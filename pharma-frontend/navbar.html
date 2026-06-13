@@ -1,0 +1,79 @@
+<aside class="app-sidebar sidebar" id="sidebar">
+    <a href="dashboard.html" class="sidebar-brand" aria-label="Dr. R Pharmacy dashboard">
+        <span class="brand-mark"><i class="fa-solid fa-prescription-bottle-medical"></i></span>
+    </a>
+
+    <nav class="sidebar-nav" aria-label="Main navigation">
+        <a href="dashboard.html" class="nav-link-item" data-nav-page="dashboard" title="Dashboard">
+            <i class="fa-solid fa-gauge-high"></i>
+            <span class="nav-label">Dashboard</span>
+        </a>
+
+        <a href="#masterFilesCollapse" class="nav-link-item d-flex align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="masterFilesCollapse" title="Master Files">
+            <i class="fa-solid fa-folder-open"></i>
+            <span class="nav-label">Master Files</span>
+            <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
+        </a>
+        <div class="collapse" id="masterFilesCollapse">
+            <a href="products.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="products" title="Products">
+                <i class="fa-solid fa-boxes"></i>
+                <span class="nav-label">Products</span>
+            </a>
+            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" title="Inventory">
+                <i class="fa-solid fa-warehouse"></i>
+                <span class="nav-label">Inventory</span>
+            </a>
+            <a href="supplier.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supplier" title="Suppliers">
+                <i class="fa-solid fa-handshake-simple"></i>
+                <span class="nav-label">Suppliers</span>
+            </a>
+        </div>
+
+        <a href="#transactionsCollapse" class="nav-link-item d-flex align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="transactionsCollapse" title="Transactions">
+            <i class="fa-solid fa-right-left"></i>
+            <span class="nav-label">Transactions</span>
+            <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
+        </a>
+        <div class="collapse" id="transactionsCollapse">
+            <a href="pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="pos" title="POS">
+                <i class="fa-solid fa-cash-register"></i>
+                <span class="nav-label">POS</span>
+            </a>
+            <a href="clerk.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="clerk" title="Salesclerk">
+                <i class="fa-solid fa-user-tie"></i>
+                <span class="nav-label">Salesclerk</span>
+            </a>
+        </div>
+
+        <a href="purchase_orders.html" class="nav-link-item" data-nav-page="purchase-orders" title="Purchase Orders">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+            <span class="nav-label">Purchase Orders</span>
+        </a>
+        <a href="pending_orders.html" class="nav-link-item" data-nav-page="pending-orders" title="Pending Orders">
+            <i class="fa-solid fa-clipboard-check"></i>
+            <span class="nav-label">Pending Orders</span>
+        </a>
+        <a href="return_damage.html" class="nav-link-item" data-nav-page="return-damage" title="Return/Damage">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span class="nav-label">Return/Damage</span>
+        </a>
+        <a href="expiry_monitoring.html" class="nav-link-item" data-nav-page="expiry-monitoring" title="Expiry Monitoring">
+            <i class="fa-solid fa-hourglass-half"></i>
+            <span class="nav-label">Expiry Monitoring</span>
+        </a>
+        <a href="#" class="nav-link-item" data-nav-page="settings" title="Settings">
+            <i class="fa-solid fa-gear"></i>
+            <span class="nav-label">Settings</span>
+        </a>
+    </nav>
+
+    <div class="sidebar-profile-footer d-flex align-items-center justify-content-between" role="group" aria-label="User profile">
+        <div class="d-flex align-items-center gap-2">
+            <div class="avatar-initials">DA</div>
+            <span class="profile-name">Dr. ADMIN</span>
+        </div>
+        <a class="signout-btn" href="logout.php" title="Sign out">
+            <i class="fa-solid fa-right-from-bracket"></i>
+        </a>
+    </div>
+</aside>

@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=5" rel="stylesheet">
+    <script src="./js/navbar.js?v=17" defer></script>
+
+    <style>
+        :root {
+            --sidebar-width: 260px;
+            --sidebar-collapsed-width: 70px;
+            --sidebar-bg: #1f2530;
+            --sidebar-bg-deep: #171c25;
+            --sidebar-text: #c6ccd8;
+            --sidebar-muted: #8790a1;
+            --purple: #7c3aed;
+            --purple-dark: #6328d6;
+            --purple-soft: rgba(124, 58, 237, 0.14);
+            --body-bg: #f4f6fb;
+            --topbar-height: 70px;
+            --border-soft: #e8ecf3;
+            --text-main: #252b37;
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            min-height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--body-bg);
+            color: var(--text-main);
+            letter-spacing: 0;
+        }
+
+        body.dark-mode {
+            --body-bg: #111827;
+            --border-soft: #263244;
+            --text-main: #e5e7eb;
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+        .sidebar a,
+        .sidebar .nav-link {
+            text-decoration: none !important;
+            color: var(--sidebar-text);
+        }
+
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: #fff !important;
+            background-color: var(--purple) !important;
+            border-radius: 8px;
+        }
+
+        .app-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: var(--sidebar-width);
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            background: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            z-index: 1040;
+            overflow: hidden;
+            transition: var(--transition);
+            box-shadow: 12px 0 30px rgba(15, 23, 42, 0.12);
+        }
+
+        .app-sidebar.collapsed {
+            width: var(--sidebar-collapsed-width);
+        }
+
+        .sidebar-brand {
+            height: var(--topbar-height);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 20px;
+            background: var(--sidebar-bg-deep);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            white-space: nowrap;
+        }
+
+        .brand-mark {
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--purple), #a855f7);
+            color: #fff;
+            font-size: 18px;
+            box-shadow: 0 12px 24px rgba(124, 58, 237, 0.32);
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.1;
+            opacity: 1;
+            transition: var(--transition);
+        }
+
+        .brand-title {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .brand-subtitle {
+            margin-top: 4px;
+            color: var(--sidebar-muted);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .sidebar-nav {
+            height: calc(100vh - var(--topbar-height));
+            padding: 16px 10px 88px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .sidebar-nav::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+        }
+
+        .nav-link-item {
+            position: relative;
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 4px 0;
+            padding: 0 16px;
+            color: var(--sidebar-text);
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: var(--transition);
+        }
+
+        .nav-link-item:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .nav-link-item.active {
+            color: #fff;
+            background: var(--purple);
+            box-shadow: 0 12px 22px rgba(124, 58, 237, 0.28);
+        }
+
+        .nav-link-item i {
+            width: 22px;
+            min-width: 22px;
+            text-align: center;
+            font-size: 16px;
+            transition: var(--transition);
+        }
+
+        .nav-label {
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        .app-sidebar.collapsed .sidebar-brand {
+            justify-content: center;
+            padding: 0;
+        }
+
+        .app-sidebar.collapsed .brand-text,
+        .app-sidebar.collapsed .nav-label {
+            width: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .app-sidebar.collapsed .sidebar-nav {
+            padding: 16px 8px;
+        }
+
+        .app-sidebar.collapsed .nav-link-item {
+            justify-content: center;
+            gap: 0;
+            padding: 0;
+        }
+
+        .app-sidebar.collapsed .nav-link-item i {
+            width: auto;
+            min-width: auto;
+            font-size: 17px;
+        }
+
+        .main-wrapper {
+            min-height: 100vh;
+            margin-left: var(--sidebar-width);
+            transition: var(--transition);
+        }
+
+        .main-wrapper.collapsed {
+            margin-left: var(--sidebar-collapsed-width);
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            height: var(--topbar-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 26px;
+            background: #fff;
+            border-bottom: 1px solid var(--border-soft);
+            z-index: 1020;
+            transition: var(--transition);
+        }
+
+        body.dark-mode .topbar,
+        body.dark-mode .stat-card,
+        body.dark-mode .content-panel,
+        body.dark-mode .table {
+            background: #182131;
+            color: var(--text-main);
+        }
+
+        .topbar-left,
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .icon-btn {
+            width: 42px;
+            height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 0;
+            border-radius: 8px;
+            color: #4b5563;
+            background: #f4f6fb;
+            transition: var(--transition);
+        }
+
+        .icon-btn:hover {
+            color: #fff;
+            background: var(--purple);
+        }
+
+        body.dark-mode .icon-btn {
+            color: #d1d5db;
+            background: #243044;
+        }
+
+        .page-title-mini {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.2;
+        }
+
+        .page-title-mini strong {
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .page-title-mini span {
+            margin-top: 3px;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .notification-btn {
+            position: relative;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            min-width: 17px;
+            height: 17px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            border-radius: 999px;
+            background: var(--purple);
+            color: #fff;
+            border: 2px solid #fff;
+            font-size: 9px;
+            font-weight: 800;
+        }
+
+        body.dark-mode .notification-badge {
+            border-color: #182131;
+        }
+
+        .profile-btn {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 8px 5px 6px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        .profile-avatar {
+            width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: var(--purple-soft);
+            color: var(--purple);
+            font-weight: 800;
+        }
+
+        .dropdown-menu {
+            border: 0;
+            border-radius: 8px;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+        }
+
+        .page-body {
+            padding: 28px;
+        }
+
+        .welcome-band {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 26px 28px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--purple), var(--purple-dark));
+            color: #fff;
+            box-shadow: 0 18px 34px rgba(124, 58, 237, 0.22);
+        }
+
+        .welcome-band h1 {
+            margin: 0;
+            font-size: 25px;
+            font-weight: 800;
+        }
+
+        .welcome-band p {
+            margin: 8px 0 0;
+            color: rgba(255, 255, 255, 0.78);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .welcome-icon {
+            width: 62px;
+            height: 62px;
+            min-width: 62px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.16);
+            font-size: 28px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 18px;
+            margin-top: 22px;
+        }
+
+        .stat-card,
+        .content-panel {
+            background: #fff;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+        }
+
+        .stat-card {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            min-height: 118px;
+            padding: 20px;
+        }
+
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            min-width: 50px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 20px;
+        }
+
+        .stat-icon.sales {
+            background: #22c55e;
+        }
+
+        .stat-icon.orders {
+            background: #06b6d4;
+        }
+
+        .stat-icon.products {
+            background: var(--purple);
+        }
+
+        .stat-icon.alerts {
+            background: #f59e0b;
+        }
+
+        .stat-content span {
+            display: block;
+            color: #7b8494;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .stat-content strong {
+            display: block;
+            margin-top: 7px;
+            color: var(--text-main);
+            font-size: 25px;
+            font-weight: 800;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+            gap: 18px;
+            margin-top: 22px;
+        }
+
+        .panel-header {
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .panel-header h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .panel-body {
+            padding: 18px 20px 20px;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .quick-action {
+            min-height: 86px;
+            display: flex;
+            align-items: center;
+            gap: 13px;
+            padding: 16px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            color: var(--text-main);
+            background: transparent;
+            font-weight: 800;
+            transition: var(--transition);
+            text-align: left;
+        }
+
+        .quick-action:hover {
+            color: var(--purple);
+            border-color: rgba(124, 58, 237, 0.28);
+            background: var(--purple-soft);
+        }
+
+        .quick-action i {
+            width: 38px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: #fff;
+            background: var(--purple);
+        }
+
+        .table {
+            margin: 0;
+            vertical-align: middle;
+        }
+
+        .table thead th {
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            background: transparent;
+            border-bottom-color: var(--border-soft);
+        }
+
+        .table tbody td {
+            color: var(--text-main);
+            font-size: 14px;
+            font-weight: 600;
+            border-bottom-color: var(--border-soft);
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            padding: 0 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .status-pill.success {
+            color: #15803d;
+            background: #dcfce7;
+        }
+
+        .status-pill.warning {
+            color: #b45309;
+            background: #fef3c7;
+        }
+
+        .content-view {
+            display: block;
+        }
+
+        .content-view.is-hidden {
+            display: none;
+        }
+
+        .btn-purple {
+            --bs-btn-color: #fff;
+            --bs-btn-bg: var(--purple);
+            --bs-btn-border-color: var(--purple);
+            --bs-btn-hover-color: #fff;
+            --bs-btn-hover-bg: var(--purple-dark);
+            --bs-btn-hover-border-color: var(--purple-dark);
+            --bs-btn-focus-shadow-rgb: 124, 58, 237;
+        }
+
+        .dynamic-product-section {
+            display: none;
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+
+        .dynamic-product-section.is-visible {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @media (max-width: 991.98px) {
+            .app-sidebar {
+                transform: translateX(0);
+            }
+
+            .app-sidebar:not(.collapsed) {
+                width: var(--sidebar-width);
+            }
+
+            .app-sidebar.collapsed {
+                width: var(--sidebar-collapsed-width);
+            }
+
+            .stats-grid,
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .topbar {
+                padding: 0 14px;
+            }
+
+            .page-title-mini,
+            .profile-name {
+                display: none;
+            }
+
+            .page-body {
+                padding: 18px;
+            }
+
+            .welcome-band {
+                align-items: flex-start;
+                flex-direction: column;
+                padding: 22px;
+            }
+
+            .stats-grid,
+            .quick-actions {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Sidebar profile footer at bottom */
+        .sidebar-profile-footer {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 15px 20px;
+            background: var(--sidebar-bg-deep);
+            color: var(--sidebar-text);
+        }
+
+        .sidebar-profile-footer .profile-avatar {
+            width: 35px;
+            height: 35px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: var(--purple);
+            color: #fff;
+            font-weight: 800;
+        }
+
+        .sidebar-profile-footer .profile-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #fff;
+        }
+
+        .sidebar-profile-footer .signout-btn {
+            color: var(--sidebar-muted);
+        }
+
+        .app-sidebar.collapsed .sidebar-profile-footer {
+            justify-content: center;
+            padding: 15px 0;
+        }
+
+        .app-sidebar.collapsed .sidebar-profile-footer .profile-name,
+        .app-sidebar.collapsed .sidebar-profile-footer .signout-btn {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="page-title-mini">
+                    <strong>Dashboard</strong>
+                    <span>Pharmacy management overview</span>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <button class="icon-btn notification-btn" type="button" aria-label="Notifications">
+                    <i class="fa-regular fa-bell"></i>
+                    <span class="notification-badge">3</span>
+                </button>
+                <button class="icon-btn" type="button" id="themeToggle" aria-label="Toggle dark mode">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+
+                <!-- user dropdown removed to avoid duplicate profile UI -->
+            </div>
+        </header>
+
+        <section class="page-body">
+            <div class="content-view" id="dashboardView">
+                <div id="view-dashboard">
+                <div class="welcome-band">
+                    <div>
+                        <h1>Welcome back, Dr. ADMIN</h1>
+                        <p>Track sales, monitor stock movement, and manage pharmacy operations from one clean workspace.</p>
+                    </div>
+                    <div class="welcome-icon">
+                        <i class="fa-solid fa-staff-snake"></i>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon sales"><i class="fa-solid fa-peso-sign"></i></div>
+                        <div class="stat-content">
+                            <span>Today's Sales</span>
+                            <strong>18,420</strong>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orders"><i class="fa-solid fa-receipt"></i></div>
+                        <div class="stat-content">
+                            <span>Transactions</span>
+                            <strong>126</strong>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon products"><i class="fa-solid fa-pills"></i></div>
+                        <div class="stat-content">
+                            <span>Total Products</span>
+                            <strong>1,248</strong>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon alerts"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="stat-content">
+                            <span>Low Stock</span>
+                            <strong>32</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="content-panel">
+                        <div class="panel-header">
+                            <h2>Recent Transactions</h2>
+                            <button class="btn btn-sm btn-outline-primary">View All</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice</th>
+                                        <th>Cashier</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>#DRP-1028</td>
+                                        <td>Cashier 01</td>
+                                        <td>2,480.00</td>
+                                        <td><span class="status-pill success">Paid</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>#DRP-1027</td>
+                                        <td>Cashier 02</td>
+                                        <td>935.00</td>
+                                        <td><span class="status-pill success">Paid</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>#DRP-1026</td>
+                                        <td>Cashier 01</td>
+                                        <td>1,120.00</td>
+                                        <td><span class="status-pill warning">Pending</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="content-panel">
+                        <div class="panel-header">
+                            <h2>Quick Actions</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="quick-actions">
+                                <a href="pos.html" class="quick-action">
+                                    <i class="fa-solid fa-cart-shopping"></i>
+                                    <span>Open POS</span>
+                                </a>
+                                <a href="products.html" class="quick-action">
+                                    <i class="fa-solid fa-boxes-stacked"></i>
+                                    <span>Products</span>
+                                </a>
+                                <a href="#" class="quick-action">
+                                    <i class="fa-solid fa-user-plus"></i>
+                                    <span>Add User</span>
+                                </a>
+                                <a href="#" class="quick-action">
+                                    <i class="fa-solid fa-chart-pie"></i>
+                                    <span>Reports</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <div id="view-inventory" class="d-none"></div>
+            <div id="view-suppliers" class="d-none"></div>
+        </section>
+    </main>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+    <script>
+        const themeToggle = document.getElementById("themeToggle");
+        const root = document.documentElement;
+
+        function setTheme(theme) {
+            const isDark = theme === "dark";
+            document.body.classList.toggle("dark-mode", isDark);
+            root.setAttribute("data-bs-theme", theme);
+            themeToggle.innerHTML = isDark
+                ? '<i class="fa-solid fa-sun"></i>'
+                : '<i class="fa-solid fa-moon"></i>';
+            localStorage.setItem("drpTheme", theme);
+        }
+
+        const savedTheme = localStorage.getItem("drpTheme") || "light";
+
+        setTheme(savedTheme);
+
+        themeToggle.addEventListener("click", () => {
+            const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
+            setTheme(nextTheme);
+        });
+
+        toastr.options = {
+            closeButton: true,
+            progressBar: true,
+            positionClass: "toast-bottom-right",
+            timeOut: "2600"
+        };
+
+        // Sidebar view routing: show/hide view containers and trigger data loaders
+        (function setupSidebarRouting(){
+            const viewIds = ['view-dashboard','view-inventory','view-suppliers'];
+            const pageTitle = document.querySelector('.page-title-mini strong');
+            const pageSubtitle = document.querySelector('.page-title-mini span');
+            const viewLabels = {
+                dashboard: ['Dashboard', 'Pharmacy management overview'],
+                inventory: ['Inventory', 'Stock batches and availability'],
+                suppliers: ['Suppliers', 'Supplier records and contacts']
+            };
+
+            function hideAllViews() {
+                viewIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && !el.classList.contains('d-none')) {
+                        el.classList.add('d-none');
+                    }
+                });
+            }
+
+            function showView(viewName) {
+                hideAllViews();
+                const targetId = `view-${viewName}`;
+                const targetEl = document.getElementById(targetId);
+                if (!targetEl) {
+                    console.warn('View not found:', targetId);
+                    return;
+                }
+                targetEl.classList.remove('d-none');
+
+                const labels = viewLabels[viewName] || viewLabels.dashboard;
+                pageTitle.textContent = labels[0];
+                pageSubtitle.textContent = labels[1];
+                if (viewName === 'inventory') {
+                    if (typeof window.loadInventoryTable === 'function') {
+                        window.loadInventoryTable();
+                    } else {
+                        console.warn('No inventory loader available');
+                    }
+                }
+
+                if (viewName === 'suppliers') {
+                    if (typeof window.loadSuppliersTable === 'function') {
+                        window.loadSuppliersTable();
+                    } else {
+                        console.warn('No suppliers loader available');
+                    }
+                }
+            }
+
+            // Also respond to programmatic events
+            window.addEventListener('pharma:view-change', (e) => {
+                const view = e?.detail?.view;
+                if (view) showView(view);
+            });
+
+            function showHashView() {
+                const view = window.location.hash.replace('#', '');
+                showView(view === 'inventory' ? view : 'dashboard');
+            }
+
+            window.addEventListener('hashchange', showHashView);
+            showHashView();
+        })();
+    </script>
+    <script type="module">
+        import verifySession from './js/modules/auth.js';
+        import { loadInventoryTable } from './js/modules/products.js?v=9';
+
+        await verifySession();
+        window.loadInventoryTable = loadInventoryTable || (async () => console.info('loadInventoryTable not implemented'));
+        window.loadSuppliersTable = window.loadSuppliersTable || (async () => console.info('loadSuppliersTable not implemented'));
+    </script>
+</body>
+</html>
