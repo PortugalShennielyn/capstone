@@ -14,14 +14,7 @@ function escapeHtml(value) {
 }
 
 async function fetchJson(url, options = {}) {
-    const response = await fetch(url, { credentials: 'include', ...options });
-    const data = await response.json();
-
-    if (!response.ok || data.status === 'error') {
-        throw new Error(data.message || 'Request failed.');
-    }
-
-    return data;
+    return PharmaUtils.safeFetch(url, { credentials: 'include', ...options });
 }
 
 function formatDate(value) {

@@ -16,10 +16,9 @@ function escapeHtml(value) {
 }
 
 async function fetchJson(url, options = {}) {
-    const response = await fetch(url, { credentials: 'include', ...options });
-    const data = await response.json();
+    const data = await PharmaUtils.safeFetch(url, { credentials: 'include', ...options });
 
-    if (!response.ok || data.status === 'error' || data.success === false) {
+    if (data.success === false) {
         const detail = data.error ? ` ${data.error}` : '';
         throw new Error(`${data.message || 'Request failed.'}${detail}`);
     }

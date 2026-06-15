@@ -78,29 +78,56 @@ const PharmaUtils = {
 
     // 3. Smart API Fetch Wrapper (Automatically handles loading states and parses JSON errors)
     async safeFetch(url, options = {}) {
-        try {
-            const response = await fetch(url, options);
+        const method = String(options.method || 'GET').toUpperCase();
+        const shouldRetry = method === 'GET';
+        const attempts = shouldRetry ? 2 : 1;
+        let lastError;
 
-            // Try to read the response as text first to capture raw PHP formatting errors
-            const rawText = await response.text();
-            let data;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            const controller = !options.signal ? new AbortController() : null;
+            const timeout = controller ? setTimeout(() => controller.abort(), 10000) : null;
+            const requestUrl = shouldRetry && attempt > 0
+                ? `${url}${url.includes('?') ? '&' : '?'}_retry=${Date.now()}`
+                : url;
 
             try {
-                data = JSON.parse(rawText);
-            } catch (jsonErr) {
-                throw new Error("Server returned an invalid non-JSON response.");
+                const response = await fetch(requestUrl, {
+                    ...options,
+                    cache: shouldRetry ? 'no-store' : options.cache,
+                    signal: options.signal || controller.signal
+                });
+
+                // Try to read the response as text first to capture raw PHP formatting errors
+                const rawText = await response.text();
+                let data;
+
+                try {
+                    data = JSON.parse(rawText);
+                } catch (jsonErr) {
+                    throw new Error("Server returned an invalid non-JSON response.");
+                }
+
+                if (!response.ok || data.status === 'error') {
+                    throw new Error(data.message || `HTTP Error! Status: ${response.status}`);
+                }
+
+                return data;
+
+            } catch (error) {
+                lastError = error.name === 'AbortError'
+                    ? new Error('Request timed out. Please refresh and try again.')
+                    : error;
+
+                if (attempt === attempts - 1) {
+                    // Forward the error to be explicitly caught by your operational pages
+                    throw lastError;
+                }
+            } finally {
+                if (timeout) clearTimeout(timeout);
             }
-
-            if (!response.ok || data.status === 'error') {
-                throw new Error(data.message || `HTTP Error! Status: ${response.status}`);
-            }
-
-            return data;
-
-        } catch (error) {
-            // Forward the error to be explicitly caught by your operational pages
-            throw error;
         }
+
+        throw lastError;
     }
 };
 

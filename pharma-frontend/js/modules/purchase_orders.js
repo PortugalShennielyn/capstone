@@ -36,14 +36,7 @@ function escapeHtml(value) {
 }
 
 async function fetchJson(url, options = {}) {
-    const response = await fetch(url, { credentials: 'include', ...options });
-    const data = await response.json();
-
-    if (!response.ok || data.status === 'error') {
-        throw new Error(data.message || 'Request failed.');
-    }
-
-    return data;
+    return PharmaUtils.safeFetch(url, { credentials: 'include', ...options });
 }
 
 function setTheme(theme) {
@@ -144,7 +137,7 @@ function draftItemFromOption(option, quantity = 1) {
         po_item_id: null,
         product_id: option.value,
         variation_id: option.dataset.variationId || '',
-        product_name: option.textContent || '',
+        product_name: option.dataset.productName || option.textContent || '',
         brand_name: option.dataset.brand || '',
         unit: option.dataset.unit || '',
         category_name: option.dataset.categoryName || '',
@@ -191,6 +184,7 @@ function showEditProductEditor(item, index = null) {
     const medicine = isMedicineItem(item);
     editDraftItemIndex = Number.isInteger(index) ? index : null;
     editor.classList.remove('d-none');
+    editor.dataset.variationId = item.variation_id || '';
 
     document.getElementById('edit-po-product-editor-title').textContent = editDraftItemIndex === null
         ? `Selected Product: ${item.product_name || 'New item'}`
@@ -237,6 +231,7 @@ function readEditProductEditor() {
     return {
         po_item_id: editDraftItemIndex === null ? null : (editDraftItems[editDraftItemIndex]?.po_item_id || null),
         product_id: productId,
+        variation_id: document.getElementById('edit-po-product-editor')?.dataset.variationId || '',
         product_name: getValue('edit-po-editor-product-name'),
         brand_name: getValue('edit-po-editor-brand-name'),
         category_name: categoryName,
@@ -367,6 +362,7 @@ async function loadSupplierProducts(supplierId, productSelectId = 'po-product-se
                 product.packaging
             ].filter(Boolean).join(' | ');
             option.textContent = variationLabel ? `${product.product_name} - ${variationLabel}` : product.product_name;
+            option.dataset.productName = product.product_name || '';
             option.dataset.variationId = product.variation_id || '';
             option.dataset.brand = product.brand_name || '';
             option.dataset.unit = product.unit || product.measurement_unit_name || '';
@@ -495,13 +491,12 @@ function commitPurchaseOrderTable(view, bodyHtml) {
     if (!tableBody) return;
 
     tableBody.classList.add('po-table-body-updating');
-
-    requestAnimationFrame(() => {
-        renderTableHead(view);
-        tableBody.innerHTML = bodyHtml;
+    renderTableHead(view);
+    tableBody.innerHTML = bodyHtml;
+    window.setTimeout(() => {
         tableBody.classList.remove('po-table-body-updating');
-        window.requestAnimationFrame(() => window.dispatchEvent(new CustomEvent('drp:tables-updated')));
-    });
+        window.dispatchEvent(new CustomEvent('drp:tables-updated'));
+    }, 120);
 }
 
 function renderActivePurchaseOrders(orders) {
@@ -644,13 +639,38 @@ async function loadPurchaseOrders(options = {}) {
 
         if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;
 
+        let orders = data.purchase_orders || [];
+        if (viewAtRequest === 'active' && !statusFilter && orders.length === 0) {
+            const activeCount = ['Pending', 'Approved by the owner', 'In transit', 'Arrived']
+                .reduce((total, status) => total + Number(data.status_counts?.[status] || 0), 0);
+
+            if (activeCount > 0) {
+                const fallback = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_orders.php?scope=all&t=${Date.now()}`);
+                if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;
+                orders = (fallback.purchase_orders || []).filter((order) =>
+                    ['Pending', 'Approved by the owner', 'In transit', 'Arrived'].includes(order.status)
+                );
+                data.status_counts = fallback.status_counts || data.status_counts;
+            }
+        }
+
         if (updateSummary) renderStatusSummary(data.status_counts || {});
         if (viewAtRequest === 'arrived') {
-            renderArrivedPurchaseOrders(data.purchase_orders || []);
+            renderArrivedPurchaseOrders(orders);
         } else if (viewAtRequest === 'delivered') {
-            renderDeliveredPurchaseOrders(data.purchase_orders || []);
+            renderDeliveredPurchaseOrders(orders);
         } else {
-            renderActivePurchaseOrders(data.purchase_orders || []);
+            renderActivePurchaseOrders(orders);
+            window.setTimeout(() => {
+                if (
+                    loadToken === purchaseOrdersLoadToken
+                    && currentPoView === 'active'
+                    && orders.length > 0
+                    && !document.querySelector('#table-purchase-orders tbody')?.textContent.trim()
+                ) {
+                    renderActivePurchaseOrders(orders);
+                }
+            }, 250);
         }
     } catch (err) {
         if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;

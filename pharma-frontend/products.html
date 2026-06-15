@@ -59,7 +59,11 @@
         .product-variant-chip.is-active { border-color:var(--purple); background:var(--purple); color:#fff; }
         .grocery-variation-entry { border:1px solid var(--border-soft); border-radius:8px; padding:12px; background:#fff; }
         .grocery-variation-entry + .grocery-variation-entry { margin-top:10px; }
+        .edit-variation-entry { border:1px solid var(--border-soft); border-radius:8px; padding:12px; background:#fff; }
+        .edit-variation-entry + .edit-variation-entry { margin-top:10px; }
+        .variation-pair { display:grid; grid-template-columns:minmax(0, 1fr) 82px; gap:6px; }
         body.dark-mode .grocery-variation-entry { background:#182131; border-color:#334155; }
+        body.dark-mode .edit-variation-entry { background:#182131; border-color:#334155; }
         body.dark-mode .product-brand, body.dark-mode .product-detail-list { color:#cbd5e1; }
         body.dark-mode .product-barcode-toggle { color:#c4b5fd; background:#182131; border-color:#475569; }
         body.dark-mode .product-meta { border-color:rgba(196,181,253,.24); background:rgba(124,58,237,.16); color:#c4b5fd; }
@@ -235,12 +239,15 @@
                                         <label class="form-label">Generic Name</label>
                                         <input class="form-control" id="supplierProductGenericName">
                                     </div>
-                                    <div class="col-md-3"><label class="form-label">Strength Value</label><input class="form-control" id="supplierProductStrengthValue" placeholder="500"></div>
-                                    <div class="col-md-3"><label class="form-label">Strength Unit</label><select class="form-select" id="supplierProductStrengthUnit"><option value="">N/A</option><option>mg</option><option>mcg</option><option>g</option><option>IU</option><option>%</option></select></div>
-                                    <div class="col-md-3"><label class="form-label">Volume Value</label><input class="form-control" id="supplierProductVolumeValue" placeholder="60"></div>
-                                    <div class="col-md-3"><label class="form-label">Volume Unit</label><select class="form-select" id="supplierProductVolumeUnit"><option value="">N/A</option><option>mL</option><option>L</option><option>oz</option></select></div>
-                                    <div class="col-md-3"><label class="form-label">Size</label><select class="form-select" id="supplierProductMedicineSize"><option>N/A</option><option>Small</option><option>Medium</option><option>Large</option><option>XL</option></select></div>
-                                    <div class="col-md-3"><label class="form-label">Packaging</label><select class="form-select" id="supplierProductMedicinePackaging"><option value="">N/A</option><option>bottle</option><option>box</option><option>blister</option><option>tube</option><option>pack</option><option>sachet</option></select></div>
+                                    <div class="col-md-3"><label class="form-label">Strength Value</label><input class="form-control" id="supplierProductStrengthValue" type="number" min="0" step="any" placeholder="500"></div>
+                                    <div class="col-md-3"><label class="form-label">Strength Unit</label><select class="form-select" id="supplierProductStrengthUnit"><option value="">N/A</option><option>mg</option><option>mcg</option><option>g</option><option>IU</option><option>%</option><option>mg/mL</option><option>mg/5mL</option><option>mg/mL</option><option>mg/5mL</option></select></div>
+                                    <div class="col-md-3"><label class="form-label">Volume Value</label><input class="form-control" id="supplierProductVolumeValue" type="number" min="0" step="any" placeholder="60"></div>
+                                    <div class="col-md-3"><label class="form-label">Volume Unit</label><select class="form-select" id="supplierProductVolumeUnit"><option value="">N/A</option><option>mL</option><option>L</option><option>oz</option><option>fl oz</option></select></div>
+                                    <div class="col-md-3 d-none" id="supplierProductMedicineFlavorWrap"><label class="form-label">Flavor</label><input class="form-control" id="supplierProductMedicineFlavor" list="supplierProductMedicineFlavorList" placeholder="Select or type"><datalist id="supplierProductMedicineFlavorList"></datalist></div>
+                                    <div class="col-md-3"><label class="form-label">Unit</label><select class="form-select" id="supplierProductMedicineUnit"><option>pcs</option><option>tablet</option><option>capsule</option><option>bottle</option><option>box</option><option>pack</option><option>can</option><option>sachet</option><option>tube</option><option>vial</option><option>ampule</option><option>blister</option><option>pouch</option><option>jar</option><option>roll</option></select></div>
+                                    <div class="col-md-3"><label class="form-label">Packaging</label><select class="form-select" id="supplierProductMedicinePackaging"><option value="">N/A</option><option>box</option><option>bottle</option><option>pack</option><option>plastic pack</option><option>blister pack</option><option>sachet</option><option>tube</option><option>can</option><option>pouch</option><option>jar</option><option>carton</option><option>strip</option></select></div>
+                                    <div class="col-md-3"><label class="form-label">Pack Content Qty</label><input class="form-control" id="supplierProductMedicinePackContentQty" type="number" min="0" step="1" placeholder="100"></div>
+                                    <div class="col-md-3"><label class="form-label">Pack Content Unit</label><select class="form-select" id="supplierProductMedicinePackContentUnit"><option>pcs</option><option>tablets</option><option>capsules</option><option>bottles</option><option>sachets</option><option>cans</option><option>packs</option><option>tubes</option><option>vials</option><option>ampules</option><option>strips</option></select></div>
                                 </div>
                             </div>
                             <div class="col-12 d-none" id="supplierProductGroceryFields">
@@ -252,10 +259,15 @@
                                     <div class="grocery-variation-entry">
                                         <div class="row g-3">
                                             <div class="col-md-4"><label class="form-label">Variant / Flavor</label><input class="form-control supplier-product-variant-flavor" id="supplierProductVariantFlavor" placeholder="e.g., Menudo"></div>
-                                            <div class="col-md-4"><label class="form-label">Size <span class="text-danger">*</span></label><select class="form-select supplier-product-size-value" id="supplierProductSizeValue"><option>Small</option><option>Medium</option><option>Large</option><option>XL</option><option>Family Size</option><option>N/A</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Net Weight</label><input class="form-control supplier-product-weight-value" id="supplierProductWeightVolumeValue" placeholder="155"></div>
-                                            <div class="col-md-4"><label class="form-label">Weight Unit</label><select class="form-select supplier-product-weight-unit" id="supplierProductWeightVolumeUnit"><option value="">N/A</option><option>g</option><option>kg</option><option>mL</option><option>L</option><option>oz</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Packaging</label><select class="form-select supplier-product-packaging" id="supplierProductPackaging"><option value="">N/A</option><option>pack</option><option>box</option><option>bottle</option><option>can</option><option>sachet</option></select></div>
+                                            <div class="col-md-4"><label class="form-label">Size <span class="text-danger">*</span></label><select class="form-select supplier-product-size-value" id="supplierProductSizeValue"><option value="">N/A</option><option>Newborn</option><option>Small</option><option>Medium</option><option>Large</option><option>XL</option><option>XXL</option><option>Family Size</option><option>Travel Size</option></select></div>
+                                            <div class="col-md-4"><label class="form-label">Weight Value</label><input class="form-control supplier-product-weight-value" id="supplierProductWeightVolumeValue" type="number" min="0" step="any" placeholder="155"></div>
+                                            <div class="col-md-4"><label class="form-label">Weight Unit</label><select class="form-select supplier-product-weight-unit" id="supplierProductWeightVolumeUnit"><option value="">N/A</option><option>mg</option><option>g</option><option>kg</option><option>oz</option><option>lb</option></select></div>
+                                            <div class="col-md-4"><label class="form-label">Volume Value</label><input class="form-control supplier-product-volume-value" id="supplierProductGroceryVolumeValue" type="number" min="0" step="any" placeholder="60"></div>
+                                            <div class="col-md-4"><label class="form-label">Volume Unit</label><select class="form-select supplier-product-volume-unit" id="supplierProductGroceryVolumeUnit"><option value="">N/A</option><option>mL</option><option>L</option><option>oz</option><option>fl oz</option></select></div>
+                                            <div class="col-md-4"><label class="form-label">Unit</label><select class="form-select supplier-product-unit" id="supplierProductVariationUnit"><option>pcs</option><option>tablet</option><option>capsule</option><option>bottle</option><option>box</option><option>pack</option><option>can</option><option>sachet</option><option>tube</option><option>vial</option><option>ampule</option><option>blister</option><option>pouch</option><option>jar</option><option>roll</option></select></div>
+                                            <div class="col-md-4"><label class="form-label">Packaging</label><select class="form-select supplier-product-packaging" id="supplierProductPackaging"><option value="">N/A</option><option>box</option><option>bottle</option><option>pack</option><option>plastic pack</option><option>blister pack</option><option>sachet</option><option>tube</option><option>can</option><option>pouch</option><option>jar</option><option>carton</option><option>strip</option></select></div>
+                                            <div class="col-md-4"><label class="form-label">Pack Content Qty</label><input class="form-control supplier-product-pack-content-qty" id="supplierProductPackContentQty" type="number" min="0" step="1" placeholder="12"></div>
+                                            <div class="col-md-4"><label class="form-label">Pack Content Unit</label><select class="form-select supplier-product-pack-content-unit" id="supplierProductPackContentUnit"><option>pcs</option><option>tablets</option><option>capsules</option><option>bottles</option><option>sachets</option><option>cans</option><option>packs</option><option>tubes</option><option>vials</option><option>ampules</option><option>strips</option></select></div>
                                             <div class="col-md-4"><label class="form-label">Price</label><input class="form-control supplier-product-price" id="supplierProductPrice" type="number" min="0" step=".01" required></div>
                                             <div class="col-md-4"><label class="form-label">Barcode</label><input class="form-control supplier-product-barcode" id="supplierProductBarcode" placeholder="Auto/manual"></div>
                                             <div class="col-md-4"><label class="form-label">SKU</label><input class="form-control supplier-product-sku" id="supplierProductSku" placeholder="Optional"></div>
@@ -402,49 +414,16 @@
                                 <label class="form-label" for="editProductType">Product Type</label>
                                 <select class="form-select" id="editProductType" required></select>
                             </div>
-                            <div class="col-12" id="editMedicineFieldsWrap">
-                                <div class="row g-3">
-                                    <div class="col-md-6" id="editGenericNameWrap">
-                                        <label class="form-label" for="editProductGeneric">Generic Name</label>
-                                        <input class="form-control" id="editProductGeneric">
-                                    </div>
-                                    <div class="col-md-3" id="editStrengthWrap"><label class="form-label" for="editProductStrength">Strength Value</label><input class="form-control" id="editProductStrength"></div>
-                                    <div class="col-md-3"><label class="form-label" for="editProductStrengthUnit">Strength Unit</label><select class="form-select" id="editProductStrengthUnit"><option value="">N/A</option><option>mg</option><option>mcg</option><option>g</option><option>IU</option><option>%</option></select></div>
-                                    <div class="col-md-3"><label class="form-label" for="editProductVolumeValue">Volume Value</label><input class="form-control" id="editProductVolumeValue"></div>
-                                    <div class="col-md-3"><label class="form-label" for="editProductVolumeUnit">Volume Unit</label><select class="form-select" id="editProductVolumeUnit"><option value="">N/A</option><option>mL</option><option>L</option><option>oz</option></select></div>
-                                    <div class="col-md-3"><label class="form-label" for="editProductMedicineSize">Size</label><select class="form-select" id="editProductMedicineSize"><option>N/A</option><option>Small</option><option>Medium</option><option>Large</option><option>XL</option></select></div>
-                                    <div class="col-md-3">
-                                        <label class="form-label" for="editProductMeasurementUnit">Unit</label>
-                                        <select class="form-select" id="editProductMeasurementUnit" required></select>
-                                    </div>
-                                    <div class="col-md-3"><label class="form-label" for="editProductMedicinePackaging">Packaging</label><select class="form-select" id="editProductMedicinePackaging"><option value="">N/A</option><option>bottle</option><option>box</option><option>blister</option><option>tube</option><option>pack</option><option>sachet</option></select></div>
+                            <div class="col-md-6" id="editGenericNameWrap">
+                                <label class="form-label" for="editProductGeneric">Generic Name</label>
+                                <input class="form-control" id="editProductGeneric">
+                            </div>
+                            <div class="col-12">
+                                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                                    <label class="form-label mb-0">Variations</label>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAddEditVariation"><i class="fa-solid fa-plus me-1"></i>Add Variation</button>
                                 </div>
-                            </div>
-                            <div class="col-12 d-none" id="editGroceryFieldsWrap">
-                                <div class="row g-3">
-                                    <div class="col-md-4">
-                                        <label class="form-label" for="editProductVariantFlavor">Variant / Flavor</label>
-                                        <input class="form-control" id="editProductVariantFlavor">
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label" for="editProductSizeValue">Size <span class="text-danger">*</span></label>
-                                        <select class="form-select" id="editProductSizeValue"><option>Small</option><option>Medium</option><option>Large</option><option>XL</option><option>Family Size</option><option>N/A</option></select>
-                                    </div>
-                                    <div class="col-md-4"><label class="form-label" for="editProductWeightVolumeValue">Weight/Volume Value</label><input class="form-control" id="editProductWeightVolumeValue"></div>
-                                    <div class="col-md-4"><label class="form-label" for="editProductWeightVolumeUnit">Weight/Volume Unit</label><select class="form-select" id="editProductWeightVolumeUnit"><option value="">N/A</option><option>g</option><option>kg</option><option>mL</option><option>L</option><option>oz</option></select></div>
-                                    <div class="col-md-4">
-                                        <label class="form-label" for="editProductPackaging">Packaging</label>
-                                        <select class="form-select" id="editProductPackaging"><option value="">N/A</option><option>pack</option><option>box</option><option>bottle</option><option>can</option><option>sachet</option></select>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6 d-none" id="editGroceryUnitWrap">
-                                <label class="form-label" for="editProductMeasurementUnitGrocery">Unit</label>
-                                <select class="form-select" id="editProductMeasurementUnitGrocery"></select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="editProductPrice">Price</label>
-                                <input class="form-control" id="editProductPrice" type="number" min="0" step=".01" required>
+                                <div id="editVariationList"></div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="editProductImageUrl">Image URL</label>
@@ -467,10 +446,10 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/suppliers.js?v=11"></script>
+    <script type="module" src="./js/modules/suppliers.js?v=12"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js';
-        import { initAddStockForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=9';
+        import { initAddStockForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=11';
 
         await verifySession();
         initProductCards();

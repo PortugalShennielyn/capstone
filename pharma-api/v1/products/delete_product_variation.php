@@ -23,6 +23,19 @@ try {
         throw new InvalidArgumentException('A valid variation is required.');
     }
 
+    $productStatement = $pdo->prepare('SELECT product_id FROM product_variations WHERE variation_id = :variation_id LIMIT 1');
+    $productStatement->execute([':variation_id' => $variationId]);
+    $productId = (int) $productStatement->fetchColumn();
+    if ($productId <= 0) {
+        throw new InvalidArgumentException('Variation was not found.');
+    }
+
+    $countStatement = $pdo->prepare('SELECT COUNT(*) FROM product_variations WHERE product_id = :product_id');
+    $countStatement->execute([':product_id' => $productId]);
+    if ((int) $countStatement->fetchColumn() <= 1) {
+        throw new InvalidArgumentException('A product must keep at least one variation.');
+    }
+
     $usageStatement = $pdo->prepare(
         'SELECT
             (SELECT COUNT(*) FROM purchase_order_items WHERE variation_id = :variation_id) +

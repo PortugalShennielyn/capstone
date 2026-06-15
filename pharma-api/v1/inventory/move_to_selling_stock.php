@@ -19,20 +19,26 @@ try {
     ensureProductCategorySchema($pdo);
 
     $productId = (int) ($payload['product_id'] ?? 0);
-    $variationId = (int) ($payload['variation_id'] ?? 0);
+    $variationId = isset($payload['variation_id']) && $payload['variation_id'] !== ''
+        ? (int) $payload['variation_id']
+        : 0;
     $quantity = (int) ($payload['quantity'] ?? 0);
 
-    if ($productId <= 0 || $variationId <= 0 || $quantity <= 0) {
-        throw new InvalidArgumentException('Product variation and quantity are required.');
+    if ($productId <= 0 || $quantity <= 0) {
+        throw new InvalidArgumentException('Product and quantity are required.');
     }
 
+    $variationFilter = $variationId > 0 ? 'variation_id = :variation_id' : 'variation_id IS NULL';
+    $variationParams = $variationId > 0 ? [':variation_id' => $variationId] : [];
+    $sellingVariationId = $variationId > 0 ? $variationId : null;
+
     $availableStatement = $pdo->prepare(
-        'SELECT COALESCE(SUM(quantity_remaining), 0)
+        "SELECT COALESCE(SUM(quantity_remaining), 0)
          FROM product_inventory
          WHERE product_id = :product_id
-           AND variation_id = :variation_id'
+           AND {$variationFilter}"
     );
-    $availableStatement->execute([':product_id' => $productId, ':variation_id' => $variationId]);
+    $availableStatement->execute([':product_id' => $productId] + $variationParams);
     $available = (int) $availableStatement->fetchColumn();
 
     if ($quantity > $available) {
@@ -42,15 +48,15 @@ try {
     $pdo->beginTransaction();
 
     $batchStatement = $pdo->prepare(
-        'SELECT inventory_id, batch_number, quantity_remaining, expiration_date
+        "SELECT inventory_id, batch_number, quantity_remaining, expiration_date
          FROM product_inventory
          WHERE product_id = :product_id
-           AND variation_id = :variation_id
+           AND {$variationFilter}
            AND quantity_remaining > 0
-         ORDER BY COALESCE(expiration_date, "9999-12-31") ASC, inventory_id ASC
-         FOR UPDATE'
+         ORDER BY COALESCE(expiration_date, '9999-12-31') ASC, inventory_id ASC
+         FOR UPDATE"
     );
-    $batchStatement->execute([':product_id' => $productId, ':variation_id' => $variationId]);
+    $batchStatement->execute([':product_id' => $productId] + $variationParams);
 
     $updateInventory = $pdo->prepare(
         'UPDATE product_inventory
@@ -77,7 +83,7 @@ try {
 
         $insertSelling->execute([
             ':product_id' => $productId,
-            ':variation_id' => $variationId,
+            ':variation_id' => $sellingVariationId,
             ':source_inventory_id' => (int) $batch['inventory_id'],
             ':batch_number' => $batch['batch_number'],
             ':quantity_stocked' => $moveQuantity,

@@ -12,12 +12,7 @@ const esc = (value) => String(value ?? '')
     .replaceAll("'", '&#039;');
 
 async function fetchJson(url, options = {}) {
-    const response = await fetch(url, { credentials: 'include', ...options });
-    const data = await response.json();
-    if (!response.ok || data.status === 'error') {
-        throw new Error(data.error || data.message || 'Request failed.');
-    }
-    return data;
+    return PharmaUtils.safeFetch(url, { credentials: 'include', ...options });
 }
 
 function dateText(value) {

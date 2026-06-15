@@ -160,6 +160,10 @@ function validatePurchaseOrderItems(array $items): void
         if ((int) ($item['product_id'] ?? 0) <= 0 || (int) ($item['quantity'] ?? 0) <= 0) {
             throw new InvalidArgumentException('Each purchase-order item must have a valid product and quantity.');
         }
+
+        if ((int) ($item['variation_id'] ?? 0) <= 0) {
+            throw new InvalidArgumentException('Each purchase-order item must include a selected product variation.');
+        }
     }
 }
 
@@ -220,19 +224,22 @@ function validateProductsForSupplier(PDO $pdo, int $supplierId, array $items): v
 {
     $statement = $pdo->prepare(
         'SELECT COUNT(*)
-         FROM supplier_products
-         WHERE product_id = :product_id
-           AND supplier_id = :supplier_id'
+         FROM supplier_products sp
+         INNER JOIN product_variations pv ON pv.product_id = sp.product_id
+         WHERE sp.product_id = :product_id
+           AND sp.supplier_id = :supplier_id
+           AND pv.variation_id = :variation_id'
     );
 
     foreach ($items as $item) {
         $statement->execute([
             ':product_id' => (int) $item['product_id'],
-            ':supplier_id' => $supplierId
+            ':supplier_id' => $supplierId,
+            ':variation_id' => (int) ($item['variation_id'] ?? 0)
         ]);
 
         if ((int) $statement->fetchColumn() !== 1) {
-            throw new InvalidArgumentException('A purchase-order item is not assigned to the selected supplier.');
+            throw new InvalidArgumentException('A purchase-order item variation is not assigned to the selected supplier.');
         }
     }
 }

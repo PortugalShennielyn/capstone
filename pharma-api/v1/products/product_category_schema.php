@@ -153,77 +153,18 @@ function ensureProductCategorySchema(PDO $pdo): void
         $pdo->exec("ALTER TABLE product ADD COLUMN generic_name VARCHAR(150) NULL AFTER product_name");
     }
 
-    if (!productTableHasColumn($pdo, 'strength_size')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN strength_size VARCHAR(100) NULL AFTER generic_name");
-    }
-
-    if (!productTableHasColumn($pdo, 'strength_size_value')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN strength_size_value VARCHAR(50) NULL AFTER strength_size");
-    }
-
-    if (!productTableHasColumn($pdo, 'strength_value')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN strength_value VARCHAR(50) NULL AFTER strength_size_value");
-    }
-
-    if (!productTableHasColumn($pdo, 'strength_unit')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN strength_unit VARCHAR(20) NULL AFTER strength_value");
-    }
-
-    if (!productTableHasColumn($pdo, 'volume_value')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN volume_value VARCHAR(50) NULL AFTER strength_unit");
-    }
-
-    if (!productTableHasColumn($pdo, 'volume_unit')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN volume_unit VARCHAR(20) NULL AFTER volume_value");
-    }
-
-    if (!productTableHasColumn($pdo, 'variant_flavor')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN variant_flavor VARCHAR(100) NULL AFTER strength_size_value");
-    }
-
-    if (!productTableHasColumn($pdo, 'size_value')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN size_value VARCHAR(100) NULL AFTER variant_flavor");
-    }
-
-    if (!productTableHasColumn($pdo, 'display_size')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN display_size VARCHAR(50) NULL AFTER size_value");
-    }
-
-    if (!productTableHasColumn($pdo, 'weight_volume_value')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN weight_volume_value VARCHAR(50) NULL AFTER display_size");
-    }
-
-    if (!productTableHasColumn($pdo, 'weight_volume_unit')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN weight_volume_unit VARCHAR(20) NULL AFTER weight_volume_value");
-    }
-
-    if (!productTableHasColumn($pdo, 'packaging')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN packaging VARCHAR(100) NULL AFTER size_value");
-    }
-
-    if (!productTableHasColumn($pdo, 'product_unit')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN product_unit VARCHAR(50) NULL AFTER packaging");
-    }
-
     if (!productTableHasColumn($pdo, 'measurement_unit_id')) {
         $afterColumn = productTableHasColumn($pdo, 'type_id') ? 'type_id' : 'category_id';
         $pdo->exec("ALTER TABLE product ADD COLUMN measurement_unit_id INT NULL AFTER {$afterColumn}");
     }
 
     if (!productTableHasColumn($pdo, 'image_url')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN image_url VARCHAR(255) NULL AFTER price");
+        $afterImageColumn = productTableHasColumn($pdo, 'price') ? 'price' : 'product_name';
+        $pdo->exec("ALTER TABLE product ADD COLUMN image_url VARCHAR(255) NULL AFTER {$afterImageColumn}");
     }
 
     if (productTableHasColumn($pdo, 'unit')) {
         $pdo->exec("ALTER TABLE product MODIFY unit VARCHAR(50) NULL");
-    }
-
-    if (!productTableHasColumn($pdo, 'goods_type')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN goods_type VARCHAR(100) NULL AFTER strength_size");
-    }
-
-    if (!productTableHasColumn($pdo, 'size_weight')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN size_weight VARCHAR(100) NULL AFTER goods_type");
     }
 
     $pdo->exec(
@@ -251,6 +192,8 @@ function ensureProductCategorySchema(PDO $pdo): void
             weight_unit VARCHAR(20) NULL,
             unit VARCHAR(50) NULL,
             packaging VARCHAR(100) NULL,
+            pack_content_qty INT NULL,
+            pack_content_unit VARCHAR(50) NULL,
             price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             barcode VARCHAR(100) NULL,
             sku VARCHAR(100) NULL,
@@ -274,6 +217,8 @@ function ensureProductCategorySchema(PDO $pdo): void
         'weight_unit VARCHAR(20) NULL',
         'unit VARCHAR(50) NULL',
         'packaging VARCHAR(100) NULL',
+        'pack_content_qty INT NULL',
+        'pack_content_unit VARCHAR(50) NULL',
         'price DECIMAL(12,2) NOT NULL DEFAULT 0.00',
         'barcode VARCHAR(100) NULL',
         'sku VARCHAR(100) NULL',
@@ -346,45 +291,59 @@ function ensureProductCategorySchema(PDO $pdo): void
         );
     }
 
-    $pdo->exec(
-        "UPDATE product
-         SET strength_value = strength_size_value
-         WHERE (strength_value IS NULL OR strength_value = '')
-           AND strength_size_value IS NOT NULL
-           AND strength_size_value <> ''"
-    );
+    if (productTableHasColumn($pdo, 'strength_value') && productTableHasColumn($pdo, 'strength_size_value')) {
+        $pdo->exec(
+            "UPDATE product
+             SET strength_value = strength_size_value
+             WHERE (strength_value IS NULL OR strength_value = '')
+               AND strength_size_value IS NOT NULL
+               AND strength_size_value <> ''"
+        );
+    }
 
-    $pdo->exec(
-        "UPDATE product
-         SET variant_flavor = goods_type
-         WHERE (variant_flavor IS NULL OR variant_flavor = '')
-           AND goods_type IS NOT NULL
-           AND goods_type <> ''"
-    );
+    if (productTableHasColumn($pdo, 'variant_flavor') && productTableHasColumn($pdo, 'goods_type')) {
+        $pdo->exec(
+            "UPDATE product
+             SET variant_flavor = goods_type
+             WHERE (variant_flavor IS NULL OR variant_flavor = '')
+               AND goods_type IS NOT NULL
+               AND goods_type <> ''"
+        );
+    }
 
-    $pdo->exec(
-        "UPDATE product
-         SET size_value = size_weight
-         WHERE (size_value IS NULL OR size_value = '')
-           AND size_weight IS NOT NULL
-           AND size_weight <> ''"
-    );
+    if (productTableHasColumn($pdo, 'size_value') && productTableHasColumn($pdo, 'size_weight')) {
+        $pdo->exec(
+            "UPDATE product
+             SET size_value = size_weight
+             WHERE (size_value IS NULL OR size_value = '')
+               AND size_weight IS NOT NULL
+               AND size_weight <> ''"
+        );
+    }
 
-    $pdo->exec(
-        "UPDATE product
-         SET display_size = size_value
-         WHERE (display_size IS NULL OR display_size = '')
-           AND size_value IS NOT NULL
-           AND size_value <> ''"
-    );
+    if (productTableHasColumn($pdo, 'display_size') && productTableHasColumn($pdo, 'size_value')) {
+        $pdo->exec(
+            "UPDATE product
+             SET display_size = size_value
+             WHERE (display_size IS NULL OR display_size = '')
+               AND size_value IS NOT NULL
+               AND size_value <> ''"
+        );
+    }
 
-    $pdo->exec(
-        "UPDATE product p
-         LEFT JOIN product_measurement_units pmu ON p.measurement_unit_id = pmu." . getMeasurementUnitIdColumn($pdo) . "
-         SET p.product_unit = COALESCE(pmu.unit_name, p.unit)
-         WHERE (p.product_unit IS NULL OR p.product_unit = '')
-           AND (pmu.unit_name IS NOT NULL OR p.unit IS NOT NULL)"
-    );
+    if (
+        productTableHasColumn($pdo, 'product_unit')
+        && productTableHasColumn($pdo, 'measurement_unit_id')
+        && productTableHasColumn($pdo, 'unit')
+    ) {
+        $pdo->exec(
+            "UPDATE product p
+             LEFT JOIN product_measurement_units pmu ON p.measurement_unit_id = pmu." . getMeasurementUnitIdColumn($pdo) . "
+             SET p.product_unit = COALESCE(pmu.unit_name, p.unit)
+             WHERE (p.product_unit IS NULL OR p.product_unit = '')
+               AND (pmu.unit_name IS NOT NULL OR p.unit IS NOT NULL)"
+        );
+    }
 
     if (productTableHasColumn($pdo, 'supplier_id')) {
         $pdo->exec(
@@ -402,25 +361,34 @@ function ensureProductCategorySchema(PDO $pdo): void
 function migrateProductRowsToVariations(PDO $pdo): void
 {
     $unitIdColumn = getMeasurementUnitIdColumn($pdo);
+    $column = static function (string $name, string $alias) use ($pdo): string {
+        return productTableHasColumn($pdo, $name) ? "p.{$name} AS {$alias}" : "NULL AS {$alias}";
+    };
+    $measurementJoin = productTableHasColumn($pdo, 'measurement_unit_id')
+        ? "LEFT JOIN product_measurement_units pmu ON pmu.{$unitIdColumn} = p.measurement_unit_id"
+        : "";
+    $measurementSelect = productTableHasColumn($pdo, 'measurement_unit_id')
+        ? "pmu.unit_name AS measurement_unit_name"
+        : "NULL AS measurement_unit_name";
     $statement = $pdo->query(
         "SELECT
             p.product_id,
-            p.barcode,
-            p.price,
-            p.variant_flavor,
-            p.strength_value,
-            p.strength_unit,
-            p.volume_value,
-            p.volume_unit,
-            p.display_size,
-            p.size_value,
-            p.weight_volume_value,
-            p.weight_volume_unit,
-            p.product_unit,
-            p.packaging,
-            pmu.unit_name AS measurement_unit_name
+            " . $column('barcode', 'barcode') . ",
+            " . (productTableHasColumn($pdo, 'price') ? 'p.price AS price' : '0 AS price') . ",
+            " . $column('variant_flavor', 'variant_flavor') . ",
+            " . $column('strength_value', 'strength_value') . ",
+            " . $column('strength_unit', 'strength_unit') . ",
+            " . $column('volume_value', 'volume_value') . ",
+            " . $column('volume_unit', 'volume_unit') . ",
+            " . $column('display_size', 'display_size') . ",
+            " . $column('size_value', 'size_value') . ",
+            " . $column('weight_volume_value', 'weight_volume_value') . ",
+            " . $column('weight_volume_unit', 'weight_volume_unit') . ",
+            " . $column('product_unit', 'product_unit') . ",
+            " . $column('packaging', 'packaging') . ",
+            {$measurementSelect}
          FROM product p
-         LEFT JOIN product_measurement_units pmu ON pmu.{$unitIdColumn} = p.measurement_unit_id
+         {$measurementJoin}
          LEFT JOIN product_variations pv ON pv.product_id = p.product_id
          WHERE pv.variation_id IS NULL"
     );
@@ -439,6 +407,8 @@ function migrateProductRowsToVariations(PDO $pdo): void
             weight_unit,
             unit,
             packaging,
+            pack_content_qty,
+            pack_content_unit,
             price,
             barcode,
             sku,
@@ -457,6 +427,8 @@ function migrateProductRowsToVariations(PDO $pdo): void
             :weight_unit,
             :unit,
             :packaging,
+            NULL,
+            NULL,
             :price,
             :barcode,
             NULL,

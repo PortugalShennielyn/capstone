@@ -41,6 +41,17 @@ try {
     $imageUrl = trim((string) ($payload['image_url'] ?? ''));
     $variationPayloads = [];
 
+    $numericField = static function (array $source, string $field, bool $integer = false) {
+        $value = trim((string) ($source[$field] ?? ''));
+        if ($value === '' || strcasecmp($value, 'N/A') === 0) {
+            return null;
+        }
+        if (!is_numeric($value)) {
+            throw new InvalidArgumentException(str_replace('_', ' ', ucfirst($field)) . ' must be a number only.');
+        }
+        return $integer ? (int) $value : $value;
+    };
+
     if ($supplierId <= 0) {
         throw new InvalidArgumentException('A supplier is required.');
     }
@@ -89,6 +100,8 @@ try {
     $genericName = null;
     if ($categoryName === 'Medicine') {
         $genericName = requiredProductField($payload, 'generic_name');
+        $strengthValue = $numericField($payload, 'strength_value');
+        $volumeValue = $numericField($payload, 'volume_value');
         $strengthSizeValue = $strengthValue ?? $volumeValue ?? $displaySize ?? optionalProductField($payload, 'strength_size_value');
         $variantFlavor = null;
         $sizeValue = $displaySize;
@@ -105,6 +118,8 @@ try {
             'weight_unit' => null,
             'unit' => $productUnit,
             'packaging' => $packaging,
+            'pack_content_qty' => $numericField($payload, 'pack_content_qty', true),
+            'pack_content_unit' => optionalProductField($payload, 'pack_content_unit'),
             'price' => (float) $price,
             'barcode' => trim((string) ($payload['barcode'] ?? '')),
             'sku' => optionalProductField($payload, 'sku'),
@@ -136,13 +151,15 @@ try {
                 'variant_name' => optionalProductField($variation, 'variant_flavor') ?? optionalProductField($variation, 'variation_name'),
                 'strength_value' => null,
                 'strength_unit' => null,
-                'volume_value' => null,
-                'volume_unit' => null,
+                'volume_value' => $numericField($variation, 'volume_value'),
+                'volume_unit' => optionalProductField($variation, 'volume_unit'),
                 'size_value' => $variationSize,
-                'weight_value' => optionalProductField($variation, 'weight_volume_value') ?? optionalProductField($variation, 'net_weight'),
+                'weight_value' => $numericField($variation, 'weight_volume_value') ?? $numericField($variation, 'net_weight'),
                 'weight_unit' => optionalProductField($variation, 'weight_volume_unit') ?? optionalProductField($variation, 'weight_unit'),
-                'unit' => $productUnit,
+                'unit' => optionalProductField($variation, 'unit') ?? $productUnit,
                 'packaging' => optionalProductField($variation, 'packaging'),
+                'pack_content_qty' => $numericField($variation, 'pack_content_qty', true),
+                'pack_content_unit' => optionalProductField($variation, 'pack_content_unit'),
                 'price' => (float) $variationPrice,
                 'barcode' => $variationBarcode,
                 'sku' => optionalProductField($variation, 'sku'),
@@ -184,50 +201,33 @@ try {
     $columns = [
         'category_id',
         'type_id',
-        'measurement_unit_id',
-        'barcode',
         'brand_name',
         'product_name',
         'generic_name',
-        'strength_size_value',
-        'strength_value',
-        'strength_unit',
-        'volume_value',
-        'volume_unit',
-        'variant_flavor',
-        'size_value',
-        'display_size',
-        'weight_volume_value',
-        'weight_volume_unit',
-        'packaging',
-        'product_unit',
-        'price',
         'image_url'
     ];
 
     $values = [
         ':category_id' => $categoryId,
         ':type_id' => $typeId,
-        ':measurement_unit_id' => $measurementUnitId,
-        ':barcode' => $barcode,
         ':brand_name' => $brandName,
         ':product_name' => $productName,
         ':generic_name' => $genericName,
-        ':strength_size_value' => $strengthSizeValue,
-        ':strength_value' => $strengthValue,
-        ':strength_unit' => $strengthUnit,
-        ':volume_value' => $volumeValue,
-        ':volume_unit' => $volumeUnit,
-        ':variant_flavor' => $variantFlavor,
-        ':size_value' => $sizeValue,
-        ':display_size' => $displaySize,
-        ':weight_volume_value' => $weightVolumeValue,
-        ':weight_volume_unit' => $weightVolumeUnit,
-        ':packaging' => $packaging,
-        ':product_unit' => $productUnit,
-        ':price' => (float) $price,
         ':image_url' => $imageUrl !== '' ? $imageUrl : null
     ];
+
+    if (productTableHasColumn($pdo, 'measurement_unit_id')) {
+        $columns[] = 'measurement_unit_id';
+        $values[':measurement_unit_id'] = $measurementUnitId;
+    }
+    if (productTableHasColumn($pdo, 'barcode')) {
+        $columns[] = 'barcode';
+        $values[':barcode'] = $barcode;
+    }
+    if (productTableHasColumn($pdo, 'price')) {
+        $columns[] = 'price';
+        $values[':price'] = (float) $price;
+    }
 
     if (productTableHasColumn($pdo, 'supplier_id')) {
         $columns[] = 'supplier_id';
@@ -275,6 +275,8 @@ try {
                 weight_unit,
                 unit,
                 packaging,
+                pack_content_qty,
+                pack_content_unit,
                 price,
                 barcode,
                 sku,
@@ -293,6 +295,8 @@ try {
                 :weight_unit,
                 :unit,
                 :packaging,
+                :pack_content_qty,
+                :pack_content_unit,
                 :price,
                 :barcode,
                 :sku,
@@ -313,6 +317,8 @@ try {
                 ':weight_unit' => $variation['weight_unit'],
                 ':unit' => $variation['unit'],
                 ':packaging' => $variation['packaging'],
+                ':pack_content_qty' => $variation['pack_content_qty'],
+                ':pack_content_unit' => $variation['pack_content_unit'],
                 ':price' => $variation['price'],
                 ':barcode' => $variation['barcode'],
                 ':sku' => $variation['sku'],
@@ -338,45 +344,17 @@ try {
          FROM product
          WHERE category_id = :category_id
            AND type_id = :type_id
-           AND measurement_unit_id = :measurement_unit_id
            AND brand_name = :brand_name
            AND product_name = :product_name
            AND COALESCE(generic_name, "") = :generic_name_match
-           AND COALESCE(strength_size_value, "") = :strength_size_value
-           AND COALESCE(strength_value, "") = :strength_value
-           AND COALESCE(strength_unit, "") = :strength_unit
-           AND COALESCE(volume_value, "") = :volume_value
-           AND COALESCE(volume_unit, "") = :volume_unit
-           AND COALESCE(variant_flavor, "") = :variant_flavor
-           AND COALESCE(size_value, "") = :size_value
-           AND COALESCE(display_size, "") = :display_size
-           AND COALESCE(weight_volume_value, "") = :weight_volume_value
-           AND COALESCE(weight_volume_unit, "") = :weight_volume_unit
-           AND COALESCE(packaging, "") = :packaging
-           AND COALESCE(product_unit, "") = :product_unit
-           AND price = :price
          LIMIT 1'
     );
     $existingProductStatement->execute([
         ':category_id' => $categoryId,
         ':type_id' => $typeId,
-        ':measurement_unit_id' => $measurementUnitId,
         ':brand_name' => $brandName,
         ':product_name' => $productName,
-        ':generic_name_match' => $genericName ?? '',
-        ':strength_size_value' => $strengthSizeValue ?? '',
-        ':strength_value' => $strengthValue ?? '',
-        ':strength_unit' => $strengthUnit ?? '',
-        ':volume_value' => $volumeValue ?? '',
-        ':volume_unit' => $volumeUnit ?? '',
-        ':variant_flavor' => $variantFlavor ?? '',
-        ':size_value' => $sizeValue ?? '',
-        ':display_size' => $displaySize ?? '',
-        ':weight_volume_value' => $weightVolumeValue ?? '',
-        ':weight_volume_unit' => $weightVolumeUnit ?? '',
-        ':packaging' => $packaging ?? '',
-        ':product_unit' => $productUnit ?? '',
-        ':price' => (float) $price
+        ':generic_name_match' => $genericName ?? ''
     ]);
 
     $existingProductId = (int) $existingProductStatement->fetchColumn();
@@ -423,6 +401,8 @@ try {
             weight_unit,
             unit,
             packaging,
+            pack_content_qty,
+            pack_content_unit,
             price,
             barcode,
             sku,
@@ -441,6 +421,8 @@ try {
             :weight_unit,
             :unit,
             :packaging,
+            :pack_content_qty,
+            :pack_content_unit,
             :price,
             :barcode,
             :sku,
@@ -461,6 +443,8 @@ try {
             ':weight_unit' => $variation['weight_unit'],
             ':unit' => $variation['unit'],
             ':packaging' => $variation['packaging'],
+            ':pack_content_qty' => $variation['pack_content_qty'],
+            ':pack_content_unit' => $variation['pack_content_unit'],
             ':price' => $variation['price'],
             ':barcode' => $variation['barcode'],
             ':sku' => $variation['sku'],
