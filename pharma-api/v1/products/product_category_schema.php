@@ -35,7 +35,7 @@ function ensureProductCategorySchema(PDO $pdo): void
 {
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_categories (
-            category_id INT AUTO_INCREMENT PRIMARY KEY,
+            category_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
             category_name VARCHAR(50) NOT NULL UNIQUE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
@@ -51,21 +51,21 @@ function ensureProductCategorySchema(PDO $pdo): void
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_types (
-            type_id INT AUTO_INCREMENT PRIMARY KEY,
-            category_id INT NULL,
+            type_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            category_id CHAR(36) NULL,
             type_name VARCHAR(80) NOT NULL UNIQUE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
     if (!productTypeTableHasColumn($pdo, 'category_id')) {
-        $pdo->exec("ALTER TABLE product_types ADD COLUMN category_id INT NULL AFTER type_id");
+        $pdo->exec("ALTER TABLE product_types ADD COLUMN category_id CHAR(36) NULL AFTER type_id");
     }
 
     $pdo->exec("ALTER TABLE product_types MODIFY type_name VARCHAR(80) NOT NULL");
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_measurement_units (
-            measurement_unit_id INT AUTO_INCREMENT PRIMARY KEY,
+            measurement_unit_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
             unit_name VARCHAR(40) NOT NULL UNIQUE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
@@ -88,7 +88,6 @@ function ensureProductCategorySchema(PDO $pdo): void
         'Ointment',
         'Cream',
         'Gel',
-        'Lotion',
         'Solution',
         'Injection',
         'Inhaler',
@@ -96,10 +95,8 @@ function ensureProductCategorySchema(PDO $pdo): void
         'Suppository',
         'Patch',
         'Powder',
-        'Vitamins/Supplements',
         'First Aid',
         'Medical Supply',
-        'Personal Protective Equipment',
         'Device/Equipment'
     ];
 
@@ -137,16 +134,16 @@ function ensureProductCategorySchema(PDO $pdo): void
          VALUES (:unit_name)
          ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name)"
     );
-    foreach (['mg', 'mcg', 'g', 'IU', '%', 'mL', 'L', 'oz', 'kg', 'pcs', 'tablet', 'capsule', 'pack', 'box', 'bottle', 'sachet', 'can', 'tube', 'N/A'] as $unitName) {
+    foreach (['mg', 'mcg', 'g', 'IU', 'mg/mL', 'mg/5mL', '%', 'mL', 'L', 'cc', 'oz', 'lb', 'kg', 'pcs', 'tablet', 'capsule', 'sachet', 'tube', 'vial', 'ampule', 'bottle', 'box', 'pack', 'can', 'jar', 'roll', 'strip', 'blister pack', 'plastic pack', 'carton', 'pouch', 'N/A'] as $unitName) {
         $unitSeed->execute([':unit_name' => $unitName]);
     }
 
     if (!productTableHasColumn($pdo, 'category_id')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN category_id INT NULL AFTER product_id");
+        $pdo->exec("ALTER TABLE product ADD COLUMN category_id CHAR(36) NULL AFTER product_id");
     }
 
     if (!productTableHasColumn($pdo, 'type_id')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN type_id INT NULL AFTER category_id");
+        $pdo->exec("ALTER TABLE product ADD COLUMN type_id CHAR(36) NULL AFTER category_id");
     }
 
     if (!productTableHasColumn($pdo, 'generic_name')) {
@@ -155,7 +152,7 @@ function ensureProductCategorySchema(PDO $pdo): void
 
     if (!productTableHasColumn($pdo, 'measurement_unit_id')) {
         $afterColumn = productTableHasColumn($pdo, 'type_id') ? 'type_id' : 'category_id';
-        $pdo->exec("ALTER TABLE product ADD COLUMN measurement_unit_id INT NULL AFTER {$afterColumn}");
+        $pdo->exec("ALTER TABLE product ADD COLUMN measurement_unit_id CHAR(36) NULL AFTER {$afterColumn}");
     }
 
     if (!productTableHasColumn($pdo, 'image_url')) {
@@ -169,9 +166,9 @@ function ensureProductCategorySchema(PDO $pdo): void
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS supplier_products (
-            supplier_product_id INT AUTO_INCREMENT PRIMARY KEY,
-            supplier_id INT NOT NULL,
-            product_id INT NOT NULL,
+            supplier_product_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            supplier_id CHAR(36) NOT NULL,
+            product_id CHAR(36) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY unique_supplier_product (supplier_id, product_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -179,8 +176,8 @@ function ensureProductCategorySchema(PDO $pdo): void
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_variations (
-            variation_id INT AUTO_INCREMENT PRIMARY KEY,
-            product_id INT NOT NULL,
+            variation_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            product_id CHAR(36) NOT NULL,
             variant_name VARCHAR(150) NULL,
             strength_value VARCHAR(50) NULL,
             strength_unit VARCHAR(20) NULL,
@@ -234,8 +231,8 @@ function ensureProductCategorySchema(PDO $pdo): void
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_inventory (
-            inventory_id INT AUTO_INCREMENT PRIMARY KEY,
-            product_id INT NOT NULL,
+            inventory_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            product_id CHAR(36) NOT NULL,
             batch_number VARCHAR(80) NULL,
             quantity_stocked INT NOT NULL DEFAULT 0,
             quantity_remaining INT NOT NULL DEFAULT 0,
@@ -248,14 +245,14 @@ function ensureProductCategorySchema(PDO $pdo): void
         $pdo->exec("ALTER TABLE product_inventory ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
     }
     if (!tableHasColumn($pdo, 'product_inventory', 'variation_id')) {
-        $pdo->exec("ALTER TABLE product_inventory ADD COLUMN variation_id INT NULL AFTER product_id");
+        $pdo->exec("ALTER TABLE product_inventory ADD COLUMN variation_id CHAR(36) NULL AFTER product_id");
     }
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_selling_stock (
-            selling_stock_id INT AUTO_INCREMENT PRIMARY KEY,
-            product_id INT NOT NULL,
-            source_inventory_id INT NULL,
+            selling_stock_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            product_id CHAR(36) NOT NULL,
+            source_inventory_id CHAR(36) NULL,
             batch_number VARCHAR(80) NULL,
             quantity_stocked INT NOT NULL DEFAULT 0,
             quantity_remaining INT NOT NULL DEFAULT 0,
@@ -264,12 +261,42 @@ function ensureProductCategorySchema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
     if (!tableHasColumn($pdo, 'product_selling_stock', 'variation_id')) {
-        $pdo->exec("ALTER TABLE product_selling_stock ADD COLUMN variation_id INT NULL AFTER product_id");
+        $pdo->exec("ALTER TABLE product_selling_stock ADD COLUMN variation_id CHAR(36) NULL AFTER product_id");
     }
 
     if (tableHasColumn($pdo, 'purchase_order_items', 'product_id') && !tableHasColumn($pdo, 'purchase_order_items', 'variation_id')) {
-        $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN variation_id INT NULL AFTER product_id");
+        $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN variation_id CHAR(36) NULL AFTER product_id");
     }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS lookup_values (
+            lookup_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            lookup_type VARCHAR(80) NOT NULL,
+            lookup_code VARCHAR(120) NOT NULL,
+            lookup_label VARCHAR(150) NOT NULL,
+            sort_order INT NOT NULL DEFAULT 0,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_lookup_values_type_code (lookup_type, lookup_code),
+            KEY idx_lookup_values_type_active (lookup_type, is_active, sort_order)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS entity_dimensions (
+            dimension_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            entity_type VARCHAR(80) NOT NULL,
+            entity_id CHAR(36) NOT NULL,
+            dimension_type VARCHAR(80) NOT NULL,
+            numeric_value DECIMAL(12,4) NULL,
+            unit VARCHAR(50) NULL,
+            text_value VARCHAR(150) NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_entity_dimension (entity_type, entity_id, dimension_type, unit, text_value),
+            KEY idx_entity_dimensions_entity (entity_type, entity_id),
+            KEY idx_entity_dimensions_type (dimension_type, unit)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
 
     if (productTableHasColumn($pdo, 'type_id')) {
         $pdo->exec(
@@ -351,7 +378,8 @@ function ensureProductCategorySchema(PDO $pdo): void
              SELECT supplier_id, product_id
              FROM product
              WHERE supplier_id IS NOT NULL
-               AND supplier_id > 0"
+               AND supplier_id IS NOT NULL
+               AND supplier_id <> ''"
         );
     }
 
@@ -439,7 +467,7 @@ function migrateProductRowsToVariations(PDO $pdo): void
 
     foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $insert->execute([
-            ':product_id' => (int) $row['product_id'],
+            ':product_id' => cleanId($row['product_id']),
             ':variant_name' => $row['variant_flavor'] ?: null,
             ':strength_value' => $row['strength_value'] ?: null,
             ':strength_unit' => $row['strength_unit'] ?: null,
@@ -471,7 +499,7 @@ function productTypeTableHasColumn(PDO $pdo, string $columnName): bool
     return (int) $statement->fetchColumn() > 0;
 }
 
-function getProductCategoryId(PDO $pdo, string $categoryName): int
+function getProductCategoryId(PDO $pdo, string $categoryName): string
 {
     $statement = $pdo->prepare(
         "SELECT category_id
@@ -481,10 +509,10 @@ function getProductCategoryId(PDO $pdo, string $categoryName): int
     );
     $statement->execute([':category_name' => $categoryName]);
 
-    return (int) $statement->fetchColumn();
+    return cleanId($statement->fetchColumn());
 }
 
-function getProductTypeId(PDO $pdo, int $categoryId, int $typeId): ?int
+function getProductTypeId(PDO $pdo, string $categoryId, string $typeId): ?string
 {
     $statement = $pdo->prepare(
         "SELECT type_id
@@ -497,12 +525,12 @@ function getProductTypeId(PDO $pdo, int $categoryId, int $typeId): ?int
         ':category_id' => $categoryId,
         ':type_id' => $typeId
     ]);
-    $validTypeId = (int) $statement->fetchColumn();
+    $validTypeId = cleanId($statement->fetchColumn());
 
-    return $validTypeId > 0 ? $validTypeId : null;
+    return $validTypeId !== '' ? $validTypeId : null;
 }
 
-function getMeasurementUnitId(PDO $pdo, int $measurementUnitId): ?int
+function getMeasurementUnitId(PDO $pdo, string $measurementUnitId): ?string
 {
     $unitIdColumn = getMeasurementUnitIdColumn($pdo);
     $statement = $pdo->prepare(
@@ -512,9 +540,9 @@ function getMeasurementUnitId(PDO $pdo, int $measurementUnitId): ?int
          LIMIT 1"
     );
     $statement->execute([':measurement_unit_id' => $measurementUnitId]);
-    $validUnitId = (int) $statement->fetchColumn();
+    $validUnitId = cleanId($statement->fetchColumn());
 
-    return $validUnitId > 0 ? $validUnitId : null;
+    return $validUnitId !== '' ? $validUnitId : null;
 }
 
 function getMeasurementUnitIdColumn(PDO $pdo): string
@@ -556,7 +584,7 @@ function getProductCategories(PDO $pdo): array
     return $statement->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function getProductTypesByCategory(PDO $pdo, int $categoryId): array
+function getProductTypesByCategory(PDO $pdo, string $categoryId): array
 {
     $statement = $pdo->prepare(
         "SELECT type_id, category_id, type_name

@@ -19,12 +19,12 @@ if (!is_array($payload)) {
 try {
     ensurePurchaseOrderSchema($pdo);
 
-    $supplierId = isset($payload['supplier_id']) ? (int) $payload['supplier_id'] : 0;
+    $supplierId = cleanId($payload['supplier_id'] ?? null);
     $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
     $paymentTerms = validatePaymentTerms($payload);
     $expectedDeliveryDate = validateExpectedDeliveryDate($payload);
 
-    if ($supplierId <= 0) {
+    if ($supplierId === '') {
         throw new InvalidArgumentException('A supplier is required.');
     }
 
@@ -34,18 +34,19 @@ try {
     validateProductsForSupplier($pdo, $supplierId, $items);
 
     $poNumber = 'PO-' . date('Ymd-His') . '-' . strtoupper(bin2hex(random_bytes(2)));
+    $poId = newUuid($pdo);
     $masterStatement = $pdo->prepare(
-        "INSERT INTO purchase_orders (supplier_id, po_number, payment_terms, expected_delivery_date, status, created_at)
-         VALUES (:supplier_id, :po_number, :payment_terms, :expected_delivery_date, 'Pending', NOW())"
+        "INSERT INTO purchase_orders (po_id, supplier_id, po_number, payment_terms, expected_delivery_date, status, created_at)
+         VALUES (:po_id, :supplier_id, :po_number, :payment_terms, :expected_delivery_date, 'Pending', NOW())"
     );
     $masterStatement->execute([
+        ':po_id' => $poId,
         ':supplier_id' => $supplierId,
         ':po_number' => $poNumber,
         ':payment_terms' => $paymentTerms,
         ':expected_delivery_date' => $expectedDeliveryDate
     ]);
 
-    $poId = (int) $pdo->lastInsertId();
     $itemStatement = $pdo->prepare(
         'INSERT INTO purchase_order_items (
             po_id,
@@ -86,8 +87,8 @@ try {
     foreach ($items as $item) {
         $itemStatement->execute(array_merge([
             ':po_id' => $poId,
-            ':product_id' => (int) $item['product_id'],
-            ':variation_id' => (int) ($item['variation_id'] ?? 0) ?: null,
+            ':product_id' => cleanId($item['product_id']),
+            ':variation_id' => nullableId($item['variation_id'] ?? null),
             ':quantity' => (int) $item['quantity']
         ], purchaseOrderItemSnapshotParams($item)));
     }

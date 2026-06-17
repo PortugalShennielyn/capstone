@@ -17,16 +17,16 @@ if (!is_array($payload)) {
 
 try {
     ensureProductCategorySchema($pdo);
-    $variationId = (int) ($payload['variation_id'] ?? 0);
+    $variationId = cleanId($payload['variation_id'] ?? null);
 
-    if ($variationId <= 0) {
+    if ($variationId === '') {
         throw new InvalidArgumentException('A valid variation is required.');
     }
 
     $productStatement = $pdo->prepare('SELECT product_id FROM product_variations WHERE variation_id = :variation_id LIMIT 1');
     $productStatement->execute([':variation_id' => $variationId]);
-    $productId = (int) $productStatement->fetchColumn();
-    if ($productId <= 0) {
+    $productId = cleanId($productStatement->fetchColumn());
+    if ($productId === '') {
         throw new InvalidArgumentException('Variation was not found.');
     }
 

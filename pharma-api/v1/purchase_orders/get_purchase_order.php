@@ -9,9 +9,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit();
 }
 
-$poId = isset($_GET['po_id']) ? (int) $_GET['po_id'] : 0;
+$poId = cleanId($_GET['po_id'] ?? null);
 
-if ($poId <= 0) {
+if ($poId === '') {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'Purchase order id is required.']);
     exit();
@@ -59,17 +59,17 @@ try {
             COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
             COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
             COALESCE(NULLIF(poi.generic_name_snapshot, ''), p.generic_name) AS generic_name,
-            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', pv.strength_value, pv.strength_unit), ''), NULLIF(CONCAT_WS(' ', p.strength_value, p.strength_unit), ''), p.strength_size_value, p.strength_size, 'N/A') AS strength,
-            p.strength_value,
-            p.strength_unit,
-            p.volume_value,
-            p.volume_unit,
-            COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), pv.variant_name, p.variant_flavor, p.goods_type, 'N/A') AS variant_flavor,
-            COALESCE(NULLIF(poi.size_value_snapshot, ''), pv.size_value, p.display_size, p.size_value, p.size_weight, 'N/A') AS size_value,
-            p.weight_volume_value,
-            p.weight_volume_unit,
-            COALESCE(NULLIF(poi.packaging_snapshot, ''), pv.packaging, p.packaging, p.unit, 'N/A') AS packaging,
-            COALESCE(NULLIF(poi.unit_snapshot, ''), pv.unit, p.product_unit, pmu.unit_name, p.unit, '') AS unit,
+            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', pv.strength_value, pv.strength_unit), ''), 'N/A') AS strength,
+            pv.strength_value,
+            pv.strength_unit,
+            pv.volume_value,
+            pv.volume_unit,
+            COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), pv.variant_name, 'N/A') AS variant_flavor,
+            COALESCE(NULLIF(poi.size_value_snapshot, ''), pv.size_value, 'N/A') AS size_value,
+            pv.weight_value AS weight_volume_value,
+            pv.weight_unit AS weight_volume_unit,
+            COALESCE(NULLIF(poi.packaging_snapshot, ''), pv.packaging, 'N/A') AS packaging,
+            COALESCE(NULLIF(poi.unit_snapshot, ''), pv.unit, pmu.unit_name, '') AS unit,
             COALESCE(poi.unit_price_snapshot, pv.price, p.price) AS price,
             COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
             COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
@@ -93,7 +93,7 @@ try {
             GROUP BY po_item_id
          ) returns ON returns.po_item_id = poi.po_item_id
          WHERE poi.po_id = :po_id
-         GROUP BY poi.po_item_id, poi.product_id, poi.quantity, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, p.generic_name, p.strength_value, p.strength_unit, p.volume_value, p.volume_unit, p.strength_size_value, p.strength_size, p.variant_flavor, p.goods_type, p.display_size, p.size_value, p.size_weight, p.weight_volume_value, p.weight_volume_unit, p.packaging, p.product_unit, p.unit, pmu.unit_name, p.price, returns.return_quantity, returns.return_reasons, returns.return_remarks
+         GROUP BY poi.po_item_id, poi.product_id, poi.quantity, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, p.generic_name, pv.strength_value, pv.strength_unit, pv.volume_value, pv.volume_unit, pv.variant_name, pv.size_value, pv.weight_value, pv.weight_unit, pv.packaging, pv.unit, pmu.unit_name, p.price, returns.return_quantity, returns.return_reasons, returns.return_remarks
          ORDER BY poi.po_item_id"
     );
     $itemsStatement->execute([':po_id' => $poId]);

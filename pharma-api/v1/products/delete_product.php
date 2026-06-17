@@ -19,9 +19,9 @@ if (!is_array($payload)) {
 try {
     ensureProductCategorySchema($pdo);
 
-    $productId = isset($payload['product_id']) ? (int) $payload['product_id'] : 0;
+    $productId = cleanId($payload['product_id'] ?? null);
 
-    if ($productId <= 0) {
+    if ($productId === '') {
         http_response_code(400);
         echo json_encode(['status' => 'error', 'message' => 'A valid product is required.']);
         exit();

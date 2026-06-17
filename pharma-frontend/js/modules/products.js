@@ -33,22 +33,6 @@ function setSelectValue(selectId, value) {
     }
 }
 
-function hideDynamicProductFields() {
-    const medicineFields = document.getElementById('medicineFields');
-    const groceryFields = document.getElementById('groceryFields');
-
-    medicineFields?.classList.remove('is-visible');
-    groceryFields?.classList.remove('is-visible');
-
-    if (medicineFields) {
-        medicineFields.style.display = 'none';
-    }
-
-    if (groceryFields) {
-        groceryFields.style.display = 'none';
-    }
-}
-
 function escapeHtml(value) {
     return String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -159,13 +143,31 @@ function nonEmptyRows(rows) {
     return uniqueDetailRows(rows);
 }
 
-const STRENGTH_UNITS = ['', 'mg', 'mcg', 'g', 'IU', '%', 'mg/mL', 'mg/5mL'];
-const WEIGHT_UNITS = ['', 'mg', 'g', 'kg', 'oz', 'lb'];
-const VOLUME_UNITS = ['', 'mL', 'L', 'oz', 'fl oz'];
-const SIZE_OPTIONS = ['', 'Newborn', 'Small', 'Medium', 'Large', 'XL', 'XXL', 'Family Size', 'Travel Size'];
-const UNIT_OPTIONS = ['pcs', 'tablet', 'capsule', 'bottle', 'box', 'pack', 'can', 'sachet', 'tube', 'vial', 'ampule', 'blister', 'pouch', 'jar', 'roll'];
-const PACKAGING_OPTIONS = ['', 'box', 'bottle', 'pack', 'plastic pack', 'blister pack', 'sachet', 'tube', 'can', 'pouch', 'jar', 'carton', 'strip'];
-const PACK_CONTENT_UNITS = ['pcs', 'tablets', 'capsules', 'bottles', 'sachets', 'cans', 'packs', 'tubes', 'vials', 'ampules', 'strips'];
+function cleanCardText(value) {
+    const clean = cleanDisplay(value);
+    if (!clean) return '';
+
+    const words = clean.split(/\s+/);
+    const compact = words.filter((word, index) => index === 0 || word.toLowerCase() !== words[index - 1].toLowerCase());
+    return compact.join(' ');
+}
+
+function cleanCardLabel(label) {
+    const clean = String(label || '').trim();
+    if (/^package type$/i.test(clean)) return 'Form';
+    if (/^flavor\s*\/\s*variant$/i.test(clean)) return 'Flavor';
+    return clean;
+}
+
+function cleanCardRows(rows) {
+    return nonEmptyRows(rows.map(([label, value]) => [cleanCardLabel(label), cleanCardText(value)]));
+}
+
+const FORM_OPTIONS = ['tablet', 'capsule', 'sachet', 'tube', 'vial', 'ampule', 'bottle', 'box', 'pack', 'can', 'jar', 'roll', 'strip', 'blister pack', 'plastic pack', 'carton', 'pouch'];
+const SMART_TYPES = {
+    Medicine: ['Tablet', 'Capsule', 'Syrup', 'Drops', 'Injection', 'Ointment', 'Cream', 'Gel', 'Solution', 'Suspension', 'Powder', 'Patch', 'Inhaler', 'Nebulizer', 'Suppository', 'First Aid', 'Medical Supply', 'Device/Equipment'],
+    Grocery: ['Beverage', 'Snacks', 'Canned Goods', 'Noodles', 'Condiments', 'Dairy', 'Bread/Bakery', 'Biscuits', 'Baby Care', 'Hygiene Product', 'Household Item', 'Personal Care']
+};
 
 function isMedicine(product) {
     return product.category_name === 'Medicine';
@@ -173,6 +175,18 @@ function isMedicine(product) {
 
 function isGrocery(product) {
     return product.category_name === 'Grocery';
+}
+
+function smartTypeList(categoryName, types = [], selectedTypeId = '') {
+    const allowed = SMART_TYPES[categoryName] || [];
+    if (!allowed.length) return types;
+
+    const allowedKeys = new Set(allowed.map((type) => type.toLowerCase()));
+    return types.filter((type) => allowedKeys.has(String(type.type_name || '').toLowerCase()) || String(type.type_id) === String(selectedTypeId));
+}
+
+function categoryNameById(categoryId) {
+    return productState.categories.find((category) => String(category.category_id) === String(categoryId))?.category_name || '';
 }
 
 function getStockStatus(stock) {
@@ -198,6 +212,88 @@ function getVariationName(variation) {
     ].find(hasDisplayValue);
 
     return fallback || 'Default';
+}
+
+function getVariationAttributeValue(variation, attribute) {
+    switch (attribute) {
+        case 'variant':
+            return cleanCardText(variation?.variant_name || variation?.variant_flavor || variation?.variation_name);
+        case 'strength':
+            return cleanCardText(ruleCombineValueUnit(variation?.strength_value, variation?.strength_unit));
+        case 'volume':
+            return cleanCardText(ruleCombineValueUnit(variation?.volume_value, variation?.volume_unit));
+        case 'weight':
+            return cleanCardText(ruleCombineValueUnit(variation?.weight_value, variation?.weight_unit));
+        case 'size':
+            return cleanCardText([variation?.size_value, variation?.size_unit].filter(hasDisplayValue).join(' '));
+        case 'packContent':
+            return cleanCardText(ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit));
+        default:
+            return '';
+    }
+}
+
+function variationAttributeDefinitions(product) {
+    const rule = getVariationRule(product.category_name || '', product.type_name || '');
+    const fields = new Set(rule.fields || []);
+    const definitions = [];
+
+    if (fields.has('variant')) definitions.push(['variant', cleanCardLabel(rule.variantLabel || 'Variant / Feature')]);
+    if (fields.has('strength')) definitions.push(['strength', 'Strength']);
+    if (fields.has('volume')) definitions.push(['volume', 'Volume']);
+    if (fields.has('weight')) definitions.push(['weight', 'Net Weight']);
+    if (fields.has('size')) definitions.push(['size', cleanCardLabel(rule.sizeLabel || 'Size')]);
+    if (fields.has('packContent')) definitions.push(['packContent', 'Pack Content']);
+
+    return definitions;
+}
+
+function productVariationGroups(product) {
+    const variations = Array.isArray(product?.variations) ? product.variations : [];
+    if (variations.length <= 1) return [];
+
+    return variationAttributeDefinitions(product)
+        .map(([attribute, label]) => {
+            const choices = [];
+            const seen = new Set();
+
+            variations.forEach((variation) => {
+                const value = getVariationAttributeValue(variation, attribute);
+                const key = value.toLowerCase();
+                if (!value || seen.has(key)) return;
+                seen.add(key);
+                choices.push(value);
+            });
+
+            return { attribute, label, choices };
+        })
+        .filter((group) => group.choices.length > 1);
+}
+
+function variationMatchesAttributes(variation, attributes) {
+    return Object.entries(attributes).every(([attribute, value]) => {
+        if (!value) return true;
+        return getVariationAttributeValue(variation, attribute).toLowerCase() === String(value).toLowerCase();
+    });
+}
+
+function selectVariationByAttribute(product, attribute, value) {
+    const variations = Array.isArray(product?.variations) ? product.variations : [];
+    if (!variations.length) return;
+
+    const activeVariation = getDefaultVariation(product) || variations[0];
+    const activeAttributes = Object.fromEntries(
+        productVariationGroups(product).map((group) => [
+            group.attribute,
+            getVariationAttributeValue(activeVariation, group.attribute)
+        ])
+    );
+    activeAttributes[attribute] = value;
+
+    const exactMatch = variations.find((variation) => variationMatchesAttributes(variation, activeAttributes));
+    const clickedMatch = variations.find((variation) => getVariationAttributeValue(variation, attribute).toLowerCase() === String(value).toLowerCase());
+    const selected = exactMatch || clickedMatch || activeVariation;
+    productState.selectedVariations[product.product_id] = selected.variation_id;
 }
 
 function getDefaultVariation(product) {
@@ -250,39 +346,42 @@ function productCardDetailRows(product) {
     const size = getProductSize(product);
     const variation = getDefaultVariation(product);
     const rule = getVariationRule(product.category_name || '', product.type_name || '');
-    const form = rule.formValue || product.type_name;
+    const form = isGrocery(product)
+        ? (variation?.packaging || product.packaging || '')
+        : (rule.formValue || variation?.unit || product.type_name);
+    const buttonLabels = new Set(productVariationGroups(product).map((group) => group.label));
 
     if (isGrocery(product)) {
-        return nonEmptyRows([
-            [rule.variantLabel || 'Variant', getVariationName(variation)],
-            ['Size', variation?.size_value || product.display_size || size],
-            ['Volume', ruleCombineValueUnit(variation?.volume_value, variation?.volume_unit)],
-            ['Net Weight', ruleCombineValueUnit(variation?.weight_value ?? product.weight_volume_value, variation?.weight_unit ?? product.weight_volume_unit)],
-            ['Package Type', variation?.packaging || product.packaging],
-            ['Pack Content', ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit)]
-        ]);
+        return cleanCardRows([
+            rule.fields.includes('variant') ? [rule.variantLabel || 'Variant / Feature', getVariationAttributeValue(variation, 'variant')] : ['', ''],
+            rule.fields.includes('size') ? [rule.sizeLabel || 'Size', variation?.size_value || product.display_size || size] : ['', ''],
+            rule.fields.includes('volume') ? ['Volume', ruleCombineValueUnit(variation?.volume_value, variation?.volume_unit)] : ['', ''],
+            rule.fields.includes('weight') ? ['Net Weight', ruleCombineValueUnit(variation?.weight_value ?? product.weight_volume_value, variation?.weight_unit ?? product.weight_volume_unit)] : ['', ''],
+            ['Form', form],
+            rule.fields.includes('packContent') ? ['Pack Content', ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit)] : ['', '']
+        ]).filter(([label]) => !buttonLabels.has(label));
     }
 
     if (isMedicine(product)) {
-        return nonEmptyRows([
+        return cleanCardRows([
             ['Generic', product.generic_name],
             rule.fields.includes('strength') ? ['Strength', ruleCombineValueUnit(variation?.strength_value || product.strength_value || strength, variation?.strength_unit || product.strength_unit)] : ['', ''],
             rule.fields.includes('weight') ? ['Net Weight', ruleCombineValueUnit(variation?.weight_value || product.weight_volume_value || product.strength_value, variation?.weight_unit || product.weight_volume_unit || product.strength_unit)] : ['', ''],
             rule.fields.includes('volume') ? ['Volume', ruleCombineValueUnit(variation?.volume_value || product.volume_value, variation?.volume_unit || product.volume_unit)] : ['', ''],
-            rule.fields.includes('variant') ? [rule.variantLabel || 'Flavor', getVariationName(variation)] : ['', ''],
+            rule.fields.includes('variant') ? [rule.variantLabel || 'Flavor', getVariationAttributeValue(variation, 'variant')] : ['', ''],
             rule.fields.includes('size') ? [rule.sizeLabel || 'Size', variation?.size_value || product.display_size || size] : ['', ''],
             rule.fields.includes('form') ? ['Form', form] : ['', ''],
-            rule.fields.includes('packaging') ? ['Package Type', variation?.packaging || product.packaging] : ['', ''],
+            rule.fields.includes('packaging') && !rule.fields.includes('form') ? ['Form', variation?.packaging || product.packaging] : ['', ''],
             rule.fields.includes('packContent') ? ['Pack Content', ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit)] : ['', '']
-        ]);
+        ]).filter(([label]) => !buttonLabels.has(label));
     }
 
-    return nonEmptyRows([
+    return cleanCardRows([
         ['Type', product.type_name],
         ['Size', variation?.size_value || size],
-        ['Package Type', variation?.packaging || product.packaging],
+        ['Form', variation?.packaging || product.packaging],
         ['Pack Content', ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit)]
-    ]);
+    ]).filter(([label]) => !buttonLabels.has(label));
 }
 
 function variationLabel(variation) {
@@ -300,26 +399,95 @@ function variationLabel(variation) {
 }
 
 function productVariationChips(product) {
-    if (!Array.isArray(product.variations) || product.variations.length <= 1) {
+    const groups = productVariationGroups(product);
+    if (!groups.length) {
         return '';
     }
 
     const activeVariation = getDefaultVariation(product);
     return `
         <div class="product-variant-tabs">
-            <div class="product-variant-label">Variants</div>
-            <div class="product-variant-chip-row">
-                ${product.variations.map(variation => `
-                    <button type="button"
-                        class="product-variant-chip ${String(activeVariation?.variation_id) === String(variation.variation_id) ? 'is-active' : ''}"
-                        data-product-id="${escapeHtml(product.product_id)}"
-                        data-variation-id="${escapeHtml(variation.variation_id)}">
-                        ${escapeHtml(getVariationName(variation))}
-                    </button>
-                `).join('')}
-            </div>
+            ${groups.map((group) => `
+                <div class="product-variant-group">
+                    <div class="product-variant-label">${escapeHtml(group.label)}</div>
+                    <div class="product-variant-chip-row">
+                        ${group.choices.map((choice) => {
+                            const activeValue = getVariationAttributeValue(activeVariation, group.attribute);
+                            return `
+                                <button type="button"
+                                    class="product-variant-chip ${activeValue.toLowerCase() === choice.toLowerCase() ? 'is-active' : ''}"
+                                    data-product-id="${escapeHtml(product.product_id)}"
+                                    data-variation-attribute="${escapeHtml(group.attribute)}"
+                                    data-variation-value="${escapeHtml(choice)}">
+                                    ${escapeHtml(choice)}
+                                </button>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `).join('')}
         </div>
     `;
+}
+
+function renderProductCard(product) {
+    const activeVariation = getDefaultVariation(product);
+    const stock = getActiveProductStock(product);
+    const stockStatus = getStockStatus(stock);
+    const detailRows = productCardDetailRows(product);
+    const variationId = activeVariation?.variation_id || '';
+
+    return `
+        <article class="product-card" data-product-id="${escapeHtml(product.product_id)}">
+            <div class="product-card-body">
+                <div class="product-card-head">
+                    <div class="product-name-block">
+                        <h3 class="product-title">${escapeHtml(product.product_name || 'Unnamed Product')}</h3>
+                        <div class="product-brand">${escapeHtml(product.brand_name || 'No brand')}</div>
+                    </div>
+                    <div class="product-card-tools">
+                        <button type="button" class="product-barcode-toggle" data-product-id="${escapeHtml(product.product_id)}" data-variation-id="${escapeHtml(variationId)}" title="Show barcode" aria-label="Show barcode">
+                            <i class="fa-solid fa-barcode"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="product-meta">${escapeHtml(cleanCardText(product.category_name) || 'Product')} &bull; ${escapeHtml(cleanCardText(product.type_name) || 'General')}</div>
+                ${productVariationChips(product)}
+                <div class="product-detail-list">
+                    ${detailRows.map(([label, value]) => `<div class="product-detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}
+                </div>
+                <div class="product-stock-row">
+                    <span class="stock-pill ${stockStatus}">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                        ${escapeHtml(stock)}
+                    </span>
+                    <span class="product-price">${formatPrice(getActiveProductPrice(product))}</span>
+                </div>
+                <div class="product-card-actions">
+                    <button class="btn btn-sm btn-purple add-stock-btn" data-id="${escapeHtml(product.product_id)}" data-variation-id="${escapeHtml(variationId)}">Add Stock</button>
+                    <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Delete product">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function refreshProductCard(productId) {
+    const grid = document.getElementById('productsGrid');
+    const product = getProductById(productId);
+    const card = grid?.querySelector(`.product-card[data-product-id="${CSS.escape(String(productId))}"]`);
+
+    if (!grid || !product || !card) {
+        renderProductCards();
+        return;
+    }
+
+    card.outerHTML = renderProductCard(product);
 }
 
 function getFilteredProducts() {
@@ -383,52 +551,7 @@ function renderProductCards() {
         return;
     }
 
-    grid.innerHTML = products.map(product => {
-        const activeVariation = getDefaultVariation(product);
-        const stock = getActiveProductStock(product);
-        const stockStatus = getStockStatus(stock);
-        const detailRows = productCardDetailRows(product);
-        const variationId = activeVariation?.variation_id || '';
-
-        return `
-            <article class="product-card">
-                <div class="product-card-body">
-                    <div class="product-card-head">
-                        <div class="product-name-block">
-                            <h3 class="product-title">${escapeHtml(product.product_name || 'Unnamed Product')}</h3>
-                            <div class="product-brand">${escapeHtml(product.brand_name || 'No brand')}</div>
-                        </div>
-                        <div class="product-card-tools">
-                            <button type="button" class="product-barcode-toggle" data-product-id="${escapeHtml(product.product_id)}" data-variation-id="${escapeHtml(variationId)}" title="Show product ID" aria-label="Show product ID">
-                                <i class="fa-solid fa-barcode"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="product-meta">${escapeHtml(product.category_name || 'N/A')} &bull; ${escapeHtml(product.type_name || 'N/A')}</div>
-                    <div class="product-detail-list">
-                        ${detailRows.map(([label, value]) => `<div>${escapeHtml(label)}: ${escapeHtml(value)}</div>`).join('')}
-                    </div>
-                    ${productVariationChips(product)}
-                    <div class="product-stock-row">
-                        <span class="stock-pill ${stockStatus}">
-                            <i class="fa-solid fa-boxes-stacked"></i>
-                            ${escapeHtml(stock)}
-                        </span>
-                        <span class="product-price">${formatPrice(getActiveProductPrice(product))}</span>
-                    </div>
-                    <div class="product-card-actions">
-                        <button class="btn btn-sm btn-purple add-stock-btn" data-id="${escapeHtml(product.product_id)}" data-variation-id="${escapeHtml(variationId)}">Add Stock</button>
-                        <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product">
-                            <i class="fa-solid fa-pen"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-danger btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Delete product">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
-                    </div>
-                </div>
-            </article>
-        `;
-    }).join('');
+    grid.innerHTML = products.map(renderProductCard).join('');
 }
 
 function openBarcodeModal(productId, variationId = '') {
@@ -488,7 +611,7 @@ async function loadProductTypeFilter(categoryId = '') {
             credentials: 'include'
         });
 
-        productState.types = resp?.types || [];
+        productState.types = smartTypeList(categoryNameById(categoryId), resp?.types || [], selectedType);
         productState.types.forEach(type => {
             const option = document.createElement('option');
             option.value = type.type_id;
@@ -517,43 +640,49 @@ async function loadMeasurementUnitCache() {
     return productState.units;
 }
 
+function getSelectedAddCategoryName() {
+    return document.getElementById('productCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
+}
+
+function selectedAddTypeName() {
+    return document.getElementById('productType')?.selectedOptions?.[0]?.textContent?.trim() || '';
+}
+
+function getVariationProductUnit(variation = {}) {
+    return cleanDisplay(variation.unit) || cleanDisplay(variation.packaging) || 'pcs';
+}
+
 function buildProductPayload() {
-    const productTypeSelect = document.getElementById('productType');
-    const selectedCategory = productTypeSelect?.selectedOptions?.[0];
-    const productType = getValue('productType');
+    const variations = collectAddVariations();
+    const firstVariation = variations.find((variation) => !variation.delete) || variations[0] || {};
+    const categoryName = getSelectedAddCategoryName();
 
     const payload = {
-        barcode: getValue('productBarcode'),
+        supplier_id: getValue('supplier_id') || null,
         brand_name: getValue('productBrandName'),
         product_name: getValue('productName'),
-        category_id: selectedCategory?.dataset.categoryId || '',
-        category_name: productType,
-        product_type: productType,
-        unit: getValue('productUnit'),
-        price: getValue('productPrice'),
-        supplier_id: getValue('supplier_id') || null
+        category_id: getValue('productCategory'),
+        type_id: getValue('productType'),
+        category_name: categoryName,
+        product_type: selectedAddTypeName(),
+        product_unit: getVariationProductUnit(firstVariation),
+        unit: getVariationProductUnit(firstVariation),
+        price: firstVariation.price || '0',
+        barcode: firstVariation.barcode || '',
+        image_url: getValue('productImageUrl'),
+        variations
     };
 
-    if (productType === 'Medicine') {
+    if (categoryName === 'Medicine') {
         payload.generic_name = getValue('genericName');
-        payload.strength_size = getValue('strengthSize');
-    }
-
-    if (productType === 'Grocery') {
-        payload.variant_flavor = getValue('variantFlavor');
-        payload.size_value = getValue('sizeValue');
-        payload.packaging = getValue('packaging');
     }
 
     return payload;
 }
 
-async function populateCategoryDropdown(selectId = 'productType') {
-    const select = document.getElementById(selectId);
-    if (!select) return;
-
-    const currentValue = select.value;
-    select.innerHTML = '<option value="" disabled selected>Select category...</option>';
+async function populateAddCategories(selectedCategoryId = '') {
+    const categorySelect = document.getElementById('productCategory');
+    if (!categorySelect) return;
 
     try {
         const resp = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/get_categories.php`, {
@@ -561,19 +690,50 @@ async function populateCategoryDropdown(selectId = 'productType') {
             credentials: 'include'
         });
 
-        (resp?.categories || []).forEach(category => {
-            const opt = document.createElement('option');
-            opt.value = category.category_name;
-            opt.textContent = category.category_name;
-            opt.dataset.categoryId = category.category_id;
-            select.appendChild(opt);
+        productState.categories = resp?.categories || [];
+        categorySelect.innerHTML = '<option value="" disabled selected>Select category...</option>';
+        productState.categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.category_id;
+            option.textContent = category.category_name;
+            option.dataset.categoryName = category.category_name;
+            categorySelect.appendChild(option);
         });
 
-        if (currentValue) {
-            select.value = currentValue;
+        if (selectedCategoryId) {
+            categorySelect.value = String(selectedCategoryId);
         }
     } catch (err) {
-        console.warn('Failed to load product categories:', err.message || err);
+        console.warn('Failed to load add product categories:', err.message || err);
+    }
+}
+
+async function populateAddTypes(categoryId = '', selectedTypeId = '') {
+    const typeSelect = document.getElementById('productType');
+    if (!typeSelect) return;
+
+    typeSelect.disabled = true;
+    typeSelect.innerHTML = '<option value="" disabled selected>Select category first...</option>';
+
+    if (!categoryId) return;
+
+    try {
+        const resp = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/get_product_types.php?category_id=${encodeURIComponent(categoryId)}`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+
+        typeSelect.innerHTML = '<option value="" disabled selected>Select product type...</option>';
+        smartTypeList(categoryNameById(categoryId), resp?.types || [], selectedTypeId).forEach(type => {
+            const option = document.createElement('option');
+            option.value = type.type_id;
+            option.textContent = type.type_name;
+            typeSelect.appendChild(option);
+        });
+        typeSelect.value = selectedTypeId ? String(selectedTypeId) : '';
+        typeSelect.disabled = false;
+    } catch (err) {
+        console.warn('Failed to load add product types:', err.message || err);
     }
 }
 
@@ -624,6 +784,40 @@ function initAddProductForm() {
         return;
     }
 
+    document.getElementById('productCategory')?.addEventListener('change', async (event) => {
+        await populateAddTypes(event.target.value, '');
+        const categoryName = getSelectedAddCategoryName();
+        const genericWrap = document.getElementById('addGenericNameWrap');
+        const genericInput = document.getElementById('genericName');
+        genericWrap?.classList.toggle('d-none', categoryName !== 'Medicine');
+        if (genericInput) genericInput.required = categoryName === 'Medicine';
+        renderAddVariations({ variations: collectAddVariations() }, categoryName);
+    });
+
+    document.getElementById('productType')?.addEventListener('change', () => {
+        renderAddVariations({ variations: collectAddVariations() }, getSelectedAddCategoryName());
+    });
+
+    document.getElementById('btnAddProductVariation')?.addEventListener('click', () => {
+        const categoryName = getSelectedAddCategoryName();
+        const typeName = selectedAddTypeName();
+        document.getElementById('addVariationList')?.insertAdjacentHTML('beforeend', editVariationEntry({}, categoryName, typeName, true, 'add'));
+        if (!document.querySelector('#addVariationList .edit-var-default:checked')) {
+            document.querySelector('#addVariationList .edit-var-default')?.click();
+        }
+    });
+
+    document.getElementById('addVariationList')?.addEventListener('click', (event) => {
+        const removeButton = event.target.closest('.btn-remove-edit-variation');
+        if (!removeButton) return;
+        const entries = document.querySelectorAll('#addVariationList .edit-variation-entry');
+        if (entries.length <= 1) return;
+        removeButton.closest('.edit-variation-entry')?.remove();
+        if (!document.querySelector('#addVariationList .edit-var-default:checked')) {
+            document.querySelector('#addVariationList .edit-var-default')?.click();
+        }
+    });
+
     addProductForm.addEventListener('submit', async (e) => {
         e.preventDefault();
 
@@ -645,7 +839,9 @@ function initAddProductForm() {
             await PharmaUtils.modal.success('Product Saved', 'Item added to system master files successfully.');
 
             addProductForm.reset();
-            hideDynamicProductFields();
+            document.getElementById('addGenericNameWrap')?.classList.add('d-none');
+            document.getElementById('productType').disabled = true;
+            renderAddVariations();
             closeAddProductModal();
             await loadProductsTable();
         } catch (err) {
@@ -802,7 +998,7 @@ async function populateEditTypes(categoryId = '', selectedTypeId = '') {
     });
 
     typeSelect.innerHTML = '<option value="" disabled>Select product type...</option>';
-    (resp?.types || []).forEach(type => {
+    smartTypeList(categoryNameById(categoryId), resp?.types || [], selectedTypeId).forEach(type => {
         const option = document.createElement('option');
         option.value = type.type_id;
         option.textContent = type.type_name;
@@ -870,20 +1066,21 @@ function selectedEditTypeName() {
     return document.getElementById('editProductType')?.selectedOptions?.[0]?.textContent?.trim() || '';
 }
 
-function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName = '', canDelete = true) {
+function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName = '', canDelete = true, mode = 'edit') {
     const rule = getVariationRule(categoryName, typeName);
     const show = (field) => rule.fields.includes(field);
     const formValue = categoryName === 'Medicine'
-        ? (rule.formValue || typeName)
-        : (cleanDisplay(variation.unit) || rule.formValue || typeName);
+        ? (cleanDisplay(variation.unit) || rule.formValue || typeName)
+        : (cleanDisplay(variation.packaging) || cleanDisplay(variation.unit) || rule.formValue || typeName);
     const rowId = `variation-rule-${Math.random().toString(36).slice(2)}`;
+    const defaultName = `${mode}DefaultVariation`;
 
     return `
         <div class="edit-variation-entry" data-variation-id="${escapeHtml(variation.variation_id || '')}">
             <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                 <span class="fw-bold small text-muted">Variation</span>
                 <div class="d-flex align-items-center gap-2">
-                    <label class="small text-muted mb-0"><input class="form-check-input edit-var-default me-1" type="radio" name="editDefaultVariation" ${String(variation.is_default) === '1' ? 'checked' : ''}>Default</label>
+                    <label class="small text-muted mb-0"><input class="form-check-input edit-var-default me-1" type="radio" name="${escapeHtml(defaultName)}" ${String(variation.is_default) === '1' ? 'checked' : ''}>Default</label>
                     ${canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Delete variation"><i class="fa-solid fa-trash-can"></i></button>' : ''}
                 </div>
             </div>
@@ -893,8 +1090,8 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-4 ${show('volume') ? '' : 'd-none'}"><label class="form-label">Volume</label><div class="variation-pair"><input class="form-control edit-var-volume-value" list="${rowId}-volume" type="number" min="0" step="any" value="${escapeHtml(variation.volume_value || '')}" placeholder="60"><select class="form-select edit-var-volume-unit">${optionList(rule.volumeUnits, variation.volume_unit || '')}</select></div>${datalist(`${rowId}-volume`, rule.volumeValues)}</div>
                 <div class="col-md-4 ${show('size') ? '' : 'd-none'}"><label class="form-label">${escapeHtml(rule.sizeLabel)}</label><select class="form-select edit-var-size-value">${optionList(rule.sizeOptions, variation.size_value || '')}</select></div>
                 <div class="col-md-4 ${show('weight') ? '' : 'd-none'}"><label class="form-label">Net Weight</label><div class="variation-pair"><input class="form-control edit-var-weight-value" list="${rowId}-weight" type="number" min="0" step="any" value="${escapeHtml(variation.weight_value || '')}" placeholder="155"><select class="form-select edit-var-weight-unit">${optionList(rule.weightUnits, variation.weight_unit || '')}</select></div>${datalist(`${rowId}-weight`, rule.weightValues)}</div>
-                <div class="col-md-4 ${show('form') ? '' : 'd-none'}"><label class="form-label">Form</label><input class="form-control edit-var-unit" value="${escapeHtml(formValue)}" readonly></div>
-                <div class="col-md-4 ${show('packaging') ? '' : 'd-none'}"><label class="form-label">Package Type</label><select class="form-select edit-var-packaging">${optionList(rule.packagingOptions, variation.packaging || '')}</select></div>
+                <div class="col-md-4 ${show('form') ? '' : 'd-none'}"><label class="form-label">Form</label><select class="form-select edit-var-unit">${optionList(FORM_OPTIONS, formValue)}</select></div>
+                <div class="col-md-4 ${show('packaging') ? '' : 'd-none'}"><label class="form-label">Form</label><select class="form-select edit-var-packaging">${optionList(rule.packagingOptions, variation.packaging || '')}</select></div>
                 <div class="col-md-4 ${show('packContent') ? '' : 'd-none'}"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control edit-var-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" value="${escapeHtml(variation.pack_content_qty || '')}" placeholder="12"><select class="form-select edit-var-pack-content-unit">${optionList(rule.packContentUnits, variation.pack_content_unit || '')}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
                 <div class="col-md-4"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
                 <div class="col-md-4"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
@@ -910,14 +1107,25 @@ function renderEditVariations(product, categoryName = '') {
     if (!list) return;
     const typeName = selectedEditTypeName() || product?.type_name || '';
     const variations = Array.isArray(product?.variations) && product.variations.length ? product.variations : [{}];
-    list.innerHTML = variations.map((variation, index) => editVariationEntry(variation, categoryName || product?.category_name || '', typeName, variations.length > 1 || index > 0)).join('');
+    list.innerHTML = variations.map((variation, index) => editVariationEntry(variation, categoryName || product?.category_name || '', typeName, variations.length > 1 || index > 0, 'edit')).join('');
     if (!list.querySelector('.edit-var-default:checked')) {
         list.querySelector('.edit-var-default')?.setAttribute('checked', 'checked');
     }
 }
 
-function collectEditVariations() {
-    return Array.from(document.querySelectorAll('#editVariationList .edit-variation-entry')).map(entry => ({
+function renderAddVariations(product = { variations: [{}] }, categoryName = '') {
+    const list = document.getElementById('addVariationList');
+    if (!list) return;
+    const typeName = selectedAddTypeName();
+    const variations = Array.isArray(product?.variations) && product.variations.length ? product.variations : [{}];
+    list.innerHTML = variations.map((variation, index) => editVariationEntry(variation, categoryName || getSelectedAddCategoryName(), typeName, variations.length > 1 || index > 0, 'add')).join('');
+    if (!list.querySelector('.edit-var-default:checked')) {
+        list.querySelector('.edit-var-default')?.setAttribute('checked', 'checked');
+    }
+}
+
+function collectVariationEntries(containerSelector) {
+    return Array.from(document.querySelectorAll(`${containerSelector} .edit-variation-entry`)).map(entry => ({
         variation_id: entry.dataset.variationId || '',
         variant_name: entry.querySelector('.edit-var-name')?.value.trim() || '',
         strength_value: entry.querySelector('.edit-var-strength-value')?.value.trim() || '',
@@ -938,6 +1146,14 @@ function collectEditVariations() {
         is_default: entry.querySelector('.edit-var-default')?.checked ? 1 : 0,
         delete: entry.dataset.deleted === '1'
     }));
+}
+
+function collectEditVariations() {
+    return collectVariationEntries('#editVariationList');
+}
+
+function collectAddVariations() {
+    return collectVariationEntries('#addVariationList');
 }
 
 async function openEditProduct(productId) {
@@ -1069,8 +1285,11 @@ function initProductCards() {
         }
 
         if (variationChip) {
-            productState.selectedVariations[variationChip.dataset.productId] = variationChip.dataset.variationId;
-            renderProductCards();
+            const product = getProductById(variationChip.dataset.productId);
+            if (product) {
+                selectVariationByAttribute(product, variationChip.dataset.variationAttribute, variationChip.dataset.variationValue);
+                refreshProductCard(product.product_id);
+            }
             return;
         }
 
@@ -1093,7 +1312,7 @@ function initProductCards() {
     document.getElementById('btnAddEditVariation')?.addEventListener('click', () => {
         const categoryName = document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
         const typeName = selectedEditTypeName();
-        document.getElementById('editVariationList')?.insertAdjacentHTML('beforeend', editVariationEntry({}, categoryName, typeName, true));
+        document.getElementById('editVariationList')?.insertAdjacentHTML('beforeend', editVariationEntry({}, categoryName, typeName, true, 'edit'));
         if (!document.querySelector('#editVariationList .edit-var-default:checked')) {
             document.querySelector('#editVariationList .edit-var-default')?.click();
         }
@@ -1251,8 +1470,13 @@ const _addProductModalEl = document.getElementById('addProductModal');
 if (_addProductModalEl) {
     _addProductModalEl.addEventListener('show.bs.modal', () => {
         populateSupplierDropdown();
-        populateCategoryDropdown();
+        populateAddCategories();
+        const typeSelect = document.getElementById('productType');
+        if (typeSelect) {
+            typeSelect.disabled = true;
+            typeSelect.innerHTML = '<option value="" disabled selected>Select category first...</option>';
+        }
+        document.getElementById('addGenericNameWrap')?.classList.add('d-none');
+        renderAddVariations();
     });
 }
-
-populateCategoryDropdown();

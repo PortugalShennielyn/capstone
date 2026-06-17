@@ -28,21 +28,22 @@ try {
             p.product_name,
             p.brand_name,
             p.generic_name,
-            COALESCE(NULLIF(CONCAT_WS(' ', p.strength_value, p.strength_unit), ''), p.strength_size_value, p.strength_size, 'N/A') AS strength,
-            p.strength_value,
-            p.strength_unit,
-            p.volume_value,
-            p.volume_unit,
-            COALESCE(p.variant_flavor, p.goods_type, 'N/A') AS variant_flavor,
-            COALESCE(p.display_size, p.size_value, p.size_weight, 'N/A') AS size_value,
-            p.weight_volume_value,
-            p.weight_volume_unit,
-            COALESCE(p.product_unit, pmu.unit_name, 'N/A') AS unit,
-            COALESCE(p.packaging, p.unit, 'N/A') AS packaging,
+            COALESCE(NULLIF(CONCAT_WS(' ', pv.strength_value, pv.strength_unit), ''), 'N/A') AS strength,
+            pv.strength_value,
+            pv.strength_unit,
+            pv.volume_value,
+            pv.volume_unit,
+            COALESCE(pv.variant_name, 'N/A') AS variant_flavor,
+            COALESCE(pv.size_value, 'N/A') AS size_value,
+            pv.weight_value AS weight_volume_value,
+            pv.weight_unit AS weight_volume_unit,
+            COALESCE(pv.unit, pmu.unit_name, 'N/A') AS unit,
+            COALESCE(pv.packaging, 'N/A') AS packaging,
             COALESCE(pc.category_name, 'N/A') AS category_name,
             COALESCE(pt.type_name, 'N/A') AS type_name
          FROM product_inventory inv
          INNER JOIN product p ON p.product_id = inv.product_id
+         LEFT JOIN product_variations pv ON pv.variation_id = inv.variation_id
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN product_measurement_units pmu ON pmu.{$unitIdColumn} = p.measurement_unit_id

@@ -27,7 +27,7 @@ try {
 
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (count($products) > 0) {
-        $productIds = array_map(static fn($row) => (int) $row['product_id'], $products);
+        $productIds = array_map(static fn($row) => cleanId($row['product_id']), $products);
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
         $variationStatement = $pdo->prepare(
             "SELECT
@@ -61,11 +61,11 @@ try {
         $variationsByProduct = [];
         foreach ($variationStatement->fetchAll(PDO::FETCH_ASSOC) as $variation) {
             $variation['stock'] = (int) ($variation['current_stock'] ?? 0);
-            $variationsByProduct[(int) $variation['product_id']][] = $variation;
+            $variationsByProduct[cleanId($variation['product_id'])][] = $variation;
         }
 
         foreach ($products as &$product) {
-            $variations = $variationsByProduct[(int) $product['product_id']] ?? [];
+            $variations = $variationsByProduct[cleanId($product['product_id'])] ?? [];
             $defaultVariation = $variations[0] ?? [];
             $product['variations'] = $variations;
             $product['current_stock'] = array_sum(array_map(static fn($variation) => (int) ($variation['stock'] ?? 0), $variations));

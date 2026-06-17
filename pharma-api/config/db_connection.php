@@ -59,6 +59,7 @@ $options = [
 try {
     // Create global PDO connection instance
     $pdo = new PDO($dsn, $username, $password, $options);
+    require_once __DIR__ . '/id_helpers.php';
 } catch (\PDOException $e) {
     http_response_code(500);
     echo json_encode([

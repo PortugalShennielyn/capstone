@@ -29,11 +29,11 @@ try {
     $pdo->exec("ALTER TABLE product_inventory ADD COLUMN IF NOT EXISTS expiration_date DATE NULL");
     $pdo->exec("ALTER TABLE product_inventory ADD COLUMN IF NOT EXISTS expiry_alert_days INT NOT NULL DEFAULT 30");
 
-    $inventoryId = (int) ($payload['inventory_id'] ?? 0);
+    $inventoryId = cleanId($payload['inventory_id'] ?? null);
     $expiryDate = trim((string) ($payload['expiry_date'] ?? ''));
     $alertDays = (int) ($payload['expiry_alert_days'] ?? 30);
 
-    if ($inventoryId <= 0) {
+    if ($inventoryId === '') {
         throw new InvalidArgumentException('Inventory batch is required.');
     }
 

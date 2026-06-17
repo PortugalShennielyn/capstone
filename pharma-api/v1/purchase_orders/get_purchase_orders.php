@@ -63,7 +63,7 @@ try {
     $orders = $statement->fetchAll(PDO::FETCH_ASSOC);
 
     if (count($orders) > 0) {
-        $poIds = array_map(static fn($order) => (int) $order['po_id'], $orders);
+        $poIds = array_map(static fn($order) => cleanId($order['po_id']), $orders);
         $placeholders = implode(',', array_fill(0, count($poIds), '?'));
         $itemsStatement = $pdo->prepare(
             "SELECT
@@ -77,17 +77,17 @@ try {
                 COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
                 COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
                 COALESCE(NULLIF(poi.generic_name_snapshot, ''), p.generic_name) AS generic_name,
-                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', pv.strength_value, pv.strength_unit), ''), NULLIF(CONCAT_WS(' ', p.strength_value, p.strength_unit), ''), p.strength_size_value, p.strength_size, 'N/A') AS strength,
-                p.strength_value,
-                p.strength_unit,
-                p.volume_value,
-                p.volume_unit,
-                COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), pv.variant_name, p.variant_flavor, p.goods_type, 'N/A') AS variant_flavor,
-                COALESCE(NULLIF(poi.size_value_snapshot, ''), pv.size_value, p.display_size, p.size_value, p.size_weight, 'N/A') AS size_value,
-                p.weight_volume_value,
-                p.weight_volume_unit,
-                COALESCE(NULLIF(poi.unit_snapshot, ''), pv.unit, p.product_unit, pmu.unit_name, p.unit, 'N/A') AS unit,
-                COALESCE(NULLIF(poi.packaging_snapshot, ''), pv.packaging, p.packaging, p.unit, 'N/A') AS packaging,
+                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', pv.strength_value, pv.strength_unit), ''), 'N/A') AS strength,
+                pv.strength_value,
+                pv.strength_unit,
+                pv.volume_value,
+                pv.volume_unit,
+                COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), pv.variant_name, 'N/A') AS variant_flavor,
+                COALESCE(NULLIF(poi.size_value_snapshot, ''), pv.size_value, 'N/A') AS size_value,
+                pv.weight_value AS weight_volume_value,
+                pv.weight_unit AS weight_volume_unit,
+                COALESCE(NULLIF(poi.unit_snapshot, ''), pv.unit, pmu.unit_name, 'N/A') AS unit,
+                COALESCE(NULLIF(poi.packaging_snapshot, ''), pv.packaging, 'N/A') AS packaging,
                 COALESCE(poi.unit_price_snapshot, pv.price, p.price) AS price,
                 COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
                 COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
@@ -105,7 +105,7 @@ try {
                 GROUP BY po_item_id
              ) returns ON returns.po_item_id = poi.po_item_id
              WHERE poi.po_id IN ({$placeholders})
-             GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, p.generic_name, p.strength_value, p.strength_unit, p.volume_value, p.volume_unit, p.strength_size_value, p.strength_size, p.variant_flavor, p.goods_type, p.display_size, p.size_value, p.size_weight, p.weight_volume_value, p.weight_volume_unit, pmu.unit_name, p.packaging, p.product_unit, p.unit, p.price, returns.return_quantity
+             GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, p.generic_name, pv.strength_value, pv.strength_unit, pv.volume_value, pv.volume_unit, pv.variant_name, pv.size_value, pv.weight_value, pv.weight_unit, pv.unit, pv.packaging, pmu.unit_name, p.price, returns.return_quantity
              ORDER BY poi.po_id, poi.po_item_id"
         );
         $itemsStatement->execute($poIds);
@@ -117,11 +117,11 @@ try {
             $returnedQuantity = (int) $item['returned_quantity'];
             $item['line_total'] = $quantity * $price;
             $item['returned_amount'] = $returnedQuantity * $price;
-            $itemsByPo[(int) $item['po_id']][] = $item;
+            $itemsByPo[cleanId($item['po_id'])][] = $item;
         }
 
         foreach ($orders as &$order) {
-            $orderItems = $itemsByPo[(int) $order['po_id']] ?? [];
+            $orderItems = $itemsByPo[cleanId($order['po_id'])] ?? [];
             $totalAmount = 0;
             $returnedAmount = 0;
             $totalQuantity = 0;

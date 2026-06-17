@@ -1,5 +1,5 @@
-CREATE TABLE IF NOT EXISTS product_categories (
-    category_id INT AUTO_INCREMENT PRIMARY KEY,
+﻿CREATE TABLE IF NOT EXISTS product_categories (
+    category_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
     category_name VARCHAR(50) NOT NULL UNIQUE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -8,9 +8,9 @@ VALUES ('Medicine'), ('Grocery')
 ON DUPLICATE KEY UPDATE category_name = VALUES(category_name);
 
 ALTER TABLE product
-    ADD COLUMN IF NOT EXISTS category_id INT NULL AFTER product_id,
-    ADD COLUMN IF NOT EXISTS type_id INT NULL AFTER category_id,
-    ADD COLUMN IF NOT EXISTS measurement_unit_id INT NULL AFTER type_id,
+    ADD COLUMN IF NOT EXISTS category_id CHAR(36) NULL AFTER product_id,
+    ADD COLUMN IF NOT EXISTS type_id CHAR(36) NULL AFTER category_id,
+    ADD COLUMN IF NOT EXISTS measurement_unit_id CHAR(36) NULL AFTER type_id,
     ADD COLUMN IF NOT EXISTS generic_name VARCHAR(150) NULL AFTER product_name,
     ADD COLUMN IF NOT EXISTS strength_size VARCHAR(100) NULL AFTER generic_name,
     ADD COLUMN IF NOT EXISTS strength_size_value VARCHAR(50) NULL AFTER strength_size,
@@ -18,19 +18,19 @@ ALTER TABLE product
     ADD COLUMN IF NOT EXISTS size_weight VARCHAR(100) NULL AFTER goods_type;
 
 CREATE TABLE IF NOT EXISTS product_types (
-    type_id INT AUTO_INCREMENT PRIMARY KEY,
-    category_id INT NULL,
+    type_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+    category_id CHAR(36) NULL,
     type_name VARCHAR(80) NOT NULL UNIQUE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 ALTER TABLE product_types
-    ADD COLUMN IF NOT EXISTS category_id INT NULL AFTER type_id;
+    ADD COLUMN IF NOT EXISTS category_id CHAR(36) NULL AFTER type_id;
 
 ALTER TABLE product_types
     MODIFY type_name VARCHAR(80) NOT NULL;
 
 CREATE TABLE IF NOT EXISTS product_measurement_units (
-    measurement_unit_id INT AUTO_INCREMENT PRIMARY KEY,
+    measurement_unit_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
     unit_name VARCHAR(40) NOT NULL UNIQUE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -86,9 +86,9 @@ VALUES
 ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name);
 
 CREATE TABLE IF NOT EXISTS supplier_products (
-    supplier_product_id INT AUTO_INCREMENT PRIMARY KEY,
-    supplier_id INT NOT NULL,
-    product_id INT NOT NULL,
+    supplier_product_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+    supplier_id CHAR(36) NOT NULL,
+    product_id CHAR(36) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY unique_supplier_product (supplier_id, product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -97,4 +97,5 @@ INSERT IGNORE INTO supplier_products (supplier_id, product_id)
 SELECT supplier_id, product_id
 FROM product
 WHERE supplier_id IS NOT NULL
-  AND supplier_id > 0;
+  AND supplier_id <> '';
+

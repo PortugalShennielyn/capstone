@@ -19,20 +19,20 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS packaging_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price_snapshot DECIMAL(12,2) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS variation_id INT NULL AFTER product_id");
+    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS variation_id CHAR(36) NULL AFTER product_id");
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS supplier_products (
-            supplier_product_id INT AUTO_INCREMENT PRIMARY KEY,
-            supplier_id INT NOT NULL,
-            product_id INT NOT NULL,
+            supplier_product_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            supplier_id CHAR(36) NOT NULL,
+            product_id CHAR(36) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY unique_supplier_product (supplier_id, product_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS purchase_order_receiving (
-            receiving_id INT AUTO_INCREMENT PRIMARY KEY,
-            po_id INT NOT NULL,
+            receiving_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            po_id CHAR(36) NOT NULL,
             received_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             remarks TEXT NULL,
             UNIQUE KEY unique_po_receiving (po_id)
@@ -40,9 +40,9 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     );
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS purchase_order_receiving_items (
-            receiving_item_id INT AUTO_INCREMENT PRIMARY KEY,
-            receiving_id INT NOT NULL,
-            po_item_id INT NOT NULL,
+            receiving_item_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            receiving_id CHAR(36) NOT NULL,
+            po_item_id CHAR(36) NOT NULL,
             received_quantity INT NOT NULL DEFAULT 0,
             damaged_quantity INT NOT NULL DEFAULT 0,
             UNIQUE KEY unique_receiving_item (receiving_id, po_item_id)
@@ -50,9 +50,9 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     );
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS purchase_order_returns (
-            return_id INT AUTO_INCREMENT PRIMARY KEY,
-            po_id INT NOT NULL,
-            po_item_id INT NOT NULL,
+            return_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            po_id CHAR(36) NOT NULL,
+            po_item_id CHAR(36) NOT NULL,
             return_quantity INT NOT NULL DEFAULT 0,
             damage_reason VARCHAR(80) NOT NULL,
             remarks TEXT NULL,
@@ -63,8 +63,8 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("ALTER TABLE purchase_order_returns ADD COLUMN IF NOT EXISTS return_status VARCHAR(40) NOT NULL DEFAULT 'Open'");
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_inventory (
-            inventory_id INT AUTO_INCREMENT PRIMARY KEY,
-            product_id INT NOT NULL,
+            inventory_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            product_id CHAR(36) NOT NULL,
             batch_number VARCHAR(80) NOT NULL,
             quantity_stocked INT NOT NULL DEFAULT 0,
             quantity_remaining INT NOT NULL DEFAULT 0,
@@ -157,11 +157,11 @@ function validatePurchaseOrderItems(array $items): void
     }
 
     foreach ($items as $item) {
-        if ((int) ($item['product_id'] ?? 0) <= 0 || (int) ($item['quantity'] ?? 0) <= 0) {
+        if (idIsMissing($item['product_id'] ?? null) || (int) ($item['quantity'] ?? 0) <= 0) {
             throw new InvalidArgumentException('Each purchase-order item must have a valid product and quantity.');
         }
 
-        if ((int) ($item['variation_id'] ?? 0) <= 0) {
+        if (idIsMissing($item['variation_id'] ?? null)) {
             throw new InvalidArgumentException('Each purchase-order item must include a selected product variation.');
         }
     }
@@ -233,9 +233,9 @@ function validateProductsForSupplier(PDO $pdo, int $supplierId, array $items): v
 
     foreach ($items as $item) {
         $statement->execute([
-            ':product_id' => (int) $item['product_id'],
+            ':product_id' => cleanId($item['product_id']),
             ':supplier_id' => $supplierId,
-            ':variation_id' => (int) ($item['variation_id'] ?? 0)
+            ':variation_id' => cleanId($item['variation_id'] ?? null)
         ]);
 
         if ((int) $statement->fetchColumn() !== 1) {
@@ -244,7 +244,7 @@ function validateProductsForSupplier(PDO $pdo, int $supplierId, array $items): v
     }
 }
 
-function updatePurchaseOrderStatus(PDO $pdo, int $poId, string $status, ?string $requiredCurrentStatus = null): void
+function updatePurchaseOrderStatus(PDO $pdo, string $poId, string $status, ?string $requiredCurrentStatus = null): void
 {
     if (!in_array($status, purchaseOrderStatuses(), true)) {
         throw new InvalidArgumentException('Invalid purchase order status.');

@@ -19,18 +19,18 @@ if (!is_array($payload)) {
 try {
     ensurePurchaseOrderSchema($pdo);
 
-    $poId = isset($payload['po_id']) ? (int) $payload['po_id'] : 0;
-    $supplierId = isset($payload['supplier_id']) ? (int) $payload['supplier_id'] : 0;
+    $poId = cleanId($payload['po_id'] ?? null);
+    $supplierId = cleanId($payload['supplier_id'] ?? null);
     $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
     $paymentTerms = validatePaymentTerms($payload);
     $expectedDeliveryDate = validateExpectedDeliveryDate($payload);
     $status = validatePurchaseOrderStatus($payload);
 
-    if ($poId <= 0) {
+    if ($poId === '') {
         throw new InvalidArgumentException('Purchase order id is required.');
     }
 
-    if ($supplierId <= 0) {
+    if ($supplierId === '') {
         throw new InvalidArgumentException('A supplier is required.');
     }
 
@@ -65,11 +65,12 @@ try {
 
     $existingItemsStatement = $pdo->prepare('SELECT po_item_id FROM purchase_order_items WHERE po_id = :po_id');
     $existingItemsStatement->execute([':po_id' => $poId]);
-    $existingItemIds = array_map('intval', $existingItemsStatement->fetchAll(PDO::FETCH_COLUMN));
+    $existingItemIds = array_map('cleanId', $existingItemsStatement->fetchAll(PDO::FETCH_COLUMN));
     $keptItemIds = [];
 
     $insertItemStatement = $pdo->prepare(
         'INSERT INTO purchase_order_items (
+            po_item_id,
             po_id,
             product_id,
             variation_id,
@@ -87,6 +88,7 @@ try {
             unit_price_snapshot
          )
          VALUES (
+            :po_item_id,
             :po_id,
             :product_id,
             :variation_id,
@@ -125,15 +127,15 @@ try {
     );
 
     foreach ($items as $item) {
-        $poItemId = (int) ($item['po_item_id'] ?? 0);
+        $poItemId = cleanId($item['po_item_id'] ?? null);
         $params = array_merge([
             ':po_id' => $poId,
-            ':product_id' => (int) $item['product_id'],
-            ':variation_id' => (int) ($item['variation_id'] ?? 0) ?: null,
+            ':product_id' => cleanId($item['product_id']),
+            ':variation_id' => nullableId($item['variation_id'] ?? null),
             ':quantity' => (int) $item['quantity']
         ], purchaseOrderItemSnapshotParams($item));
 
-        if ($poItemId > 0) {
+        if ($poItemId !== '') {
             if (!in_array($poItemId, $existingItemIds, true)) {
                 throw new InvalidArgumentException('A purchase-order item does not belong to this order.');
             }
@@ -141,8 +143,10 @@ try {
             $updateItemStatement->execute(array_merge($params, [':po_item_id' => $poItemId]));
             $keptItemIds[] = $poItemId;
         } else {
+            $newPoItemId = newUuid($pdo);
+            $params[':po_item_id'] = $newPoItemId;
             $insertItemStatement->execute($params);
-            $keptItemIds[] = (int) $pdo->lastInsertId();
+            $keptItemIds[] = $newPoItemId;
         }
     }
 

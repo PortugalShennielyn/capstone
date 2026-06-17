@@ -42,7 +42,7 @@ function normalizeVariation(array $variation, string $categoryName, string $fall
     }
 
     return [
-        'variation_id' => (int) ($variation['variation_id'] ?? 0),
+        'variation_id' => cleanId($variation['variation_id'] ?? null),
         'variant_name' => cleanVariationField($variation, 'variant_name') ?? cleanVariationField($variation, 'variant_flavor'),
         'strength_value' => $categoryName === 'Medicine' ? cleanNumericVariationField($variation, 'strength_value') : null,
         'strength_unit' => $categoryName === 'Medicine' ? cleanVariationField($variation, 'strength_unit') : null,
@@ -72,21 +72,21 @@ function normalizeVariation(array $variation, string $categoryName, string $fall
 try {
     ensureProductCategorySchema($pdo);
 
-    $productId = (int) ($payload['product_id'] ?? 0);
-    $categoryId = (int) ($payload['category_id'] ?? 0);
-    $typeId = (int) ($payload['type_id'] ?? 0);
+    $productId = cleanId($payload['product_id'] ?? null);
+    $categoryId = cleanId($payload['category_id'] ?? null);
+    $typeId = cleanId($payload['type_id'] ?? null);
     $brandName = requiredProductField($payload, 'brand_name');
     $productName = requiredProductField($payload, 'product_name');
     $genericName = cleanVariationField($payload, 'generic_name');
     $imageUrl = trim((string) ($payload['image_url'] ?? ''));
 
-    if ($productId <= 0) {
+    if ($productId === '') {
         throw new InvalidArgumentException('A valid product is required.');
     }
-    if ($categoryId <= 0) {
+    if ($categoryId === '') {
         throw new InvalidArgumentException('A valid product category is required.');
     }
-    if ($typeId <= 0 || getProductTypeId($pdo, $categoryId, $typeId) === null) {
+    if ($typeId === '' || getProductTypeId($pdo, $categoryId, $typeId) === null) {
         throw new InvalidArgumentException('A valid product type is required for the selected category.');
     }
 
@@ -183,6 +183,7 @@ try {
     );
     $insertStatement = $pdo->prepare(
         'INSERT INTO product_variations (
+            variation_id,
             product_id,
             variant_name,
             strength_value,
@@ -203,6 +204,7 @@ try {
             stock,
             is_default
         ) VALUES (
+            :variation_id,
             :product_id,
             :variant_name,
             :strength_value,
@@ -227,7 +229,7 @@ try {
 
     foreach ($variations as $variation) {
         if ($variation['delete']) {
-            if ($variation['variation_id'] <= 0) {
+            if ($variation['variation_id'] === '') {
                 continue;
             }
             $deleteUsageStatement->execute([':variation_id' => $variation['variation_id']]);
@@ -264,10 +266,10 @@ try {
             ':is_default' => $variation['is_default']
         ];
 
-        if ($variation['variation_id'] > 0) {
+        if ($variation['variation_id'] !== '') {
             $updateStatement->execute($params);
         } else {
-            unset($params[':variation_id']);
+            $params[':variation_id'] = newUuid($pdo);
             $insertStatement->execute($params);
         }
     }

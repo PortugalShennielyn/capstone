@@ -34,10 +34,12 @@ if ($supplierEmail !== '' && !filter_var($supplierEmail, FILTER_VALIDATE_EMAIL))
 
 try {
     $statement = $pdo->prepare(
-        'INSERT INTO suppliers (supplier_name, phone, email, address)
-         VALUES (:supplier_name, :phone, :email, :address)'
+        'INSERT INTO suppliers (supplier_id, supplier_name, phone, email, address)
+         VALUES (:supplier_id, :supplier_name, :phone, :email, :address)'
     );
+    $supplierId = newUuid($pdo);
     $statement->execute([
+        ':supplier_id' => $supplierId,
         ':supplier_name' => $supplierName,
         ':phone' => $supplierPhone,
         ':email' => $supplierEmail,
@@ -48,7 +50,7 @@ try {
     echo json_encode([
         'status' => 'success',
         'message' => 'Supplier created successfully.',
-        'supplier_id' => (int) $pdo->lastInsertId()
+        'supplier_id' => $supplierId
     ]);
 } catch (PDOException $e) {
     http_response_code(500);

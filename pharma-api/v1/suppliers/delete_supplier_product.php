@@ -19,14 +19,14 @@ if (!is_array($payload)) {
 try {
     ensureProductCategorySchema($pdo);
 
-    $supplierProductId = isset($payload['supplier_product_id']) ? (int) $payload['supplier_product_id'] : 0;
-    $supplierId = isset($payload['supplier_id']) ? (int) $payload['supplier_id'] : 0;
-    $productId = isset($payload['product_id']) ? (int) $payload['product_id'] : 0;
+    $supplierProductId = cleanId($payload['supplier_product_id'] ?? null);
+    $supplierId = cleanId($payload['supplier_id'] ?? null);
+    $productId = cleanId($payload['product_id'] ?? null);
 
-    if ($supplierProductId > 0) {
+    if ($supplierProductId !== '') {
         $statement = $pdo->prepare('DELETE FROM supplier_products WHERE supplier_product_id = :supplier_product_id');
         $statement->execute([':supplier_product_id' => $supplierProductId]);
-    } elseif ($supplierId > 0 && $productId > 0) {
+    } elseif ($supplierId !== '' && $productId !== '') {
         $statement = $pdo->prepare(
             'DELETE FROM supplier_products
              WHERE supplier_id = :supplier_id

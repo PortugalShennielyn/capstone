@@ -18,7 +18,7 @@ if (!is_array($payload)) {
 try {
     ensurePurchaseOrderSchema($pdo);
 
-    $poId = (int) ($payload['po_id'] ?? 0);
+    $poId = cleanId($payload['po_id'] ?? null);
     $records = is_array($payload['returns'] ?? null) ? $payload['returns'] : [];
     $allowedReasons = [
         'Expired',
@@ -29,7 +29,7 @@ try {
         'Other'
     ];
 
-    if ($poId <= 0 || count($records) === 0) {
+    if ($poId === '' || count($records) === 0) {
         throw new InvalidArgumentException('Purchase order and return items are required.');
     }
 
@@ -47,7 +47,7 @@ try {
     $itemStatement->execute([':po_id' => $poId]);
     $poItems = [];
     foreach ($itemStatement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $poItems[(int) $row['po_item_id']] = [
+        $poItems[cleanId($row['po_item_id'])] = [
             'quantity' => (int) $row['quantity'],
             'damaged_quantity' => (int) $row['damaged_quantity'],
             'receiving_item_count' => (int) $row['receiving_item_count']
@@ -60,13 +60,13 @@ try {
 
     $insertStatement = $pdo->prepare(
         'INSERT INTO purchase_order_returns
-            (po_id, po_item_id, return_quantity, damage_reason, remarks)
+            (return_id, po_id, po_item_id, return_quantity, damage_reason, remarks)
          VALUES
-            (:po_id, :po_item_id, :return_quantity, :damage_reason, :remarks)'
+            (:return_id, :po_id, :po_item_id, :return_quantity, :damage_reason, :remarks)'
     );
 
     foreach ($records as $record) {
-        $poItemId = (int) ($record['po_item_id'] ?? 0);
+        $poItemId = cleanId($record['po_item_id'] ?? null);
         $returnQuantity = (int) ($record['return_quantity'] ?? 0);
         $damageReason = trim((string) ($record['damage_reason'] ?? ''));
         $remarks = trim((string) ($record['remarks'] ?? ''));
@@ -88,6 +88,7 @@ try {
         }
 
         $insertStatement->execute([
+            ':return_id' => newUuid($pdo),
             ':po_id' => $poId,
             ':po_item_id' => $poItemId,
             ':return_quantity' => $returnQuantity,

@@ -22,17 +22,22 @@ try {
     $unitIdColumn = getMeasurementUnitIdColumn($pdo);
 
     $statement = $pdo->prepare(
-        "INSERT INTO product_measurement_units (unit_name)
-         VALUES (:unit_name)
-         ON DUPLICATE KEY UPDATE {$unitIdColumn} = LAST_INSERT_ID({$unitIdColumn}), unit_name = VALUES(unit_name)"
+        "INSERT INTO product_measurement_units ({$unitIdColumn}, unit_name)
+         VALUES (:measurement_unit_id, :unit_name)
+         ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name)"
     );
-    $statement->execute([':unit_name' => $unitName]);
+    $measurementUnitId = newUuid($pdo);
+    $statement->execute([':measurement_unit_id' => $measurementUnitId, ':unit_name' => $unitName]);
+
+    $select = $pdo->prepare("SELECT {$unitIdColumn} FROM product_measurement_units WHERE unit_name = :unit_name LIMIT 1");
+    $select->execute([':unit_name' => $unitName]);
+    $measurementUnitId = cleanId($select->fetchColumn()) ?: $measurementUnitId;
 
     echo json_encode([
         'status' => 'success',
         'message' => 'Measurement unit saved successfully.',
         'unit' => [
-            'measurement_unit_id' => (int) $pdo->lastInsertId(),
+            'measurement_unit_id' => $measurementUnitId,
             'unit_name' => $unitName
         ]
     ]);

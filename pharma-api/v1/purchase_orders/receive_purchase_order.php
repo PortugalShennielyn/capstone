@@ -26,14 +26,14 @@ if (!is_array($payload)) {
 try {
     ensurePurchaseOrderSchema($pdo);
 
-    $poId = (int) ($payload['po_id'] ?? 0);
+    $poId = cleanId($payload['po_id'] ?? null);
     $remarks = trim((string) ($payload['remarks'] ?? ''));
     $amountPaidRaw = $payload['amount_paid'] ?? null;
     $additionalAmountRaw = $payload['additional_amount'] ?? 0;
     $adjustmentReason = trim((string) ($payload['adjustment_reason'] ?? ''));
     $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
 
-    if ($poId <= 0 || count($items) === 0) {
+    if ($poId === '' || count($items) === 0) {
         throw new InvalidArgumentException('Purchase order and received items are required.');
     }
 
@@ -81,7 +81,7 @@ try {
 
     $poItems = [];
     foreach ($poItemStatement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $poItems[(int) $row['po_item_id']] = $row;
+        $poItems[cleanId($row['po_item_id'])] = $row;
     }
 
     if (count($poItems) === 0) {
@@ -103,7 +103,7 @@ try {
     }
 
     foreach ($items as $item) {
-        $poItemId = (int) ($item['po_item_id'] ?? 0);
+        $poItemId = cleanId($item['po_item_id'] ?? null);
         $receivedQuantity = (int) ($item['received_quantity'] ?? 0);
         $damagedQuantity = (int) ($item['damaged_quantity'] ?? 0);
 
@@ -150,39 +150,39 @@ try {
     $pdo->beginTransaction();
 
     $receivingStatement = $pdo->prepare(
-        'INSERT INTO purchase_order_receiving (po_id, received_date, remarks)
-         VALUES (:po_id, CURRENT_TIMESTAMP, :remarks)'
+        'INSERT INTO purchase_order_receiving (receiving_id, po_id, received_date, remarks)
+         VALUES (:receiving_id, :po_id, CURRENT_TIMESTAMP, :remarks)'
     );
+    $receivingId = newUuid($pdo);
     $receivingStatement->execute([
+        ':receiving_id' => $receivingId,
         ':po_id' => $poId,
         ':remarks' => $remarks
     ]);
 
-    $receivingId = (int) $pdo->lastInsertId();
-
     $receiveItemStatement = $pdo->prepare(
         'INSERT INTO purchase_order_receiving_items
-            (receiving_id, po_item_id, received_quantity, damaged_quantity)
+            (receiving_item_id, receiving_id, po_item_id, received_quantity, damaged_quantity)
          VALUES
-            (:receiving_id, :po_item_id, :received_quantity, :damaged_quantity)'
+            (:receiving_item_id, :receiving_id, :po_item_id, :received_quantity, :damaged_quantity)'
     );
 
     $inventoryStatement = $pdo->prepare(
         "INSERT INTO product_inventory
-            (product_id, variation_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, status)
+            (inventory_id, product_id, variation_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, status)
          VALUES
-            (:product_id, :variation_id, :batch_number, :quantity_stocked, :quantity_remaining, NULL, 'Available')"
+            (:inventory_id, :product_id, :variation_id, :batch_number, :quantity_stocked, :quantity_remaining, NULL, 'Available')"
     );
 
     $returnStatement = $pdo->prepare(
         "INSERT INTO purchase_order_returns
-            (po_id, po_item_id, return_quantity, damage_reason, remarks, return_status)
+            (return_id, po_id, po_item_id, return_quantity, damage_reason, remarks, return_status)
          VALUES
-            (:po_id, :po_item_id, :return_quantity, :damage_reason, :remarks, 'Open')"
+            (:return_id, :po_id, :po_item_id, :return_quantity, :damage_reason, :remarks, 'Open')"
     );
 
     foreach ($items as $item) {
-        $poItemId = (int) $item['po_item_id'];
+        $poItemId = cleanId($item['po_item_id'] ?? null);
         $receivedQuantity = (int) ($item['received_quantity'] ?? 0);
         $damagedQuantity = (int) ($item['damaged_quantity'] ?? 0);
         $goodQuantity = $receivedQuantity - $damagedQuantity;
@@ -190,6 +190,7 @@ try {
         $poItem = $poItems[$poItemId];
 
         $receiveItemStatement->execute([
+            ':receiving_item_id' => newUuid($pdo),
             ':receiving_id' => $receivingId,
             ':po_item_id' => $poItemId,
             ':received_quantity' => $receivedQuantity,
@@ -198,8 +199,9 @@ try {
 
         if ($goodQuantity > 0) {
             $inventoryStatement->execute([
-                ':product_id' => (int) $poItem['product_id'],
-                ':variation_id' => (int) ($poItem['variation_id'] ?? 0) ?: null,
+                ':inventory_id' => newUuid($pdo),
+                ':product_id' => cleanId($poItem['product_id']),
+                ':variation_id' => nullableId($poItem['variation_id'] ?? null),
                 ':batch_number' => $order['po_number'] . '-' . $poItemId,
                 ':quantity_stocked' => $goodQuantity,
                 ':quantity_remaining' => $goodQuantity
@@ -208,6 +210,7 @@ try {
 
         if ($damagedQuantity > 0) {
             $returnStatement->execute([
+                ':return_id' => newUuid($pdo),
                 ':po_id' => $poId,
                 ':po_item_id' => $poItemId,
                 ':return_quantity' => $damagedQuantity,

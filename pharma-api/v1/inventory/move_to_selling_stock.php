@@ -18,19 +18,17 @@ if (!is_array($payload)) {
 try {
     ensureProductCategorySchema($pdo);
 
-    $productId = (int) ($payload['product_id'] ?? 0);
-    $variationId = isset($payload['variation_id']) && $payload['variation_id'] !== ''
-        ? (int) $payload['variation_id']
-        : 0;
+    $productId = cleanId($payload['product_id'] ?? null);
+    $variationId = nullableId($payload['variation_id'] ?? null);
     $quantity = (int) ($payload['quantity'] ?? 0);
 
-    if ($productId <= 0 || $quantity <= 0) {
+    if ($productId === '' || $quantity <= 0) {
         throw new InvalidArgumentException('Product and quantity are required.');
     }
 
-    $variationFilter = $variationId > 0 ? 'variation_id = :variation_id' : 'variation_id IS NULL';
-    $variationParams = $variationId > 0 ? [':variation_id' => $variationId] : [];
-    $sellingVariationId = $variationId > 0 ? $variationId : null;
+    $variationFilter = $variationId !== null ? 'variation_id = :variation_id' : 'variation_id IS NULL';
+    $variationParams = $variationId !== null ? [':variation_id' => $variationId] : [];
+    $sellingVariationId = $variationId;
 
     $availableStatement = $pdo->prepare(
         "SELECT COALESCE(SUM(quantity_remaining), 0)
@@ -65,9 +63,9 @@ try {
     );
     $insertSelling = $pdo->prepare(
         'INSERT INTO product_selling_stock
-            (product_id, variation_id, source_inventory_id, batch_number, quantity_stocked, quantity_remaining, expiration_date)
+            (selling_stock_id, product_id, variation_id, source_inventory_id, batch_number, quantity_stocked, quantity_remaining, expiration_date)
          VALUES
-            (:product_id, :variation_id, :source_inventory_id, :batch_number, :quantity_stocked, :quantity_remaining, :expiration_date)'
+            (:selling_stock_id, :product_id, :variation_id, :source_inventory_id, :batch_number, :quantity_stocked, :quantity_remaining, :expiration_date)'
     );
 
     $remainingToMove = $quantity;
@@ -78,13 +76,14 @@ try {
 
         $updateInventory->execute([
             ':quantity' => $moveQuantity,
-            ':inventory_id' => (int) $batch['inventory_id']
+            ':inventory_id' => cleanId($batch['inventory_id'])
         ]);
 
         $insertSelling->execute([
+            ':selling_stock_id' => newUuid($pdo),
             ':product_id' => $productId,
             ':variation_id' => $sellingVariationId,
-            ':source_inventory_id' => (int) $batch['inventory_id'],
+            ':source_inventory_id' => cleanId($batch['inventory_id']),
             ':batch_number' => $batch['batch_number'],
             ':quantity_stocked' => $moveQuantity,
             ':quantity_remaining' => $moveQuantity,

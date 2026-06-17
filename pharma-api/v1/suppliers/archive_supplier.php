@@ -9,9 +9,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $payload = json_decode(file_get_contents('php://input'), true);
-$supplierId = (int) ($payload['supplier_id'] ?? 0);
+$supplierId = cleanId($payload['supplier_id'] ?? null);
 
-if ($supplierId <= 0) {
+if ($supplierId === '') {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'A valid supplier is required.']);
     exit();

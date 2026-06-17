@@ -2,9 +2,9 @@
 require_once '../../config/db_connection.php';
 require_once '../products/product_category_schema.php';
 
-$supplierId = isset($_GET['supplier_id']) ? (int) $_GET['supplier_id'] : 0;
+$supplierId = cleanId($_GET['supplier_id'] ?? null);
 
-if ($supplierId <= 0) {
+if ($supplierId === '') {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'A valid supplier is required.']);
     exit();

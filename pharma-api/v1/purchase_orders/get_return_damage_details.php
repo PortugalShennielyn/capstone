@@ -9,8 +9,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit();
 }
 
-$returnId = isset($_GET['return_id']) ? (int) $_GET['return_id'] : 0;
-if ($returnId <= 0) {
+$returnId = cleanId($_GET['return_id'] ?? null);
+if ($returnId === '') {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'Return/Damage id is required.']);
     exit();

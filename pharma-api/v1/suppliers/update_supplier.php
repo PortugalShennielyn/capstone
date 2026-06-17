@@ -16,13 +16,13 @@ if (!is_array($payload)) {
     exit();
 }
 
-$supplierId = (int) ($payload['supplier_id'] ?? 0);
+$supplierId = cleanId($payload['supplier_id'] ?? null);
 $supplierName = trim((string) ($payload['supplier_name'] ?? ''));
 $supplierPhone = trim((string) ($payload['phone'] ?? ''));
 $supplierEmail = trim((string) ($payload['email'] ?? ''));
 $supplierAddress = trim((string) ($payload['address'] ?? ''));
 
-if ($supplierId <= 0 || $supplierName === '') {
+if ($supplierId === '' || $supplierName === '') {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'Supplier ID and name are required.']);
     exit();

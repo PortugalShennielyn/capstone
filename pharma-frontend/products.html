@@ -50,9 +50,13 @@
         .product-barcode-toggle { width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; border:1px solid #d9e0ec; border-radius:8px; color:var(--purple); background:#fff; }
         .product-barcode-toggle:hover { color:#fff; border-color:var(--purple); background:var(--purple); }
         .product-meta { display:inline-flex; align-self:flex-start; max-width:100%; margin:0 0 8px; padding:3px 7px; border:1px solid rgba(124,58,237,.18); border-radius:999px; color:var(--purple); background:rgba(124,58,237,.06); font-size:11px; font-weight:850; line-height:1.25; overflow-wrap:break-word; word-break:normal; }
-        .product-detail-list { display:grid; gap:4px; margin:0 0 10px; color:#4b5563; font-size:12px; font-weight:750; line-height:1.3; overflow-wrap:break-word; word-break:normal; }
-        .product-variant-tabs { margin:0 0 10px; }
-        .product-variant-label { margin-bottom:5px; color:#7b8494; font-size:10px; font-weight:900; letter-spacing:.04em; text-transform:uppercase; }
+        .product-detail-list { display:grid; gap:5px; margin:0 0 10px; color:#4b5563; font-size:12px; font-weight:750; line-height:1.3; overflow-wrap:break-word; word-break:normal; }
+        .product-detail-row { display:grid; gap:1px; min-width:0; }
+        .product-detail-row span, .product-variant-label { color:#7b8494; font-size:10px; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }
+        .product-detail-row strong { min-width:0; color:#374151; font-size:12px; font-weight:850; overflow-wrap:anywhere; }
+        .product-variant-tabs { display:grid; gap:8px; margin:0 0 10px; }
+        .product-variant-group { min-width:0; }
+        .product-variant-label { margin-bottom:5px; }
         .product-variant-chip-row { display:flex; flex-wrap:wrap; gap:6px; }
         .product-variant-chip { max-width:100%; padding:5px 10px; border:1px solid #dfe4ef; border-radius:8px; color:#4b5563; background:#fff; font-size:12px; font-weight:850; line-height:1.15; overflow-wrap:break-word; word-break:normal; transition:background .16s ease, color .16s ease, border-color .16s ease; }
         .product-variant-chip:hover { border-color:rgba(124,58,237,.28); background:rgba(124,58,237,.08); color:var(--purple); }
@@ -61,10 +65,12 @@
         .grocery-variation-entry + .grocery-variation-entry { margin-top:10px; }
         .edit-variation-entry { border:1px solid var(--border-soft); border-radius:8px; padding:12px; background:#fff; }
         .edit-variation-entry + .edit-variation-entry { margin-top:10px; }
-        .variation-pair { display:grid; grid-template-columns:minmax(0, 1fr) 82px; gap:6px; }
+        .variation-pair { display:grid; grid-template-columns:minmax(0, 1fr) minmax(84px, 96px); gap:6px; }
+        .variation-pair .form-select { text-align:right; text-align-last:right; }
+        .edit-variation-entry .form-select, .edit-variation-entry .form-control { min-width:0; }
         body.dark-mode .grocery-variation-entry { background:#182131; border-color:#334155; }
         body.dark-mode .edit-variation-entry { background:#182131; border-color:#334155; }
-        body.dark-mode .product-brand, body.dark-mode .product-detail-list { color:#cbd5e1; }
+        body.dark-mode .product-brand, body.dark-mode .product-detail-list, body.dark-mode .product-detail-row strong { color:#cbd5e1; }
         body.dark-mode .product-barcode-toggle { color:#c4b5fd; background:#182131; border-color:#475569; }
         body.dark-mode .product-meta { border-color:rgba(196,181,253,.24); background:rgba(124,58,237,.16); color:#c4b5fd; }
         body.dark-mode .product-variant-label { color:#aab6c7; }
@@ -128,7 +134,7 @@
                             <h2>Product Master Files</h2>
                             <p>Review normalized product details and manage stock batches.</p>
                         </div>
-                        <button class="btn btn-purple" type="button" data-bs-toggle="modal" data-bs-target="#addSupplierProductModal">
+                        <button class="btn btn-purple" type="button" data-bs-toggle="modal" data-bs-target="#addProductModal">
                             <i class="fa-solid fa-plus me-2"></i>Add Product
                         </button>
                     </div>
@@ -185,104 +191,56 @@
         </section>
     </main>
 
-    <div class="modal fade" id="addSupplierProductModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="addProductModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold">Add Product for Supplier</h5>
+                    <h5 class="modal-title fw-bold">Add Product</h5>
                     <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="addSupplierProductForm">
+                <form id="addProductForm">
                     <div class="modal-body">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label">Supplier <span class="text-danger">*</span></label>
-                                <select class="form-select" id="supplierProductSupplier" required>
+                                <label class="form-label" for="supplier_id">Supplier <span class="text-danger">*</span></label>
+                                <select class="form-select" id="supplier_id" required>
                                     <option value="" disabled selected>Select supplier...</option>
                                 </select>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Category <span class="text-danger">*</span></label>
-                                <select class="form-select" id="supplierProductCategory" required>
+                                <label class="form-label" for="productCategory">Category <span class="text-danger">*</span></label>
+                                <select class="form-select" id="productCategory" required>
                                     <option value="" disabled selected>Select category...</option>
                                 </select>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Product Type</label>
-                                <div class="input-group">
-                                    <select class="form-select" id="supplierProductType" required disabled>
-                                        <option value="" disabled selected>Select supplier and category first...</option>
-                                    </select>
-                                    <button class="btn btn-outline-secondary" type="button" id="btnOpenAddProductType" title="Add product type" disabled><i class="fa-solid fa-plus"></i></button>
-                                </div>
+                                <label class="form-label" for="productType">Product Type <span class="text-danger">*</span></label>
+                                <select class="form-select" id="productType" required disabled>
+                                    <option value="" disabled selected>Select category first...</option>
+                                </select>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Unit</label>
-                                <div class="input-group">
-                                    <select class="form-select" id="supplierProductMeasurementUnit" required disabled>
-                                        <option value="" disabled selected>Select supplier and category first...</option>
-                                    </select>
-                                    <button class="btn btn-outline-secondary" type="button" id="btnOpenAddMeasurementUnit" title="Add measurement unit" disabled><i class="fa-solid fa-plus"></i></button>
-                                </div>
+                                <label class="form-label" for="productBrandName">Brand Name</label>
+                                <input class="form-control" id="productBrandName" required>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Brand Name</label>
-                                <input class="form-control" id="supplierProductBrand" required>
+                                <label class="form-label" for="productName">Product Name</label>
+                                <input class="form-control" id="productName" required>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Product Name</label>
-                                <input class="form-control" id="supplierProductName" required>
+                            <div class="col-md-6 d-none" id="addGenericNameWrap">
+                                <label class="form-label" for="genericName">Generic Name</label>
+                                <input class="form-control" id="genericName">
                             </div>
-                            <div class="col-12 d-none" id="supplierProductMedicineFields">
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Generic Name</label>
-                                        <input class="form-control" id="supplierProductGenericName">
-                                    </div>
-                                    <div class="col-md-3"><label class="form-label">Strength Value</label><input class="form-control" id="supplierProductStrengthValue" type="number" min="0" step="any" placeholder="500"></div>
-                                    <div class="col-md-3"><label class="form-label">Strength Unit</label><select class="form-select" id="supplierProductStrengthUnit"><option value="">N/A</option><option>mg</option><option>mcg</option><option>g</option><option>IU</option><option>%</option><option>mg/mL</option><option>mg/5mL</option><option>mg/mL</option><option>mg/5mL</option></select></div>
-                                    <div class="col-md-3"><label class="form-label">Volume Value</label><input class="form-control" id="supplierProductVolumeValue" type="number" min="0" step="any" placeholder="60"></div>
-                                    <div class="col-md-3"><label class="form-label">Volume Unit</label><select class="form-select" id="supplierProductVolumeUnit"><option value="">N/A</option><option>mL</option><option>L</option><option>oz</option><option>fl oz</option></select></div>
-                                    <div class="col-md-3 d-none" id="supplierProductMedicineFlavorWrap"><label class="form-label">Flavor</label><input class="form-control" id="supplierProductMedicineFlavor" list="supplierProductMedicineFlavorList" placeholder="Select or type"><datalist id="supplierProductMedicineFlavorList"></datalist></div>
-                                    <div class="col-md-3"><label class="form-label">Unit</label><select class="form-select" id="supplierProductMedicineUnit"><option>pcs</option><option>tablet</option><option>capsule</option><option>bottle</option><option>box</option><option>pack</option><option>can</option><option>sachet</option><option>tube</option><option>vial</option><option>ampule</option><option>blister</option><option>pouch</option><option>jar</option><option>roll</option></select></div>
-                                    <div class="col-md-3"><label class="form-label">Packaging</label><select class="form-select" id="supplierProductMedicinePackaging"><option value="">N/A</option><option>box</option><option>bottle</option><option>pack</option><option>plastic pack</option><option>blister pack</option><option>sachet</option><option>tube</option><option>can</option><option>pouch</option><option>jar</option><option>carton</option><option>strip</option></select></div>
-                                    <div class="col-md-3"><label class="form-label">Pack Content Qty</label><input class="form-control" id="supplierProductMedicinePackContentQty" type="number" min="0" step="1" placeholder="100"></div>
-                                    <div class="col-md-3"><label class="form-label">Pack Content Unit</label><select class="form-select" id="supplierProductMedicinePackContentUnit"><option>pcs</option><option>tablets</option><option>capsules</option><option>bottles</option><option>sachets</option><option>cans</option><option>packs</option><option>tubes</option><option>vials</option><option>ampules</option><option>strips</option></select></div>
-                                </div>
-                            </div>
-                            <div class="col-12 d-none" id="supplierProductGroceryFields">
+                            <div class="col-12">
                                 <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                                    <label class="form-label mb-0">Grocery Variations</label>
-                                    <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAddGroceryVariation"><i class="fa-solid fa-plus me-1"></i>Add Another Variation</button>
+                                    <label class="form-label mb-0">Variations</label>
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAddProductVariation"><i class="fa-solid fa-plus me-1"></i>Add Variation</button>
                                 </div>
-                                <div id="groceryVariationList">
-                                    <div class="grocery-variation-entry">
-                                        <div class="row g-3">
-                                            <div class="col-md-4"><label class="form-label">Variant / Flavor</label><input class="form-control supplier-product-variant-flavor" id="supplierProductVariantFlavor" placeholder="e.g., Menudo"></div>
-                                            <div class="col-md-4"><label class="form-label">Size <span class="text-danger">*</span></label><select class="form-select supplier-product-size-value" id="supplierProductSizeValue"><option value="">N/A</option><option>Newborn</option><option>Small</option><option>Medium</option><option>Large</option><option>XL</option><option>XXL</option><option>Family Size</option><option>Travel Size</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Weight Value</label><input class="form-control supplier-product-weight-value" id="supplierProductWeightVolumeValue" type="number" min="0" step="any" placeholder="155"></div>
-                                            <div class="col-md-4"><label class="form-label">Weight Unit</label><select class="form-select supplier-product-weight-unit" id="supplierProductWeightVolumeUnit"><option value="">N/A</option><option>mg</option><option>g</option><option>kg</option><option>oz</option><option>lb</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Volume Value</label><input class="form-control supplier-product-volume-value" id="supplierProductGroceryVolumeValue" type="number" min="0" step="any" placeholder="60"></div>
-                                            <div class="col-md-4"><label class="form-label">Volume Unit</label><select class="form-select supplier-product-volume-unit" id="supplierProductGroceryVolumeUnit"><option value="">N/A</option><option>mL</option><option>L</option><option>oz</option><option>fl oz</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Unit</label><select class="form-select supplier-product-unit" id="supplierProductVariationUnit"><option>pcs</option><option>tablet</option><option>capsule</option><option>bottle</option><option>box</option><option>pack</option><option>can</option><option>sachet</option><option>tube</option><option>vial</option><option>ampule</option><option>blister</option><option>pouch</option><option>jar</option><option>roll</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Packaging</label><select class="form-select supplier-product-packaging" id="supplierProductPackaging"><option value="">N/A</option><option>box</option><option>bottle</option><option>pack</option><option>plastic pack</option><option>blister pack</option><option>sachet</option><option>tube</option><option>can</option><option>pouch</option><option>jar</option><option>carton</option><option>strip</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Pack Content Qty</label><input class="form-control supplier-product-pack-content-qty" id="supplierProductPackContentQty" type="number" min="0" step="1" placeholder="12"></div>
-                                            <div class="col-md-4"><label class="form-label">Pack Content Unit</label><select class="form-select supplier-product-pack-content-unit" id="supplierProductPackContentUnit"><option>pcs</option><option>tablets</option><option>capsules</option><option>bottles</option><option>sachets</option><option>cans</option><option>packs</option><option>tubes</option><option>vials</option><option>ampules</option><option>strips</option></select></div>
-                                            <div class="col-md-4"><label class="form-label">Price</label><input class="form-control supplier-product-price" id="supplierProductPrice" type="number" min="0" step=".01" required></div>
-                                            <div class="col-md-4"><label class="form-label">Barcode</label><input class="form-control supplier-product-barcode" id="supplierProductBarcode" placeholder="Auto/manual"></div>
-                                            <div class="col-md-4"><label class="form-label">SKU</label><input class="form-control supplier-product-sku" id="supplierProductSku" placeholder="Optional"></div>
-                                            <div class="col-md-4"><label class="form-label">Stock</label><input class="form-control supplier-product-stock" id="supplierProductStock" type="number" min="0" step="1" value="0"></div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <div id="addVariationList"></div>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Price</label>
-                                <input class="form-control" id="supplierProductBasePrice" type="number" min="0" step=".01" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Image URL</label>
-                                <input class="form-control" id="supplierProductImageUrl" type="url" placeholder="Optional image link">
+                                <label class="form-label" for="productImageUrl">Image URL</label>
+                                <input class="form-control" id="productImageUrl" type="url" placeholder="Optional image link">
                             </div>
                         </div>
                     </div>
@@ -446,12 +404,12 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/suppliers.js?v=12"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js';
-        import { initAddStockForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=11';
+        import { initAddProductForm, initAddStockForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=12';
 
         await verifySession();
+        initAddProductForm();
         initProductCards();
         initAddStockForm();
         await loadProductsTable();

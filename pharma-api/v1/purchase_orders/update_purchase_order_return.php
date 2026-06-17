@@ -18,7 +18,7 @@ if (!is_array($payload)) {
 try {
     ensurePurchaseOrderSchema($pdo);
 
-    $returnId = (int) ($payload['return_id'] ?? 0);
+    $returnId = cleanId($payload['return_id'] ?? null);
     $action = trim((string) ($payload['action'] ?? 'update'));
     $allowedReasons = [
         'Expired',
@@ -29,7 +29,7 @@ try {
         'Other'
     ];
 
-    if ($returnId <= 0) {
+    if ($returnId === '') {
         throw new InvalidArgumentException('Return/Damage id is required.');
     }
 
@@ -97,7 +97,7 @@ try {
         ':return_id' => $returnId
     ]);
 
-    updatePurchaseOrderStatus($pdo, (int) $record['po_id'], 'Delivered with Return/Damage');
+    updatePurchaseOrderStatus($pdo, cleanId($record['po_id']), 'Delivered with Return/Damage');
 
     echo json_encode(['status' => 'success', 'message' => 'Return/Damage record updated successfully.']);
 } catch (InvalidArgumentException $e) {

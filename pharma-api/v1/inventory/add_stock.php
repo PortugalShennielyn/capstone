@@ -25,21 +25,21 @@ if (!is_array($payload)) {
 try {
     ensureProductCategorySchema($pdo);
 
-    $productId = isset($payload['product_id']) ? (int) $payload['product_id'] : 0;
-    $variationId = isset($payload['variation_id']) ? (int) $payload['variation_id'] : 0;
+    $productId = cleanId($payload['product_id'] ?? null);
+    $variationId = cleanId($payload['variation_id'] ?? null);
     $batchNumber = isset($payload['batch_number']) ? trim((string) $payload['batch_number']) : '';
     $quantityStocked = isset($payload['quantity_stocked']) ? (int) $payload['quantity_stocked'] : 0;
     $expirationDate = isset($payload['expiration_date']) ? trim((string) $payload['expiration_date']) : '';
 
-    if ($productId > 0 && $variationId <= 0) {
+    if ($productId !== '' && $variationId === '') {
         $defaultVariation = $pdo->prepare(
             'SELECT variation_id FROM product_variations WHERE product_id = :product_id ORDER BY variation_id ASC LIMIT 1'
         );
         $defaultVariation->execute([':product_id' => $productId]);
-        $variationId = (int) $defaultVariation->fetchColumn();
+        $variationId = cleanId($defaultVariation->fetchColumn());
     }
 
-    if ($productId <= 0 || $variationId <= 0 || $batchNumber === '' || $quantityStocked <= 0 || $expirationDate === '') {
+    if ($productId === '' || $variationId === '' || $batchNumber === '' || $quantityStocked <= 0 || $expirationDate === '') {
         http_response_code(400);
         echo json_encode([
             'status' => 'error',
@@ -56,12 +56,14 @@ try {
 
     $statement = $pdo->prepare(
         "INSERT INTO product_selling_stock
-            (product_id, variation_id, batch_number, quantity_stocked, quantity_remaining, expiration_date)
+            (selling_stock_id, product_id, variation_id, batch_number, quantity_stocked, quantity_remaining, expiration_date)
          VALUES
-            (:product_id, :variation_id, :batch_number, :quantity_stocked, :quantity_remaining, :expiration_date)"
+            (:selling_stock_id, :product_id, :variation_id, :batch_number, :quantity_stocked, :quantity_remaining, :expiration_date)"
     );
 
+    $sellingStockId = newUuid($pdo);
     $statement->execute([
+        ':selling_stock_id' => $sellingStockId,
         ':product_id' => $productId,
         ':variation_id' => $variationId,
         ':batch_number' => $batchNumber,
@@ -74,7 +76,7 @@ try {
     echo json_encode([
         'status' => 'success',
         'message' => 'Stock successfully added to Products selling stock.',
-        'inventory_id' => (int) $pdo->lastInsertId()
+        'inventory_id' => $sellingStockId
     ]);
 } catch (Throwable $e) {
     http_response_code(500);

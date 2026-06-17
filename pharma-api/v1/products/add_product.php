@@ -19,10 +19,10 @@ if (!is_array($payload)) {
 try {
     ensureProductCategorySchema($pdo);
 
-    $supplierId = isset($payload['supplier_id']) ? (int) $payload['supplier_id'] : 0;
-    $categoryId = isset($payload['category_id']) ? (int) $payload['category_id'] : 0;
-    $typeId = isset($payload['type_id']) ? (int) $payload['type_id'] : 0;
-    $measurementUnitId = isset($payload['measurement_unit_id']) ? (int) $payload['measurement_unit_id'] : 0;
+    $supplierId = cleanId($payload['supplier_id'] ?? null);
+    $categoryId = cleanId($payload['category_id'] ?? null);
+    $typeId = cleanId($payload['type_id'] ?? null);
+    $measurementUnitId = cleanId($payload['measurement_unit_id'] ?? null);
     $brandName = requiredProductField($payload, 'brand_name');
     $productName = requiredProductField($payload, 'product_name');
     $strengthSizeValue = optionalProductField($payload, 'strength_size_value');
@@ -52,20 +52,30 @@ try {
         return $integer ? (int) $value : $value;
     };
 
-    if ($supplierId <= 0) {
+    if ($supplierId === '') {
         throw new InvalidArgumentException('A supplier is required.');
     }
 
-    if ($categoryId <= 0) {
+    if ($categoryId === '') {
         throw new InvalidArgumentException('A valid product category is required.');
     }
 
-    if ($typeId <= 0 || getProductTypeId($pdo, $categoryId, $typeId) === null) {
+    if ($typeId === '' || getProductTypeId($pdo, $categoryId, $typeId) === null) {
         throw new InvalidArgumentException('A valid product type is required for the selected category.');
     }
 
-    if ($measurementUnitId <= 0 || getMeasurementUnitId($pdo, $measurementUnitId) === null) {
-        throw new InvalidArgumentException('A valid measurement unit is required.');
+    if ($productUnit === null) {
+        $firstVariation = (isset($payload['variations']) && is_array($payload['variations']) && count($payload['variations']) > 0)
+            ? (is_array($payload['variations'][0]) ? $payload['variations'][0] : [])
+            : $payload;
+        $productUnit = optionalProductField($firstVariation, 'unit')
+            ?? optionalProductField($firstVariation, 'packaging')
+            ?? optionalProductField($payload, 'unit')
+            ?? 'pcs';
+    }
+
+    if ($measurementUnitId === '' || getMeasurementUnitId($pdo, $measurementUnitId) === null) {
+        $measurementUnitId = ensureMeasurementUnitId($pdo, $productUnit);
     }
 
     if ($productUnit === null) {
@@ -97,95 +107,72 @@ try {
         throw new InvalidArgumentException('A valid product category is required.');
     }
 
-    $genericName = null;
-    if ($categoryName === 'Medicine') {
-        $genericName = requiredProductField($payload, 'generic_name');
-        $strengthValue = $numericField($payload, 'strength_value');
-        $volumeValue = $numericField($payload, 'volume_value');
-        $strengthSizeValue = $strengthValue ?? $volumeValue ?? $displaySize ?? optionalProductField($payload, 'strength_size_value');
-        $variantFlavor = null;
-        $sizeValue = $displaySize;
-        $weightVolumeValue = null;
-        $weightVolumeUnit = null;
+    $genericName = $categoryName === 'Medicine' ? requiredProductField($payload, 'generic_name') : null;
+    $rawVariations = (isset($payload['variations']) && is_array($payload['variations']) && count($payload['variations']) > 0)
+        ? $payload['variations']
+        : [$payload];
+
+    foreach ($rawVariations as $index => $variation) {
+        if (!is_array($variation) || !empty($variation['delete'])) {
+            continue;
+        }
+
+        $variationPrice = $variation['price'] ?? $price;
+        if (!is_numeric($variationPrice) || (float) $variationPrice < 0) {
+            throw new InvalidArgumentException('Each variation must have a valid non-negative price.');
+        }
+
+        $variationBarcode = trim((string) ($variation['barcode'] ?? ''));
+        if ($variationBarcode === '') {
+            $variationBarcode = 'AUTO-' . strtoupper(bin2hex(random_bytes(6)));
+        }
+
+        $variationUnit = optionalProductField($variation, 'unit') ?? $productUnit;
+        $variationPackaging = optionalProductField($variation, 'packaging');
+
         $variationPayloads[] = [
-            'variant_name' => null,
-            'strength_value' => $strengthValue,
-            'strength_unit' => $strengthUnit,
-            'volume_value' => $volumeValue,
-            'volume_unit' => $volumeUnit,
-            'size_value' => $displaySize ?: $sizeValue,
-            'weight_value' => null,
-            'weight_unit' => null,
-            'unit' => $productUnit,
-            'packaging' => $packaging,
-            'pack_content_qty' => $numericField($payload, 'pack_content_qty', true),
-            'pack_content_unit' => optionalProductField($payload, 'pack_content_unit'),
-            'price' => (float) $price,
-            'barcode' => trim((string) ($payload['barcode'] ?? '')),
-            'sku' => optionalProductField($payload, 'sku'),
-            'stock' => 0,
-            'is_default' => 1
+            'variant_name' => optionalProductField($variation, 'variant_name') ?? optionalProductField($variation, 'variant_flavor') ?? optionalProductField($variation, 'variation_name'),
+            'strength_value' => $categoryName === 'Medicine' ? $numericField($variation, 'strength_value') : null,
+            'strength_unit' => $categoryName === 'Medicine' ? optionalProductField($variation, 'strength_unit') : null,
+            'volume_value' => $numericField($variation, 'volume_value'),
+            'volume_unit' => optionalProductField($variation, 'volume_unit'),
+            'size_value' => optionalProductField($variation, 'size_value') ?? optionalProductField($variation, 'display_size'),
+            'weight_value' => $numericField($variation, 'weight_value') ?? $numericField($variation, 'weight_volume_value') ?? $numericField($variation, 'net_weight'),
+            'weight_unit' => optionalProductField($variation, 'weight_unit') ?? optionalProductField($variation, 'weight_volume_unit'),
+            'unit' => $variationUnit,
+            'packaging' => $variationPackaging,
+            'pack_content_qty' => $numericField($variation, 'pack_content_qty', true),
+            'pack_content_unit' => optionalProductField($variation, 'pack_content_unit'),
+            'price' => (float) $variationPrice,
+            'barcode' => $variationBarcode,
+            'sku' => optionalProductField($variation, 'sku'),
+            'stock' => max(0, (int) ($variation['stock'] ?? 0)),
+            'is_default' => !empty($variation['is_default']) ? 1 : 0
         ];
-    } elseif ($categoryName === 'Grocery') {
-        $rawVariations = (isset($payload['variations']) && is_array($payload['variations']) && count($payload['variations']) > 0)
-            ? $payload['variations']
-            : [$payload];
-
-        foreach ($rawVariations as $index => $variation) {
-            if (!is_array($variation)) {
-                continue;
-            }
-
-            $variationPrice = $variation['price'] ?? $price;
-            if (!is_numeric($variationPrice) || (float) $variationPrice < 0) {
-                throw new InvalidArgumentException('Each grocery variation must have a valid non-negative price.');
-            }
-
-            $variationSize = requiredProductField($variation, 'size_value');
-            $variationBarcode = trim((string) ($variation['barcode'] ?? ''));
-            if ($variationBarcode === '') {
-                $variationBarcode = 'AUTO-' . strtoupper(bin2hex(random_bytes(6)));
-            }
-
-            $variationPayloads[] = [
-                'variant_name' => optionalProductField($variation, 'variant_flavor') ?? optionalProductField($variation, 'variation_name'),
-                'strength_value' => null,
-                'strength_unit' => null,
-                'volume_value' => $numericField($variation, 'volume_value'),
-                'volume_unit' => optionalProductField($variation, 'volume_unit'),
-                'size_value' => $variationSize,
-                'weight_value' => $numericField($variation, 'weight_volume_value') ?? $numericField($variation, 'net_weight'),
-                'weight_unit' => optionalProductField($variation, 'weight_volume_unit') ?? optionalProductField($variation, 'weight_unit'),
-                'unit' => optionalProductField($variation, 'unit') ?? $productUnit,
-                'packaging' => optionalProductField($variation, 'packaging'),
-                'pack_content_qty' => $numericField($variation, 'pack_content_qty', true),
-                'pack_content_unit' => optionalProductField($variation, 'pack_content_unit'),
-                'price' => (float) $variationPrice,
-                'barcode' => $variationBarcode,
-                'sku' => optionalProductField($variation, 'sku'),
-                'stock' => max(0, (int) ($variation['stock'] ?? 0)),
-                'is_default' => $index === 0 ? 1 : 0
-            ];
-        }
-
-        if (count($variationPayloads) === 0) {
-            throw new InvalidArgumentException('Please add at least one grocery variation.');
-        }
-
-        $firstVariation = $variationPayloads[0];
-        $variantFlavor = $firstVariation['variant_name'];
-        $sizeValue = $firstVariation['size_value'];
-        $displaySize = $sizeValue;
-        $weightVolumeValue = $firstVariation['weight_value'];
-        $weightVolumeUnit = $firstVariation['weight_unit'];
-        $packaging = $firstVariation['packaging'];
-        $price = $firstVariation['price'];
-        $strengthValue = null;
-        $strengthUnit = null;
-        $volumeValue = null;
-        $volumeUnit = null;
-        $strengthSizeValue = null;
     }
+
+    if (count($variationPayloads) === 0) {
+        throw new InvalidArgumentException('Please add at least one product variation.');
+    }
+
+    if (!array_filter($variationPayloads, static fn($variation) => (int) $variation['is_default'] === 1)) {
+        $variationPayloads[0]['is_default'] = 1;
+    }
+
+    $firstVariation = array_values(array_filter($variationPayloads, static fn($variation) => (int) $variation['is_default'] === 1))[0] ?? $variationPayloads[0];
+    $variantFlavor = $firstVariation['variant_name'];
+    $sizeValue = $firstVariation['size_value'];
+    $displaySize = $sizeValue;
+    $weightVolumeValue = $firstVariation['weight_value'];
+    $weightVolumeUnit = $firstVariation['weight_unit'];
+    $packaging = $firstVariation['packaging'];
+    $productUnit = $firstVariation['unit'] ?? $productUnit;
+    $price = $firstVariation['price'];
+    $strengthValue = $firstVariation['strength_value'];
+    $strengthUnit = $firstVariation['strength_unit'];
+    $volumeValue = $firstVariation['volume_value'];
+    $volumeUnit = $firstVariation['volume_unit'];
+    $strengthSizeValue = $strengthValue ?? $volumeValue ?? $displaySize ?? optionalProductField($payload, 'strength_size_value');
 
     $barcode = trim((string) ($payload['barcode'] ?? ''));
     if ($categoryName === 'Grocery' && isset($variationPayloads[0]['barcode'])) {
@@ -258,11 +245,13 @@ try {
         ':product_name' => $productName,
         ':generic_name_match' => $genericName ?? ''
     ]);
-    $mainProductId = (int) $mainProductStatement->fetchColumn();
+    $mainProductId = cleanId($mainProductStatement->fetchColumn());
 
-    if ($mainProductId > 0) {
+    if ($mainProductId !== '') {
+        $lastVariationId = null;
         $variationStatement = $pdo->prepare(
             'INSERT INTO product_variations (
+                variation_id,
                 product_id,
                 variant_name,
                 strength_value,
@@ -283,6 +272,7 @@ try {
                 is_default,
                 stock
              ) VALUES (
+                :variation_id,
                 :product_id,
                 :variant_name,
                 :strength_value,
@@ -305,7 +295,9 @@ try {
              )'
         );
         foreach ($variationPayloads as $variation) {
+            $lastVariationId = newUuid($pdo);
             $variationStatement->execute([
+                ':variation_id' => $lastVariationId,
                 ':product_id' => $mainProductId,
                 ':variant_name' => $variation['variant_name'],
                 ':strength_value' => $variation['strength_value'],
@@ -334,7 +326,7 @@ try {
             'status' => 'success',
             'message' => 'Product variation added successfully.',
             'product_id' => $mainProductId,
-            'variation_id' => (int) $pdo->lastInsertId()
+            'variation_id' => $lastVariationId
         ]);
         exit();
     }
@@ -357,9 +349,9 @@ try {
         ':generic_name_match' => $genericName ?? ''
     ]);
 
-    $existingProductId = (int) $existingProductStatement->fetchColumn();
+    $existingProductId = cleanId($existingProductStatement->fetchColumn());
 
-    if ($existingProductId > 0) {
+    if ($existingProductId !== '') {
         $supplierProductStatement = $pdo->prepare(
             'INSERT IGNORE INTO supplier_products (supplier_id, product_id)
              VALUES (:supplier_id, :product_id)'
@@ -379,16 +371,20 @@ try {
         exit();
     }
 
+    $productId = newUuid($pdo);
+    array_unshift($columns, 'product_id');
+    $values = [':product_id' => $productId] + $values;
+    $placeholders = array_keys($values);
+
     $productStatement = $pdo->prepare(
         'INSERT INTO product (' . implode(', ', $columns) . ')
          VALUES (' . implode(', ', $placeholders) . ')'
     );
     $productStatement->execute($values);
 
-    $productId = (int) $pdo->lastInsertId();
-
     $variationStatement = $pdo->prepare(
         'INSERT INTO product_variations (
+            variation_id,
             product_id,
             variant_name,
             strength_value,
@@ -409,6 +405,7 @@ try {
             is_default,
             stock
          ) VALUES (
+            :variation_id,
             :product_id,
             :variant_name,
             :strength_value,
@@ -432,6 +429,7 @@ try {
     );
     foreach ($variationPayloads as $variation) {
         $variationStatement->execute([
+            ':variation_id' => newUuid($pdo),
             ':product_id' => $productId,
             ':variant_name' => $variation['variant_name'],
             ':strength_value' => $variation['strength_value'],
@@ -484,5 +482,26 @@ try {
 
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to add product.']);
+}
+
+function ensureMeasurementUnitId(PDO $pdo, ?string $unitName): string
+{
+    $cleanUnit = trim((string) ($unitName ?? ''));
+    if ($cleanUnit === '') {
+        $cleanUnit = 'pcs';
+    }
+
+    $unitIdColumn = getMeasurementUnitIdColumn($pdo);
+    $select = $pdo->prepare("SELECT {$unitIdColumn} FROM product_measurement_units WHERE LOWER(unit_name) = LOWER(:unit_name) LIMIT 1");
+    $select->execute([':unit_name' => $cleanUnit]);
+    $existingId = cleanId($select->fetchColumn());
+    if ($existingId !== '') {
+        return $existingId;
+    }
+
+    $measurementUnitId = newUuid($pdo);
+    $insert = $pdo->prepare('INSERT INTO product_measurement_units (measurement_unit_id, unit_name) VALUES (:measurement_unit_id, :unit_name)');
+    $insert->execute([':measurement_unit_id' => $measurementUnitId, ':unit_name' => $cleanUnit]);
+    return $measurementUnitId;
 }
 ?>

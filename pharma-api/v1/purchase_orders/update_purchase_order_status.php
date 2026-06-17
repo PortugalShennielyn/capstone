@@ -18,10 +18,10 @@ if (!is_array($payload)) {
 try {
     ensurePurchaseOrderSchema($pdo);
 
-    $poId = (int) ($payload['po_id'] ?? 0);
+    $poId = cleanId($payload['po_id'] ?? null);
     $status = trim((string) ($payload['status'] ?? ''));
 
-    if ($poId <= 0) {
+    if ($poId === '') {
         throw new InvalidArgumentException('Purchase order id is required.');
     }
 

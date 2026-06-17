@@ -18,34 +18,40 @@ if (!is_array($payload)) {
 try {
     ensureProductCategorySchema($pdo);
 
-    $categoryId = isset($payload['category_id']) ? (int) $payload['category_id'] : 0;
+    $categoryId = cleanId($payload['category_id'] ?? null);
     $typeName = requiredProductField($payload, 'type_name');
 
-    if ($categoryId <= 0) {
+    if ($categoryId === '') {
         throw new InvalidArgumentException('A valid category is required.');
     }
 
     $categoryCheck = $pdo->prepare('SELECT category_id FROM product_categories WHERE category_id = :category_id LIMIT 1');
     $categoryCheck->execute([':category_id' => $categoryId]);
-    if ((int) $categoryCheck->fetchColumn() <= 0) {
+    if (cleanId($categoryCheck->fetchColumn()) === '') {
         throw new InvalidArgumentException('A valid category is required.');
     }
 
     $statement = $pdo->prepare(
-        'INSERT INTO product_types (category_id, type_name)
-         VALUES (:category_id, :type_name)
-         ON DUPLICATE KEY UPDATE category_id = VALUES(category_id), type_id = LAST_INSERT_ID(type_id)'
+        'INSERT INTO product_types (type_id, category_id, type_name)
+         VALUES (:type_id, :category_id, :type_name)
+         ON DUPLICATE KEY UPDATE category_id = VALUES(category_id), type_name = VALUES(type_name)'
     );
+    $typeId = newUuid($pdo);
     $statement->execute([
+        ':type_id' => $typeId,
         ':category_id' => $categoryId,
         ':type_name' => $typeName
     ]);
+
+    $select = $pdo->prepare('SELECT type_id FROM product_types WHERE type_name = :type_name LIMIT 1');
+    $select->execute([':type_name' => $typeName]);
+    $typeId = cleanId($select->fetchColumn()) ?: $typeId;
 
     echo json_encode([
         'status' => 'success',
         'message' => 'Product type saved successfully.',
         'type' => [
-            'type_id' => (int) $pdo->lastInsertId(),
+            'type_id' => $typeId,
             'category_id' => $categoryId,
             'type_name' => $typeName
         ]

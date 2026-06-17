@@ -1,11 +1,11 @@
 const base = {
     text: [],
-    strengthUnits: ['mcg', 'mg', 'g', 'IU'],
-    syrupStrengthUnits: ['mg/5mL', 'mg/mL'],
-    volumeUnits: ['mL', 'L', 'oz'],
-    weightUnits: ['g', 'kg', 'oz'],
-    packContentUnits: ['pcs', 'tablets', 'capsules', 'bottles', 'sachets', 'cans', 'packs', 'tubes', 'vials', 'ampules', 'strips'],
-    packageTypes: ['Pack', 'Jumbo Pack', 'Box', 'Bottle', 'Can', 'Sachet', 'Carton', 'Pouch', 'Blister Pack', 'Blister', 'Strip', 'Tube', 'Jar', 'Ampule', 'Vial', 'Dropper', 'Canister']
+    strengthUnits: ['mg', 'mcg', 'g', 'IU', 'mg/mL', 'mg/5mL', '%'],
+    syrupStrengthUnits: ['mg/5mL', 'mg/mL', '%'],
+    volumeUnits: ['mL', 'L', 'cc'],
+    weightUnits: ['g', 'kg', 'oz', 'lb'],
+    packContentUnits: ['pcs', 'tablets', 'capsules', 'bottles', 'sachets', 'cans', 'packs', 'tubes', 'vials', 'ampules', 'strips', 'g', 'kg', 'oz', 'lb', 'mL', 'L', 'cc'],
+    packageTypes: ['tablet', 'capsule', 'sachet', 'tube', 'vial', 'ampule', 'bottle', 'box', 'pack', 'can', 'jar', 'roll', 'strip', 'blister pack', 'plastic pack', 'carton', 'pouch']
 };
 
 const RULES = {
@@ -16,32 +16,32 @@ const RULES = {
             sizeOptions: ['Small', 'Medium', 'Large', 'Family Size'],
             weightValues: ['20', '50', '100', '150', '200', '250'],
             weightUnits: base.weightUnits,
-            packagingOptions: ['Pack', 'Box']
+            packagingOptions: ['pack', 'box']
         },
         'baby care': {
             fields: ['variant', 'size', 'packaging', 'packContent'],
             variantLabel: 'Variant / Feature',
-            variantOptions: ['Dry', 'Ultra Dry', 'Ultra-cushy', 'Sensitive', 'Overnight', 'Premium Care', 'Active Baby', 'Extra Soft', 'Aloe', 'Unscented'],
-            sizeOptions: ['Newborn', 'Small', 'Medium', 'Large', 'XL', 'XXL', 'Jumbo'],
-            packagingOptions: ['Pack', 'Jumbo Pack', 'Box'],
-            packContentValues: ['10', '20', '30', '40', '50', '60', '80', '100', '120'],
+            variantOptions: ['Sensitive', 'Ultra Dry', 'Ultra Soft', 'Overnight', 'Extra Absorbent'],
+            sizeOptions: ['NB', 'S', 'M', 'L', 'XL', 'XXL'],
+            packagingOptions: ['pack', 'box'],
+            packContentValues: ['12', '24', '36', '48'],
             packContentUnits: ['pcs']
         },
         beverage: {
             fields: ['variant', 'volume', 'packaging'],
             variantLabel: 'Flavor',
             variantOptions: ['Original', 'Orange', 'Apple', 'Grape', 'Lemon', 'Mango', 'Strawberry', 'Chocolate', 'Vanilla', 'Coffee', 'Mocha'],
-            volumeValues: ['150', '180', '200', '250', '300', '330', '500', '750', '1000', '1500', '2000'],
+            volumeValues: ['250', '500', '1', '1.5'],
             volumeUnits: base.volumeUnits,
-            packagingOptions: ['Bottle', 'Can', 'Sachet', 'Box', 'Carton']
+            packagingOptions: ['bottle', 'can', 'sachet', 'box', 'carton']
         },
         'canned goods': {
             fields: ['variant', 'weight', 'packaging'],
-            variantLabel: 'Flavor / Variant',
+            variantLabel: 'Flavor',
             variantOptions: ['Adobo', 'Menudo', 'Hot & Spicy', 'Caldereta', 'Afritada', 'Flakes in Oil', 'Spicy', 'Original', 'Sweet & Spicy', 'Garlic'],
-            weightValues: ['50', '80', '90', '100', '120', '155', '175', '180', '200', '250', '300'],
+            weightValues: ['100', '175', '200'],
             weightUnits: base.weightUnits,
-            packagingOptions: ['Can', 'Pouch']
+            packagingOptions: ['can', 'pouch']
         },
         dairy: {
             fields: ['variant', 'size', 'volume'],
@@ -59,7 +59,7 @@ const RULES = {
             sizeOptions: ['Small', 'Medium', 'Large', 'Family Size'],
             weightValues: ['20', '30', '50', '80', '100', '150', '200'],
             weightUnits: ['g', 'oz'],
-            packagingOptions: ['Pack', 'Box']
+            packagingOptions: ['pack', 'box']
         },
         'personal care': {
             fields: ['variant', 'size', 'volume', 'packaging'],
@@ -69,7 +69,7 @@ const RULES = {
             sizeOptions: ['Sensitive', 'Anti-bacterial', 'Whitening', 'Moisturizing'],
             volumeValues: ['50', '100', '150', '200', '250', '500', '1000'],
             volumeUnits: ['mL'],
-            packagingOptions: ['Bottle', 'Sachet', 'Tube']
+            packagingOptions: ['bottle', 'sachet', 'tube']
         },
         'hygiene product': {
             alias: 'personal care'
@@ -95,57 +95,59 @@ const RULES = {
             variantOptions: ['Original', 'Spicy', 'Sweet', 'Garlic', 'Chili', 'Soy', 'Vinegar', 'Tomato'],
             volumeValues: ['100', '150', '250', '350', '500', '750', '1000'],
             volumeUnits: ['mL', 'L'],
-            packagingOptions: ['Bottle', 'Sachet', 'Pouch']
+            packagingOptions: ['bottle', 'sachet', 'pouch']
         }
     },
     medicine: {
         default: {
-            fields: ['strength', 'form', 'packaging', 'packContent'],
+            fields: ['strength', 'form', 'packContent'],
             strengthUnits: base.strengthUnits,
-            packagingOptions: ['Blister Pack', 'Bottle', 'Box', 'Strip'],
+            packagingOptions: ['blister pack', 'bottle', 'box', 'strip'],
             packContentValues: ['6', '10', '12', '20', '30', '50', '100'],
             packContentUnits: ['tablets']
         },
         tablet: {
-            fields: ['strength', 'form', 'packaging', 'packContent'],
-            formValue: 'Tablet',
+            fields: ['strength', 'form', 'packContent'],
+            formValue: 'tablet',
             strengthUnits: base.strengthUnits,
-            packagingOptions: ['Blister Pack', 'Bottle', 'Box', 'Strip'],
+            packagingOptions: ['blister pack', 'bottle', 'box', 'strip'],
             packContentValues: ['6', '10', '12', '20', '30', '50', '100'],
             packContentUnits: ['tablets']
         },
         capsule: {
-            fields: ['strength', 'form', 'packaging', 'packContent'],
-            formValue: 'Capsule',
+            fields: ['strength', 'form', 'packContent'],
+            formValue: 'capsule',
             strengthUnits: base.strengthUnits,
-            packagingOptions: ['Blister', 'Bottle'],
+            packagingOptions: ['blister pack', 'bottle'],
             packContentValues: ['6', '10', '12', '20', '30', '50', '100'],
             packContentUnits: ['capsules']
         },
         syrup: {
-            fields: ['variant', 'strength', 'volume', 'packaging'],
+            fields: ['variant', 'strength', 'volume', 'form'],
             variantLabel: 'Flavor',
             variantOptions: ['Orange', 'Strawberry', 'Grape', 'Bubblegum'],
             strengthUnits: base.syrupStrengthUnits,
             volumeValues: ['30', '60', '90', '120', '150', '200'],
             volumeUnits: ['mL'],
-            packagingOptions: ['Bottle']
+            formValue: 'bottle'
         },
         suspension: {
             alias: 'syrup'
         },
+        solution: {
+            alias: 'syrup'
+        },
         drops: {
-            fields: ['volume', 'packaging'],
+            fields: ['volume', 'form'],
             volumeValues: ['5', '10', '15'],
             volumeUnits: ['mL'],
-            packagingOptions: ['Bottle', 'Dropper']
+            formValue: 'bottle'
         },
         cream: {
-            fields: ['weight', 'form', 'packaging'],
-            formValue: 'Cream',
+            fields: ['weight', 'form'],
+            formValue: 'tube',
             weightValues: ['5', '10', '15', '20', '30', '50', '100'],
-            weightUnits: ['g', 'mL'],
-            packagingOptions: ['Tube', 'Jar']
+            weightUnits: ['g']
         },
         gel: {
             alias: 'cream'
@@ -157,37 +159,51 @@ const RULES = {
             alias: 'cream'
         },
         injection: {
-            fields: ['strength', 'volume', 'form', 'packaging'],
-            formValue: 'Injection',
+            fields: ['strength', 'volume', 'form'],
+            formValue: 'vial',
             strengthUnits: base.strengthUnits,
             volumeValues: ['1', '2', '5', '10', '20'],
             volumeUnits: ['mL'],
-            packagingOptions: ['Ampule', 'Vial']
+            packagingOptions: ['ampule', 'vial']
         },
         inhaler: {
-            fields: ['volume', 'packaging'],
+            fields: ['volume', 'form'],
             volumeValues: ['100', '200'],
             volumeUnits: ['mL'],
-            packagingOptions: ['Canister']
+            formValue: 'bottle'
         },
         nebulizer: {
             alias: 'inhaler'
         },
         powder: {
-            fields: ['weight', 'packaging'],
+            fields: ['weight', 'form'],
             weightValues: ['1', '5', '10', '15', '20'],
             weightUnits: ['g'],
-            packagingOptions: ['Sachet', 'Box']
+            formValue: 'sachet'
         },
         sachet: {
             alias: 'powder'
+        },
+        patch: {
+            fields: ['strength', 'form', 'packContent'],
+            formValue: 'pack',
+            strengthUnits: base.strengthUnits,
+            packContentValues: ['1', '3', '5', '10'],
+            packContentUnits: ['pcs']
+        },
+        suppository: {
+            fields: ['strength', 'form', 'packContent'],
+            formValue: 'strip',
+            strengthUnits: base.strengthUnits,
+            packContentValues: ['6', '10', '12'],
+            packContentUnits: ['pcs']
         },
         'first aid': {
             fields: ['size', 'volume', 'packaging'],
             sizeOptions: ['Small', 'Medium', 'Large', 'Roll', 'Pad', 'Bottle'],
             volumeValues: ['50', '100', '250', '500', '1000'],
             volumeUnits: ['mL'],
-            packagingOptions: ['Pack', 'Box', 'Bottle', 'Roll']
+            packagingOptions: ['pack', 'box', 'bottle', 'roll']
         },
         'medical supply': {
             alias: 'first aid'
