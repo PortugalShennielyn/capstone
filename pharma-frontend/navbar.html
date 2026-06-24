@@ -1,10 +1,10 @@
 <aside class="app-sidebar sidebar" id="sidebar">
-    <a href="dashboard.html" class="sidebar-brand" aria-label="Dr. R Pharmacy dashboard">
+    <a href="dashboard.html" class="sidebar-brand" aria-label="Dr. R Pharmacy dashboard" data-dashboard-view="dashboard">
         <span class="brand-mark"><i class="fa-solid fa-prescription-bottle-medical"></i></span>
     </a>
 
     <nav class="sidebar-nav" aria-label="Main navigation">
-        <a href="dashboard.html" class="nav-link-item" data-nav-page="dashboard" title="Dashboard">
+        <a href="dashboard.html" class="nav-link-item" data-nav-page="dashboard" data-dashboard-view="dashboard" title="Dashboard">
             <i class="fa-solid fa-gauge-high"></i>
             <span class="nav-label">Dashboard</span>
         </a>
@@ -15,15 +15,15 @@
             <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
         </a>
         <div class="collapse" id="masterFilesCollapse">
-            <a href="products.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="products" title="Products">
+            <a href="products.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="products" data-dashboard-view="dashboard/products" title="Products">
                 <i class="fa-solid fa-boxes"></i>
                 <span class="nav-label">Products</span>
             </a>
-            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" title="Inventory">
+            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" data-dashboard-view="dashboard/inventory" title="Inventory">
                 <i class="fa-solid fa-warehouse"></i>
                 <span class="nav-label">Inventory</span>
             </a>
-            <a href="supplier.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supplier" title="Suppliers">
+            <a href="supplier.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supplier" data-dashboard-view="dashboard/suppliers" title="Suppliers">
                 <i class="fa-solid fa-handshake-simple"></i>
                 <span class="nav-label">Suppliers</span>
             </a>
@@ -35,44 +35,68 @@
             <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
         </a>
         <div class="collapse" id="transactionsCollapse">
-            <a href="pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="pos" title="POS">
+            <a href="pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="pos" data-dashboard-view="dashboard/pos" title="POS">
                 <i class="fa-solid fa-cash-register"></i>
                 <span class="nav-label">POS</span>
             </a>
-            <a href="clerk.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="clerk" title="Salesclerk">
+            <a href="clerk.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="clerk" data-dashboard-view="dashboard/clerk" title="Salesclerk">
                 <i class="fa-solid fa-user-tie"></i>
                 <span class="nav-label">Salesclerk</span>
             </a>
         </div>
 
-        <a href="purchase_orders.html" class="nav-link-item" data-nav-page="purchase-orders" title="Purchase Orders">
+        <a href="purchase_orders.html" class="nav-link-item" data-nav-page="purchase-orders" data-dashboard-view="dashboard/purchase-orders" title="Purchase Orders">
             <i class="fa-solid fa-file-invoice-dollar"></i>
             <span class="nav-label">Purchase Orders</span>
         </a>
-        <a href="pending_orders.html" class="nav-link-item" data-nav-page="pending-orders" title="Pending Orders">
+        <a href="pending_orders.html" class="nav-link-item" data-nav-page="pending-orders" data-dashboard-view="dashboard/pending-orders" title="Pending Orders">
             <i class="fa-solid fa-clipboard-check"></i>
             <span class="nav-label">Pending Orders</span>
         </a>
-        <a href="return_damage.html" class="nav-link-item" data-nav-page="return-damage" title="Return/Damage">
+        <a href="return_damage.html" class="nav-link-item" data-nav-page="return-damage" data-dashboard-view="dashboard/return-damage" title="Return/Damage">
             <i class="fa-solid fa-triangle-exclamation"></i>
             <span class="nav-label">Return/Damage</span>
         </a>
-        <a href="expiry_monitoring.html" class="nav-link-item" data-nav-page="expiry-monitoring" title="Expiry Monitoring">
+        <a href="expiry_monitoring.html" class="nav-link-item" data-nav-page="expiry-monitoring" data-dashboard-view="dashboard/expiry-monitoring" title="Expiry Monitoring">
             <i class="fa-solid fa-hourglass-half"></i>
             <span class="nav-label">Expiry Monitoring</span>
         </a>
-        <a href="#" class="nav-link-item" data-nav-page="settings" title="Settings">
+        <a href="dashboard.html#dashboard/settings" class="nav-link-item" data-nav-page="settings" data-dashboard-view="dashboard/settings" title="Tenant Settings">
             <i class="fa-solid fa-gear"></i>
             <span class="nav-label">Settings</span>
         </a>
     </nav>
 
-    <div class="sidebar-profile-footer d-flex align-items-center justify-content-between" role="group" aria-label="User profile">
-        <div class="d-flex align-items-center gap-2">
+    <div class="sidebar-profile-footer" role="group" aria-label="User profile">
+        <button class="sidebar-user-trigger" type="button" id="sidebarUserMenuButton" aria-expanded="false" aria-controls="sidebarUserPopover" title="User actions">
             <div class="avatar-initials">DA</div>
             <span class="profile-name">Dr. ADMIN</span>
+        </button>
+        <button class="signout-btn sidebar-user-menu-toggle" type="button" aria-label="Open user actions" title="User actions">
+            <i class="fa-solid fa-ellipsis-vertical"></i>
+        </button>
+        <div class="sidebar-user-popover" id="sidebarUserPopover" role="menu" aria-labelledby="sidebarUserMenuButton">
+            <div class="sidebar-user-summary">
+                <div class="avatar-initials">DA</div>
+                <div>
+                    <strong>Dr. ADMIN</strong>
+                    <span>Admin account</span>
+                </div>
+            </div>
+            <a href="dashboard.html#dashboard/user/settings" class="sidebar-user-action" data-nav-page="user-settings" data-dashboard-view="dashboard/user/settings" role="menuitem">
+                <i class="fa-solid fa-user-gear"></i>
+                <span>User Settings</span>
+            </a>
+            <a href="dashboard.html#dashboard/billing" class="sidebar-user-action" data-nav-page="billing" data-dashboard-view="dashboard/billing" role="menuitem">
+                <i class="fa-solid fa-credit-card"></i>
+                <span>Billing</span>
+            </a>
+            <a href="logout.php" class="sidebar-user-action sidebar-user-action-danger" role="menuitem">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span>Sign out</span>
+            </a>
         </div>
-        <a class="signout-btn" href="logout.php" title="Sign out">
+        <a class="signout-btn sidebar-signout-direct" href="logout.php" title="Sign out" aria-label="Sign out">
             <i class="fa-solid fa-right-from-bracket"></i>
         </a>
     </div>

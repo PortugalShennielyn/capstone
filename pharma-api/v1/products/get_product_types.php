@@ -5,8 +5,6 @@ require_once 'product_category_schema.php';
 $categoryId = cleanId($_GET['category_id'] ?? null);
 
 try {
-    ensureProductCategorySchema($pdo);
-
     echo json_encode([
         'status' => 'success',
         'types' => $categoryId !== '' ? getProductTypesByCategory($pdo, $categoryId) : getAllProductTypes($pdo)

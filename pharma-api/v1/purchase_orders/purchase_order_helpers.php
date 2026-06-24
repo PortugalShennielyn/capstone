@@ -19,7 +19,6 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS packaging_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price_snapshot DECIMAL(12,2) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS variation_id CHAR(36) NULL AFTER product_id");
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS supplier_products (
             supplier_product_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
@@ -157,13 +156,12 @@ function validatePurchaseOrderItems(array $items): void
     }
 
     foreach ($items as $item) {
-        if (idIsMissing($item['product_id'] ?? null) || (int) ($item['quantity'] ?? 0) <= 0) {
+        $purchaseQty = (int) ($item['purchase_qty'] ?? $item['quantity'] ?? 0);
+        $unitsPerPurchaseUnit = (int) ($item['units_per_purchase_unit'] ?? 1);
+        if (idIsMissing($item['product_id'] ?? null) || $purchaseQty <= 0 || $unitsPerPurchaseUnit <= 0) {
             throw new InvalidArgumentException('Each purchase-order item must have a valid product and quantity.');
         }
 
-        if (idIsMissing($item['variation_id'] ?? null)) {
-            throw new InvalidArgumentException('Each purchase-order item must include a selected product variation.');
-        }
     }
 }
 
@@ -203,6 +201,23 @@ function cleanSnapshotPrice(array $item): ?float
     return (float) $item['price'];
 }
 
+function purchaseOrderQuantityParams(array $item): array
+{
+    $purchaseQty = max(1, (int) ($item['purchase_qty'] ?? $item['quantity'] ?? 1));
+    $unitsPerPurchaseUnit = max(1, (int) ($item['units_per_purchase_unit'] ?? 1));
+    $inventoryQtyOrdered = max(1, (int) ($item['inventory_qty_ordered'] ?? ($purchaseQty * $unitsPerPurchaseUnit)));
+    $unitPrice = cleanSnapshotPrice($item) ?? 0.0;
+
+    return [
+        ':quantity' => $inventoryQtyOrdered,
+        ':purchase_qty' => $purchaseQty,
+        ':purchase_unit_snapshot' => cleanSnapshotText($item, 'purchase_unit') ?: cleanSnapshotText($item, 'unit'),
+        ':units_per_purchase_unit_snapshot' => $unitsPerPurchaseUnit,
+        ':inventory_qty_ordered' => $inventoryQtyOrdered,
+        ':line_total' => $inventoryQtyOrdered * $unitPrice
+    ];
+}
+
 function purchaseOrderItemSnapshotParams(array $item): array
 {
     return [
@@ -220,28 +235,91 @@ function purchaseOrderItemSnapshotParams(array $item): array
     ];
 }
 
-function validateProductsForSupplier(PDO $pdo, int $supplierId, array $items): void
+function validateProductsForSupplier(PDO $pdo, string $supplierId, array $items): void
 {
     $statement = $pdo->prepare(
         'SELECT COUNT(*)
          FROM supplier_products sp
-         INNER JOIN product_variations pv ON pv.product_id = sp.product_id
          WHERE sp.product_id = :product_id
-           AND sp.supplier_id = :supplier_id
-           AND pv.variation_id = :variation_id'
+           AND sp.supplier_id = :supplier_id'
     );
 
     foreach ($items as $item) {
         $statement->execute([
             ':product_id' => cleanId($item['product_id']),
-            ':supplier_id' => $supplierId,
-            ':variation_id' => cleanId($item['variation_id'] ?? null)
+            ':supplier_id' => $supplierId
         ]);
 
         if ((int) $statement->fetchColumn() !== 1) {
-            throw new InvalidArgumentException('A purchase-order item variation is not assigned to the selected supplier.');
+            throw new InvalidArgumentException('A purchase-order item is not assigned to the selected supplier.');
         }
     }
+}
+
+function supplierProductSetupByProduct(PDO $pdo, string $supplierId, array $items): array
+{
+    $productIds = array_values(array_unique(array_filter(array_map(
+        static fn($item) => cleanId($item['product_id'] ?? null),
+        $items
+    ))));
+
+    if (count($productIds) === 0) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+    $statement = $pdo->prepare(
+        "SELECT
+            sp.product_id,
+            sp.supplier_cost_price,
+            COALESCE(NULLIF(sp.purchase_unit, ''), gd.package_type, md.package_type, md.dosage_form, 'pcs') AS purchase_unit,
+            CASE
+                WHEN COALESCE(sp.units_per_purchase_unit, 1) > 1 THEN sp.units_per_purchase_unit
+                WHEN gd.pack_content REGEXP '^[0-9]+' THEN GREATEST(CAST(SUBSTRING_INDEX(gd.pack_content, ' ', 1) AS UNSIGNED), 1)
+                ELSE 1
+            END AS units_per_purchase_unit
+         FROM supplier_products sp
+         INNER JOIN product p ON p.product_id = sp.product_id
+         LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
+         WHERE sp.supplier_id = ?
+           AND sp.product_id IN ({$placeholders})"
+    );
+    $statement->execute(array_merge([$supplierId], $productIds));
+
+    $setup = [];
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $setup[cleanId($row['product_id'])] = $row;
+    }
+    return $setup;
+}
+
+function applySupplierProductSetup(PDO $pdo, string $supplierId, array $items): array
+{
+    $setupByProduct = supplierProductSetupByProduct($pdo, $supplierId, $items);
+    $hydratedItems = [];
+
+    foreach ($items as $item) {
+        $productId = cleanId($item['product_id'] ?? null);
+        $setup = $setupByProduct[$productId] ?? [];
+        $unitsPerPurchaseUnit = max(1, (int) ($item['units_per_purchase_unit'] ?? $setup['units_per_purchase_unit'] ?? 1));
+        $purchaseUnit = preg_replace('/^by\s+/i', '', trim((string) ($item['purchase_unit'] ?? $setup['purchase_unit'] ?? $item['unit'] ?? 'pcs')));
+        $supplierCost = $setup['supplier_cost_price'] ?? null;
+
+        $item['purchase_unit'] = $purchaseUnit !== '' ? $purchaseUnit : 'pcs';
+        $item['units_per_purchase_unit'] = $unitsPerPurchaseUnit;
+        if ($supplierCost !== null && $supplierCost !== '') {
+            $item['price'] = (float) $supplierCost;
+        }
+
+        $purchaseQty = max(1, (int) ($item['purchase_qty'] ?? $item['quantity'] ?? 1));
+        $item['purchase_qty'] = $purchaseQty;
+        $item['inventory_qty_ordered'] = $purchaseQty * $unitsPerPurchaseUnit;
+        $item['quantity'] = $item['inventory_qty_ordered'];
+        $hydratedItems[] = $item;
+    }
+
+    return $hydratedItems;
 }
 
 function updatePurchaseOrderStatus(PDO $pdo, string $poId, string $status, ?string $requiredCurrentStatus = null): void

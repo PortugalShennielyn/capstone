@@ -3,94 +3,89 @@ require_once '../../config/db_connection.php';
 require_once 'product_category_schema.php';
 
 try {
-    ensureProductCategorySchema($pdo);
-
     $stmt = $pdo->prepare(
         "SELECT
             p.product_id,
-            p.supplier_id,
+            p.barcode,
             p.category_id,
             p.type_id,
             p.brand_name,
             p.product_name,
-            p.generic_name,
-            p.image_url,
+            p.price,
             p.created_at,
             pc.category_name,
-            pt.type_name
+            pt.type_name,
+            md.generic_name,
+            md.strength,
+            md.dosage_form,
+            md.package_type AS medicine_package_type,
+            gd.variant,
+            gd.size,
+            gd.net_weight,
+            gd.package_type AS grocery_package_type,
+            gd.pack_content,
+            supplier_names.supplier_ids,
+            supplier_names.supplier_name,
+            COALESCE(inventory_stock.total_inventory_quantity, 0) AS total_inventory_quantity,
+            COALESCE(inventory_stock.available_stock, 0) AS available_stock,
+            inventory_stock.nearest_expiry_date,
+            COALESCE(selling_stock.selling_stock, 0) AS selling_stock
          FROM product p
          LEFT JOIN product_categories pc ON p.category_id = pc.category_id
          LEFT JOIN product_types pt ON p.type_id = pt.type_id
+         LEFT JOIN medicine_details md ON p.product_id = md.product_id
+         LEFT JOIN grocery_details gd ON p.product_id = gd.product_id
+         LEFT JOIN (
+            SELECT
+                sp.product_id,
+                GROUP_CONCAT(DISTINCT sp.supplier_id ORDER BY sp.supplier_id SEPARATOR ',') AS supplier_ids,
+                GROUP_CONCAT(DISTINCT s.supplier_name ORDER BY s.supplier_name SEPARATOR ', ') AS supplier_name
+            FROM supplier_products sp
+            LEFT JOIN suppliers s ON sp.supplier_id = s.supplier_id
+            GROUP BY sp.product_id
+         ) supplier_names ON supplier_names.product_id = p.product_id
+         LEFT JOIN (
+            SELECT
+                product_id,
+                SUM(quantity_stocked) AS total_inventory_quantity,
+                SUM(quantity_remaining) AS available_stock,
+                MIN(CASE WHEN quantity_remaining > 0 AND expiration_date IS NOT NULL THEN expiration_date END) AS nearest_expiry_date
+            FROM product_inventory
+            GROUP BY product_id
+         ) inventory_stock ON inventory_stock.product_id = p.product_id
+         LEFT JOIN (
+            SELECT pss.product_id, SUM(pss.quantity_remaining) AS selling_stock
+            FROM product_selling_stock pss
+            GROUP BY pss.product_id
+         ) selling_stock ON selling_stock.product_id = p.product_id
          ORDER BY p.product_id DESC"
     );
     $stmt->execute();
 
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (count($products) > 0) {
-        $productIds = array_map(static fn($row) => cleanId($row['product_id']), $products);
-        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
-        $variationStatement = $pdo->prepare(
-            "SELECT
-                pv.*,
-                COALESCE(stock.current_stock, 0) + COALESCE(legacy_stock.current_stock, 0) + COALESCE(pv.stock, 0) AS current_stock
-             FROM product_variations pv
-             LEFT JOIN (
-                SELECT variation_id, SUM(quantity_remaining) AS current_stock
-                FROM product_selling_stock
-                WHERE variation_id IS NOT NULL
-                GROUP BY variation_id
-             ) stock ON stock.variation_id = pv.variation_id
-             LEFT JOIN (
-                SELECT product_id, SUM(quantity_remaining) AS current_stock
-                FROM product_selling_stock
-                WHERE variation_id IS NULL
-                GROUP BY product_id
-             ) legacy_stock ON legacy_stock.product_id = pv.product_id
-                AND pv.variation_id = (
-                    SELECT first_pv.variation_id
-                    FROM product_variations first_pv
-                    WHERE first_pv.product_id = pv.product_id
-                    ORDER BY first_pv.is_default DESC, first_pv.variation_id ASC
-                    LIMIT 1
-                )
-             WHERE pv.product_id IN ({$placeholders})
-             ORDER BY pv.product_id ASC, pv.is_default DESC, pv.variation_id ASC"
-        );
-        $variationStatement->execute($productIds);
-
-        $variationsByProduct = [];
-        foreach ($variationStatement->fetchAll(PDO::FETCH_ASSOC) as $variation) {
-            $variation['stock'] = (int) ($variation['current_stock'] ?? 0);
-            $variationsByProduct[cleanId($variation['product_id'])][] = $variation;
-        }
-
         foreach ($products as &$product) {
-            $variations = $variationsByProduct[cleanId($product['product_id'])] ?? [];
-            $defaultVariation = $variations[0] ?? [];
-            $product['variations'] = $variations;
-            $product['current_stock'] = array_sum(array_map(static fn($variation) => (int) ($variation['stock'] ?? 0), $variations));
-            $product['variation_id'] = $defaultVariation['variation_id'] ?? null;
-            $product['barcode'] = $defaultVariation['barcode'] ?? '';
-            $product['price'] = $defaultVariation['price'] ?? 0;
-            $product['product_unit'] = $defaultVariation['unit'] ?? '';
-            $product['measurement_unit_name'] = $defaultVariation['unit'] ?? '';
-            $product['unit'] = $defaultVariation['unit'] ?? '';
-            $product['strength_size_value'] = $defaultVariation['strength_value'] ?? '';
-            $product['strength_value'] = $defaultVariation['strength_value'] ?? '';
-            $product['strength_unit'] = $defaultVariation['strength_unit'] ?? '';
-            $product['volume_value'] = $defaultVariation['volume_value'] ?? '';
-            $product['volume_unit'] = $defaultVariation['volume_unit'] ?? '';
-            $product['variant_flavor'] = $defaultVariation['variant_name'] ?? '';
-            $product['size_value'] = $defaultVariation['size_value'] ?? '';
-            $product['display_size'] = $defaultVariation['size_value'] ?? '';
-            $product['weight_volume_value'] = $defaultVariation['weight_value'] ?? '';
-            $product['weight_volume_unit'] = $defaultVariation['weight_unit'] ?? '';
-            $product['packaging'] = $defaultVariation['packaging'] ?? '';
-            $product['packaging_size'] = $defaultVariation['size_value'] ?? '';
-            $product['strength_size_display'] = trim(implode(' ', array_filter([
-                $defaultVariation['strength_value'] ?? '',
-                $defaultVariation['strength_unit'] ?? ''
-            ])));
+            $product['variations'] = [];
+            $product['available_stock'] = (int) ($product['available_stock'] ?? 0);
+            $product['selling_stock'] = (int) ($product['selling_stock'] ?? 0);
+            $product['total_inventory_quantity'] = (int) ($product['total_inventory_quantity'] ?? 0);
+            $product['current_stock'] = $product['selling_stock'];
+            $product['damaged_returned_stock'] = null;
+            $product['barcode'] = $product['barcode'] ?? '';
+            $product['price'] = $product['price'] ?? 0;
+            $product['strength_value'] = $product['strength'] ?? '';
+            $product['strength_size_value'] = $product['strength'] ?? '';
+            $product['strength_size_display'] = $product['strength'] ?? '';
+            $product['package_type'] = $product['medicine_package_type'] ?? ($product['grocery_package_type'] ?? '');
+            $product['variant_flavor'] = $product['variant'] ?? '';
+            $product['size_value'] = $product['size'] ?? '';
+            $product['display_size'] = $product['size'] ?? '';
+            $product['weight_volume_value'] = $product['net_weight'] ?? '';
+            $product['weight_volume_unit'] = '';
+            $product['packaging'] = '';
+            $product['packaging_size'] = $product['pack_content'] ?? '';
+            $product['pack_content_qty'] = '';
+            $product['pack_content_unit'] = $product['pack_content'] ?? '';
         }
         unset($product);
     }

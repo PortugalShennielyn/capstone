@@ -50,7 +50,11 @@ function setTheme(theme) {
 
 function formatDate(value) {
     if (!value) return 'Not set';
-    const date = new Date(String(value).replace(' ', 'T'));
+    const text = String(value);
+    const dateOnlyMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const date = dateOnlyMatch
+        ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+        : new Date(text.replace(' ', 'T'));
     return Number.isNaN(date.getTime())
         ? escapeHtml(value)
         : date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
@@ -65,6 +69,257 @@ function peso(value) {
         style: 'currency',
         currency: 'PHP'
     }).format(Number(value || 0));
+}
+
+function cleanText(value) {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return ['N/A', 'NA', 'NULL', 'NONE'].includes(text.toUpperCase()) ? '' : text;
+}
+
+function displayText(value) {
+    const text = cleanText(value);
+    return text.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function displayDetailText(value) {
+    const text = cleanText(value);
+    return /^[a-z]/.test(text) ? displayText(text) : text;
+}
+
+function compactMeasurement(value) {
+    return displayDetailText(value)
+        .replace(/(\d)\s+([a-zA-Z%]+)/g, '$1$2')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function removePrefix(value, prefix) {
+    const text = cleanText(value).replace(/^[\s-]+|[\s-]+$/g, '');
+    const label = cleanText(prefix);
+
+    if (!text || !label) return text;
+    if (text.toLowerCase() === label.toLowerCase()) return text;
+
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text
+        .replace(new RegExp(`^${escapedLabel}\\s*[-:]\\s*`, 'i'), '')
+        .replace(new RegExp(`^${escapedLabel}\\s+`, 'i'), '')
+        .trim() || text;
+}
+
+function removeBrandPrefix(productName, brandName) {
+    const product = cleanText(productName).replace(/^[\s-]+|[\s-]+$/g, '');
+    const brand = cleanText(brandName);
+
+    if (!product || !brand) return product;
+    if (product.toLowerCase() === brand.toLowerCase()) return product;
+
+    const escapedBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return product
+        .replace(new RegExp(`^${escapedBrand}\\s*[-:]\\s*`, 'i'), '')
+        .replace(new RegExp(`^${escapedBrand}\\s+`, 'i'), '')
+        .trim() || product;
+}
+
+function productDisplayParts(item) {
+    const brand = cleanText(item.brand_name);
+    const productName = cleanText(item.product_name);
+    const rawVariant = cleanText(item.variant_flavor);
+    const category = cleanText(item.category_name).toLowerCase();
+    const variant = category === 'grocery' && rawVariant.length <= 24 ? rawVariant : '';
+    const productLooksLikeBrand = productName && brand && !productName.toLowerCase().includes(brand.toLowerCase()) && !brand.toLowerCase().includes(productName.toLowerCase()) && !productName.includes(' ') && brand.includes(' ');
+    const productWithoutBrand = removeBrandPrefix(productName, brand);
+    const displayBrand = variant ? productName : (productLooksLikeBrand ? productName : brand);
+    const baseProduct = variant || (productLooksLikeBrand ? brand : productWithoutBrand) || productName;
+    const strength = compactMeasurement(item.strength_size_display || item.strength_size_value || item.strength || item.strength_value);
+    const netWeight = compactMeasurement(item.weight_volume_value);
+    const size = displayDetailText(item.size_display || item.size_value);
+    const identifier = category === 'medicine'
+        ? strength
+        : (category === 'grocery' ? (netWeight || size) : '');
+    const displayProduct = identifier && !baseProduct.toLowerCase().includes(identifier.toLowerCase())
+        ? `${baseProduct} ${identifier}`
+        : baseProduct;
+
+    return {
+        brand: displayBrand || brand,
+        product: removePrefix(displayProduct, displayBrand),
+        rawProduct: productName
+    };
+}
+
+function productDropdownLabel(product) {
+    const { rawProduct } = productDisplayParts(product);
+    const brand = poBrandName(product);
+    const productLabel = productCoreName(product);
+
+    return [brand, productLabel].filter(Boolean).join(' - ') || rawProduct || 'Unnamed product';
+}
+
+function productOptionDetail(product) {
+    const size = productSizeValue(product);
+    const packaging = productPackagingValue(product);
+    return [size, packaging].filter(Boolean).join(' \u2022 ');
+}
+
+function productCoreName(item) {
+    const brand = cleanText(item.brand_name);
+    const productName = cleanText(item.product_name);
+    const rawVariant = cleanText(item.variant_flavor);
+    const variant = rawVariant.length <= 24 ? rawVariant : '';
+    const tableName = cleanText(item.product_display_name);
+    const size = productSizeValue(item);
+    const swappedBrand = productName && brand && !productName.toLowerCase().includes(brand.toLowerCase()) && !brand.toLowerCase().includes(productName.toLowerCase()) && !productName.includes(' ') && brand.includes(' ');
+    const rawProduct = swappedBrand ? brand : removeBrandPrefix(productName, brand);
+    let name = rawProduct;
+
+    if (variant && !name.toLowerCase().includes(variant.toLowerCase())) {
+        name = [name, variant].filter(Boolean).join(' ');
+    }
+
+    if (!name) name = tableName || rawProduct || cleanText(item.product_name);
+    if (size) {
+        const escapedSize = size.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        name = name.replace(new RegExp(`\\s*${escapedSize}\\s*$`, 'i'), '').trim();
+    }
+
+    return name || tableName || cleanText(item.product_name);
+}
+
+function poBrandName(item) {
+    const brand = cleanText(item.brand_display_name || item.brand_name);
+    const productName = cleanText(item.product_name);
+    const swappedBrand = productName && brand && !productName.toLowerCase().includes(brand.toLowerCase()) && !brand.toLowerCase().includes(productName.toLowerCase()) && !productName.includes(' ') && brand.includes(' ');
+    return swappedBrand ? productName : brand;
+}
+
+function productSizeValue(item) {
+    const category = cleanText(item.category_name).toLowerCase();
+    if (category === 'grocery') {
+        return compactMeasurement(item.weight_volume_value || item.size_display || item.size_value);
+    }
+
+    return compactMeasurement(
+        item.strength_size_display
+        || item.strength_size_value
+        || item.strength_value
+        || item.size_display
+        || item.size_value
+        || sizeDisplayFromDetails(item)
+    );
+}
+
+function productPackagingValue(item) {
+    return displayDetailText(item.packaging || item.package_type);
+}
+
+function sameText(left, right) {
+    return cleanText(left).toLowerCase() === cleanText(right).toLowerCase();
+}
+
+function pluralizeUnit(unit, quantity = 2) {
+    const raw = cleanText(unit || 'pcs');
+    const lower = raw.toLowerCase();
+    const fixedUnits = {
+        pcs: 'pcs',
+        pc: 'pcs',
+        mg: 'mg',
+        mcg: 'mcg',
+        g: 'g',
+        kg: 'kg',
+        ml: 'mL',
+        l: 'L'
+    };
+    const text = fixedUnits[lower] || displayDetailText(raw);
+    if (Number(quantity) === 1) return text;
+    if (/s$/i.test(text)) return text;
+    if (/y$/i.test(text)) return text.replace(/y$/i, 'ies');
+    return `${text}s`;
+}
+
+function normalizePurchaseUnit(unit) {
+    const text = cleanText(unit).replace(/^by\s+/i, '').trim();
+    const lower = text.toLowerCase();
+    if (['pc', 'piece', 'pieces'].includes(lower)) return 'pcs';
+    return text;
+}
+
+function parsePackContent(value) {
+    const text = cleanText(value);
+    const match = text.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+    if (!match) {
+        return { quantity: 1, unit: '', label: text };
+    }
+
+    const quantity = Number(match[1]);
+    const unit = cleanText(match[2]);
+    return {
+        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        unit,
+        label: [match[1], unit].filter(Boolean).join(' ')
+    };
+}
+
+function purchaseUnitInfo(item) {
+    const suppliedUnit = normalizePurchaseUnit(item.purchase_unit);
+    const suppliedQty = Number(item.units_per_purchase_unit || item.purchase_unit_qty || 0);
+    const packaging = productPackagingValue(item) || 'Unit';
+    const supplierPackage = suppliedUnit || packaging || unitDisplayFromDetails(item) || 'Unit';
+    const pack = parsePackContent(item.pack_content || item.pack_content_unit || '');
+    const quantity = suppliedQty > 0 ? suppliedQty : (pack.quantity || 1);
+    const inventoryUnit = cleanText(item.unit) || unitDisplayFromDetails(item) || pack.unit || 'pcs';
+    const containerText = pluralizeUnit(inventoryUnit, quantity);
+    const packageText = displayText(supplierPackage);
+    const unitLabel = quantity > 1 ? `${packageText} (${quantity} ${containerText})` : packageText;
+    const conversion = `1 ${packageText} contains ${quantity} ${containerText}`;
+
+    return {
+        label: unitLabel || 'Unit',
+        conversion,
+        purchaseUnit: packageText,
+        quantity,
+        stockUnit: containerText,
+        packaging: displayText(packaging),
+        containsLabel: `${quantity} ${containerText}`
+    };
+}
+
+function productTableName(item) {
+    return cleanText(item.product_display_name) || productDisplayParts(item).product || cleanText(item.product_name);
+}
+
+function productTableBrand(item) {
+    return cleanText(item.brand_display_name) || productDisplayParts(item).brand || cleanText(item.brand_name);
+}
+
+function unitDisplayFromDetails(item) {
+    const category = cleanText(item.category_name).toLowerCase();
+    const dosageForm = cleanText(item.dosage_form);
+    const productUnit = cleanText(item.product_unit || item.unit || item.measurement_unit_name);
+    const pack = parsePackContent(item.pack_content || item.pack_content_unit || '');
+    const weightUnit = cleanText(item.weight_volume_unit) || cleanText(item.weight_volume_value).match(/[a-zA-Z%]+$/)?.[0] || '';
+    const volumeUnit = cleanText(item.volume_unit) || cleanText(item.volume_value).match(/[a-zA-Z%]+$/)?.[0] || '';
+    const strengthUnit = cleanText(item.strength_unit) || cleanText(item.strength_value).match(/[a-zA-Z%]+$/)?.[0] || '';
+
+    if (category === 'medicine' && /^(tablet|capsule|caplet)$/i.test(dosageForm)) {
+        return 'pcs';
+    }
+
+    if (category === 'medicine' && /\b(liquid|syrup|solution|suspension|drops)\b/i.test(dosageForm)) {
+        return volumeUnit || 'mL';
+    }
+
+    if (category === 'grocery') {
+        return pack.unit || weightUnit || volumeUnit || productUnit || 'pcs';
+    }
+
+    return displayText(productUnit || volumeUnit || strengthUnit || pack.unit || 'pcs');
+}
+
+function sizeDisplayFromDetails(item) {
+    const weight = [cleanText(item.weight_volume_value), cleanText(item.weight_volume_unit)].filter(Boolean).join(' ');
+    const volume = [cleanText(item.volume_value), cleanText(item.volume_unit)].filter(Boolean).join(' ');
+    return weight || volume || cleanText(item.size_value);
 }
 
 function statusBadge(status) {
@@ -96,53 +351,179 @@ function productDetailValue(item, field) {
     const isLiquid = /\b(liquid|syrup|solution|suspension|drops|betadine|povidone)\b/.test(medicineText);
 
     if (field === 'genericVariant') {
-        return isMedicine ? (item.generic_name || 'N/A') : (item.variant_flavor || 'N/A');
+        return isMedicine ? cleanText(item.generic_name) : cleanText(item.variant_flavor);
     }
 
     if (field === 'strengthSize') {
         if (isMedicine) {
             if (isLiquid) {
-                return [item.volume_value, item.volume_unit].filter(Boolean).join(' ') || item.strength || 'N/A';
+                return cleanText([item.volume_value, item.volume_unit].filter(Boolean).join(' ') || item.strength);
             }
 
-            return [item.strength_value, item.strength_unit].filter(Boolean).join(' ') || item.strength || 'N/A';
+            return cleanText([item.strength_value, item.strength_unit].filter(Boolean).join(' ') || item.strength);
         }
 
         return item.weight_volume_value
-            ? [item.weight_volume_value, item.weight_volume_unit].filter(Boolean).join(' ')
-            : (item.size_value || 'N/A');
+            ? cleanText([item.weight_volume_value, item.weight_volume_unit].filter(Boolean).join(' '))
+            : cleanText(item.size_value);
     }
 
     if (field === 'packaging') {
-        return item.packaging || 'N/A';
+        return cleanText(item.packaging);
     }
 
-    return 'N/A';
+    return '';
 }
 
 function productLineTotal(item) {
-    const quantity = Number(item.quantity || 0);
+    const quantity = Number(item.inventory_qty_ordered || inventoryQtyForItem(item));
     const unitPrice = Number(item.price || 0);
     return quantity * unitPrice;
+}
+
+function inventoryQtyForItem(item) {
+    const purchaseQty = Number(item.purchase_qty || item.quantity || 0);
+    const unitsPerPurchaseUnit = Number(item.units_per_purchase_unit || item.purchase_unit_qty || 1);
+    return purchaseQty * Math.max(1, unitsPerPurchaseUnit);
+}
+
+function updateCreateSummary() {
+    const summary = document.getElementById('po-create-summary');
+    if (!summary) return;
+
+    const totalItems = createDraftItems.length;
+    const totalPurchaseUnits = createDraftItems.reduce((total, item) => total + Number(item.purchase_qty || item.quantity || 0), 0);
+    const totalInventoryQty = createDraftItems.reduce((total, item) => total + inventoryQtyForItem(item), 0);
+    const estimatedCost = createDraftItems.reduce((total, item) => total + productLineTotal(item), 0);
+
+    summary.innerHTML = `
+        <div><span>Total Items</span><strong>${totalItems}</strong></div>
+        <div><span>Total Purchase Units</span><strong>${totalPurchaseUnits}</strong></div>
+        <div><span>Total Inventory Quantity</span><strong>${totalInventoryQty} pcs</strong></div>
+        <div><span>Estimated Purchase Cost</span><strong>${peso(estimatedCost)}</strong></div>
+    `;
+}
+
+function readPurchaseUnitOverrides(prefix = 'po') {
+    const purchaseUnit = cleanText(document.getElementById(`${prefix}-purchase-unit`)?.value);
+    const unitsPerPurchaseUnit = Math.max(1, Number(document.getElementById(`${prefix}-units-per-purchase-unit`)?.value || 1));
+    return { purchaseUnit, unitsPerPurchaseUnit };
+}
+
+function setCreatePurchaseUnitFields(item) {
+    if (!item) {
+        setSelectValue('po-purchase-unit', 'Box');
+        setValue('po-units-per-purchase-unit', '1');
+        return;
+    }
+    const purchaseUnit = purchaseUnitInfo(item);
+    setSelectValue('po-purchase-unit', purchaseUnit.purchaseUnit || 'Box');
+    setValue('po-units-per-purchase-unit', purchaseUnit.quantity || 1);
+}
+
+function syncPurchaseUnitFieldsFromSelectedProduct() {
+    const item = selectedOptionItem('po-product-select', false);
+    setCreatePurchaseUnitFields(item);
+    renderSelectedProductPanel();
+}
+
+function selectedOptionItem(selectId = 'po-product-select', useOverrides = true) {
+    const productSelect = document.getElementById(selectId);
+    const option = productSelect?.options[productSelect.selectedIndex];
+    return productSelect?.value && option ? draftItemFromOption(option, 1, selectId === 'po-product-select' && useOverrides ? readPurchaseUnitOverrides('po') : {}) : null;
+}
+
+function infoMetric(label, value) {
+    const cleanValue = cleanText(value);
+    if (!cleanValue) return '';
+    return `<div class="po-info-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(cleanValue)}</strong></div>`;
+}
+
+function renderSelectedProductPanel() {
+    const panel = document.getElementById('po-selected-product-panel');
+    if (!panel) return;
+
+    const item = selectedOptionItem('po-product-select');
+    if (!item) {
+        panel.classList.remove('is-visible');
+        panel.innerHTML = '';
+        return;
+    }
+
+    const onHand = Number(item.stock || 0);
+    const reorderLevel = 10;
+    const suggestedOrder = Math.max(0, reorderLevel - onHand);
+    const overrides = readPurchaseUnitOverrides('po');
+    const purchaseUnit = purchaseUnitInfo({
+        ...item,
+        purchase_unit: overrides.purchaseUnit || item.purchase_unit,
+        units_per_purchase_unit: overrides.unitsPerPurchaseUnit || item.units_per_purchase_unit,
+        purchase_unit_qty: overrides.unitsPerPurchaseUnit || item.purchase_unit_qty
+    });
+    const orderQty = Math.max(1, Number(document.getElementById('po-quantity')?.value || 1));
+    const inventoryQtyOrdered = orderQty * purchaseUnit.quantity;
+    const unit = item.unit || unitDisplayFromDetails(item);
+    const packaging = item.packaging || purchaseUnit.packaging || '';
+    const packageSameAsUnit = sameText(unit, packaging);
+    const supplierSameAsPackaging = sameText(purchaseUnit.purchaseUnit, packaging);
+    const supplierSameAsUnit = sameText(purchaseUnit.purchaseUnit, unit);
+    const showUnit = unit && !(packageSameAsUnit && supplierSameAsUnit);
+    const showPackaging = packaging && !(packageSameAsUnit && supplierSameAsPackaging);
+    const productMetrics = [
+        infoMetric('Brand', poBrandName(item)),
+        infoMetric('Product', productCoreName(item)),
+        infoMetric('Size', productSizeValue(item)),
+        showUnit ? infoMetric('Unit', unit) : '',
+        showPackaging ? infoMetric('Packaging', packaging) : ''
+    ].filter(Boolean).join('');
+
+    panel.innerHTML = `
+        <div class="po-selected-product-grid">
+            ${productMetrics}
+        </div>
+        <div class="po-selected-product-grid">
+            <div class="po-info-metric"><span>Shelf Stock</span><strong>${Number(item.shelf_stock || 0)}</strong></div>
+            <div class="po-info-metric"><span>Storage Stock</span><strong>${Number(item.storage_stock || 0)}</strong></div>
+            <div class="po-info-metric"><span>On Hand</span><strong>${onHand}</strong></div>
+            <div class="po-info-metric"><span>Purchase Cost</span><strong>${peso(item.price)}</strong></div>
+            <div class="po-info-metric"><span>Selling Price</span><strong>${peso(item.selling_price || item.price)}</strong></div>
+        </div>
+        <div class="po-selected-product-grid">
+            <div class="po-info-metric"><span>Supplier Package</span><strong>${escapeHtml(purchaseUnit.purchaseUnit || 'pcs')}</strong></div>
+            <div class="po-info-metric"><span>Contains</span><strong>${escapeHtml(purchaseUnit.containsLabel)}</strong></div>
+            <div class="po-info-metric"><span>Qty Ordered</span><strong>${orderQty} ${escapeHtml(pluralizeUnit(purchaseUnit.purchaseUnit, orderQty))}</strong></div>
+            <div class="po-info-metric"><span>Inventory Qty</span><strong>${inventoryQtyOrdered} ${escapeHtml(purchaseUnit.stockUnit || 'pcs')}</strong></div>
+            <div class="po-info-metric"><span>Reorder Level</span><strong>${reorderLevel}</strong></div>
+            <div class="po-info-metric"><span>Suggested Order</span><strong>${suggestedOrder}</strong></div>
+        </div>
+        <div class="po-reorder-note">${escapeHtml(purchaseUnit.conversion)}</div>
+    `;
+    panel.classList.add('is-visible');
 }
 
 function isMedicineItem(item) {
     return String(item?.category_name || '').trim().toLowerCase() === 'medicine';
 }
 
-function draftItemFromOption(option, quantity = 1) {
+function draftItemFromOption(option, quantity = 1, overrides = {}) {
     if (!option) return null;
+    const unitsPerPurchaseUnit = Math.max(1, Number(overrides.unitsPerPurchaseUnit || option.dataset.unitsPerPurchaseUnit || option.dataset.purchaseUnitQty || 1));
+    const purchaseUnit = normalizePurchaseUnit(overrides.purchaseUnit || option.dataset.purchaseUnit || '');
+    const purchaseQty = Math.max(1, Number(quantity || 1));
 
     return {
         po_item_id: null,
         product_id: option.value,
-        variation_id: option.dataset.variationId || '',
         product_name: option.dataset.productName || option.textContent || '',
+        product_display_name: option.dataset.productDisplayName || '',
         brand_name: option.dataset.brand || '',
+        brand_display_name: option.dataset.brandDisplayName || '',
         unit: option.dataset.unit || '',
         category_name: option.dataset.categoryName || '',
         type_name: option.dataset.typeName || '',
         generic_name: option.dataset.genericName || '',
+        dosage_form: option.dataset.dosageForm || '',
+        package_type: option.dataset.packageType || '',
         strength: option.dataset.strength || '',
         strength_value: option.dataset.strengthValue || '',
         strength_unit: option.dataset.strengthUnit || '',
@@ -152,15 +533,37 @@ function draftItemFromOption(option, quantity = 1) {
         size_value: option.dataset.sizeValue || '',
         weight_volume_value: option.dataset.weightVolumeValue || '',
         weight_volume_unit: option.dataset.weightVolumeUnit || '',
+        size_display: option.dataset.sizeDisplay || '',
         packaging: option.dataset.packaging || '',
+        purchase_unit: purchaseUnit,
+        units_per_purchase_unit: unitsPerPurchaseUnit,
+        purchase_unit_conversion: option.dataset.purchaseUnitConversion || '',
+        purchase_unit_qty: unitsPerPurchaseUnit,
+        pack_content: option.dataset.packContent || '',
+        shelf_stock: Number(option.dataset.shelfStock || 0),
+        storage_stock: Number(option.dataset.storageStock || 0),
+        selling_price: Number(option.dataset.sellingPrice || option.dataset.price || 0),
+        stock: option.dataset.stock || '',
         price: Number(option.dataset.price || 0),
-        quantity: Number(quantity || 1)
+        purchase_qty: purchaseQty,
+        inventory_qty_ordered: purchaseQty * unitsPerPurchaseUnit,
+        quantity: purchaseQty
     };
 }
 
 function setValue(id, value) {
     const input = document.getElementById(id);
     if (input) input.value = value ?? '';
+}
+
+function setSelectValue(id, value) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const cleanValue = cleanText(value);
+    if (cleanValue && ![...select.options].some(option => sameText(option.value, cleanValue))) {
+        select.add(new Option(cleanValue, cleanValue));
+    }
+    select.value = cleanValue;
 }
 
 function getValue(id) {
@@ -184,7 +587,6 @@ function showEditProductEditor(item, index = null) {
     const medicine = isMedicineItem(item);
     editDraftItemIndex = Number.isInteger(index) ? index : null;
     editor.classList.remove('d-none');
-    editor.dataset.variationId = item.variation_id || '';
 
     document.getElementById('edit-po-product-editor-title').textContent = editDraftItemIndex === null
         ? `Selected Product: ${item.product_name || 'New item'}`
@@ -227,11 +629,14 @@ function readEditProductEditor() {
     if (!productId || quantity <= 0 || price < 0) {
         throw new Error('Select a product and enter a valid quantity and price.');
     }
+    const existingItem = editDraftItemIndex === null ? null : editDraftItems[editDraftItemIndex];
+    const selectedOption = document.getElementById('edit-po-product-select')?.selectedOptions?.[0] || null;
+    const optionItem = selectedOption ? draftItemFromOption(selectedOption, quantity) : null;
+    const unitsPerPurchaseUnit = Number(existingItem?.units_per_purchase_unit || optionItem?.units_per_purchase_unit || 1);
 
     return {
         po_item_id: editDraftItemIndex === null ? null : (editDraftItems[editDraftItemIndex]?.po_item_id || null),
         product_id: productId,
-        variation_id: document.getElementById('edit-po-product-editor')?.dataset.variationId || '',
         product_name: getValue('edit-po-editor-product-name'),
         brand_name: getValue('edit-po-editor-brand-name'),
         category_name: categoryName,
@@ -248,7 +653,12 @@ function readEditProductEditor() {
         weight_volume_unit: '',
         unit: getValue('edit-po-editor-unit'),
         packaging,
+        purchase_unit: existingItem?.purchase_unit || optionItem?.purchase_unit || getValue('edit-po-editor-unit') || 'pcs',
+        units_per_purchase_unit: unitsPerPurchaseUnit,
+        purchase_unit_qty: unitsPerPurchaseUnit,
         price,
+        purchase_qty: quantity,
+        inventory_qty_ordered: quantity * unitsPerPurchaseUnit,
         quantity
     };
 }
@@ -351,39 +761,52 @@ async function loadSupplierProducts(supplierId, productSelectId = 'po-product-se
 
         products.forEach((product) => {
             const option = document.createElement('option');
+            const unitDisplay = unitDisplayFromDetails(product);
+            const sizeDisplay = sizeDisplayFromDetails(product);
+            const optionLabel = productDropdownLabel(product);
+            const optionDetail = productOptionDetail(product);
+            const purchaseUnit = purchaseUnitInfo(product);
+            const optionParts = [optionLabel, productSizeValue(product), productPackagingValue(product)].filter(Boolean);
             option.value = product.product_id;
-            const variationLabel = [
-                product.variant_flavor,
-                [product.strength_value, product.strength_unit].filter(Boolean).join(' '),
-                [product.volume_value, product.volume_unit].filter(Boolean).join(' '),
-                [product.weight_volume_value, product.weight_volume_unit].filter(Boolean).join(' '),
-                product.size_value,
-                product.unit,
-                product.packaging
-            ].filter(Boolean).join(' | ');
-            option.textContent = variationLabel ? `${product.product_name} - ${variationLabel}` : product.product_name;
-            option.dataset.productName = product.product_name || '';
-            option.dataset.variationId = product.variation_id || '';
-            option.dataset.brand = product.brand_name || '';
-            option.dataset.unit = product.unit || product.measurement_unit_name || '';
+            option.textContent = optionParts.join(' \u2022 ');
+            option.title = [optionLabel, optionDetail].filter(Boolean).join('\n');
+            option.dataset.productName = cleanText(product.product_name);
+            option.dataset.productDisplayName = productCoreName(product);
+            option.dataset.brand = cleanText(product.brand_name);
+            option.dataset.brandDisplayName = poBrandName(product);
+            option.dataset.unit = unitDisplay;
             option.dataset.price = product.price || '0';
-            option.dataset.categoryName = product.category_name || '';
-            option.dataset.typeName = product.type_name || '';
-            option.dataset.genericName = product.generic_name || '';
-            option.dataset.strength = product.strength_size_value || '';
-            option.dataset.strengthValue = product.strength_value || '';
-            option.dataset.strengthUnit = product.strength_unit || '';
-            option.dataset.volumeValue = product.volume_value || '';
-            option.dataset.volumeUnit = product.volume_unit || '';
-            option.dataset.variantFlavor = product.variant_flavor || '';
-            option.dataset.sizeValue = product.size_value || '';
-            option.dataset.weightVolumeValue = product.weight_volume_value || '';
-            option.dataset.weightVolumeUnit = product.weight_volume_unit || '';
-            option.dataset.packaging = product.packaging || '';
+            option.dataset.sellingPrice = product.selling_price || product.price || '0';
+            option.dataset.categoryName = cleanText(product.category_name);
+            option.dataset.typeName = cleanText(product.type_name);
+            option.dataset.genericName = cleanText(product.generic_name);
+            option.dataset.dosageForm = cleanText(product.dosage_form);
+            option.dataset.packageType = displayText(product.package_type);
+            option.dataset.strength = cleanText(product.strength_size_display || product.strength_size_value || product.strength_value);
+            option.dataset.strengthValue = cleanText(product.strength_value);
+            option.dataset.strengthUnit = cleanText(product.strength_unit);
+            option.dataset.volumeValue = cleanText(product.volume_value);
+            option.dataset.volumeUnit = cleanText(product.volume_unit);
+            option.dataset.variantFlavor = cleanText(product.variant_flavor);
+            option.dataset.sizeValue = cleanText(product.size_value);
+            option.dataset.weightVolumeValue = cleanText(product.weight_volume_value);
+            option.dataset.weightVolumeUnit = cleanText(product.weight_volume_unit);
+            option.dataset.sizeDisplay = sizeDisplay;
+            option.dataset.packaging = cleanText(product.package_type || product.packaging);
+            option.dataset.stock = String(Number(product.stock || 0));
+            option.dataset.shelfStock = String(Number(product.shelf_stock || 0));
+            option.dataset.storageStock = String(Number(product.storage_stock || 0));
+            option.dataset.packContent = cleanText(product.pack_content);
+            option.dataset.purchaseUnit = purchaseUnit.purchaseUnit;
+            option.dataset.purchaseUnitConversion = purchaseUnit.conversion;
+            option.dataset.purchaseUnitQty = String(purchaseUnit.quantity);
+            option.dataset.unitsPerPurchaseUnit = String(purchaseUnit.quantity);
+            option.dataset.optionDetail = optionDetail;
             productSelect.appendChild(option);
         });
 
         productSelect.disabled = products.length === 0;
+        if (productSelectId === 'po-product-select') syncPurchaseUnitFieldsFromSelectedProduct();
     } catch (err) {
         productSelect.innerHTML = '<option value="" disabled selected>Unable to load products</option>';
         PharmaUtils.toast.error(err.message);
@@ -412,7 +835,7 @@ function renderTableHead(view = currentPoView) {
     if (!head) return;
     const table = document.getElementById('table-purchase-orders');
     if (table) {
-        table.style.minWidth = view === 'delivered' ? '1660px' : (view === 'arrived' ? '1320px' : '1540px');
+        table.style.minWidth = view === 'delivered' ? '1660px' : (view === 'arrived' ? '1320px' : '2020px');
     }
 
     if (view === 'arrived') {
@@ -420,10 +843,10 @@ function renderTableHead(view = currentPoView) {
             <tr>
                 <th class="col-date">Order Date</th>
                 <th class="col-po-number">PO Number</th>
-                <th class="col-supplier">Supplier Name</th>
-                <th class="col-items">Items</th>
-                <th class="col-brand">Brand Name</th>
-                <th class="col-qty">Ordered Quantity</th>
+                <th class="col-supplier">Supplier</th>
+                <th class="col-brand">Brand</th>
+                <th class="col-items">Product</th>
+                <th class="col-qty">Qty Ordered</th>
                 <th class="col-terms">Payment Terms</th>
                 <th class="col-delivery">Expected Delivery Date</th>
                 <th class="col-status">Status</th>
@@ -442,11 +865,11 @@ function renderTableHead(view = currentPoView) {
             <tr>
                 <th class="col-date">Delivery Date</th>
                 <th class="col-po-number">PO Number</th>
-                <th class="col-supplier">Supplier Name</th>
-                <th class="col-items">Items</th>
-                <th class="col-brand">Brand Name</th>
-                <th class="col-qty">Ordered Quantity</th>
-                <th class="col-received">Received Quantity</th>
+                <th class="col-supplier">Supplier</th>
+                <th class="col-brand">Brand</th>
+                <th class="col-items">Product</th>
+                <th class="col-qty">Qty Ordered</th>
+                <th class="col-received">Received Qty</th>
                 <th class="col-money">Total Amount</th>
                 <th class="col-money">Final Payment</th>
                 <th class="col-payment-status">Payment Status</th>
@@ -464,10 +887,14 @@ function renderTableHead(view = currentPoView) {
     const nextHead = `
         <tr>
             <th class="col-date">Order Date</th>
-            <th class="col-supplier">Supplier Name</th>
-            <th class="col-items">Items</th>
-            <th class="col-brand">Brand Name</th>
-            <th class="col-qty">Quantity</th>
+            <th class="col-supplier">Supplier</th>
+            <th class="col-brand">Brand</th>
+            <th class="col-items">Product</th>
+            <th class="col-category">Category</th>
+            <th class="col-type">Product Type</th>
+            <th class="col-qty">Qty Ordered</th>
+            <th class="col-purchase-unit">Purchase Unit</th>
+            <th class="col-inventory-qty">Inventory Qty</th>
             <th class="col-terms">Payment Terms</th>
             <th class="col-delivery">Expected Delivery Date</th>
             <th class="col-money">Total Amount</th>
@@ -501,24 +928,34 @@ function commitPurchaseOrderTable(view, bodyHtml) {
 
 function renderActivePurchaseOrders(orders) {
     if (orders.length === 0) {
-        commitPurchaseOrderTable('active', tableEmpty(11, 'No active purchase orders found.'));
+        commitPurchaseOrderTable('active', tableEmpty(15, 'No active purchase orders found.'));
         return;
     }
 
     const bodyHtml = orders.map((order) => {
-        const itemNames = (order.items || []).length ? order.items.map((item) => item.product_name) : (order.item_names || []);
-        const brandNames = Array.isArray(order.brand_names)
-            ? order.brand_names
-            : (order.items || []).map((item) => item.brand_name);
-        const quantities = order.quantities || (order.items || []).map((item) => item.quantity);
+        const items = order.items || [];
+        const itemNames = items.length ? items.map((item) => productTableName(item)) : (order.item_names || []);
+        const brandNames = items.length ? items.map((item) => productTableBrand(item)) : (order.brand_names || []);
+        const categories = items.map((item) => cleanText(item.category_name) || '-');
+        const types = items.map((item) => cleanText(item.type_name) || '-');
+        const quantities = items.length ? items.map((item) => Number(item.purchase_qty || item.quantity || 0)) : (order.quantities || []);
+        const purchaseUnits = items.map((item) => purchaseUnitInfo(item).label);
+        const inventoryQuantities = items.map((item) => {
+            const purchaseUnit = purchaseUnitInfo(item);
+            return `${Number(item.inventory_qty_ordered || inventoryQtyForItem(item) || 0)} ${purchaseUnit.stockUnit || 'pcs'}`;
+        });
 
         return `
         <tr>
             <td>${formatDate(order.order_date)}</td>
             <td>${escapeHtml(order.supplier_name)}</td>
-            <td>${numberedList(itemNames)}</td>
             <td>${numberedList(brandNames)}</td>
+            <td>${numberedList(itemNames)}</td>
+            <td>${numberedList(categories)}</td>
+            <td>${numberedList(types)}</td>
             <td>${numberedList(quantities, { plain: true })}</td>
+            <td>${numberedList(purchaseUnits)}</td>
+            <td>${numberedList(inventoryQuantities, { plain: true })}</td>
             <td>${escapeHtml(order.payment_terms || 'Not set')}</td>
             <td>${formatDate(order.expected_delivery_date)}</td>
             <td><span class="po-money">${peso(order.total_amount)}</span></td>
@@ -548,10 +985,9 @@ function renderArrivedPurchaseOrders(orders) {
     }
 
     const bodyHtml = orders.map((order) => {
-        const itemNames = (order.items || []).length ? order.items.map((item) => item.product_name) : (order.item_names || []);
-        const brandNames = Array.isArray(order.brand_names)
-            ? order.brand_names
-            : (order.items || []).map((item) => item.brand_name);
+        const items = order.items || [];
+        const itemNames = items.length ? items.map((item) => productTableName(item)) : (order.item_names || []);
+        const brandNames = items.length ? items.map((item) => productTableBrand(item)) : (order.brand_names || []);
         const quantities = order.quantities || (order.items || []).map((item) => item.quantity);
 
         return `
@@ -559,8 +995,8 @@ function renderArrivedPurchaseOrders(orders) {
                 <td>${formatDate(order.order_date)}</td>
                 <td>${escapeHtml(order.po_number || `PO-${order.po_id}`)}</td>
                 <td>${escapeHtml(order.supplier_name || 'N/A')}</td>
-                <td>${numberedList(itemNames)}</td>
                 <td>${numberedList(brandNames)}</td>
+                <td>${numberedList(itemNames)}</td>
                 <td>${numberedList(quantities, { plain: true })}</td>
                 <td>${escapeHtml(order.payment_terms || 'Not set')}</td>
                 <td>${formatDate(order.expected_delivery_date)}</td>
@@ -590,8 +1026,8 @@ function renderDeliveredPurchaseOrders(orders) {
 
     const bodyHtml = orders.map((order) => {
         const items = order.items || [];
-        const itemNames = items.length ? items.map((item) => item.product_name) : (order.item_names || []);
-        const brandNames = Array.isArray(order.brand_names) ? order.brand_names : items.map((item) => item.brand_name);
+        const itemNames = items.length ? items.map((item) => productTableName(item)) : (order.item_names || []);
+        const brandNames = items.length ? items.map((item) => productTableBrand(item)) : (order.brand_names || []);
         const orderedQuantities = order.quantities || items.map((item) => item.quantity);
         const receivedQuantities = items.map((item) => Number(item.received_quantity || 0));
         const deliveryDate = order.delivery_date || order.received_date || order.expected_delivery_date || order.order_date;
@@ -601,8 +1037,8 @@ function renderDeliveredPurchaseOrders(orders) {
                 <td>${formatDate(deliveryDate)}</td>
                 <td>${escapeHtml(order.po_number || `PO-${order.po_id}`)}</td>
                 <td>${escapeHtml(order.supplier_name || 'N/A')}</td>
-                <td>${numberedList(itemNames)}</td>
                 <td>${numberedList(brandNames)}</td>
+                <td>${numberedList(itemNames)}</td>
                 <td>${numberedList(orderedQuantities, { plain: true })}</td>
                 <td>${numberedList(receivedQuantities, { plain: true })}</td>
                 <td><span class="po-money">${peso(order.total_amount)}</span></td>
@@ -706,18 +1142,34 @@ function renderDraftItems(items, tableSelector, removeClass) {
     if (!tableBody) return;
 
     if (items.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No items added yet.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="14" class="text-center text-muted py-4">No items added yet.</td></tr>';
+        if (tableSelector === '#table-po-items') updateCreateSummary();
         return;
     }
 
     const isEditTable = tableSelector === '#table-edit-po-items';
-    tableBody.innerHTML = items.map((item, index) => `
+    tableBody.innerHTML = items.map((item, index) => {
+        const purchaseUnit = purchaseUnitInfo(item);
+        const unit = item.unit || unitDisplayFromDetails(item);
+        const packaging = item.packaging || purchaseUnit.packaging || '';
+        const supplierPackage = purchaseUnit.purchaseUnit || '';
+        const unitCell = sameText(unit, packaging) && sameText(unit, supplierPackage) ? '' : unit;
+
+        return `
         <tr>
-            <td>${escapeHtml(item.product_name)}</td>
-            <td>${escapeHtml(item.brand_name)}</td>
-            <td>${escapeHtml(item.unit)}</td>
-            <td>${money(item.price)}</td>
-            <td>${escapeHtml(item.quantity)}</td>
+            <td>${escapeHtml(poBrandName(item))}</td>
+            <td>${escapeHtml(productCoreName(item))}</td>
+            <td>${escapeHtml(cleanText(item.category_name) || '-')}</td>
+            <td>${escapeHtml(cleanText(item.type_name) || '-')}</td>
+            <td>${escapeHtml(productSizeValue(item) || '-')}</td>
+            <td>${escapeHtml(unitCell || '-')}</td>
+            <td>${escapeHtml(packaging || '-')}</td>
+            <td>${escapeHtml(purchaseUnit.label)}</td>
+            <td>${escapeHtml(item.purchase_qty || item.quantity)}</td>
+            <td>${escapeHtml(`${purchaseUnit.quantity} ${pluralizeUnit(purchaseUnit.stockUnit, purchaseUnit.quantity)}`)}</td>
+            <td>${escapeHtml(`${inventoryQtyForItem(item)} ${purchaseUnit.stockUnit}`)}</td>
+            <td>${peso(item.price)}</td>
+            <td>${peso(productLineTotal(item))}</td>
             <td>
                 <div class="po-actions">
                     ${isEditTable ? `<button class="btn btn-sm btn-outline-secondary edit-po-item" type="button" data-index="${index}" aria-label="Edit item"><i class="fa-solid fa-pen"></i></button>` : ''}
@@ -725,7 +1177,9 @@ function renderDraftItems(items, tableSelector, removeClass) {
                 </div>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
+    if (tableSelector === '#table-po-items') updateCreateSummary();
 }
 
 function addDraftItem({ items, productSelectId, quantityInputId, tableSelector, removeClass }) {
@@ -733,21 +1187,31 @@ function addDraftItem({ items, productSelectId, quantityInputId, tableSelector, 
     const quantityInput = document.getElementById(quantityInputId);
     const option = productSelect?.options[productSelect.selectedIndex];
     const quantity = Number(quantityInput?.value);
+    const isCreateTable = productSelectId === 'po-product-select';
+    const overrides = isCreateTable ? readPurchaseUnitOverrides('po') : {};
 
     if (!productSelect?.value || !option || quantity <= 0) {
         PharmaUtils.toast.error('Select a product and enter a valid quantity.');
         return;
     }
 
-    const existing = items.find((item) => String(item.product_id) === String(productSelect.value) && String(item.variation_id || '') === String(option.dataset.variationId || ''));
+    const existing = items.find((item) => String(item.product_id) === String(productSelect.value));
     if (existing) {
-        existing.quantity += quantity;
+        existing.purchase_qty = Number(existing.purchase_qty || existing.quantity || 0) + quantity;
+        if (overrides.purchaseUnit) existing.purchase_unit = overrides.purchaseUnit;
+        if (overrides.unitsPerPurchaseUnit) {
+            existing.units_per_purchase_unit = overrides.unitsPerPurchaseUnit;
+            existing.purchase_unit_qty = overrides.unitsPerPurchaseUnit;
+        }
+        existing.quantity = existing.purchase_qty;
+        existing.inventory_qty_ordered = inventoryQtyForItem(existing);
     } else {
-        items.push(draftItemFromOption(option, quantity));
+        items.push(draftItemFromOption(option, quantity, overrides));
     }
 
     quantityInput.value = '1';
     renderDraftItems(items, tableSelector, removeClass);
+    if (productSelectId === 'po-product-select') renderSelectedProductPanel();
 }
 
 function resetCreateDraft() {
@@ -762,8 +1226,12 @@ function resetCreateDraft() {
         productSelect.innerHTML = '<option value="" disabled selected>Select product...</option>';
     }
     document.getElementById('po-quantity').value = '1';
+    setSelectValue('po-purchase-unit', 'Box');
+    setValue('po-units-per-purchase-unit', '1');
     document.getElementById('po-payment-terms').value = '';
     document.getElementById('po-expected-delivery').value = '';
+    renderSelectedProductPanel();
+    updateCreateSummary();
 }
 
 function purchaseOrderPayload(prefix, items, poId = null) {
@@ -783,9 +1251,8 @@ function purchaseOrderPayload(prefix, items, poId = null) {
         items: items.map((item) => ({
             po_item_id: item.po_item_id || null,
             product_id: item.product_id,
-            variation_id: item.variation_id || null,
-            product_name: item.product_name || '',
-            brand_name: item.brand_name || '',
+            product_name: productCoreName(item),
+            brand_name: poBrandName(item),
             category_name: item.category_name || '',
             type_name: item.type_name || '',
             generic_name: item.generic_name || '',
@@ -798,10 +1265,14 @@ function purchaseOrderPayload(prefix, items, poId = null) {
             size_value: item.size_value || '',
             weight_volume_value: item.weight_volume_value || '',
             weight_volume_unit: item.weight_volume_unit || '',
-            unit: item.unit || '',
+            unit: item.unit || unitDisplayFromDetails(item),
             packaging: item.packaging || '',
             price: Number(item.price || 0),
-            quantity: Number(item.quantity || 0)
+            purchase_unit: item.purchase_unit || purchaseUnitInfo(item).purchaseUnit || '',
+            units_per_purchase_unit: Number(item.units_per_purchase_unit || item.purchase_unit_qty || 1),
+            purchase_qty: Number(item.purchase_qty || item.quantity || 0),
+            inventory_qty_ordered: inventoryQtyForItem(item),
+            quantity: inventoryQtyForItem(item)
         }))
     };
 
@@ -856,14 +1327,14 @@ async function openViewPurchaseOrder(poId) {
             <tr>
                 <td>${escapeHtml(item.product_name)}</td>
                 <td>${escapeHtml(item.brand_name)}</td>
-                <td>${escapeHtml(item.category_name || 'N/A')}</td>
-                <td>${escapeHtml(item.type_name || 'N/A')}</td>
-                <td>${escapeHtml(productDetailValue(item, 'genericVariant'))}</td>
-                <td>${escapeHtml(productDetailValue(item, 'strengthSize'))}</td>
-                <td>${escapeHtml(item.unit)}</td>
-                <td>${escapeHtml(productDetailValue(item, 'packaging'))}</td>
+                <td>${escapeHtml(cleanText(item.category_name) || '-')}</td>
+                <td>${escapeHtml(cleanText(item.type_name) || '-')}</td>
+                <td>${escapeHtml(productDetailValue(item, 'genericVariant') || '-')}</td>
+                <td>${escapeHtml(productDetailValue(item, 'strengthSize') || '-')}</td>
+                <td>${escapeHtml(cleanText(item.unit) || '-')}</td>
+                <td>${escapeHtml(productDetailValue(item, 'packaging') || '-')}</td>
                 <td>${money(item.price)}</td>
-                <td>${escapeHtml(item.quantity)}</td>
+                <td>${escapeHtml(item.inventory_qty_ordered || item.quantity)}</td>
                 <td>${escapeHtml(item.received_quantity || 0)}</td>
                 <td>
                     ${escapeHtml(item.damaged_quantity || 0)}
@@ -899,7 +1370,9 @@ async function openEditPurchaseOrder(poId) {
             po_item_id: item.po_item_id,
             product_id: item.product_id,
             product_name: item.product_name,
+            product_display_name: productTableName(item),
             brand_name: item.brand_name,
+            brand_display_name: productTableBrand(item),
             unit: item.unit,
             category_name: item.category_name,
             type_name: item.type_name,
@@ -914,8 +1387,13 @@ async function openEditPurchaseOrder(poId) {
             weight_volume_value: item.weight_volume_value,
             weight_volume_unit: item.weight_volume_unit,
             packaging: item.packaging,
+            purchase_unit: item.purchase_unit,
+            units_per_purchase_unit: Number(item.units_per_purchase_unit || 1),
+            purchase_unit_qty: Number(item.units_per_purchase_unit || 1),
+            purchase_qty: Number(item.purchase_qty || item.quantity || 0),
+            inventory_qty_ordered: Number(item.inventory_qty_ordered || item.quantity || 0),
             price: Number(item.price || 0),
-            quantity: Number(item.quantity || 0)
+            quantity: Number(item.purchase_qty || item.quantity || 0)
         }));
         clearEditProductEditor();
         renderDraftItems(editDraftItems, '#table-edit-po-items', 'remove-edit-po-item');
@@ -988,9 +1466,9 @@ function renderReceiveItems(order) {
         <tr data-po-item-id="${escapeHtml(item.po_item_id)}">
             <td>${escapeHtml(item.product_name)}</td>
             <td>${escapeHtml(item.brand_name)}</td>
-            <td>${escapeHtml(item.quantity)}</td>
-            <td><input class="form-control form-control-sm receive-qty-input" type="number" min="0" max="${escapeHtml(item.quantity)}" value="${escapeHtml(item.quantity)}"></td>
-            <td><input class="form-control form-control-sm damaged-qty-input" type="number" min="0" max="${escapeHtml(item.quantity)}" value="${escapeHtml(item.damaged_quantity || 0)}"></td>
+            <td>${escapeHtml(item.inventory_qty_ordered || item.quantity)}</td>
+            <td><input class="form-control form-control-sm receive-qty-input" type="number" min="0" max="${escapeHtml(item.inventory_qty_ordered || item.quantity)}" value="${escapeHtml(item.inventory_qty_ordered || item.quantity)}"></td>
+            <td><input class="form-control form-control-sm damaged-qty-input" type="number" min="0" max="${escapeHtml(item.inventory_qty_ordered || item.quantity)}" value="${escapeHtml(item.damaged_quantity || 0)}"></td>
             <td><input class="form-control form-control-sm receive-remarks-input" type="text" value=""></td>
         </tr>
     `).join('');
@@ -1001,15 +1479,11 @@ function orderTotal(order) {
         return Number(order.total_amount);
     }
 
-    return (order?.items || []).reduce((total, item) => {
-        return total + (Number(item.quantity || 0) * Number(item.price || 0));
-    }, 0);
+    return (order?.items || []).reduce((total, item) => total + productLineTotal(item), 0);
 }
 
 function receivePaymentSummary() {
-    const originalTotal = (activeReceiveOrder?.items || []).reduce((total, item) => {
-        return total + (Number(item.quantity || 0) * Number(item.price || 0));
-    }, 0);
+    const originalTotal = (activeReceiveOrder?.items || []).reduce((total, item) => total + productLineTotal(item), 0);
     const additionalAmount = Number(document.getElementById('receiveAdditionalAmount')?.value || 0);
     let damageDeduction = 0;
     let hasDamage = false;
@@ -1081,7 +1555,7 @@ function receivePayload() {
         const receivedQuantity = Number(row.querySelector('.receive-qty-input')?.value || 0);
         const damagedQuantity = Number(row.querySelector('.damaged-qty-input')?.value || 0);
         const remarks = row.querySelector('.receive-remarks-input')?.value || '';
-        const orderedQuantity = Number(orderItem?.quantity || 0);
+        const orderedQuantity = Number(orderItem?.inventory_qty_ordered || orderItem?.quantity || 0);
 
         if (receivedQuantity < 0 || damagedQuantity < 0) {
             throw new Error('Received and damaged quantities cannot be negative.');
@@ -1141,13 +1615,13 @@ function renderReturnItems(order) {
 
     body.innerHTML = order.items.map((item) => {
         const damagedQuantity = Number(item.damaged_quantity || 0);
-        const maxReturnQuantity = hasReceivingRecord ? damagedQuantity : Number(item.quantity || 0);
+        const maxReturnQuantity = hasReceivingRecord ? damagedQuantity : Number(item.inventory_qty_ordered || item.quantity || 0);
 
         return `
         <tr data-po-item-id="${escapeHtml(item.po_item_id)}">
             <td>${escapeHtml(item.product_name)}</td>
             <td>${escapeHtml(item.brand_name)}</td>
-            <td>${escapeHtml(item.quantity)}</td>
+            <td>${escapeHtml(item.inventory_qty_ordered || item.quantity)}</td>
             <td>${escapeHtml(item.received_quantity || 0)}</td>
             <td>${escapeHtml(item.damaged_quantity || 0)}</td>
             <td><input class="form-control form-control-sm return-qty-input" type="number" min="0" max="${escapeHtml(maxReturnQuantity)}" value="${escapeHtml(damagedQuantity)}"></td>
@@ -1197,7 +1671,7 @@ function returnPayload() {
         const damageReason = row.querySelector('.damage-reason-select')?.value || '';
         const remarks = row.querySelector('.return-remarks-input')?.value || '';
         const damagedQuantity = Number(orderItem?.damaged_quantity || 0);
-        const maxReturnQuantity = hasReceivingRecord ? damagedQuantity : Number(orderItem?.quantity || 0);
+        const maxReturnQuantity = hasReceivingRecord ? damagedQuantity : Number(orderItem?.inventory_qty_ordered || orderItem?.quantity || 0);
 
         if (returnQuantity > 0) {
             if (returnQuantity > maxReturnQuantity) {
@@ -1258,7 +1732,16 @@ function initPurchaseOrders() {
     document.querySelectorAll('[data-bs-dismiss="modal"]').forEach((button) => {
         button.addEventListener('click', () => hideModal(button.closest('.modal')?.id));
     });
-    document.getElementById('po-supplier-select')?.addEventListener('change', (event) => loadSupplierProducts(event.target.value, 'po-product-select'));
+    document.getElementById('po-supplier-select')?.addEventListener('change', (event) => {
+        createDraftItems.length = 0;
+        renderDraftItems(createDraftItems, '#table-po-items', 'remove-po-item');
+        renderSelectedProductPanel();
+        loadSupplierProducts(event.target.value, 'po-product-select');
+    });
+    document.getElementById('po-product-select')?.addEventListener('change', syncPurchaseUnitFieldsFromSelectedProduct);
+    document.getElementById('po-quantity')?.addEventListener('input', renderSelectedProductPanel);
+    document.getElementById('po-purchase-unit')?.addEventListener('change', renderSelectedProductPanel);
+    document.getElementById('po-units-per-purchase-unit')?.addEventListener('input', renderSelectedProductPanel);
     document.getElementById('edit-po-supplier-select')?.addEventListener('change', (event) => {
         editDraftItems.length = 0;
         clearEditProductEditor();
@@ -1288,7 +1771,15 @@ function initPurchaseOrders() {
     document.getElementById('btnUpdatePo')?.addEventListener('click', updatePurchaseOrder);
     document.getElementById('btnConfirmReceivePo')?.addEventListener('click', submitReceivePurchaseOrder);
     document.getElementById('btnSaveReturnDamage')?.addEventListener('click', submitReturnDamage);
-    document.getElementById('po-status-filter')?.addEventListener('change', loadPurchaseOrders);
+    const statusFilter = document.getElementById('po-status-filter');
+    const queryStatus = new URLSearchParams(window.location.search).get('status') || '';
+    if (statusFilter && queryStatus && STATUS_META[queryStatus]) {
+        if (![...statusFilter.options].some(option => option.value === queryStatus)) {
+            statusFilter.add(new Option(queryStatus, queryStatus));
+        }
+        statusFilter.value = queryStatus;
+    }
+    statusFilter?.addEventListener('change', loadPurchaseOrders);
     document.querySelectorAll('.po-view-btn').forEach((button) => {
         button.addEventListener('click', () => setPurchaseOrderView(button.dataset.poView || 'active'));
     });

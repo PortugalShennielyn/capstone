@@ -12,7 +12,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 try {
     ensurePurchaseOrderSchema($pdo);
     ensureProductCategorySchema($pdo);
-    $unitIdColumn = getMeasurementUnitIdColumn($pdo);
 
     $statement = $pdo->query(
         "SELECT
@@ -30,18 +29,18 @@ try {
             COALESCE(NULLIF(poi.brand_name_snapshot, ''), p.brand_name) AS brand_name,
             COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
             COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
-            COALESCE(NULLIF(poi.generic_name_snapshot, ''), p.generic_name) AS generic_name,
-            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', p.strength_value, p.strength_unit), ''), p.strength_size_value, p.strength_size, 'N/A') AS strength,
-            p.strength_value,
-            p.strength_unit,
-            p.volume_value,
-            p.volume_unit,
-            COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), p.variant_flavor, p.goods_type, 'N/A') AS variant_flavor,
-            COALESCE(NULLIF(poi.size_value_snapshot, ''), p.display_size, p.size_value, p.size_weight, 'N/A') AS size_value,
-            p.weight_volume_value,
-            p.weight_volume_unit,
-            COALESCE(NULLIF(poi.unit_snapshot, ''), p.product_unit, pmu.unit_name, p.unit, 'N/A') AS unit,
-            COALESCE(NULLIF(poi.packaging_snapshot, ''), p.packaging, p.unit, 'N/A') AS packaging,
+            COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
+            COALESCE(NULLIF(poi.strength_snapshot, ''), md.strength, 'N/A') AS strength,
+            md.strength AS strength_value,
+            '' AS strength_unit,
+            md.dosage_form AS volume_value,
+            '' AS volume_unit,
+            COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), gd.variant, 'N/A') AS variant_flavor,
+            COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, 'N/A') AS size_value,
+            gd.net_weight AS weight_volume_value,
+            '' AS weight_volume_unit,
+            COALESCE(NULLIF(poi.unit_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS unit,
+            COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS packaging,
             poi.quantity AS ordered_quantity,
             CASE
                 WHEN COALESCE(SUM(pori.received_quantity), 0) >= poi.quantity THEN
@@ -57,7 +56,8 @@ try {
          INNER JOIN suppliers s ON s.supplier_id = po.supplier_id
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
-         LEFT JOIN product_measurement_units pmu ON p.measurement_unit_id = pmu.{$unitIdColumn}
+         LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          LEFT JOIN purchase_order_receiving_items pori ON pori.po_item_id = poi.po_item_id
          GROUP BY
             por.return_id,
@@ -80,28 +80,18 @@ try {
             poi.size_value_snapshot,
             poi.unit_snapshot,
             poi.packaging_snapshot,
-            p.strength_value,
-            p.strength_unit,
-            p.volume_value,
-            p.volume_unit,
-            p.display_size,
-            p.weight_volume_value,
-            p.weight_volume_unit,
-            p.product_unit,
             p.product_name,
             p.brand_name,
             pc.category_name,
             pt.type_name,
-            p.generic_name,
-            p.strength_size_value,
-            p.strength_size,
-            p.variant_flavor,
-            p.goods_type,
-            p.size_value,
-            p.size_weight,
-            pmu.unit_name,
-            p.packaging,
-            p.unit,
+            md.generic_name,
+            md.strength,
+            md.dosage_form,
+            md.package_type,
+            gd.variant,
+            gd.size,
+            gd.net_weight,
+            gd.package_type,
             poi.quantity
          ORDER BY por.created_at DESC, por.return_id DESC"
     );

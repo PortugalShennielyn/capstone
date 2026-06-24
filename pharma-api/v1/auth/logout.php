@@ -1,6 +1,8 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/auth_context.php';
 
+revokeCurrentAuthSession($pdo);
 $_SESSION = [];
 session_destroy();
 

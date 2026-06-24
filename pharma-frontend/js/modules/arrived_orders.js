@@ -175,6 +175,7 @@ function renderReceiveItems(order) {
             <td>${escapeHtml(item.quantity)}</td>
             <td><input class="form-control form-control-sm received-qty-input" type="number" min="0" max="${escapeHtml(item.quantity)}" value="${escapeHtml(item.quantity)}"></td>
             <td><input class="form-control form-control-sm damaged-qty-input" type="number" min="0" max="${escapeHtml(item.quantity)}" value="0"></td>
+            <td><input class="form-control form-control-sm expiry-date-input" type="date"></td>
             <td><textarea class="form-control form-control-sm receive-remarks-input" rows="1"></textarea></td>
         </tr>
     `).join('');
@@ -264,6 +265,7 @@ function receivePayload() {
         const orderItem = activeReceiveOrder.items.find((item) => String(item.po_item_id) === String(poItemId));
         const receivedQuantity = Number(row.querySelector('.received-qty-input')?.value || 0);
         const damagedQuantity = Number(row.querySelector('.damaged-qty-input')?.value || 0);
+        const expiryDate = row.querySelector('.expiry-date-input')?.value || '';
         const remarks = row.querySelector('.receive-remarks-input')?.value || '';
         const orderedQuantity = Number(orderItem?.quantity || 0);
 
@@ -283,6 +285,7 @@ function receivePayload() {
             po_item_id: poItemId,
             received_quantity: receivedQuantity,
             damaged_quantity: damagedQuantity,
+            expiry_date: expiryDate,
             remarks
         });
     });

@@ -1,8 +1,13 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/auth_context.php';
 
-function sendInvalidLoginResponse(): void
+function sendInvalidLoginResponse(PDO $pdo, string $username = '', ?string $userId = null, string $reason = 'invalid_credentials'): void
 {
+    if ($username !== '') {
+        recordLoginAttempt($pdo, $username, $userId, false, $reason);
+    }
+
     http_response_code(401);
     echo json_encode([
         'status' => 'error',
@@ -23,19 +28,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $payload = json_decode(file_get_contents('php://input'), true);
 
 if (!is_array($payload)) {
-    sendInvalidLoginResponse();
+    sendInvalidLoginResponse($pdo);
 }
 
 $username = isset($payload['username']) ? trim((string) $payload['username']) : '';
 $password = isset($payload['password']) ? (string) $payload['password'] : '';
 
 if ($username === '' || $password === '') {
-    sendInvalidLoginResponse();
+    sendInvalidLoginResponse($pdo, $username, null, 'missing_credentials');
 }
 
 try {
     $statement = $pdo->prepare(
-        "SELECT user_id, username, password, role, full_name
+        "SELECT user_id, username, email, password, role, status, full_name, first_name, last_name
          FROM users
          WHERE username = :username
            AND status = 'Active'
@@ -49,7 +54,7 @@ try {
     $user = $statement->fetch();
 
     if (!$user || !password_verify($password, $user['password'])) {
-        sendInvalidLoginResponse();
+        sendInvalidLoginResponse($pdo, $username, $user['user_id'] ?? null);
     }
 
     $redirects = [
@@ -59,20 +64,37 @@ try {
     ];
 
     if (!isset($redirects[$user['role']])) {
-        sendInvalidLoginResponse();
+        sendInvalidLoginResponse($pdo, $username, $user['user_id'], 'role_not_allowed');
     }
+
+    $accountContext = loadPrimaryAccountContext($pdo, $user['user_id'], $user['role']);
 
     session_regenerate_id(true);
 
     $_SESSION['user_id'] = $user['user_id'];
     $_SESSION['username'] = $user['username'];
+    $_SESSION['email'] = $user['email'];
     $_SESSION['role'] = $user['role'];
+    $_SESSION['user_status'] = $user['status'];
     $_SESSION['full_name'] = $user['full_name'];
+    $_SESSION['first_name'] = $user['first_name'];
+    $_SESSION['last_name'] = $user['last_name'];
+    $_SESSION['roles'] = $accountContext['roles'];
+    $_SESSION['role_identifiers'] = $accountContext['role_identifiers'];
+    $_SESSION['account_id'] = $accountContext['account_id'];
+    $_SESSION['account_type'] = $accountContext['account_type'];
+    $_SESSION['tenant_id'] = $accountContext['tenant_id'];
+    $_SESSION['tenant_name'] = $accountContext['tenant_name'];
+    $_SESSION['tenant_slug'] = $accountContext['tenant_slug'];
+    $_SESSION['primary_domain'] = $accountContext['primary_domain'];
+    createAuthSession($pdo, $user['user_id'], $accountContext['account_id'], $accountContext['tenant_id']);
+    recordLoginAttempt($pdo, $username, $user['user_id'], true, null);
 
     echo json_encode([
         'status' => 'success',
         'message' => 'Login successful.',
-        'redirect' => $redirects[$user['role']]
+        'redirect' => $redirects[$user['role']],
+        'session' => currentSessionPayload()
     ]);
 } catch (PDOException $e) {
     http_response_code(500);

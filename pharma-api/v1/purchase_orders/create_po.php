@@ -17,7 +17,6 @@ if (!is_array($payload)) {
 }
 
 try {
-    ensurePurchaseOrderSchema($pdo);
 
     $supplierId = cleanId($payload['supplier_id'] ?? null);
     $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
@@ -32,6 +31,7 @@ try {
 
     $pdo->beginTransaction();
     validateProductsForSupplier($pdo, $supplierId, $items);
+    $items = applySupplierProductSetup($pdo, $supplierId, $items);
 
     $poNumber = 'PO-' . date('Ymd-His') . '-' . strtoupper(bin2hex(random_bytes(2)));
     $poId = newUuid($pdo);
@@ -51,8 +51,11 @@ try {
         'INSERT INTO purchase_order_items (
             po_id,
             product_id,
-            variation_id,
             quantity,
+            purchase_qty,
+            purchase_unit_snapshot,
+            units_per_purchase_unit_snapshot,
+            inventory_qty_ordered,
             product_name_snapshot,
             brand_name_snapshot,
             category_name_snapshot,
@@ -63,13 +66,17 @@ try {
             size_value_snapshot,
             unit_snapshot,
             packaging_snapshot,
-            unit_price_snapshot
+            unit_price_snapshot,
+            line_total
          )
          VALUES (
             :po_id,
             :product_id,
-            :variation_id,
             :quantity,
+            :purchase_qty,
+            :purchase_unit_snapshot,
+            :units_per_purchase_unit_snapshot,
+            :inventory_qty_ordered,
             :product_name_snapshot,
             :brand_name_snapshot,
             :category_name_snapshot,
@@ -80,17 +87,16 @@ try {
             :size_value_snapshot,
             :unit_snapshot,
             :packaging_snapshot,
-            :unit_price_snapshot
+            :unit_price_snapshot,
+            :line_total
          )'
     );
 
     foreach ($items as $item) {
         $itemStatement->execute(array_merge([
             ':po_id' => $poId,
-            ':product_id' => cleanId($item['product_id']),
-            ':variation_id' => nullableId($item['variation_id'] ?? null),
-            ':quantity' => (int) $item['quantity']
-        ], purchaseOrderItemSnapshotParams($item)));
+            ':product_id' => cleanId($item['product_id'])
+        ], purchaseOrderQuantityParams($item), purchaseOrderItemSnapshotParams($item)));
     }
 
     $pdo->commit();

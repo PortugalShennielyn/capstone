@@ -134,9 +134,10 @@ function ensureProductCategorySchema(PDO $pdo): void
          VALUES (:unit_name)
          ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name)"
     );
-    foreach (['mg', 'mcg', 'g', 'IU', 'mg/mL', 'mg/5mL', '%', 'mL', 'L', 'cc', 'oz', 'lb', 'kg', 'pcs', 'tablet', 'capsule', 'sachet', 'tube', 'vial', 'ampule', 'bottle', 'box', 'pack', 'can', 'jar', 'roll', 'strip', 'blister pack', 'plastic pack', 'carton', 'pouch', 'N/A'] as $unitName) {
+    foreach (['%', 'mg', 'mcg', 'g', 'kg', 'mL', 'L', 'oz', 'lb', 'IU', 'mg/mL', 'mg/5mL', 'cc', 'pcs', 'tablet', 'capsule', 'box', 'bottle', 'can', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule', 'jar', 'roll', 'strip', 'plastic pack', 'carton', 'pouch'] as $unitName) {
         $unitSeed->execute([':unit_name' => $unitName]);
     }
+    $pdo->exec("DELETE FROM product_measurement_units WHERE unit_name IN ('N/A', 'Select category first...')");
 
     if (!productTableHasColumn($pdo, 'category_id')) {
         $pdo->exec("ALTER TABLE product ADD COLUMN category_id CHAR(36) NULL AFTER product_id");
@@ -146,19 +147,8 @@ function ensureProductCategorySchema(PDO $pdo): void
         $pdo->exec("ALTER TABLE product ADD COLUMN type_id CHAR(36) NULL AFTER category_id");
     }
 
-    if (!productTableHasColumn($pdo, 'generic_name')) {
-        $pdo->exec("ALTER TABLE product ADD COLUMN generic_name VARCHAR(150) NULL AFTER product_name");
-    }
-
-    if (!productTableHasColumn($pdo, 'measurement_unit_id')) {
-        $afterColumn = productTableHasColumn($pdo, 'type_id') ? 'type_id' : 'category_id';
-        $pdo->exec("ALTER TABLE product ADD COLUMN measurement_unit_id CHAR(36) NULL AFTER {$afterColumn}");
-    }
-
-    if (!productTableHasColumn($pdo, 'image_url')) {
-        $afterImageColumn = productTableHasColumn($pdo, 'price') ? 'price' : 'product_name';
-        $pdo->exec("ALTER TABLE product ADD COLUMN image_url VARCHAR(255) NULL AFTER {$afterImageColumn}");
-    }
+    // The normalized product table must stay limited to shared product columns.
+    // Medicine, grocery, supplier, and stock data live in their own tables.
 
     if (productTableHasColumn($pdo, 'unit')) {
         $pdo->exec("ALTER TABLE product MODIFY unit VARCHAR(50) NULL");
@@ -174,60 +164,8 @@ function ensureProductCategorySchema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
-    $pdo->exec(
-        "CREATE TABLE IF NOT EXISTS product_variations (
-            variation_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
-            product_id CHAR(36) NOT NULL,
-            variant_name VARCHAR(150) NULL,
-            strength_value VARCHAR(50) NULL,
-            strength_unit VARCHAR(20) NULL,
-            volume_value VARCHAR(50) NULL,
-            volume_unit VARCHAR(20) NULL,
-            size_value VARCHAR(100) NULL,
-            size_unit VARCHAR(40) NULL,
-            weight_value VARCHAR(50) NULL,
-            weight_unit VARCHAR(20) NULL,
-            unit VARCHAR(50) NULL,
-            packaging VARCHAR(100) NULL,
-            pack_content_qty INT NULL,
-            pack_content_unit VARCHAR(50) NULL,
-            price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-            barcode VARCHAR(100) NULL,
-            sku VARCHAR(100) NULL,
-            is_default TINYINT(1) NOT NULL DEFAULT 0,
-            stock INT NOT NULL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY unique_product_variation_barcode (barcode),
-            KEY idx_product_variations_product (product_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
-
-    foreach ([
-        'variant_name VARCHAR(150) NULL',
-        'strength_value VARCHAR(50) NULL',
-        'strength_unit VARCHAR(20) NULL',
-        'volume_value VARCHAR(50) NULL',
-        'volume_unit VARCHAR(20) NULL',
-        'size_value VARCHAR(100) NULL',
-        'size_unit VARCHAR(40) NULL',
-        'weight_value VARCHAR(50) NULL',
-        'weight_unit VARCHAR(20) NULL',
-        'unit VARCHAR(50) NULL',
-        'packaging VARCHAR(100) NULL',
-        'pack_content_qty INT NULL',
-        'pack_content_unit VARCHAR(50) NULL',
-        'price DECIMAL(12,2) NOT NULL DEFAULT 0.00',
-        'barcode VARCHAR(100) NULL',
-        'sku VARCHAR(100) NULL',
-        'is_default TINYINT(1) NOT NULL DEFAULT 0',
-        'stock INT NOT NULL DEFAULT 0',
-        'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-    ] as $definition) {
-        [$column] = explode(' ', $definition, 2);
-        if (!tableHasColumn($pdo, 'product_variations', $column)) {
-            $pdo->exec("ALTER TABLE product_variations ADD COLUMN {$definition}");
-        }
-    }
+    // Each product row is now its own sellable SKU. SKU-specific attributes
+    // live in medicine_details or grocery_details.
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_inventory (
@@ -244,9 +182,6 @@ function ensureProductCategorySchema(PDO $pdo): void
     if (!tableHasColumn($pdo, 'product_inventory', 'created_at')) {
         $pdo->exec("ALTER TABLE product_inventory ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
     }
-    if (!tableHasColumn($pdo, 'product_inventory', 'variation_id')) {
-        $pdo->exec("ALTER TABLE product_inventory ADD COLUMN variation_id CHAR(36) NULL AFTER product_id");
-    }
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_selling_stock (
@@ -260,13 +195,6 @@ function ensureProductCategorySchema(PDO $pdo): void
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
-    if (!tableHasColumn($pdo, 'product_selling_stock', 'variation_id')) {
-        $pdo->exec("ALTER TABLE product_selling_stock ADD COLUMN variation_id CHAR(36) NULL AFTER product_id");
-    }
-
-    if (tableHasColumn($pdo, 'purchase_order_items', 'product_id') && !tableHasColumn($pdo, 'purchase_order_items', 'variation_id')) {
-        $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN variation_id CHAR(36) NULL AFTER product_id");
-    }
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS lookup_values (
@@ -383,106 +311,160 @@ function ensureProductCategorySchema(PDO $pdo): void
         );
     }
 
-    migrateProductRowsToVariations($pdo);
+    ensureInventoryBatchSchema($pdo);
+
+    // Product rows are now the sellable SKU records.
+}
+
+function ensureInventoryBatchSchema(PDO $pdo): void
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS inventory_batches (
+            batch_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            legacy_inventory_id CHAR(36) NULL,
+            po_id CHAR(36) NULL,
+            po_item_id CHAR(36) NULL,
+            product_id CHAR(36) NOT NULL,
+            supplier_id CHAR(36) NULL,
+            received_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expiry_date DATE NULL,
+            received_qty INT NOT NULL DEFAULT 0,
+            storage_qty INT NOT NULL DEFAULT 0,
+            shelf_qty INT NOT NULL DEFAULT 0,
+            damaged_qty INT NOT NULL DEFAULT 0,
+            returned_qty INT NOT NULL DEFAULT 0,
+            unit_cost DECIMAL(10,2) DEFAULT 0.00,
+            batch_status VARCHAR(40) NOT NULL DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_inventory_batches_legacy_inventory_id (legacy_inventory_id),
+            UNIQUE KEY uniq_inventory_batches_po_item (po_id, po_item_id),
+            KEY idx_inventory_batches_product_status (product_id, batch_status),
+            KEY idx_inventory_batches_fefo (product_id, expiry_date, received_date),
+            KEY idx_inventory_batches_po_id (po_id),
+            KEY idx_inventory_batches_po_item_id (po_item_id),
+            KEY idx_inventory_batches_supplier_id (supplier_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    foreach ([
+        'legacy_inventory_id CHAR(36) NULL',
+        'po_id CHAR(36) NULL',
+        'po_item_id CHAR(36) NULL',
+        'supplier_id CHAR(36) NULL',
+        'expiry_date DATE NULL',
+        'received_qty INT NOT NULL DEFAULT 0',
+        'storage_qty INT NOT NULL DEFAULT 0',
+        'shelf_qty INT NOT NULL DEFAULT 0',
+        'damaged_qty INT NOT NULL DEFAULT 0',
+        'returned_qty INT NOT NULL DEFAULT 0',
+        'unit_cost DECIMAL(10,2) DEFAULT 0.00',
+        "batch_status VARCHAR(40) NOT NULL DEFAULT 'active'",
+        'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+    ] as $columnDefinition) {
+        $columnName = strtok($columnDefinition, ' ');
+        if (!tableHasColumn($pdo, 'inventory_batches', $columnName)) {
+            $pdo->exec("ALTER TABLE inventory_batches ADD COLUMN {$columnDefinition}");
+        }
+    }
+
+    if (!tableHasColumn($pdo, 'product_selling_stock', 'source_batch_id')) {
+        $pdo->exec("ALTER TABLE product_selling_stock ADD COLUMN source_batch_id CHAR(36) NULL AFTER source_inventory_id");
+    }
+
+    $pdo->exec(
+        "INSERT INTO inventory_batches (
+            batch_id,
+            legacy_inventory_id,
+            po_id,
+            po_item_id,
+            product_id,
+            supplier_id,
+            received_date,
+            expiry_date,
+            received_qty,
+            storage_qty,
+            shelf_qty,
+            damaged_qty,
+            returned_qty,
+            unit_cost,
+            batch_status,
+            created_at
+        )
+        SELECT
+            UUID(),
+            inv.inventory_id,
+            po.po_id,
+            poi.po_item_id,
+            inv.product_id,
+            po.supplier_id,
+            COALESCE(por.received_date, inv.created_at, CURRENT_TIMESTAMP),
+            COALESCE(inv.expiry_date, inv.expiration_date),
+            COALESCE(inv.quantity_stocked, 0) + COALESCE(shelf.shelf_qty, 0),
+            COALESCE(inv.quantity_remaining, 0),
+            COALESCE(shelf.shelf_qty, 0),
+            COALESCE(ret.returned_qty, 0),
+            0,
+            COALESCE(poi.unit_price_snapshot, p.price, 0),
+            CASE
+                WHEN COALESCE(inv.quantity_remaining, 0) + COALESCE(shelf.shelf_qty, 0) <= 0 THEN 'depleted'
+                WHEN COALESCE(inv.expiry_date, inv.expiration_date) IS NOT NULL
+                    AND COALESCE(inv.expiry_date, inv.expiration_date) < CURDATE() THEN 'expired'
+                ELSE 'active'
+            END,
+            COALESCE(inv.created_at, CURRENT_TIMESTAMP)
+        FROM product_inventory inv
+        LEFT JOIN inventory_batches existing ON existing.legacy_inventory_id = inv.inventory_id
+        LEFT JOIN purchase_order_items poi ON inv.batch_number LIKE CONCAT('%', poi.po_item_id)
+        LEFT JOIN purchase_orders po ON po.po_id = poi.po_id
+        LEFT JOIN purchase_order_receiving por ON por.po_id = po.po_id
+        LEFT JOIN product p ON p.product_id = inv.product_id
+        LEFT JOIN (
+            SELECT source_inventory_id, SUM(quantity_remaining) AS shelf_qty
+            FROM product_selling_stock
+            WHERE source_inventory_id IS NOT NULL
+            GROUP BY source_inventory_id
+        ) shelf ON shelf.source_inventory_id = inv.inventory_id
+        LEFT JOIN (
+            SELECT po_item_id, SUM(return_quantity) AS returned_qty
+            FROM purchase_order_returns
+            GROUP BY po_item_id
+        ) ret ON ret.po_item_id = poi.po_item_id
+        WHERE existing.batch_id IS NULL"
+    );
+
+    $pdo->exec(
+        "UPDATE product_selling_stock pss
+         INNER JOIN inventory_batches ib ON ib.legacy_inventory_id = pss.source_inventory_id
+         SET pss.source_batch_id = ib.batch_id
+         WHERE pss.source_batch_id IS NULL"
+    );
+
+    $pdo->exec(
+        "UPDATE inventory_batches ib
+         INNER JOIN product_inventory inv ON inv.inventory_id = ib.legacy_inventory_id
+         INNER JOIN purchase_orders po ON inv.batch_number LIKE CONCAT(po.po_number, '%')
+         INNER JOIN purchase_order_items poi ON poi.po_id = po.po_id AND poi.product_id = ib.product_id
+         LEFT JOIN purchase_order_receiving por ON por.po_id = po.po_id
+         LEFT JOIN (
+            SELECT po_item_id, SUM(return_quantity) AS damaged_qty
+            FROM purchase_order_returns
+            GROUP BY po_item_id
+         ) ret ON ret.po_item_id = poi.po_item_id
+         SET ib.po_id = po.po_id,
+             ib.po_item_id = poi.po_item_id,
+             ib.supplier_id = po.supplier_id,
+             ib.received_date = COALESCE(por.received_date, ib.received_date),
+             ib.unit_cost = CASE WHEN ib.unit_cost = 0 THEN COALESCE(poi.unit_price_snapshot, ib.unit_cost) ELSE ib.unit_cost END,
+             ib.damaged_qty = CASE WHEN ib.damaged_qty = 0 THEN COALESCE(ret.damaged_qty, 0) ELSE ib.damaged_qty END
+         WHERE ib.po_id IS NULL"
+    );
 }
 
 function migrateProductRowsToVariations(PDO $pdo): void
 {
-    $unitIdColumn = getMeasurementUnitIdColumn($pdo);
-    $column = static function (string $name, string $alias) use ($pdo): string {
-        return productTableHasColumn($pdo, $name) ? "p.{$name} AS {$alias}" : "NULL AS {$alias}";
-    };
-    $measurementJoin = productTableHasColumn($pdo, 'measurement_unit_id')
-        ? "LEFT JOIN product_measurement_units pmu ON pmu.{$unitIdColumn} = p.measurement_unit_id"
-        : "";
-    $measurementSelect = productTableHasColumn($pdo, 'measurement_unit_id')
-        ? "pmu.unit_name AS measurement_unit_name"
-        : "NULL AS measurement_unit_name";
-    $statement = $pdo->query(
-        "SELECT
-            p.product_id,
-            " . $column('barcode', 'barcode') . ",
-            " . (productTableHasColumn($pdo, 'price') ? 'p.price AS price' : '0 AS price') . ",
-            " . $column('variant_flavor', 'variant_flavor') . ",
-            " . $column('strength_value', 'strength_value') . ",
-            " . $column('strength_unit', 'strength_unit') . ",
-            " . $column('volume_value', 'volume_value') . ",
-            " . $column('volume_unit', 'volume_unit') . ",
-            " . $column('display_size', 'display_size') . ",
-            " . $column('size_value', 'size_value') . ",
-            " . $column('weight_volume_value', 'weight_volume_value') . ",
-            " . $column('weight_volume_unit', 'weight_volume_unit') . ",
-            " . $column('product_unit', 'product_unit') . ",
-            " . $column('packaging', 'packaging') . ",
-            {$measurementSelect}
-         FROM product p
-         {$measurementJoin}
-         LEFT JOIN product_variations pv ON pv.product_id = p.product_id
-         WHERE pv.variation_id IS NULL"
-    );
-
-    $insert = $pdo->prepare(
-        "INSERT INTO product_variations (
-            product_id,
-            variant_name,
-            strength_value,
-            strength_unit,
-            volume_value,
-            volume_unit,
-            size_value,
-            size_unit,
-            weight_value,
-            weight_unit,
-            unit,
-            packaging,
-            pack_content_qty,
-            pack_content_unit,
-            price,
-            barcode,
-            sku,
-            is_default,
-            stock
-        ) VALUES (
-            :product_id,
-            :variant_name,
-            :strength_value,
-            :strength_unit,
-            :volume_value,
-            :volume_unit,
-            :size_value,
-            :size_unit,
-            :weight_value,
-            :weight_unit,
-            :unit,
-            :packaging,
-            NULL,
-            NULL,
-            :price,
-            :barcode,
-            NULL,
-            1,
-            0
-        )"
-    );
-
-    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $insert->execute([
-            ':product_id' => cleanId($row['product_id']),
-            ':variant_name' => $row['variant_flavor'] ?: null,
-            ':strength_value' => $row['strength_value'] ?: null,
-            ':strength_unit' => $row['strength_unit'] ?: null,
-            ':volume_value' => $row['volume_value'] ?: null,
-            ':volume_unit' => $row['volume_unit'] ?: null,
-            ':size_value' => $row['display_size'] ?: ($row['size_value'] ?: null),
-            ':size_unit' => null,
-            ':weight_value' => $row['weight_volume_value'] ?: null,
-            ':weight_unit' => $row['weight_volume_unit'] ?: null,
-            ':unit' => $row['product_unit'] ?: ($row['measurement_unit_name'] ?: null),
-            ':packaging' => $row['packaging'] ?: null,
-            ':price' => (float) ($row['price'] ?? 0),
-            ':barcode' => $row['barcode'] ?: ('AUTO-' . strtoupper(bin2hex(random_bytes(6))))
-        ]);
-    }
+    // Kept as a no-op for older callers. Detail rows are now normalized by
+    // category-specific tables.
+    return;
 }
 
 function productTypeTableHasColumn(PDO $pdo, string $columnName): bool

@@ -58,36 +58,29 @@ function isLiquidMedicine(product) {
 function productDetailCells(product) {
     const isMedicine = product.category_name === 'Medicine';
     const rule = getVariationRule(product.category_name, product.type_name);
-    const variant = product.variant_flavor || product.variant_name || '';
-    const size = product.display_size || product.size_value || '';
-    const packaging = product.packaging || '';
-    const packContent = combineValueUnit(product.pack_content_qty, product.pack_content_unit);
-    const rows = [];
+    const variant = product.variant_flavor || product.variant || '';
+    const size = product.display_size || product.size_value || product.size || '';
+    const netWeight = product.weight_volume_value || product.net_weight || '';
+    const packContent = product.pack_content || product.pack_content_unit || '';
 
     if (isMedicine) {
-        rows.push(['Generic', product.generic_name || '']);
-        rows.push(['Strength', combineValueUnit(product.strength_value || product.strength_size_value, product.strength_unit)]);
-        rows.push(['Volume', combineValueUnit(product.volume_value, product.volume_unit)]);
-        rows.push(['Flavor', variant]);
-        rows.push(['Form', rule.formValue || product.type_name]);
-        rows.push(['Package Type', packaging]);
-        rows.push(['Pack Content', packContent]);
         return {
             generic: esc(product.generic_name || ''),
-            value: esc(rows.filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join(' / '))
+            strength: esc(product.strength_value || product.strength_size_value || ''),
+            variant: '',
+            size: '',
+            netWeight: '',
+            packContent: ''
         };
     }
 
-    rows.push([rule.variantLabel || 'Variant', variant]);
-    rows.push([rule.sizeLabel || 'Size', size]);
-    rows.push(['Net Weight', combineValueUnit(product.weight_volume_value, product.weight_volume_unit)]);
-    rows.push(['Volume', combineValueUnit(product.volume_value, product.volume_unit)]);
-    rows.push(['Package Type', packaging]);
-    rows.push(['Pack Content', packContent]);
-
     return {
-        generic: esc(variant),
-        value: esc(rows.filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join(' / '))
+        generic: '',
+        strength: '',
+        variant: esc(variant),
+        size: esc(size),
+        netWeight: esc(netWeight),
+        packContent: esc(packContent)
     };
 }
 
@@ -160,14 +153,18 @@ function renderSupplierProducts(rows) {
                 <td>${esc(product.category_name)}</td>
                 <td>${esc(product.type_name)}</td>
                 <td>${details.generic}</td>
-                <td>${details.value}</td>
+                <td>${details.strength}</td>
+                <td>${details.variant}</td>
+                <td>${details.size}</td>
+                <td>${details.netWeight}</td>
+                <td>${details.packContent}</td>
                 <td>${Number(product.price || 0).toFixed(2)}</td>
                 <td>
                     <div class="supplier-product-actions">
                         <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-product-id="${esc(product.product_id)}" title="Edit product">
                             <i class="fa-solid fa-pen"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger delete-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" data-product-id="${esc(product.product_id)}" data-variation-id="${esc(product.variation_id || '')}" title="Delete variation">
+                        <button class="btn btn-sm btn-outline-danger delete-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" data-product-id="${esc(product.product_id)}" title="Remove product">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
                     </div>
@@ -175,7 +172,7 @@ function renderSupplierProducts(rows) {
             </tr>
         `;
         }).join('')
-        : '<tr><td colspan="9" class="text-center text-muted py-4">No supplier products found.</td></tr>';
+        : '<tr><td colspan="13" class="text-center text-muted py-4">No supplier products found.</td></tr>';
 }
 
 async function loadSupplierProducts() {
@@ -819,19 +816,14 @@ async function submitEditSupplierProduct(event) {
 
 async function deleteSupplierProduct(button) {
     const product = supplierProductRows.find((row) => String(row.product_id) === String(button.dataset.productId));
-    const variationText = product?.variant_flavor || product?.strength_size_value || product?.size_value || '';
-    const confirmed = confirm(button.dataset.variationId
-        ? `Delete ${variationText ? `${variationText} variation of ` : ''}${product?.product_name || 'this product'}?`
-        : `Remove ${product?.product_name || 'this product'} from this supplier?`);
+    const confirmed = confirm(`Remove ${product?.product_name || 'this product'} from this supplier?`);
     if (!confirmed) return;
 
     try {
-        const data = await fetchJson(endpoint(button.dataset.variationId ? 'products/delete_product_variation.php' : 'suppliers/delete_supplier_product.php'), {
+        const data = await fetchJson(endpoint('suppliers/delete_supplier_product.php'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(button.dataset.variationId ? {
-                variation_id: button.dataset.variationId
-            } : {
+            body: JSON.stringify({
                 supplier_product_id: button.dataset.supplierProductId,
                 product_id: button.dataset.productId
             })

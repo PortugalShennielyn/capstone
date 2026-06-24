@@ -11,8 +11,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=6" rel="stylesheet">
-    <script src="./js/navbar.js?v=17" defer></script>
+    <link href="./css/navbar.css?v=9" rel="stylesheet">
+    <script src="./js/navbar.js?v=22" defer></script>
 
     <style>
         :root {
@@ -87,22 +87,29 @@
         .po-status-filter { width: 178px; flex: 0 0 auto; }
         .table-responsive { border-radius: 10px; overflow-x: auto; }
         .po-table-scroll { scrollbar-gutter: stable; }
-        .po-list-table { width: 100%; min-width: 1540px; margin-bottom: 0; table-layout: fixed; }
-        .po-list-table th { padding: 14px 8px; color: #596274; background: #f8f9fc; font-size: 12.5px; font-weight: 800; line-height: 1.18; text-align: center; white-space: normal; vertical-align: middle; }
-        .po-list-table td { padding: 15px 8px; color: var(--text-main); font-size: 12.5px; font-weight: 750; line-height: 1.34; text-align: center; vertical-align: middle; overflow-wrap: normal; word-break: normal; }
+        .po-list-table { width: max-content; min-width: 2020px; margin-bottom: 0; table-layout: fixed; }
+        #table-purchase-orders.po-list-table { width: max-content !important; min-width: 2020px !important; table-layout: fixed !important; }
+        .po-list-table th { padding: 13px 10px; color: #596274; background: #f8f9fc; font-size: 12.5px; font-weight: 800; line-height: 1.18; text-align: center; white-space: nowrap; vertical-align: middle; }
+        .po-list-table td { padding: 14px 10px; color: var(--text-main); font-size: 12.5px; font-weight: 750; line-height: 1.34; text-align: center; vertical-align: middle; overflow-wrap: normal; word-break: normal; }
+        #table-purchase-orders.po-list-table th,
+        #table-purchase-orders.po-list-table td { overflow-wrap: normal !important; word-break: normal !important; hyphens: none !important; }
         .po-list-table tbody { opacity: 1; transition: opacity .15s ease; }
         .po-list-table tbody.po-table-body-updating { opacity: .72; }
-        .po-list-table .col-date { width: 110px; }
+        .po-list-table .col-date { width: 120px; }
         .po-list-table .col-po-number { width: 170px; }
-        .po-list-table .col-supplier { width: 120px; }
-        .po-list-table .col-items { width: 210px; }
-        .po-list-table .col-brand { width: 155px; }
-        .po-list-table .col-qty { width: 90px; }
-        .po-list-table .col-terms { width: 105px; }
-        .po-list-table .col-delivery { width: 130px; }
+        .po-list-table .col-supplier { width: 160px; }
+        .po-list-table .col-brand { width: 140px; }
+        .po-list-table .col-items { width: 180px; }
+        .po-list-table .col-category { width: 130px; }
+        .po-list-table .col-type { width: 130px; }
+        .po-list-table .col-qty { width: 110px; }
+        .po-list-table .col-purchase-unit { width: 150px; }
+        .po-list-table .col-inventory-qty { width: 130px; }
+        .po-list-table .col-terms { width: 120px; }
+        .po-list-table .col-delivery { width: 160px; }
         .po-list-table .col-money { width: 130px; }
-        .po-list-table .col-status { width: 105px; }
-        .po-list-table .col-actions { width: 95px; }
+        .po-list-table .col-status { width: 120px; }
+        .po-list-table .col-actions { width: 100px; }
         .po-list-table .col-received { width: 110px; }
         .po-list-table .col-payment-status { width: 125px; }
         .po-list-table th:nth-child(1),
@@ -126,7 +133,7 @@
         .po-line-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; text-align: left; }
         .po-line-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 5px; align-items: start; min-height: 18px; }
         .po-line-list .line-index { color: #7b8494; font-size: 12px; font-weight: 800; text-align: right; line-height: 1.3; }
-        .po-line-list .line-text { min-width: 0; overflow-wrap: break-word; word-break: normal; hyphens: auto; line-height: 1.3; }
+        .po-line-list .line-text { min-width: 0; white-space: normal; overflow-wrap: normal; word-break: normal; hyphens: none; line-height: 1.3; }
         .po-line-list.po-line-list-plain { text-align: center; }
         .po-line-list.po-line-list-plain li { grid-template-columns: 1fr; justify-items: center; }
         .po-money { display: inline-block; min-width: max-content; font-weight: 800; white-space: nowrap; color: var(--text-main); font-size: 13px; }
@@ -134,8 +141,50 @@
         .po-actions .btn { width: 32px; height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
         .status-badge { white-space: nowrap; line-height: 1.2; font-size: 11px; padding: 6px 8px; }
         .po-empty { padding: 42px 16px !important; color: #8790a1 !important; text-align: center; }
-        .po-items-table th, .po-items-table td { padding: 12px; text-align: center; font-size: .88rem; vertical-align: middle; }
+        .po-product-select-wrap { min-width: 0; }
+        .po-product-select-wrap .form-select { min-width: 0; width: 100%; max-width: 100%; text-overflow: ellipsis; }
+        .po-create-form { display: grid; gap: 16px; margin-bottom: 18px; }
+        .po-create-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: end; }
+        .po-create-form-row.po-create-items-row { grid-template-columns: minmax(300px, 1.9fr) 132px 170px 190px 132px; }
+        .po-create-form .form-label { margin-bottom: 6px; }
+        .po-create-form .form-select, .po-create-form .form-control, .po-create-form .btn { min-height: 40px; }
+        .po-selected-product-panel { display: none; margin: -2px 0 18px; padding: 14px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
+        .po-selected-product-panel.is-visible { display: block; }
+        .po-selected-product-grid { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); gap: 10px; }
+        .po-selected-product-grid + .po-selected-product-grid { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e9f1; }
+        .po-info-metric { min-width: 0; }
+        .po-info-metric span { display: block; color: #7b8494; font-size: .72rem; font-weight: 800; line-height: 1.2; text-transform: uppercase; }
+        .po-info-metric strong { display: block; margin-top: 4px; color: var(--text-main); font-size: .88rem; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+        .po-reorder-note { margin-top: 10px; color: #596274; font-size: .82rem; font-weight: 700; }
+        .po-items-table th, .po-items-table td { padding: 11px 10px; text-align: center; font-size: .84rem; vertical-align: middle; }
         .po-items-table th { color: #596274; background: #f8f9fc; font-weight: 800; white-space: nowrap; }
+        .po-items-table { width: max-content; table-layout: fixed; min-width: 1700px; }
+        #table-po-items.po-items-table,
+        #table-edit-po-items.po-items-table { width: max-content !important; min-width: 1700px !important; table-layout: fixed !important; }
+        #table-po-items.po-items-table th,
+        #table-po-items.po-items-table td,
+        #table-edit-po-items.po-items-table th,
+        #table-edit-po-items.po-items-table td { overflow-wrap: normal !important; word-break: normal !important; hyphens: none !important; }
+        .po-items-table th:nth-child(1), .po-items-table td:nth-child(1) { width: 120px; text-align: left; }
+        .po-items-table th:nth-child(2), .po-items-table td:nth-child(2) { width: 190px; text-align: left; }
+        .po-items-table th:nth-child(3), .po-items-table td:nth-child(3) { width: 135px; }
+        .po-items-table th:nth-child(4), .po-items-table td:nth-child(4) { width: 140px; }
+        .po-items-table th:nth-child(5), .po-items-table td:nth-child(5) { width: 95px; }
+        .po-items-table th:nth-child(6), .po-items-table td:nth-child(6) { width: 90px; }
+        .po-items-table th:nth-child(7), .po-items-table td:nth-child(7) { width: 115px; }
+        .po-items-table th:nth-child(8), .po-items-table td:nth-child(8) { width: 150px; }
+        .po-items-table th:nth-child(9), .po-items-table td:nth-child(9) { width: 100px; white-space: nowrap; }
+        .po-items-table th:nth-child(10), .po-items-table td:nth-child(10) { width: 150px; white-space: nowrap; }
+        .po-items-table th:nth-child(11), .po-items-table td:nth-child(11) { width: 130px; white-space: nowrap; }
+        .po-items-table th:nth-child(12), .po-items-table td:nth-child(12) { width: 120px; text-align: right; white-space: nowrap; }
+        .po-items-table th:nth-child(13), .po-items-table td:nth-child(13) { width: 125px; text-align: right; white-space: nowrap; }
+        .po-items-table th:nth-child(14), .po-items-table td:nth-child(14) { width: 80px; white-space: nowrap; }
+        .po-items-table td { overflow-wrap: normal; word-break: normal; hyphens: none; }
+        .po-items-table td:nth-child(2) { white-space: normal; overflow-wrap: normal; }
+        .po-items-table td:not(:nth-child(2)) { white-space: nowrap; }
+        .po-create-summary { display: grid; grid-template-columns: repeat(4, minmax(135px, 1fr)); gap: 12px; margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
+        .po-create-summary span { display: block; color: #7b8494; font-size: .72rem; font-weight: 800; text-transform: uppercase; }
+        .po-create-summary strong { display: block; margin-top: 4px; color: var(--text-main); font-size: .95rem; font-weight: 800; }
         .po-detail-items-table { min-width: 1990px; table-layout: auto; }
         .po-detail-items-table th,
         .po-detail-items-table td {
@@ -194,19 +243,27 @@
         .po-item-editor .form-control { min-height: 38px; }
         .po-item-editor-title { margin: 0 0 12px; color: var(--text-main); font-size: .9rem; font-weight: 800; }
         body.dark-mode .po-list-table th, body.dark-mode .po-items-table th { background: #202b3d; color: #cbd5e1; }
-        body.dark-mode .status-card, body.dark-mode .po-detail-box, body.dark-mode .payment-summary-card, body.dark-mode .po-item-editor { background: #182131; }
+        body.dark-mode .status-card, body.dark-mode .po-detail-box, body.dark-mode .payment-summary-card, body.dark-mode .po-item-editor, body.dark-mode .po-selected-product-panel, body.dark-mode .po-create-summary { background: #182131; }
         body.dark-mode .payment-summary-line { border-bottom-color: #263244; }
         @media (min-width: 1500px) {
-            .po-list-table { min-width: 1540px; }
+            .po-list-table { min-width: 2020px; }
         }
         @media (max-width: 1199.98px) {
             .status-summary-grid { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
-            .po-list-table { min-width: 1540px; }
+            .po-list-table { min-width: 2020px; }
         }
         @media (max-width: 991.98px) {
             .page-body { padding: 20px 14px; }
             .po-workspace { width: 100%; max-width: 100%; margin-left: 0; padding-inline: 0; }
-            .po-list-table { min-width: 1540px; }
+            .po-list-table { min-width: 2020px; }
+            .po-create-form-row,
+            .po-create-form-row.po-create-items-row { grid-template-columns: 1fr; }
+            .po-selected-product-grid,
+            .po-create-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 575.98px) {
+            .po-selected-product-grid,
+            .po-create-summary { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -269,10 +326,14 @@
                                     <thead id="purchase-orders-head">
                                         <tr>
                                             <th class="col-date">Order Date</th>
-                                            <th class="col-supplier">Supplier Name</th>
-                                            <th class="col-items">Items</th>
-                                            <th class="col-brand">Brand Name</th>
-                                            <th class="col-qty">Quantity</th>
+                                            <th class="col-supplier">Supplier</th>
+                                            <th class="col-brand">Brand</th>
+                                            <th class="col-items">Product</th>
+                                            <th class="col-category">Category</th>
+                                            <th class="col-type">Product Type</th>
+                                            <th class="col-qty">Qty Ordered</th>
+                                            <th class="col-purchase-unit">Purchase Unit</th>
+                                            <th class="col-inventory-qty">Inventory Qty</th>
                                             <th class="col-terms">Payment Terms</th>
                                             <th class="col-delivery">Expected Delivery Date</th>
                                             <th class="col-money">Total Amount</th>
@@ -302,24 +363,15 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="row g-3 align-items-end mb-4">
-                        <div class="col-lg-4">
+                    <div class="po-create-form">
+                        <div class="po-create-form-row">
+                        <div>
                             <label class="form-label fw-semibold" for="po-supplier-select">Supplier</label>
                             <select id="po-supplier-select" class="form-select">
                                 <option value="" disabled selected>Loading suppliers...</option>
                             </select>
                         </div>
-                        <div class="col-lg-4">
-                            <label class="form-label fw-semibold" for="po-product-select">Product</label>
-                            <select id="po-product-select" class="form-select" disabled>
-                                <option value="" disabled selected>Select product...</option>
-                            </select>
-                        </div>
-                        <div class="col-lg-2">
-                            <label class="form-label fw-semibold" for="po-quantity">Quantity</label>
-                            <input id="po-quantity" type="number" class="form-control" min="1" value="1">
-                        </div>
-                        <div class="col-lg-4">
+                        <div>
                             <label class="form-label fw-semibold" for="po-payment-terms">Payment Terms</label>
                             <select id="po-payment-terms" class="form-select">
                                 <option value="" disabled selected>Select payment terms...</option>
@@ -328,30 +380,73 @@
                                 <option value="Bank Transfer">Bank Transfer</option>
                             </select>
                         </div>
-                        <div class="col-lg-4">
+                        <div>
                             <label class="form-label fw-semibold" for="po-expected-delivery">Expected Delivery Date</label>
                             <input id="po-expected-delivery" type="date" class="form-control">
                         </div>
-                        <div class="col-lg-4 d-grid">
+                        </div>
+                        <div class="po-create-form-row po-create-items-row">
+                        <div class="po-product-select-wrap">
+                            <label class="form-label fw-semibold" for="po-product-select">Product</label>
+                            <select id="po-product-select" class="form-select" disabled>
+                                <option value="" disabled selected>Select product...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label fw-semibold" for="po-quantity">Qty Ordered</label>
+                            <input id="po-quantity" type="number" class="form-control" min="1" value="1">
+                        </div>
+                        <div>
+                            <label class="form-label fw-semibold" for="po-purchase-unit">Purchase Unit</label>
+                            <select id="po-purchase-unit" class="form-select">
+                                <option value="Box">Box</option>
+                                <option value="Pack">Pack</option>
+                                <option value="Case">Case</option>
+                                <option value="Carton">Carton</option>
+                                <option value="Bottle">Bottle</option>
+                                <option value="Can">Can</option>
+                                <option value="Blister Pack">Blister Pack</option>
+                                <option value="Sachet">Sachet</option>
+                                <option value="Piece">Piece</option>
+                                <option value="pcs">pcs</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label fw-semibold" for="po-units-per-purchase-unit">Units per Purchase Unit</label>
+                            <input id="po-units-per-purchase-unit" type="number" class="form-control" min="1" value="1">
+                        </div>
+                        <div class="d-grid">
                             <button id="btnAddPoItem" class="btn btn-purple" type="button">Add Item</button>
                         </div>
+                        </div>
                     </div>
+
+                    <div id="po-selected-product-panel" class="po-selected-product-panel" aria-live="polite"></div>
 
                     <div class="table-responsive border rounded">
                         <table id="table-po-items" class="table table-hover align-middle mb-0 po-items-table">
                             <thead>
                                 <tr>
-                                    <th>Product Name</th>
                                     <th>Brand</th>
+                                    <th>Product</th>
+                                    <th>Category</th>
+                                    <th>Product Type</th>
+                                    <th>Size</th>
                                     <th>Unit</th>
-                                    <th>Price</th>
-                                    <th>Order Qty</th>
+                                    <th>Packaging</th>
+                                    <th>Purchase Unit</th>
+                                    <th>Qty Ordered</th>
+                                    <th>Units per Purchase Unit</th>
+                                    <th>Inventory Qty</th>
+                                    <th>Purchase Cost</th>
+                                    <th>Line Total</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
                         </table>
                     </div>
+                    <div id="po-create-summary" class="po-create-summary" aria-live="polite"></div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
@@ -377,7 +472,7 @@
                         <table class="table table-hover align-middle mb-0 po-items-table po-detail-items-table">
                             <thead>
                                 <tr>
-                                    <th>Product Name</th>
+                                    <th>Product</th>
                                     <th>Brand</th>
                                     <th>Category</th>
                                     <th>Product Type</th>
@@ -385,8 +480,8 @@
                                     <th>Strength / Size</th>
                                     <th>Unit</th>
                                     <th>Packaging</th>
-                                    <th>Unit Price</th>
-                                    <th>Ordered Qty</th>
+                                    <th>Purchase Cost</th>
+                                    <th>Inventory Qty</th>
                                     <th>Received Qty</th>
                                     <th>Damaged Qty</th>
                                     <th>Returned Amount</th>
@@ -428,7 +523,7 @@
                             </select>
                         </div>
                         <div class="col-lg-2">
-                            <label class="form-label fw-semibold" for="edit-po-quantity">Quantity</label>
+                            <label class="form-label fw-semibold" for="edit-po-quantity">Qty Ordered</label>
                             <input id="edit-po-quantity" type="number" class="form-control" min="1" value="1">
                         </div>
                         <div class="col-lg-2 d-grid">
@@ -463,7 +558,7 @@
                                 <input type="hidden" id="edit-po-editor-product-id">
                                 <div class="row g-3">
                                     <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-product-name">Product Name</label>
+                                        <label class="form-label fw-semibold" for="edit-po-editor-product-name">Product</label>
                                         <input id="edit-po-editor-product-name" class="form-control" type="text">
                                     </div>
                                     <div class="col-lg-6">
@@ -499,7 +594,7 @@
                                         <input id="edit-po-editor-price" class="form-control" type="number" min="0" step="0.01">
                                     </div>
                                     <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-quantity">Quantity</label>
+                                        <label class="form-label fw-semibold" for="edit-po-editor-quantity">Qty Ordered</label>
                                         <input id="edit-po-editor-quantity" class="form-control" type="number" min="1" value="1">
                                     </div>
                                 </div>
@@ -511,11 +606,19 @@
                         <table id="table-edit-po-items" class="table table-hover align-middle mb-0 po-items-table">
                             <thead>
                                 <tr>
-                                    <th>Product Name</th>
                                     <th>Brand</th>
+                                    <th>Product</th>
+                                    <th>Category</th>
+                                    <th>Product Type</th>
+                                    <th>Size</th>
                                     <th>Unit</th>
-                                    <th>Price</th>
-                                    <th>Order Qty</th>
+                                    <th>Packaging</th>
+                                    <th>Purchase Unit</th>
+                                    <th>Qty Ordered</th>
+                                    <th>Units per Purchase Unit</th>
+                                    <th>Inventory Qty</th>
+                                    <th>Purchase Cost</th>
+                                    <th>Line Total</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -546,11 +649,11 @@
                         <table id="table-receive-items" class="table table-hover align-middle mb-0 po-items-table">
                             <thead>
                                 <tr>
-                                    <th>Product/Items</th>
+                                    <th>Product</th>
                                     <th>Brand</th>
-                                    <th>Ordered Quantity</th>
-                                    <th>Received Quantity</th>
-                                    <th>Damaged Quantity</th>
+                                    <th>Inventory Qty</th>
+                                    <th>Received Qty</th>
+                                    <th>Damaged Qty</th>
                                     <th>Remarks</th>
                                 </tr>
                             </thead>
@@ -624,12 +727,12 @@
                         <table id="table-return-items" class="table table-hover align-middle mb-0 po-items-table">
                             <thead>
                                 <tr>
-                                    <th>Product Name</th>
-                                    <th>Brand Name</th>
-                                    <th>Ordered Quantity</th>
-                                    <th>Received Quantity</th>
-                                    <th>Damaged Quantity</th>
-                                    <th>Return Quantity</th>
+                                    <th>Product</th>
+                                    <th>Brand</th>
+                                    <th>Inventory Qty</th>
+                                    <th>Received Qty</th>
+                                    <th>Damaged Qty</th>
+                                    <th>Return Qty</th>
                                     <th>Damage Reason</th>
                                     <th>Remarks</th>
                                 </tr>
@@ -651,7 +754,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-    <script type="module" src="./js/modules/purchase_orders.js?v=18"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=29"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js';
 

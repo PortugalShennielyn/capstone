@@ -10,8 +10,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
-    ensurePurchaseOrderSchema($pdo);
-    ensureProductCategorySchema($pdo);
 
     $status = trim((string) ($_GET['status'] ?? ''));
     $scope = trim((string) ($_GET['scope'] ?? 'active'));
@@ -70,34 +68,52 @@ try {
                 poi.po_id,
                 poi.po_item_id,
                 poi.product_id,
-                poi.variation_id,
                 poi.quantity,
-                COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name) AS product_name,
-                COALESCE(NULLIF(poi.brand_name_snapshot, ''), p.brand_name) AS brand_name,
+                poi.purchase_qty,
+                CASE
+                    WHEN LOWER(TRIM(COALESCE(poi.purchase_unit_snapshot, ''))) LIKE 'by %' THEN TRIM(SUBSTRING(TRIM(poi.purchase_unit_snapshot), 4))
+                    ELSE COALESCE(NULLIF(TRIM(poi.purchase_unit_snapshot), ''), 'pcs')
+                END AS purchase_unit,
+                COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
+                COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
+                COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, p.price, 0)) AS stored_line_total,
+                CASE
+                    WHEN NULLIF(TRIM(poi.product_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.product_name_snapshot)) LIKE 'N/A%' THEN p.product_name
+                    ELSE poi.product_name_snapshot
+                END AS product_name,
+                CASE
+                    WHEN NULLIF(TRIM(poi.brand_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.brand_name_snapshot)) LIKE 'N/A%' THEN p.brand_name
+                    ELSE poi.brand_name_snapshot
+                END AS brand_name,
                 COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
                 COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
-                COALESCE(NULLIF(poi.generic_name_snapshot, ''), p.generic_name) AS generic_name,
-                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', pv.strength_value, pv.strength_unit), ''), 'N/A') AS strength,
-                pv.strength_value,
-                pv.strength_unit,
-                pv.volume_value,
-                pv.volume_unit,
-                COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), pv.variant_name, 'N/A') AS variant_flavor,
-                COALESCE(NULLIF(poi.size_value_snapshot, ''), pv.size_value, 'N/A') AS size_value,
-                pv.weight_value AS weight_volume_value,
-                pv.weight_unit AS weight_volume_unit,
-                COALESCE(NULLIF(poi.unit_snapshot, ''), pv.unit, pmu.unit_name, 'N/A') AS unit,
-                COALESCE(NULLIF(poi.packaging_snapshot, ''), pv.packaging, 'N/A') AS packaging,
-                COALESCE(poi.unit_price_snapshot, pv.price, p.price) AS price,
+                COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
+                COALESCE(NULLIF(poi.strength_snapshot, ''), md.strength, '') AS strength,
+                md.strength AS strength_value,
+                '' AS strength_unit,
+                md.dosage_form AS dosage_form,
+                md.dosage_form AS volume_value,
+                '' AS volume_unit,
+                COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), gd.variant, '') AS variant_flavor,
+                COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, '') AS size_value,
+                gd.net_weight AS weight_volume_value,
+                '' AS weight_volume_unit,
+                CASE
+                    WHEN NULLIF(poi.unit_snapshot, '') IS NOT NULL AND UPPER(TRIM(poi.unit_snapshot)) NOT LIKE 'N/A%' THEN poi.unit_snapshot
+                    WHEN LOWER(COALESCE(md.dosage_form, '')) IN ('tablet', 'capsule', 'caplet') THEN 'pcs'
+                    ELSE COALESCE(md.dosage_form, '')
+                END AS unit,
+                COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging,
+                COALESCE(poi.unit_price_snapshot, p.price) AS price,
                 COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
                 COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
                 COALESCE(returns.return_quantity, 0) AS returned_quantity
              FROM purchase_order_items poi
              INNER JOIN product p ON p.product_id = poi.product_id
-             LEFT JOIN product_variations pv ON pv.variation_id = poi.variation_id
              LEFT JOIN product_categories pc ON pc.category_id = p.category_id
              LEFT JOIN product_types pt ON pt.type_id = p.type_id
-             LEFT JOIN product_measurement_units pmu ON p.measurement_unit_id = pmu." . getMeasurementUnitIdColumn($pdo) . "
+             LEFT JOIN medicine_details md ON md.product_id = p.product_id
+             LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
              LEFT JOIN purchase_order_receiving_items pori ON pori.po_item_id = poi.po_item_id
              LEFT JOIN (
                 SELECT po_item_id, SUM(return_quantity) AS return_quantity
@@ -105,17 +121,17 @@ try {
                 GROUP BY po_item_id
              ) returns ON returns.po_item_id = poi.po_item_id
              WHERE poi.po_id IN ({$placeholders})
-             GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, p.generic_name, pv.strength_value, pv.strength_unit, pv.volume_value, pv.volume_unit, pv.variant_name, pv.size_value, pv.weight_value, pv.weight_unit, pv.unit, pv.packaging, pmu.unit_name, p.price, returns.return_quantity
+             GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.package_type, p.price, returns.return_quantity
              ORDER BY poi.po_id, poi.po_item_id"
         );
         $itemsStatement->execute($poIds);
 
         $itemsByPo = [];
         foreach ($itemsStatement->fetchAll(PDO::FETCH_ASSOC) as $item) {
-            $quantity = (int) $item['quantity'];
+            $quantity = (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
             $price = (float) $item['price'];
             $returnedQuantity = (int) $item['returned_quantity'];
-            $item['line_total'] = $quantity * $price;
+            $item['line_total'] = (float) ($item['stored_line_total'] ?: ($quantity * $price));
             $item['returned_amount'] = $returnedQuantity * $price;
             $itemsByPo[cleanId($item['po_id'])][] = $item;
         }
@@ -129,7 +145,7 @@ try {
             foreach ($orderItems as $item) {
                 $totalAmount += (float) $item['line_total'];
                 $returnedAmount += (float) $item['returned_amount'];
-                $totalQuantity += (int) $item['quantity'];
+                $totalQuantity += (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
             }
 
             $order['items'] = $orderItems;
@@ -141,7 +157,7 @@ try {
             $order['payment_state'] = $order['payment_status'] ?: ($returnedAmount > 0 ? 'Adjusted' : 'Unpaid');
             $order['item_names'] = array_map(static fn($item) => $item['product_name'], $orderItems);
             $order['brand_names'] = array_map(static fn($item) => $item['brand_name'], $orderItems);
-            $order['quantities'] = array_map(static fn($item) => (int) $item['quantity'], $orderItems);
+            $order['quantities'] = array_map(static fn($item) => (int) ($item['inventory_qty_ordered'] ?: $item['quantity']), $orderItems);
         }
         unset($order);
     }

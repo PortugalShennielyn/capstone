@@ -24,7 +24,6 @@ if (!is_array($payload)) {
 }
 
 try {
-    ensurePurchaseOrderSchema($pdo);
 
     $poId = cleanId($payload['po_id'] ?? null);
     $remarks = trim((string) ($payload['remarks'] ?? ''));
@@ -38,7 +37,7 @@ try {
     }
 
     $orderStatement = $pdo->prepare(
-        'SELECT po_id, status, po_number
+        'SELECT po_id, supplier_id, status, po_number
          FROM purchase_orders
          WHERE po_id = :po_id
          LIMIT 1'
@@ -69,12 +68,12 @@ try {
         'SELECT
             poi.po_item_id,
             poi.product_id,
-            poi.variation_id,
             poi.quantity,
-            COALESCE(poi.unit_price_snapshot, pv.price, p.price, 0) AS unit_price
+            COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
+            COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, p.price, 0)) AS line_total,
+            COALESCE(poi.unit_price_snapshot, p.price, 0) AS unit_price
          FROM purchase_order_items poi
          INNER JOIN product p ON p.product_id = poi.product_id
-         LEFT JOIN product_variations pv ON pv.variation_id = poi.variation_id
          WHERE poi.po_id = :po_id'
     );
     $poItemStatement->execute([':po_id' => $poId]);
@@ -99,13 +98,14 @@ try {
     }
 
     foreach ($poItems as $poItem) {
-        $totalAmount += (int) $poItem['quantity'] * (float) $poItem['unit_price'];
+        $totalAmount += (float) ($poItem['line_total'] ?: ((int) $poItem['inventory_qty_ordered'] * (float) $poItem['unit_price']));
     }
 
     foreach ($items as $item) {
         $poItemId = cleanId($item['po_item_id'] ?? null);
         $receivedQuantity = (int) ($item['received_quantity'] ?? 0);
         $damagedQuantity = (int) ($item['damaged_quantity'] ?? 0);
+        $expiryDate = trim((string) ($item['expiry_date'] ?? ''));
 
         if (!isset($poItems[$poItemId])) {
             throw new InvalidArgumentException('A received item does not belong to this purchase order.');
@@ -115,7 +115,7 @@ try {
             throw new InvalidArgumentException('Received and damaged quantities cannot be negative.');
         }
 
-        $orderedQuantity = (int) $poItems[$poItemId]['quantity'];
+        $orderedQuantity = (int) ($poItems[$poItemId]['inventory_qty_ordered'] ?: $poItems[$poItemId]['quantity']);
         $unitPrice = (float) $poItems[$poItemId]['unit_price'];
 
         if ($receivedQuantity > $orderedQuantity) {
@@ -124,6 +124,13 @@ try {
 
         if ($damagedQuantity > $receivedQuantity) {
             throw new InvalidArgumentException('Damaged quantity cannot be greater than received quantity.');
+        }
+
+        if ($expiryDate !== '') {
+            $parsedExpiry = DateTime::createFromFormat('Y-m-d', $expiryDate);
+            if (!$parsedExpiry || $parsedExpiry->format('Y-m-d') !== $expiryDate) {
+                throw new InvalidArgumentException('Expiry date must be a valid date.');
+            }
         }
 
         if ($damagedQuantity > 0) {
@@ -169,9 +176,27 @@ try {
 
     $inventoryStatement = $pdo->prepare(
         "INSERT INTO product_inventory
-            (inventory_id, product_id, variation_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, status)
+            (inventory_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, status)
          VALUES
-            (:inventory_id, :product_id, :variation_id, :batch_number, :quantity_stocked, :quantity_remaining, NULL, 'Available')"
+            (:inventory_id, :product_id, :batch_number, :quantity_stocked, :quantity_remaining, :expiration_date, 'Available')"
+    );
+
+    $batchStatement = $pdo->prepare(
+        "INSERT INTO inventory_batches
+            (batch_id, legacy_inventory_id, po_id, po_item_id, product_id, supplier_id, received_date, expiry_date, received_qty, storage_qty, shelf_qty, damaged_qty, returned_qty, unit_cost, batch_status)
+         VALUES
+            (:batch_id, :legacy_inventory_id, :po_id, :po_item_id, :product_id, :supplier_id, CURRENT_TIMESTAMP, :expiry_date, :received_qty, :storage_qty, 0, :damaged_qty, :returned_qty, :unit_cost, :batch_status)
+         ON DUPLICATE KEY UPDATE
+            legacy_inventory_id = VALUES(legacy_inventory_id),
+            supplier_id = VALUES(supplier_id),
+            received_date = VALUES(received_date),
+            expiry_date = VALUES(expiry_date),
+            received_qty = VALUES(received_qty),
+            storage_qty = VALUES(storage_qty),
+            damaged_qty = VALUES(damaged_qty),
+            returned_qty = VALUES(returned_qty),
+            unit_cost = VALUES(unit_cost),
+            batch_status = VALUES(batch_status)"
     );
 
     $returnStatement = $pdo->prepare(
@@ -186,6 +211,7 @@ try {
         $receivedQuantity = (int) ($item['received_quantity'] ?? 0);
         $damagedQuantity = (int) ($item['damaged_quantity'] ?? 0);
         $goodQuantity = $receivedQuantity - $damagedQuantity;
+        $expiryDate = trim((string) ($item['expiry_date'] ?? ''));
         $itemRemarks = trim((string) ($item['remarks'] ?? ''));
         $poItem = $poItems[$poItemId];
 
@@ -197,14 +223,34 @@ try {
             ':damaged_quantity' => $damagedQuantity
         ]);
 
+        $inventoryId = null;
         if ($goodQuantity > 0) {
+            $inventoryId = newUuid($pdo);
             $inventoryStatement->execute([
-                ':inventory_id' => newUuid($pdo),
+                ':inventory_id' => $inventoryId,
                 ':product_id' => cleanId($poItem['product_id']),
-                ':variation_id' => nullableId($poItem['variation_id'] ?? null),
                 ':batch_number' => $order['po_number'] . '-' . $poItemId,
                 ':quantity_stocked' => $goodQuantity,
-                ':quantity_remaining' => $goodQuantity
+                ':quantity_remaining' => $goodQuantity,
+                ':expiration_date' => $expiryDate !== '' ? $expiryDate : null
+            ]);
+        }
+
+        if ($receivedQuantity > 0 || $damagedQuantity > 0) {
+            $batchStatement->execute([
+                ':batch_id' => newUuid($pdo),
+                ':legacy_inventory_id' => $inventoryId,
+                ':po_id' => $poId,
+                ':po_item_id' => $poItemId,
+                ':product_id' => cleanId($poItem['product_id']),
+                ':supplier_id' => cleanId($order['supplier_id']),
+                ':expiry_date' => $expiryDate !== '' ? $expiryDate : null,
+                ':received_qty' => $receivedQuantity,
+                ':storage_qty' => $goodQuantity,
+                ':damaged_qty' => $damagedQuantity,
+                ':returned_qty' => 0,
+                ':unit_cost' => (float) $poItem['unit_price'],
+                ':batch_status' => $goodQuantity > 0 ? 'active' : ($damagedQuantity > 0 ? 'damaged' : 'depleted')
             ]);
         }
 

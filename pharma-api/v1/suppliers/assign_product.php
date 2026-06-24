@@ -11,6 +11,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $payload = json_decode(file_get_contents('php://input'), true);
 $supplierId = cleanId($payload['supplier_id'] ?? null);
 $productId = cleanId($payload['product_id'] ?? null);
+$supplierCostPrice = $payload['supplier_cost_price'] ?? null;
+$purchaseUnit = trim((string) ($payload['purchase_unit'] ?? ''));
+$unitsPerPurchaseUnit = max(1, (int) ($payload['units_per_purchase_unit'] ?? 1));
 
 if ($supplierId === '' || $productId === '') {
     http_response_code(400);
@@ -19,7 +22,6 @@ if ($supplierId === '' || $productId === '') {
 }
 
 try {
-    ensureProductCategorySchema($pdo);
 
     $supplierCheck = $pdo->prepare('SELECT COUNT(*) FROM suppliers WHERE supplier_id = :supplier_id');
     $supplierCheck->execute([':supplier_id' => $supplierId]);
@@ -34,12 +36,19 @@ try {
     }
 
     $statement = $pdo->prepare(
-        'INSERT IGNORE INTO supplier_products (supplier_id, product_id)
-         VALUES (:supplier_id, :product_id)'
+        'INSERT INTO supplier_products (supplier_id, product_id, supplier_cost_price, purchase_unit, units_per_purchase_unit)
+         VALUES (:supplier_id, :product_id, :supplier_cost_price, :purchase_unit, :units_per_purchase_unit)
+         ON DUPLICATE KEY UPDATE
+            supplier_cost_price = VALUES(supplier_cost_price),
+            purchase_unit = VALUES(purchase_unit),
+            units_per_purchase_unit = VALUES(units_per_purchase_unit)'
     );
     $statement->execute([
         ':supplier_id' => $supplierId,
-        ':product_id' => $productId
+        ':product_id' => $productId,
+        ':supplier_cost_price' => is_numeric($supplierCostPrice) ? (float) $supplierCostPrice : null,
+        ':purchase_unit' => $purchaseUnit !== '' ? $purchaseUnit : null,
+        ':units_per_purchase_unit' => $unitsPerPurchaseUnit
     ]);
 
     echo json_encode([

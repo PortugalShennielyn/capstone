@@ -47,8 +47,9 @@ const productState = {
     categories: [],
     types: [],
     units: [],
-    selectedVariations: {}
+    inventoryBatches: {}
 };
+let openAddStockFromButton = null;
 
 function formatPrice(value) {
     return `\u20b1${Number(value || 0).toLocaleString('en-PH', {
@@ -57,16 +58,27 @@ function formatPrice(value) {
     })}`;
 }
 
+function formatDate(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit'
+    });
+}
+
 function getProductStock(product) {
-    if (Array.isArray(product.variations)) {
-        return product.variations.reduce((total, variation) => total + Number(variation.stock ?? variation.current_stock ?? 0), 0);
+    if (product.current_stock !== undefined && product.current_stock !== null) {
+        return Number(product.current_stock || 0);
     }
 
     return Number(product.current_stock ?? product.stock_quantity ?? product.quantity_remaining ?? 0);
 }
 
 function getProductStrength(product) {
-    const value = String(product.strength_size_value || product.strength_size || '').trim();
+    const value = String(product.strength || product.strength_size_value || '').trim();
 
     if (!value || value === 'N/A') {
         return 'N/A';
@@ -76,12 +88,11 @@ function getProductStrength(product) {
 }
 
 function getProductUnit(product) {
-    const unit = String(product.measurement_unit_name || '').trim();
-    return unit && unit !== 'N/A' ? unit : 'N/A';
+    return 'N/A';
 }
 
 function getProductSize(product) {
-    const size = String(product.size_value || product.packaging_size || product.size_weight || product.goods_type || product.unit || '').trim();
+    const size = String(product.size || product.size_value || '').trim();
 
     if (size && size !== 'N/A') {
         return size;
@@ -163,9 +174,43 @@ function cleanCardRows(rows) {
     return nonEmptyRows(rows.map(([label, value]) => [cleanCardLabel(label), cleanCardText(value)]));
 }
 
+function groceryVariantLabel(typeName = '') {
+    const normalized = String(typeName || '').trim().toLowerCase();
+    if (['canned goods', 'beverage', 'snacks'].includes(normalized)) return 'Flavor';
+    if (normalized === 'baby care') return 'Feature';
+    return 'Variant';
+}
+
+function isMedicalSupplyType(typeName = '') {
+    const normalized = String(typeName || '').trim().toLowerCase();
+    return ['first aid', 'medical supply', 'device/equipment', 'ppe'].includes(normalized);
+}
+
+function medicineDescriptionLabel(typeName = '') {
+    return isMedicalSupplyType(typeName) ? 'Item Description' : 'Generic Name';
+}
+
+function medicineSpecificationLabel(typeName = '') {
+    return isMedicalSupplyType(typeName) ? 'Specification / Pack Size' : 'Strength';
+}
+
+function dash(value) {
+    const clean = cleanCardText(value);
+    return clean || '-';
+}
+
+function productVariantGeneric(product) {
+    return isMedicine(product) ? dash(product.generic_name) : dash(product.variant);
+}
+
+function productSubDetail(product) {
+    if (isMedicine(product)) return dash(product.strength);
+    return dash(cleanCardText(product.size) || cleanCardText(product.net_weight));
+}
+
 const FORM_OPTIONS = ['tablet', 'capsule', 'sachet', 'tube', 'vial', 'ampule', 'bottle', 'box', 'pack', 'can', 'jar', 'roll', 'strip', 'blister pack', 'plastic pack', 'carton', 'pouch'];
 const SMART_TYPES = {
-    Medicine: ['Tablet', 'Capsule', 'Syrup', 'Drops', 'Injection', 'Ointment', 'Cream', 'Gel', 'Solution', 'Suspension', 'Powder', 'Patch', 'Inhaler', 'Nebulizer', 'Suppository', 'First Aid', 'Medical Supply', 'Device/Equipment'],
+    Medicine: ['Tablet', 'Capsule', 'Syrup', 'Drops', 'Injection', 'Ointment', 'Cream', 'Gel', 'Solution', 'Suspension', 'Powder', 'Patch', 'Inhaler', 'Nebulizer', 'Suppository', 'First Aid', 'Medical Supply', 'Device/Equipment', 'PPE'],
     Grocery: ['Beverage', 'Snacks', 'Canned Goods', 'Noodles', 'Condiments', 'Dairy', 'Bread/Bakery', 'Biscuits', 'Baby Care', 'Hygiene Product', 'Household Item', 'Personal Care']
 };
 
@@ -249,6 +294,10 @@ function variationAttributeDefinitions(product) {
 }
 
 function productVariationGroups(product) {
+    if (product?.category_name === 'Medicine' || product?.category_name === 'Grocery') {
+        return [];
+    }
+
     const variations = Array.isArray(product?.variations) ? product.variations : [];
     if (variations.length <= 1) return [];
 
@@ -278,52 +327,23 @@ function variationMatchesAttributes(variation, attributes) {
 }
 
 function selectVariationByAttribute(product, attribute, value) {
-    const variations = Array.isArray(product?.variations) ? product.variations : [];
-    if (!variations.length) return;
-
-    const activeVariation = getDefaultVariation(product) || variations[0];
-    const activeAttributes = Object.fromEntries(
-        productVariationGroups(product).map((group) => [
-            group.attribute,
-            getVariationAttributeValue(activeVariation, group.attribute)
-        ])
-    );
-    activeAttributes[attribute] = value;
-
-    const exactMatch = variations.find((variation) => variationMatchesAttributes(variation, activeAttributes));
-    const clickedMatch = variations.find((variation) => getVariationAttributeValue(variation, attribute).toLowerCase() === String(value).toLowerCase());
-    const selected = exactMatch || clickedMatch || activeVariation;
-    productState.selectedVariations[product.product_id] = selected.variation_id;
+    return;
 }
 
 function getDefaultVariation(product) {
-    const variations = Array.isArray(product?.variations) ? product.variations : [];
-    if (!variations.length) return null;
-
-    const selectedId = productState.selectedVariations[product.product_id];
-    return variations.find(variation => String(variation.variation_id) === String(selectedId))
-        || variations.find(variation => String(variation.is_default) === '1')
-        || variations.find(variation => String(variation.variation_id) === String(product.variation_id))
-        || variations[0];
+    return null;
 }
 
 function getActiveProductStock(product) {
-    const variation = getDefaultVariation(product);
-    return variation ? Number(variation.stock ?? variation.current_stock ?? 0) : getProductStock(product);
+    return getProductStock(product);
 }
 
 function getActiveProductPrice(product) {
-    const variation = getDefaultVariation(product);
-    return variation?.price ?? product.price;
+    return product.price;
 }
 
 function productSearchText(product) {
     const variationText = (product.variations || []).map(variation => [
-        getVariationName(variation),
-        variation.size_value,
-        variation.weight_value,
-        variation.weight_unit,
-        variation.packaging,
         variation.barcode,
         variation.sku
     ].join(' ')).join(' ');
@@ -332,8 +352,11 @@ function productSearchText(product) {
         product.product_name,
         product.brand_name,
         product.generic_name,
-        product.variant_flavor,
-        product.packaging,
+        product.strength,
+        product.variant,
+        product.size,
+        product.net_weight,
+        product.pack_content,
         product.barcode,
         product.category_name,
         product.type_name,
@@ -342,46 +365,32 @@ function productSearchText(product) {
 }
 
 function productCardDetailRows(product) {
-    const strength = getProductStrength(product);
-    const size = getProductSize(product);
-    const variation = getDefaultVariation(product);
     const rule = getVariationRule(product.category_name || '', product.type_name || '');
-    const form = isGrocery(product)
-        ? (variation?.packaging || product.packaging || '')
-        : (rule.formValue || variation?.unit || product.type_name);
-    const buttonLabels = new Set(productVariationGroups(product).map((group) => group.label));
 
     if (isGrocery(product)) {
         return cleanCardRows([
-            rule.fields.includes('variant') ? [rule.variantLabel || 'Variant / Feature', getVariationAttributeValue(variation, 'variant')] : ['', ''],
-            rule.fields.includes('size') ? [rule.sizeLabel || 'Size', variation?.size_value || product.display_size || size] : ['', ''],
-            rule.fields.includes('volume') ? ['Volume', ruleCombineValueUnit(variation?.volume_value, variation?.volume_unit)] : ['', ''],
-            rule.fields.includes('weight') ? ['Net Weight', ruleCombineValueUnit(variation?.weight_value ?? product.weight_volume_value, variation?.weight_unit ?? product.weight_volume_unit)] : ['', ''],
-            ['Form', form],
-            rule.fields.includes('packContent') ? ['Pack Content', ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit)] : ['', '']
-        ]).filter(([label]) => !buttonLabels.has(label));
+            [rule.variantLabel || 'Variant', product.variant],
+            ['Size', product.size],
+            ['Net Weight', product.net_weight],
+            ['Package Type', product.package_type],
+            ['Pack Content', product.pack_content]
+        ]);
     }
 
     if (isMedicine(product)) {
         return cleanCardRows([
-            ['Generic', product.generic_name],
-            rule.fields.includes('strength') ? ['Strength', ruleCombineValueUnit(variation?.strength_value || product.strength_value || strength, variation?.strength_unit || product.strength_unit)] : ['', ''],
-            rule.fields.includes('weight') ? ['Net Weight', ruleCombineValueUnit(variation?.weight_value || product.weight_volume_value || product.strength_value, variation?.weight_unit || product.weight_volume_unit || product.strength_unit)] : ['', ''],
-            rule.fields.includes('volume') ? ['Volume', ruleCombineValueUnit(variation?.volume_value || product.volume_value, variation?.volume_unit || product.volume_unit)] : ['', ''],
-            rule.fields.includes('variant') ? [rule.variantLabel || 'Flavor', getVariationAttributeValue(variation, 'variant')] : ['', ''],
-            rule.fields.includes('size') ? [rule.sizeLabel || 'Size', variation?.size_value || product.display_size || size] : ['', ''],
-            rule.fields.includes('form') ? ['Form', form] : ['', ''],
-            rule.fields.includes('packaging') && !rule.fields.includes('form') ? ['Form', variation?.packaging || product.packaging] : ['', ''],
-            rule.fields.includes('packContent') ? ['Pack Content', ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit)] : ['', '']
-        ]).filter(([label]) => !buttonLabels.has(label));
+            ['Generic Name', product.generic_name],
+            ['Strength', product.strength],
+            ['Dosage Form', product.dosage_form],
+            ['Package Type', product.package_type]
+        ]);
     }
 
     return cleanCardRows([
         ['Type', product.type_name],
-        ['Size', variation?.size_value || size],
-        ['Form', variation?.packaging || product.packaging],
-        ['Pack Content', ruleCombineValueUnit(variation?.pack_content_qty, variation?.pack_content_unit)]
-    ]).filter(([label]) => !buttonLabels.has(label));
+        ['Size', product.size],
+        ['Pack Content', product.pack_content]
+    ]);
 }
 
 function variationLabel(variation) {
@@ -431,11 +440,9 @@ function productVariationChips(product) {
 }
 
 function renderProductCard(product) {
-    const activeVariation = getDefaultVariation(product);
     const stock = getActiveProductStock(product);
     const stockStatus = getStockStatus(stock);
     const detailRows = productCardDetailRows(product);
-    const variationId = activeVariation?.variation_id || '';
 
     return `
         <article class="product-card" data-product-id="${escapeHtml(product.product_id)}">
@@ -446,7 +453,7 @@ function renderProductCard(product) {
                         <div class="product-brand">${escapeHtml(product.brand_name || 'No brand')}</div>
                     </div>
                     <div class="product-card-tools">
-                        <button type="button" class="product-barcode-toggle" data-product-id="${escapeHtml(product.product_id)}" data-variation-id="${escapeHtml(variationId)}" title="Show barcode" aria-label="Show barcode">
+                        <button type="button" class="product-barcode-toggle" data-product-id="${escapeHtml(product.product_id)}" title="Show barcode" aria-label="Show barcode">
                             <i class="fa-solid fa-barcode"></i>
                         </button>
                     </div>
@@ -464,7 +471,9 @@ function renderProductCard(product) {
                     <span class="product-price">${formatPrice(getActiveProductPrice(product))}</span>
                 </div>
                 <div class="product-card-actions">
-                    <button class="btn btn-sm btn-purple add-stock-btn" data-id="${escapeHtml(product.product_id)}" data-variation-id="${escapeHtml(variationId)}">Add Stock</button>
+                    <button class="btn btn-sm btn-purple btn-icon add-stock-btn" data-id="${escapeHtml(product.product_id)}" title="Move to selling shelf" aria-label="Move to selling shelf">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                    </button>
                     <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product">
                         <i class="fa-solid fa-pen"></i>
                     </button>
@@ -478,16 +487,8 @@ function renderProductCard(product) {
 }
 
 function refreshProductCard(productId) {
-    const grid = document.getElementById('productsGrid');
     const product = getProductById(productId);
-    const card = grid?.querySelector(`.product-card[data-product-id="${CSS.escape(String(productId))}"]`);
-
-    if (!grid || !product || !card) {
-        renderProductCards();
-        return;
-    }
-
-    card.outerHTML = renderProductCard(product);
+    if (product) renderProductCards();
 }
 
 function getFilteredProducts() {
@@ -536,42 +537,124 @@ function getFilteredProducts() {
 }
 
 function renderProductCards() {
-    const grid = document.getElementById('productsGrid');
-    if (!grid) return;
+    const tableBody = document.querySelector('#table-products tbody');
+    if (!tableBody) return;
 
     const products = getFilteredProducts();
 
     if (!products.length) {
-        grid.innerHTML = `
-            <div class="empty-products">
-                <div class="fw-bold mb-1">No products found</div>
-                <div>Try changing your search, category, stock status, or sort filters.</div>
-            </div>
-        `;
+        tableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No products found.</td></tr>';
         return;
     }
 
-    grid.innerHTML = products.map(renderProductCard).join('');
+    tableBody.innerHTML = products.map((product) => {
+        const stock = getActiveProductStock(product);
+        const stockStatus = getStockStatus(stock);
+
+        return `
+            <tr class="product-row" data-product-id="${escapeHtml(product.product_id)}" title="View product details">
+                <td>
+                    <button type="button" class="product-barcode-toggle" data-product-id="${escapeHtml(product.product_id)}" title="Show barcode" aria-label="Show barcode">
+                        <i class="fa-solid fa-barcode"></i>
+                    </button>
+                </td>
+                <td><span class="product-clamp">${escapeHtml(dash(product.brand_name))}</span></td>
+                <td><span class="product-clamp">${escapeHtml(dash(product.product_name))}</span></td>
+                <td>${escapeHtml(dash(product.category_name))}</td>
+                <td>${escapeHtml(dash(product.type_name))}</td>
+                <td><span class="product-clamp">${escapeHtml(productVariantGeneric(product))}</span></td>
+                <td>${escapeHtml(productSubDetail(product))}</td>
+                <td>${formatPrice(product.price)}</td>
+                <td><span class="stock-pill ${stockStatus}"><i class="fa-solid fa-boxes-stacked"></i>${escapeHtml(stock)}</span></td>
+                <td>
+                    <div class="product-actions" role="group" aria-label="Product actions">
+                        <button class="btn btn-sm btn-purple btn-icon add-stock-btn" data-id="${escapeHtml(product.product_id)}" title="Move to selling shelf" aria-label="Move to selling shelf">
+                            <i class="fa-solid fa-boxes-stacked"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Delete product">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
-function openBarcodeModal(productId, variationId = '') {
+function detailBox(label, value) {
+    return `
+        <div class="product-details-box">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(dash(value))}</strong>
+        </div>
+    `;
+}
+
+function openProductDetailsModal(productId) {
+    const product = getProductById(productId);
+    const container = document.getElementById('productDetailsContent');
+    if (!product || !container) return;
+
+    const rows = [
+        ['Barcode', product.barcode],
+        ['Supplier Name', product.supplier_name],
+        ['Brand Name', product.brand_name],
+        ['Product Name', product.product_name],
+        ['Category', product.category_name],
+        ['Product Type', product.type_name],
+        ['Price', formatPrice(product.price)],
+        ['Selling/Shelf Stock', String(product.selling_stock ?? 0)],
+        ['Total Inventory Quantity', String(product.total_inventory_quantity ?? 0)],
+        ['Available Quantity', String(product.available_stock ?? 0)],
+        ['Damaged/Returned Quantity', product.damaged_returned_stock],
+        ['Nearest Expiry Date', formatDate(product.nearest_expiry_date)],
+        ['Created Date', formatDate(product.created_at)]
+    ];
+
+    if (isMedicine(product)) {
+        rows.push(['Generic Name', product.generic_name]);
+        rows.push(['Strength', product.strength]);
+        rows.push(['Dosage Form', product.dosage_form]);
+        rows.push(['Package Type', product.package_type]);
+    } else {
+        rows.push([groceryVariantLabel(product.type_name), product.variant]);
+        rows.push(['Size', product.size]);
+        rows.push(['Net Weight', product.net_weight]);
+        rows.push(['Package Type', product.package_type]);
+        rows.push(['Pack Content', product.pack_content]);
+    }
+
+    container.innerHTML = rows.map(([label, value]) => detailBox(label, value)).join('');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('productDetailsModal')).show();
+}
+
+function openBarcodeModal(productId) {
     const product = getProductById(productId);
     if (!product) return;
 
-    const variation = (product.variations || []).find((item) => String(item.variation_id) === String(variationId));
-    const barcode = variation?.barcode || product.barcode || `AUTO-${product.product_id || ''}`;
+    const barcode = product.barcode || `AUTO-${product.product_id || ''}`;
     const productName = document.getElementById('barcodeModalProductName');
     const brand = document.getElementById('barcodeModalBrand');
     const text = document.getElementById('barcodeModalText');
     const displayText = document.getElementById('barcodeModalDisplayText');
 
-    if (productName) productName.textContent = product.product_name || 'Unnamed Product';
-    if (brand) brand.textContent = product.brand_name || 'No brand';
-    if (text) text.textContent = variation ? `${variationLabel(variation)} - ${barcode}` : barcode;
-    if (displayText) displayText.textContent = barcode;
+    if (productName) productName.textContent = dash(product.product_name);
+    if (brand) brand.textContent = dash(product.brand_name);
+    if (text) text.textContent = barcode || '-';
+    if (displayText) displayText.textContent = barcode || '-';
 
     const modal = document.getElementById('productBarcodeModal');
     if (modal) bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+
+function inventoryBatchLabel(batch) {
+    const batchNumber = dash(batch.batch_number);
+    const available = Number(batch.quantity_remaining || 0);
+    const expirationDate = formatDate(batch.expiration_date);
+    return `Batch: ${batchNumber} | Available: ${available} | Expiry: ${expirationDate}`;
 }
 
 async function populateProductCardFilters() {
@@ -669,13 +752,8 @@ function buildProductPayload() {
         unit: getVariationProductUnit(firstVariation),
         price: firstVariation.price || '0',
         barcode: firstVariation.barcode || '',
-        image_url: getValue('productImageUrl'),
         variations
     };
-
-    if (categoryName === 'Medicine') {
-        payload.generic_name = getValue('genericName');
-    }
 
     return payload;
 }
@@ -763,6 +841,31 @@ async function populateSupplierDropdown() {
     }
 }
 
+async function populateEditSupplierDropdown(selectedSupplierId = '') {
+    const select = document.getElementById('editSupplierId');
+    if (!select) return;
+
+    select.innerHTML = '<option value="" disabled selected>Select supplier...</option>';
+
+    try {
+        const resp = await PharmaUtils.safeFetch(`${API_BASE_URL}/suppliers/get_suppliers.php`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+
+        const suppliers = resp?.suppliers || resp?.data || [];
+        suppliers.forEach(supplier => {
+            const option = document.createElement('option');
+            option.value = supplier.supplier_id ?? supplier.id ?? '';
+            option.textContent = supplier.supplier_name ?? supplier.name ?? 'Unknown';
+            select.appendChild(option);
+        });
+        if (selectedSupplierId) select.value = String(selectedSupplierId);
+    } catch (err) {
+        console.warn('Failed to load edit suppliers:', err.message || err);
+    }
+}
+
 function closeAddProductModal() {
     const modalElement = document.getElementById('addProductModal');
     const modalInstance = bootstrap.Modal.getInstance(modalElement);
@@ -784,13 +887,13 @@ function initAddProductForm() {
         return;
     }
 
+    loadMeasurementUnitCache().then(() => {
+        renderAddVariations({ variations: collectAddVariations() }, getSelectedAddCategoryName());
+    }).catch((err) => console.warn('Failed to load unit options:', err.message || err));
+
     document.getElementById('productCategory')?.addEventListener('change', async (event) => {
         await populateAddTypes(event.target.value, '');
         const categoryName = getSelectedAddCategoryName();
-        const genericWrap = document.getElementById('addGenericNameWrap');
-        const genericInput = document.getElementById('genericName');
-        genericWrap?.classList.toggle('d-none', categoryName !== 'Medicine');
-        if (genericInput) genericInput.required = categoryName === 'Medicine';
         renderAddVariations({ variations: collectAddVariations() }, categoryName);
     });
 
@@ -798,7 +901,7 @@ function initAddProductForm() {
         renderAddVariations({ variations: collectAddVariations() }, getSelectedAddCategoryName());
     });
 
-    document.getElementById('btnAddProductVariation')?.addEventListener('click', () => {
+    document.getElementById('btnCreateAnotherAddVariant')?.addEventListener('click', () => {
         const categoryName = getSelectedAddCategoryName();
         const typeName = selectedAddTypeName();
         document.getElementById('addVariationList')?.insertAdjacentHTML('beforeend', editVariationEntry({}, categoryName, typeName, true, 'add'));
@@ -839,7 +942,6 @@ function initAddProductForm() {
             await PharmaUtils.modal.success('Product Saved', 'Item added to system master files successfully.');
 
             addProductForm.reset();
-            document.getElementById('addGenericNameWrap')?.classList.add('d-none');
             document.getElementById('productType').disabled = true;
             renderAddVariations();
             closeAddProductModal();
@@ -851,87 +953,23 @@ function initAddProductForm() {
     });
 }
 async function loadProductsTable() {
-    const cardGrid = document.getElementById('productsGrid');
     const tableBody = document.querySelector('#table-products tbody') || document.querySelector('#productsTable tbody') || document.getElementById('productTableBody');
 
-    if (!cardGrid && !tableBody) return;
+    if (!tableBody) return;
 
     try {
+        productState.products = [];
         const resp = await fetchProductsWithRetry();
 
         const products = (resp && resp.data) ? resp.data : [];
         productState.products = products;
-
-        if (cardGrid) {
-            renderProductCards();
-            return;
-        }
-
-        tableBody.innerHTML = '';
-
-        if (products.length === 0) {
-            tableBody.innerHTML = `
-                <tr>
-                    <td colspan="9" class="text-center text-muted py-4">No products found.</td>
-                </tr>
-            `;
-            return;
-        }
-
-        products.forEach((product) => {
-            const categoryName = product.category_name || '';
-            const genericName = categoryName === 'Medicine'
-                ? escapeHtml(product.generic_name || 'N/A')
-                : escapeHtml(product.variant_flavor || 'N/A');
-            const isLiquid = /\b(liquid|syrup|solution|suspension|drops|betadine|povidone)\b/.test(`${product.product_name || ''} ${product.brand_name || ''} ${product.type_name || ''}`.toLowerCase());
-            const strengthSize = categoryName === 'Grocery'
-                ? `Size: ${product.size_value || 'N/A'} / Weight/Volume: ${combineValueUnit(product.weight_volume_value, product.weight_volume_unit)} / Unit: ${product.product_unit || product.measurement_unit_name || 'N/A'}${product.packaging ? ` / ${product.packaging}` : ''}`.trim()
-                : (isLiquid
-                    ? `Volume: ${combineValueUnit(product.volume_value || product.strength_value || product.strength_size_value, product.volume_unit)} / Unit: ${product.product_unit || product.measurement_unit_name || 'N/A'} / Packaging: ${product.packaging || 'N/A'}`
-                    : `Strength: ${combineValueUnit(product.strength_value || product.strength_size_value, product.strength_unit)} / Unit: ${product.product_unit || product.measurement_unit_name || 'N/A'} / Packaging: ${product.packaging || 'N/A'}`);
-
-            tableBody.insertAdjacentHTML('beforeend', `
-                <tr>
-                    <td>${escapeHtml(product.barcode)}</td>
-                    <td>${escapeHtml(product.brand_name)}</td>
-                    <td>${escapeHtml(product.product_name)}</td>
-                    <td>${escapeHtml(categoryName || 'N/A')}</td>
-                    <td>${escapeHtml(product.type_name || 'N/A')}</td>
-                    <td>${genericName}</td>
-                    <td>${escapeHtml(strengthSize)}</td>
-                    <td>${Number(product.price || 0).toFixed(2)}</td>
-                    <td>
-                        <div class="table-actions product-actions" role="group" aria-label="Product actions">
-                            <button class="btn btn-sm btn-purple add-stock-btn" data-id="${escapeHtml(product.product_id)}">Add Stock</button>
-                            <button type="button" class="btn btn-outline-primary" data-product-id="${escapeHtml(product.product_id)}" title="Edit product">
-                                <i class="fa-solid fa-pen"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger" data-product-id="${escapeHtml(product.product_id)}" title="Delete product">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `);
-        });
+        renderProductCards();
     } catch (err) {
-        if (cardGrid) {
-            cardGrid.innerHTML = `
-                <div class="empty-products">
-                    <div class="fw-bold mb-1">Unable to load products</div>
-                    <div>${escapeHtml(err.message || 'Please refresh the page.')}</div>
-                </div>
-            `;
-            return;
-        }
-
-        if (tableBody) {
-            tableBody.innerHTML = `
-                <tr>
-                    <td colspan="9" class="text-center text-danger py-4">${escapeHtml(err.message)}</td>
-                </tr>
-            `;
-        }
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="10" class="text-center text-danger py-4">${escapeHtml(err.message)}</td>
+            </tr>
+        `;
     }
 }
 
@@ -941,12 +979,13 @@ async function fetchProductsWithRetry() {
     for (let attempt = 0; attempt < 2; attempt += 1) {
         const controller = new AbortController();
         const timeoutId = window.setTimeout(() => controller.abort(), 10000);
-        const cacheBust = attempt === 0 ? '' : `?t=${Date.now()}`;
+        const cacheBust = `?t=${Date.now()}-${attempt}`;
 
         try {
             return await PharmaUtils.safeFetch(`${API_BASE_URL}/products/get_products.php${cacheBust}`, {
                 method: 'GET',
                 credentials: 'include',
+                cache: 'no-store',
                 signal: controller.signal
             });
         } catch (err) {
@@ -1051,15 +1090,26 @@ function populateSelectFromUnits(select, units, selectedUnitId) {
 }
 
 function toggleEditGenericField() {
-    const categorySelect = document.getElementById('editProductCategory');
-    const categoryName = categorySelect?.selectedOptions?.[0]?.dataset.categoryName || '';
-    const generic = document.getElementById('editProductGeneric');
-    document.getElementById('editGenericNameWrap')?.classList.toggle('d-none', categoryName !== 'Medicine');
-    if (generic) generic.required = categoryName === 'Medicine';
+    return;
 }
 
 function optionList(options, selected = '') {
     return ruleOptionList(options, selected);
+}
+
+function measurementUnitOptionList(selected = '', fallbackOptions = []) {
+    const unitNames = productState.units.length
+        ? productState.units.map(unit => unit.unit_name)
+        : fallbackOptions;
+    const normalizedSelected = String(selected || '').trim().toLowerCase();
+    const options = Array.from(new Set(unitNames.filter(Boolean)));
+    if (selected && !options.some(option => option.toLowerCase() === normalizedSelected)) {
+        options.unshift(selected);
+    }
+    return [
+        '<option value="">-</option>',
+        ...options.map(option => `<option value="${escapeHtml(option)}" ${String(option).toLowerCase() === normalizedSelected ? 'selected' : ''}>${escapeHtml(option)}</option>`)
+    ].join('');
 }
 
 function selectedEditTypeName() {
@@ -1068,35 +1118,39 @@ function selectedEditTypeName() {
 
 function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName = '', canDelete = true, mode = 'edit') {
     const rule = getVariationRule(categoryName, typeName);
-    const show = (field) => rule.fields.includes(field);
-    const formValue = categoryName === 'Medicine'
-        ? (cleanDisplay(variation.unit) || rule.formValue || typeName)
-        : (cleanDisplay(variation.packaging) || cleanDisplay(variation.unit) || rule.formValue || typeName);
     const rowId = `variation-rule-${Math.random().toString(36).slice(2)}`;
     const defaultName = `${mode}DefaultVariation`;
+    const header = mode === 'edit' ? 'Product SKU Details' : 'Sellable SKU';
+    const deleteButton = canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Remove variant"><i class="fa-solid fa-trash-can"></i></button>' : '';
+    const medicineFields = `
+                <div class="col-md-6"><label class="form-label">Generic Name</label><input class="form-control edit-var-generic-name" value="${escapeHtml(variation.generic_name || '')}" placeholder="Povidone-Iodine"></div>
+                <div class="col-md-6"><label class="form-label">Strength</label><input class="form-control edit-var-strength-value" type="text" value="${escapeHtml(variation.strength_value || '')}" placeholder="10% or 500 mg"></div>
+                <div class="col-md-6"><label class="form-label">Dosage Form</label><input class="form-control edit-var-dosage-form" value="${escapeHtml(variation.dosage_form || '')}" placeholder="Solution"></div>
+                <div class="col-md-6"><label class="form-label">Package Type</label><select class="form-select edit-var-package-type">${measurementUnitOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule'])}</select></div>
+                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
+                <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
+    `;
+    const groceryFields = `
+                <div class="col-md-6"><label class="form-label">${escapeHtml(groceryVariantLabel(typeName))}</label><input class="form-control edit-var-name" list="${rowId}-variant" value="${escapeHtml(variation.variant_name || '')}" placeholder="Select or type">${datalist(`${rowId}-variant`, rule.variantOptions)}</div>
+                <div class="col-md-6"><label class="form-label">Size</label><select class="form-select edit-var-size-value">${optionList(rule.sizeOptions, variation.size_value || '')}</select></div>
+                <div class="col-md-6"><label class="form-label">Net Weight</label><div class="variation-pair"><input class="form-control edit-var-weight-value" list="${rowId}-weight" type="number" min="0" step="any" value="${escapeHtml(variation.weight_value || '')}" placeholder="155"><select class="form-select edit-var-weight-unit">${measurementUnitOptionList(variation.weight_unit || '', rule.weightUnits)}</select></div>${datalist(`${rowId}-weight`, rule.weightValues)}</div>
+                <div class="col-md-6"><label class="form-label">Package Type</label><select class="form-select edit-var-package-type">${measurementUnitOptionList(variation.package_type || '', ['can', 'bottle', 'box', 'pack', 'sachet', 'tube', 'jar', 'pouch'])}</select></div>
+                <div class="col-md-6"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control edit-var-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" value="${escapeHtml(variation.pack_content_qty || '')}" placeholder="12"><select class="form-select edit-var-pack-content-unit">${measurementUnitOptionList(variation.pack_content_unit || '', rule.packContentUnits)}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
+                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
+                <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
+    `;
 
     return `
-        <div class="edit-variation-entry" data-variation-id="${escapeHtml(variation.variation_id || '')}">
+        <div class="edit-variation-entry">
             <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                <span class="fw-bold small text-muted">Variation</span>
+                <span class="fw-bold small text-muted">${escapeHtml(header)}</span>
                 <div class="d-flex align-items-center gap-2">
-                    <label class="small text-muted mb-0"><input class="form-check-input edit-var-default me-1" type="radio" name="${escapeHtml(defaultName)}" ${String(variation.is_default) === '1' ? 'checked' : ''}>Default</label>
-                    ${canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Delete variation"><i class="fa-solid fa-trash-can"></i></button>' : ''}
+                    <input class="form-check-input edit-var-default d-none" type="radio" name="${escapeHtml(defaultName)}" ${String(variation.is_default) === '1' ? 'checked' : ''}>
+                    ${deleteButton}
                 </div>
             </div>
             <div class="row g-3">
-                <div class="col-md-4 ${show('variant') ? '' : 'd-none'}"><label class="form-label">${escapeHtml(rule.variantLabel)}</label><input class="form-control edit-var-name" list="${rowId}-variant" value="${escapeHtml(variation.variant_name || '')}" placeholder="Select or type">${datalist(`${rowId}-variant`, rule.variantOptions)}</div>
-                <div class="col-md-4 ${show('strength') ? '' : 'd-none'}"><label class="form-label">Strength</label><div class="variation-pair"><input class="form-control edit-var-strength-value" type="number" min="0" step="any" value="${escapeHtml(variation.strength_value || '')}" placeholder="500"><select class="form-select edit-var-strength-unit">${optionList(rule.strengthUnits, variation.strength_unit || '')}</select></div></div>
-                <div class="col-md-4 ${show('volume') ? '' : 'd-none'}"><label class="form-label">Volume</label><div class="variation-pair"><input class="form-control edit-var-volume-value" list="${rowId}-volume" type="number" min="0" step="any" value="${escapeHtml(variation.volume_value || '')}" placeholder="60"><select class="form-select edit-var-volume-unit">${optionList(rule.volumeUnits, variation.volume_unit || '')}</select></div>${datalist(`${rowId}-volume`, rule.volumeValues)}</div>
-                <div class="col-md-4 ${show('size') ? '' : 'd-none'}"><label class="form-label">${escapeHtml(rule.sizeLabel)}</label><select class="form-select edit-var-size-value">${optionList(rule.sizeOptions, variation.size_value || '')}</select></div>
-                <div class="col-md-4 ${show('weight') ? '' : 'd-none'}"><label class="form-label">Net Weight</label><div class="variation-pair"><input class="form-control edit-var-weight-value" list="${rowId}-weight" type="number" min="0" step="any" value="${escapeHtml(variation.weight_value || '')}" placeholder="155"><select class="form-select edit-var-weight-unit">${optionList(rule.weightUnits, variation.weight_unit || '')}</select></div>${datalist(`${rowId}-weight`, rule.weightValues)}</div>
-                <div class="col-md-4 ${show('form') ? '' : 'd-none'}"><label class="form-label">Form</label><select class="form-select edit-var-unit">${optionList(FORM_OPTIONS, formValue)}</select></div>
-                <div class="col-md-4 ${show('packaging') ? '' : 'd-none'}"><label class="form-label">Form</label><select class="form-select edit-var-packaging">${optionList(rule.packagingOptions, variation.packaging || '')}</select></div>
-                <div class="col-md-4 ${show('packContent') ? '' : 'd-none'}"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control edit-var-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" value="${escapeHtml(variation.pack_content_qty || '')}" placeholder="12"><select class="form-select edit-var-pack-content-unit">${optionList(rule.packContentUnits, variation.pack_content_unit || '')}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
-                <div class="col-md-4"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
-                <div class="col-md-4"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
-                <div class="col-md-4"><label class="form-label">Stock</label><input class="form-control edit-var-stock" type="number" min="0" step="1" value="${escapeHtml(variation.stock ?? variation.current_stock ?? 0)}"></div>
-                <div class="col-md-4"><label class="form-label">SKU</label><input class="form-control edit-var-sku" value="${escapeHtml(variation.sku || '')}"></div>
+                ${categoryName === 'Medicine' ? medicineFields : groceryFields}
             </div>
         </div>
     `;
@@ -1126,23 +1180,19 @@ function renderAddVariations(product = { variations: [{}] }, categoryName = '') 
 
 function collectVariationEntries(containerSelector) {
     return Array.from(document.querySelectorAll(`${containerSelector} .edit-variation-entry`)).map(entry => ({
-        variation_id: entry.dataset.variationId || '',
+        generic_name: entry.querySelector('.edit-var-generic-name')?.value.trim() || '',
         variant_name: entry.querySelector('.edit-var-name')?.value.trim() || '',
         strength_value: entry.querySelector('.edit-var-strength-value')?.value.trim() || '',
         strength_unit: entry.querySelector('.edit-var-strength-unit')?.value || '',
-        volume_value: entry.querySelector('.edit-var-volume-value')?.value.trim() || '',
-        volume_unit: entry.querySelector('.edit-var-volume-unit')?.value || '',
+        dosage_form: entry.querySelector('.edit-var-dosage-form')?.value.trim() || '',
         size_value: entry.querySelector('.edit-var-size-value')?.value || '',
         weight_value: entry.querySelector('.edit-var-weight-value')?.value.trim() || '',
         weight_unit: entry.querySelector('.edit-var-weight-unit')?.value || '',
-        unit: entry.querySelector('.edit-var-unit')?.value.trim() || '',
-        packaging: entry.querySelector('.edit-var-packaging')?.value || '',
+        package_type: entry.querySelector('.edit-var-package-type')?.value.trim() || '',
         pack_content_qty: entry.querySelector('.edit-var-pack-content-qty')?.value || '',
         pack_content_unit: entry.querySelector('.edit-var-pack-content-unit')?.value || '',
         price: entry.querySelector('.edit-var-price')?.value || '0',
         barcode: entry.querySelector('.edit-var-barcode')?.value.trim() || '',
-        stock: entry.querySelector('.edit-var-stock')?.value || '0',
-        sku: entry.querySelector('.edit-var-sku')?.value.trim() || '',
         is_default: entry.querySelector('.edit-var-default')?.checked ? 1 : 0,
         delete: entry.dataset.deleted === '1'
     }));
@@ -1156,6 +1206,61 @@ function collectAddVariations() {
     return collectVariationEntries('#addVariationList');
 }
 
+function productToVariation(product) {
+    if (isMedicine(product)) {
+        return {
+            generic_name: product.generic_name || '',
+            variant_name: '',
+            strength_value: product.strength || '',
+            strength_unit: '',
+            dosage_form: product.dosage_form || '',
+            package_type: product.package_type || product.medicine_package_type || '',
+            price: product.price || '',
+            barcode: product.barcode || '',
+            is_default: 1
+        };
+    }
+
+    const [weightValue = '', weightUnit = ''] = String(product.net_weight || '').split(/\s+/, 2);
+    const packMatch = String(product.pack_content || '').match(/^(\d+)\s*(.*)$/);
+    return {
+        variant_name: product.variant || '',
+        size_value: product.size || '',
+        weight_value: weightValue,
+        weight_unit: weightUnit,
+        package_type: product.package_type || product.grocery_package_type || '',
+        pack_content_qty: packMatch?.[1] || '',
+        pack_content_unit: packMatch?.[2] || '',
+        price: product.price || '',
+        barcode: product.barcode || '',
+        is_default: 1
+    };
+}
+
+async function openCreateAnotherVariant(product) {
+    const modalElement = document.getElementById('addProductModal');
+    const form = document.getElementById('addProductForm');
+    if (!modalElement || !form || !product) return;
+
+    form.reset();
+    await populateSupplierDropdown();
+    await populateAddCategories(product.category_id || '');
+    await populateAddTypes(product.category_id || '', product.type_id || '');
+
+    const supplierId = String(product.supplier_ids || '').split(',').map(item => item.trim()).filter(Boolean)[0] || '';
+    const supplierSelect = document.getElementById('supplier_id');
+    if (supplierSelect && supplierId) supplierSelect.value = supplierId;
+
+    document.getElementById('productBrandName').value = product.brand_name || '';
+    document.getElementById('productName').value = product.product_name || '';
+    document.getElementById('productCategory').value = product.category_id || '';
+    document.getElementById('productType').value = product.type_id || '';
+
+    renderAddVariations({ variations: [{ price: product.price || '' }] }, product.category_name || '');
+    bootstrap.Modal.getInstance(document.getElementById('editProductModal'))?.hide();
+    bootstrap.Modal.getOrCreateInstance(modalElement).show();
+}
+
 async function openEditProduct(productId) {
     const product = getProductById(productId);
     const modalElement = document.getElementById('editProductModal');
@@ -1165,13 +1270,12 @@ async function openEditProduct(productId) {
     document.getElementById('editProductId').value = product.product_id || '';
     document.getElementById('editProductBrand').value = product.brand_name || '';
     document.getElementById('editProductName').value = product.product_name || '';
-    document.getElementById('editProductGeneric').value = product.generic_name || '';
-    document.getElementById('editProductImageUrl').value = product.image_url || product.image_path || '';
+    await populateEditSupplierDropdown(String(product.supplier_ids || '').split(',').map(item => item.trim()).filter(Boolean)[0] || '');
 
     await populateEditCategories(product.category_id || '');
     await populateEditTypes(product.category_id || '', product.type_id || '');
     toggleEditGenericField();
-    renderEditVariations(product, product.category_name || '');
+    renderEditVariations({ ...product, variations: [productToVariation(product)] }, product.category_name || '');
 
     bootstrap.Modal.getOrCreateInstance(modalElement).show();
 }
@@ -1186,15 +1290,11 @@ async function submitEditProduct(event) {
         product_id: getValue('editProductId'),
         brand_name: getValue('editProductBrand'),
         product_name: getValue('editProductName'),
+        supplier_id: getValue('editSupplierId') || null,
         category_id: getValue('editProductCategory'),
         type_id: getValue('editProductType'),
-        image_url: getValue('editProductImageUrl'),
         variations: collectEditVariations()
     };
-
-    if (categoryName === 'Medicine') {
-        payload.generic_name = getValue('editProductGeneric');
-    }
 
     try {
         PharmaUtils.modal.loading('Updating Product...');
@@ -1234,11 +1334,20 @@ async function deleteProduct(productId) {
             body: JSON.stringify({ product_id: productId })
         });
 
+        productState.products = productState.products.filter(product => String(product.product_id) !== String(productId));
+        renderProductCards();
         PharmaUtils.modal.close();
         await loadProductsTable();
-        PharmaUtils.toast.success(data.message || 'Product deleted successfully.');
+        PharmaUtils.toast.success(data.status === 'already_deleted' ? 'Product already removed.' : (data.message || 'Product deleted successfully.'));
     } catch (err) {
         PharmaUtils.modal.close();
+        if (/product not found/i.test(err.message || '')) {
+            productState.products = productState.products.filter(product => String(product.product_id) !== String(productId));
+            renderProductCards();
+            await loadProductsTable();
+            PharmaUtils.toast.success('Product already removed.');
+            return;
+        }
         PharmaUtils.modal.error('Failed to delete product', err.message);
     }
 }
@@ -1273,28 +1382,38 @@ function initProductCards() {
         renderProductCards();
     });
 
-    document.getElementById('productsGrid')?.addEventListener('click', (event) => {
+    document.getElementById('table-products')?.addEventListener('click', (event) => {
+        const addStockButton = event.target.closest('.add-stock-btn');
         const editButton = event.target.closest('.edit-product-btn');
         const deleteButton = event.target.closest('.delete-product-btn');
         const barcodeButton = event.target.closest('.product-barcode-toggle');
-        const variationChip = event.target.closest('.product-variant-chip');
+        const row = event.target.closest('.product-row');
 
         if (barcodeButton) {
-            openBarcodeModal(barcodeButton.dataset.productId, barcodeButton.dataset.variationId || '');
+            event.stopPropagation();
+            openBarcodeModal(barcodeButton.dataset.productId);
             return;
         }
 
-        if (variationChip) {
-            const product = getProductById(variationChip.dataset.productId);
-            if (product) {
-                selectVariationByAttribute(product, variationChip.dataset.variationAttribute, variationChip.dataset.variationValue);
-                refreshProductCard(product.product_id);
-            }
+        if (addStockButton) {
+            event.stopPropagation();
+            if (typeof openAddStockFromButton === 'function') openAddStockFromButton(addStockButton);
             return;
         }
 
-        if (editButton) openEditProduct(editButton.dataset.productId);
-        if (deleteButton) deleteProduct(deleteButton.dataset.productId);
+        if (editButton) {
+            event.stopPropagation();
+            openEditProduct(editButton.dataset.productId);
+            return;
+        }
+
+        if (deleteButton) {
+            event.stopPropagation();
+            deleteProduct(deleteButton.dataset.productId);
+            return;
+        }
+
+        if (row) openProductDetailsModal(row.dataset.productId);
     });
 
     document.getElementById('editProductCategory')?.addEventListener('change', async (event) => {
@@ -1310,24 +1429,15 @@ function initProductCards() {
         renderEditVariations(product || { variations: collectEditVariations() }, categoryName);
     });
     document.getElementById('btnAddEditVariation')?.addEventListener('click', () => {
-        const categoryName = document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
-        const typeName = selectedEditTypeName();
-        document.getElementById('editVariationList')?.insertAdjacentHTML('beforeend', editVariationEntry({}, categoryName, typeName, true, 'edit'));
-        if (!document.querySelector('#editVariationList .edit-var-default:checked')) {
-            document.querySelector('#editVariationList .edit-var-default')?.click();
-        }
+        const product = getProductById(getValue('editProductId'));
+        if (product) openCreateAnotherVariant(product);
     });
     document.getElementById('editVariationList')?.addEventListener('click', (event) => {
         const removeButton = event.target.closest('.btn-remove-edit-variation');
         if (!removeButton) return;
         const entry = removeButton.closest('.edit-variation-entry');
         if (!entry) return;
-        if (entry.dataset.variationId) {
-            entry.dataset.deleted = '1';
-            entry.classList.add('d-none');
-        } else {
-            entry.remove();
-        }
+        entry.remove();
         if (!document.querySelector('#editVariationList .edit-variation-entry:not(.d-none) .edit-var-default:checked')) {
             document.querySelector('#editVariationList .edit-variation-entry:not(.d-none) .edit-var-default')?.click();
         }
@@ -1397,11 +1507,102 @@ function initAddStockForm() {
     const addStockModal = document.getElementById('addStockModal');
     const addStockForm = document.getElementById('addStockForm');
     const stockProductId = document.getElementById('stockProductId');
-    let stockVariationId = '';
-
-    if (!addStockModal || !addStockForm || !stockProductId) {
+    const inventoryBatchSelect = document.getElementById('inventoryBatchSelect');
+    const quantityToMove = document.getElementById('quantityToMove');
+    const noBatchMessage = document.getElementById('noInventoryBatchMessage');
+    const moveSubmit = document.getElementById('moveToShelfSubmit');
+    const moveProductName = document.getElementById('moveShelfProductName');
+    const moveBrand = document.getElementById('moveShelfBrand');
+    const moveCategory = document.getElementById('moveShelfCategory');
+    const moveType = document.getElementById('moveShelfType');
+    const moveAvailableTotal = document.getElementById('moveShelfAvailableTotal');
+    const moveBatchNumber = document.getElementById('moveShelfBatchNumber');
+    const moveBatchAvailable = document.getElementById('moveShelfBatchAvailable');
+    const moveBatchExpiry = document.getElementById('moveShelfBatchExpiry');
+    if (!addStockModal || !addStockForm || !stockProductId || !inventoryBatchSelect || !quantityToMove || !moveSubmit) {
         return;
     }
+
+    function setMoveFormEnabled(isEnabled, showNoBatchMessage = !isEnabled) {
+        inventoryBatchSelect.disabled = !isEnabled;
+        quantityToMove.disabled = !isEnabled;
+        moveSubmit.disabled = !isEnabled;
+        noBatchMessage?.classList.toggle('d-none', !showNoBatchMessage);
+    }
+
+    function selectedInventoryBatch() {
+        return productState.inventoryBatches[stockProductId.value]?.find((batch) => String(batch.inventory_id) === String(inventoryBatchSelect.value));
+    }
+
+    function renderSelectedBatchDetails() {
+        const batch = selectedInventoryBatch();
+        if (moveBatchNumber) moveBatchNumber.textContent = dash(batch?.batch_number);
+        if (moveBatchAvailable) moveBatchAvailable.textContent = batch ? String(Number(batch.quantity_remaining || 0)) : '-';
+        if (moveBatchExpiry) moveBatchExpiry.textContent = batch ? formatDate(batch.expiration_date) : '-';
+    }
+
+    function updateQuantityLimit() {
+        const batch = selectedInventoryBatch();
+        const available = Number(batch?.quantity_remaining || 0);
+        quantityToMove.max = available > 0 ? String(available) : '';
+        if (available > 0 && Number(quantityToMove.value || 0) > available) {
+            quantityToMove.value = String(available);
+        }
+        renderSelectedBatchDetails();
+    }
+
+    async function loadAvailableInventoryBatches(productId) {
+        inventoryBatchSelect.innerHTML = '<option value="" selected>Loading available batches...</option>';
+        quantityToMove.value = '';
+        if (moveAvailableTotal) moveAvailableTotal.textContent = '0';
+        renderSelectedBatchDetails();
+        setMoveFormEnabled(false, false);
+
+        const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/inventory/get_available_batches.php?product_id=${encodeURIComponent(productId)}`, {
+            credentials: 'include'
+        });
+        const batches = Array.isArray(response.data) ? response.data : [];
+        productState.inventoryBatches[productId] = batches;
+        const totalAvailable = batches.reduce((total, batch) => total + Number(batch.quantity_remaining || 0), 0);
+        if (moveAvailableTotal) moveAvailableTotal.textContent = String(totalAvailable);
+
+        if (!batches.length) {
+            inventoryBatchSelect.innerHTML = '<option value="" selected>No available inventory batch</option>';
+            renderSelectedBatchDetails();
+            setMoveFormEnabled(false, true);
+            return;
+        }
+
+        inventoryBatchSelect.innerHTML = [
+            '<option value="" selected disabled>Select inventory batch...</option>',
+            ...batches.map((batch) => `<option value="${escapeHtml(batch.inventory_id)}">${escapeHtml(inventoryBatchLabel(batch))}</option>`)
+        ].join('');
+        inventoryBatchSelect.value = batches[0].inventory_id;
+        updateQuantityLimit();
+        setMoveFormEnabled(true);
+    }
+
+    inventoryBatchSelect.addEventListener('change', updateQuantityLimit);
+
+    openAddStockFromButton = async (addStockButton) => {
+        stockProductId.value = addStockButton.dataset.id || '';
+        const product = getProductById(stockProductId.value);
+        if (moveProductName) moveProductName.textContent = dash(product?.product_name);
+        if (moveBrand) moveBrand.textContent = dash(product?.brand_name);
+        if (moveCategory) moveCategory.textContent = dash(product?.category_name);
+        if (moveType) moveType.textContent = dash(product?.type_name);
+        if (moveAvailableTotal) moveAvailableTotal.textContent = String(Number(product?.available_stock || 0));
+        renderSelectedBatchDetails();
+
+        bootstrap.Modal.getOrCreateInstance(addStockModal).show();
+        try {
+            await loadAvailableInventoryBatches(stockProductId.value);
+        } catch (err) {
+            inventoryBatchSelect.innerHTML = '<option value="" selected>Unable to load batches</option>';
+            setMoveFormEnabled(false, false);
+            PharmaUtils.toast?.error?.(err.message || 'Unable to load inventory batches.');
+        }
+    };
 
     document.addEventListener('click', (event) => {
         const addStockButton = event.target.closest('.add-stock-btn');
@@ -1410,37 +1611,42 @@ function initAddStockForm() {
             return;
         }
 
-        stockProductId.value = addStockButton.dataset.id || '';
-        stockVariationId = addStockButton.dataset.variationId || '';
-        const product = getProductById(stockProductId.value);
-        const variation = (product?.variations || []).find((item) => String(item.variation_id) === String(stockVariationId));
-        const summary = document.getElementById('stockProductSummary');
-
-        if (summary && product) {
-            summary.innerHTML = `
-                <div class="fw-bold">${escapeHtml(product.product_name || '')}</div>
-                <div class="text-muted small">${escapeHtml(product.brand_name || '')} &bull; ${escapeHtml(variation ? variationLabel(variation) : product.category_name || 'N/A')} &bull; Current stock: ${escapeHtml(variation?.stock ?? getProductStock(product))}</div>
-            `;
-        }
-
-        bootstrap.Modal.getOrCreateInstance(addStockModal).show();
+        event.stopPropagation();
+        openAddStockFromButton(addStockButton);
     });
 
     addStockForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
+        const batch = selectedInventoryBatch();
+        const quantity = Number(quantityToMove.value || 0);
+        const available = Number(batch?.quantity_remaining || 0);
+
+        if (!batch) {
+            PharmaUtils.modal.error('Select Inventory Batch', 'Please select an available inventory batch.');
+            return;
+        }
+
+        if (quantity <= 0) {
+            PharmaUtils.modal.error('Invalid Quantity', 'Quantity to move must be greater than zero.');
+            return;
+        }
+
+        if (quantity > available) {
+            PharmaUtils.modal.error('Invalid Quantity', 'Quantity to move cannot exceed the selected batch available quantity.');
+            return;
+        }
+
         const payload = {
             product_id: stockProductId.value,
-            variation_id: stockVariationId,
-            batch_number: getValue('batchNumber'),
-            quantity_stocked: getValue('quantityStocked'),
-            expiration_date: getValue('expirationDate')
+            inventory_id: batch.inventory_id,
+            quantity_to_move: quantity
         };
 
         try {
-            PharmaUtils.modal.loading('Saving Stock...');
+            PharmaUtils.modal.loading('Moving Stock...');
 
-            await PharmaUtils.safeFetch(`${API_BASE_URL}/inventory/add_stock.php`, {
+            await PharmaUtils.safeFetch(`${API_BASE_URL}/inventory/move_to_selling_stock.php`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
@@ -1450,14 +1656,19 @@ function initAddStockForm() {
             });
 
             PharmaUtils.modal.close();
-            await PharmaUtils.modal.success('Stock Added', 'Inventory batch saved successfully.');
+            await PharmaUtils.modal.success('Stock Moved', 'Stock moved to selling shelf successfully.');
 
+            const movedProductId = stockProductId.value;
             addStockForm.reset();
+            productState.inventoryBatches[movedProductId] = [];
             closeAddStockModal();
             await loadProductsTable();
+            if (document.querySelector('#table-inventory tbody')) {
+                await loadInventoryTable();
+            }
         } catch (err) {
             PharmaUtils.modal.close();
-            PharmaUtils.modal.error('Failed to add stock', err.message);
+            PharmaUtils.modal.error('Failed to move stock', err.message);
         }
     });
 }
@@ -1476,7 +1687,6 @@ if (_addProductModalEl) {
             typeSelect.disabled = true;
             typeSelect.innerHTML = '<option value="" disabled selected>Select category first...</option>';
         }
-        document.getElementById('addGenericNameWrap')?.classList.add('d-none');
         renderAddVariations();
     });
 }

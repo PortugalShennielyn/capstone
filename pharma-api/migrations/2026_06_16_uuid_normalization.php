@@ -25,7 +25,6 @@ $primaryKeys = [
     'product' => 'product_id',
     'medicine_items' => 'medicine_id',
     'grocery_items' => 'grocery_id',
-    'product_variations' => 'variation_id',
     'supplier_products' => 'supplier_product_id',
     'product_inventory' => 'inventory_id',
     'product_selling_stock' => 'selling_stock_id',
@@ -44,18 +43,14 @@ $references = [
     ['table' => 'product', 'column' => 'supplier_id', 'refTable' => 'suppliers', 'refColumn' => 'supplier_id', 'nullable' => true],
     ['table' => 'medicine_items', 'column' => 'product_id', 'refTable' => 'product', 'refColumn' => 'product_id', 'nullable' => false],
     ['table' => 'grocery_items', 'column' => 'product_id', 'refTable' => 'product', 'refColumn' => 'product_id', 'nullable' => false],
-    ['table' => 'product_variations', 'column' => 'product_id', 'refTable' => 'product', 'refColumn' => 'product_id', 'nullable' => false],
     ['table' => 'supplier_products', 'column' => 'supplier_id', 'refTable' => 'suppliers', 'refColumn' => 'supplier_id', 'nullable' => false],
     ['table' => 'supplier_products', 'column' => 'product_id', 'refTable' => 'product', 'refColumn' => 'product_id', 'nullable' => false],
     ['table' => 'product_inventory', 'column' => 'product_id', 'refTable' => 'product', 'refColumn' => 'product_id', 'nullable' => false],
-    ['table' => 'product_inventory', 'column' => 'variation_id', 'refTable' => 'product_variations', 'refColumn' => 'variation_id', 'nullable' => true],
     ['table' => 'product_selling_stock', 'column' => 'product_id', 'refTable' => 'product', 'refColumn' => 'product_id', 'nullable' => false],
-    ['table' => 'product_selling_stock', 'column' => 'variation_id', 'refTable' => 'product_variations', 'refColumn' => 'variation_id', 'nullable' => true],
     ['table' => 'product_selling_stock', 'column' => 'source_inventory_id', 'refTable' => 'product_inventory', 'refColumn' => 'inventory_id', 'nullable' => true],
     ['table' => 'purchase_orders', 'column' => 'supplier_id', 'refTable' => 'suppliers', 'refColumn' => 'supplier_id', 'nullable' => false],
     ['table' => 'purchase_order_items', 'column' => 'po_id', 'refTable' => 'purchase_orders', 'refColumn' => 'po_id', 'nullable' => false],
     ['table' => 'purchase_order_items', 'column' => 'product_id', 'refTable' => 'product', 'refColumn' => 'product_id', 'nullable' => false],
-    ['table' => 'purchase_order_items', 'column' => 'variation_id', 'refTable' => 'product_variations', 'refColumn' => 'variation_id', 'nullable' => true],
     ['table' => 'purchase_order_receiving', 'column' => 'po_id', 'refTable' => 'purchase_orders', 'refColumn' => 'po_id', 'nullable' => false],
     ['table' => 'purchase_order_receiving_items', 'column' => 'receiving_id', 'refTable' => 'purchase_order_receiving', 'refColumn' => 'receiving_id', 'nullable' => false],
     ['table' => 'purchase_order_receiving_items', 'column' => 'po_item_id', 'refTable' => 'purchase_order_items', 'refColumn' => 'po_item_id', 'nullable' => false],
@@ -66,12 +61,11 @@ $references = [
 $relationshipIndexes = [
     'product_types' => [['category_id'], ['category_id', 'type_name', true]],
     'product' => [['category_id'], ['type_id'], ['measurement_unit_id'], ['supplier_id'], ['brand_name'], ['product_name']],
-    'product_variations' => [['product_id'], ['barcode', true], ['sku']],
     'supplier_products' => [['supplier_id', 'product_id', true], ['product_id']],
-    'product_inventory' => [['product_id', 'variation_id'], ['expiration_date'], ['batch_number']],
-    'product_selling_stock' => [['product_id', 'variation_id'], ['source_inventory_id']],
+    'product_inventory' => [['product_id'], ['expiration_date'], ['batch_number']],
+    'product_selling_stock' => [['product_id'], ['source_inventory_id']],
     'purchase_orders' => [['supplier_id'], ['po_number', true], ['status'], ['created_at']],
-    'purchase_order_items' => [['po_id'], ['product_id'], ['variation_id']],
+    'purchase_order_items' => [['po_id'], ['product_id']],
     'purchase_order_receiving' => [['po_id', true]],
     'purchase_order_receiving_items' => [['receiving_id', 'po_item_id', true], ['po_item_id']],
     'purchase_order_returns' => [['po_id'], ['po_item_id'], ['return_status']],
@@ -251,18 +245,14 @@ $foreignKeys = [
     ['product', 'supplier_id', 'suppliers', 'supplier_id', 'SET NULL'],
     ['medicine_items', 'product_id', 'product', 'product_id', 'CASCADE'],
     ['grocery_items', 'product_id', 'product', 'product_id', 'CASCADE'],
-    ['product_variations', 'product_id', 'product', 'product_id', 'CASCADE'],
     ['supplier_products', 'supplier_id', 'suppliers', 'supplier_id', 'CASCADE'],
     ['supplier_products', 'product_id', 'product', 'product_id', 'CASCADE'],
     ['product_inventory', 'product_id', 'product', 'product_id', 'CASCADE'],
-    ['product_inventory', 'variation_id', 'product_variations', 'variation_id', 'SET NULL'],
     ['product_selling_stock', 'product_id', 'product', 'product_id', 'CASCADE'],
-    ['product_selling_stock', 'variation_id', 'product_variations', 'variation_id', 'SET NULL'],
     ['product_selling_stock', 'source_inventory_id', 'product_inventory', 'inventory_id', 'SET NULL'],
     ['purchase_orders', 'supplier_id', 'suppliers', 'supplier_id', 'RESTRICT'],
     ['purchase_order_items', 'po_id', 'purchase_orders', 'po_id', 'CASCADE'],
     ['purchase_order_items', 'product_id', 'product', 'product_id', 'RESTRICT'],
-    ['purchase_order_items', 'variation_id', 'product_variations', 'variation_id', 'SET NULL'],
     ['purchase_order_receiving', 'po_id', 'purchase_orders', 'po_id', 'CASCADE'],
     ['purchase_order_receiving_items', 'receiving_id', 'purchase_order_receiving', 'receiving_id', 'CASCADE'],
     ['purchase_order_receiving_items', 'po_item_id', 'purchase_order_items', 'po_item_id', 'CASCADE'],
@@ -331,41 +321,6 @@ foreach ($lookupGroups as $type => $values) {
             ':lookup_label' => $label,
             ':sort_order' => $index + 1,
         ]);
-    }
-}
-
-if (tableExists($pdo, 'product_variations')) {
-    $dimensionInsert = $pdo->prepare(
-        'INSERT IGNORE INTO entity_dimensions
-            (entity_type, entity_id, dimension_type, numeric_value, unit, text_value)
-         VALUES
-            ("product_variation", :entity_id, :dimension_type, :numeric_value, :unit, :text_value)'
-    );
-    $rows = $pdo->query(
-        'SELECT variation_id, strength_value, strength_unit, volume_value, volume_unit, size_value, size_unit,
-                weight_value, weight_unit, pack_content_qty, pack_content_unit
-         FROM product_variations'
-    )->fetchAll();
-    foreach ($rows as $row) {
-        foreach ([
-            ['strength', $row['strength_value'] ?? null, $row['strength_unit'] ?? null],
-            ['volume', $row['volume_value'] ?? null, $row['volume_unit'] ?? null],
-            ['size', null, $row['size_unit'] ?? null, $row['size_value'] ?? null],
-            ['weight', $row['weight_value'] ?? null, $row['weight_unit'] ?? null],
-            ['pack_content', $row['pack_content_qty'] ?? null, $row['pack_content_unit'] ?? null],
-        ] as $dimension) {
-            [$type, $numeric, $unit, $text] = [$dimension[0], $dimension[1] ?? null, $dimension[2] ?? null, $dimension[3] ?? null];
-            if (($numeric === null || $numeric === '') && ($text === null || $text === '') && ($unit === null || $unit === '')) {
-                continue;
-            }
-            $dimensionInsert->execute([
-                ':entity_id' => $row['variation_id'],
-                ':dimension_type' => $type,
-                ':numeric_value' => is_numeric($numeric) ? $numeric : null,
-                ':unit' => $unit ?: null,
-                ':text_value' => $text ?: (is_numeric($numeric) ? null : ($numeric ?: null)),
-            ]);
-        }
     }
 }
 

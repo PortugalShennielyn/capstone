@@ -27,10 +27,26 @@ try {
         exit();
     }
 
+    $existsStatement = $pdo->prepare('SELECT COUNT(*) FROM product WHERE product_id = :product_id');
+    $existsStatement->execute([':product_id' => $productId]);
+    if ((int) $existsStatement->fetchColumn() === 0) {
+        echo json_encode([
+            'status' => 'already_deleted',
+            'message' => 'Product already removed.'
+        ]);
+        exit();
+    }
+
     $pdo->beginTransaction();
 
     $supplierProducts = $pdo->prepare('DELETE FROM supplier_products WHERE product_id = :product_id');
     $supplierProducts->execute([':product_id' => $productId]);
+
+    $sellingStock = $pdo->prepare('DELETE FROM product_selling_stock WHERE product_id = :product_id');
+    $sellingStock->execute([':product_id' => $productId]);
+
+    $batches = $pdo->prepare('DELETE FROM inventory_batches WHERE product_id = :product_id');
+    $batches->execute([':product_id' => $productId]);
 
     $inventory = $pdo->prepare('DELETE FROM product_inventory WHERE product_id = :product_id');
     $inventory->execute([':product_id' => $productId]);
@@ -39,9 +55,11 @@ try {
     $product->execute([':product_id' => $productId]);
 
     if ($product->rowCount() === 0) {
-        $pdo->rollBack();
-        http_response_code(404);
-        echo json_encode(['status' => 'error', 'message' => 'Product not found.']);
+        $pdo->commit();
+        echo json_encode([
+            'status' => 'already_deleted',
+            'message' => 'Product already removed.'
+        ]);
         exit();
     }
 

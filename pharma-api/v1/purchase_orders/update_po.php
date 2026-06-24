@@ -17,7 +17,6 @@ if (!is_array($payload)) {
 }
 
 try {
-    ensurePurchaseOrderSchema($pdo);
 
     $poId = cleanId($payload['po_id'] ?? null);
     $supplierId = cleanId($payload['supplier_id'] ?? null);
@@ -38,6 +37,7 @@ try {
 
     $pdo->beginTransaction();
     validateProductsForSupplier($pdo, $supplierId, $items);
+    $items = applySupplierProductSetup($pdo, $supplierId, $items);
 
     $orderStatement = $pdo->prepare(
         'UPDATE purchase_orders
@@ -73,8 +73,11 @@ try {
             po_item_id,
             po_id,
             product_id,
-            variation_id,
             quantity,
+            purchase_qty,
+            purchase_unit_snapshot,
+            units_per_purchase_unit_snapshot,
+            inventory_qty_ordered,
             product_name_snapshot,
             brand_name_snapshot,
             category_name_snapshot,
@@ -85,14 +88,18 @@ try {
             size_value_snapshot,
             unit_snapshot,
             packaging_snapshot,
-            unit_price_snapshot
+            unit_price_snapshot,
+            line_total
          )
          VALUES (
             :po_item_id,
             :po_id,
             :product_id,
-            :variation_id,
             :quantity,
+            :purchase_qty,
+            :purchase_unit_snapshot,
+            :units_per_purchase_unit_snapshot,
+            :inventory_qty_ordered,
             :product_name_snapshot,
             :brand_name_snapshot,
             :category_name_snapshot,
@@ -103,14 +110,18 @@ try {
             :size_value_snapshot,
             :unit_snapshot,
             :packaging_snapshot,
-            :unit_price_snapshot
+            :unit_price_snapshot,
+            :line_total
          )'
     );
     $updateItemStatement = $pdo->prepare(
         'UPDATE purchase_order_items
          SET product_id = :product_id,
-             variation_id = :variation_id,
              quantity = :quantity,
+             purchase_qty = :purchase_qty,
+             purchase_unit_snapshot = :purchase_unit_snapshot,
+             units_per_purchase_unit_snapshot = :units_per_purchase_unit_snapshot,
+             inventory_qty_ordered = :inventory_qty_ordered,
              product_name_snapshot = :product_name_snapshot,
              brand_name_snapshot = :brand_name_snapshot,
              category_name_snapshot = :category_name_snapshot,
@@ -121,7 +132,8 @@ try {
              size_value_snapshot = :size_value_snapshot,
              unit_snapshot = :unit_snapshot,
              packaging_snapshot = :packaging_snapshot,
-             unit_price_snapshot = :unit_price_snapshot
+             unit_price_snapshot = :unit_price_snapshot,
+             line_total = :line_total
          WHERE po_item_id = :po_item_id
            AND po_id = :po_id'
     );
@@ -130,10 +142,8 @@ try {
         $poItemId = cleanId($item['po_item_id'] ?? null);
         $params = array_merge([
             ':po_id' => $poId,
-            ':product_id' => cleanId($item['product_id']),
-            ':variation_id' => nullableId($item['variation_id'] ?? null),
-            ':quantity' => (int) $item['quantity']
-        ], purchaseOrderItemSnapshotParams($item));
+            ':product_id' => cleanId($item['product_id'])
+        ], purchaseOrderQuantityParams($item), purchaseOrderItemSnapshotParams($item));
 
         if ($poItemId !== '') {
             if (!in_array($poItemId, $existingItemIds, true)) {

@@ -15,7 +15,7 @@
     mainWrapperBeforeLoad?.classList.toggle("collapsed", savedCollapsed);
 
     try {
-            const cacheKey = "drpNavbarHtml:v12";
+            const cacheKey = "drpNavbarHtml:v17";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -39,23 +39,227 @@
         const mainWrapper = document.getElementById("mainWrapper");
         const filename = window.location.pathname.split("/").pop() || "dashboard.html";
 
+        const pageMap = {
+            "dashboard.html": "dashboard",
+            "products.html": "products",
+            "inventory.html": "inventory",
+            "supplier.html": "supplier",
+            "purchase_orders.html": "purchase-orders",
+            "pending_orders.html": "pending-orders",
+            "arrived_orders.html": "arrived-orders",
+            "complete_delivery.html": "complete-delivery",
+            "return_damage.html": "return-damage",
+            "expiry_monitoring.html": "expiry-monitoring",
+            "pos.html": "pos",
+            "clerk.html": "clerk"
+        };
+
+        const dashboardViewMap = {
+            dashboard: "dashboard",
+            "dashboard/settings": "settings",
+            "dashboard/billing": "billing",
+            "dashboard/user/settings": "user-settings",
+            "dashboard/products": "products",
+            "dashboard/inventory": "inventory",
+            "dashboard/suppliers": "supplier",
+            "dashboard/pos": "pos",
+            "dashboard/clerk": "clerk",
+            "dashboard/purchase-orders": "purchase-orders",
+            "dashboard/pending-orders": "pending-orders",
+            "dashboard/arrived-orders": "arrived-orders",
+            "dashboard/complete-delivery": "complete-delivery",
+            "dashboard/return-damage": "return-damage",
+            "dashboard/expiry-monitoring": "expiry-monitoring"
+        };
+
+        function normalizeDashboardView(view) {
+            return String(view || "")
+                .replace(/^#/, "")
+                .replace(/^\/+/, "")
+                .replace(/\/+$/, "")
+                || "dashboard";
+        }
+
+        function getDashboardView() {
+            const hashView = normalizeDashboardView(window.location.hash);
+            if (hashView && hashView !== "dashboard") return hashView;
+
+            const activePage = pageMap[filename] || "dashboard";
+            const activeLink = container.querySelector(`[data-nav-page="${activePage}"]`);
+            return normalizeDashboardView(activeLink?.dataset.dashboardView || activePage);
+        }
+
         function getActivePage() {
-            const hash = window.location.hash.replace("#", "");
-            const pageMap = {
-                "dashboard.html": "dashboard",
-                "products.html": "products",
-                "inventory.html": "inventory",
-                "supplier.html": "supplier",
-                "purchase_orders.html": "purchase-orders",
-                "pending_orders.html": "pending-orders",
-                "arrived_orders.html": "arrived-orders",
-                "complete_delivery.html": "complete-delivery",
-                "return_damage.html": "return-damage",
-                "expiry_monitoring.html": "expiry-monitoring",
-                "pos.html": "pos",
-                "clerk.html": "clerk"
-            };
+            const dashboardView = getDashboardView();
+            if (dashboardViewMap[dashboardView]) return dashboardViewMap[dashboardView];
+
             return pageMap[filename] || "";
+        }
+
+        function setDashboardViewState() {
+            const view = getDashboardView();
+            document.body.dataset.dashboardView = view;
+            document.body.dataset.dashboardPage = "dashboard";
+            sessionStorage.setItem("drpDashboardView", view);
+        }
+
+        function setUserPopoverOpen(isOpen) {
+            const footer = container.querySelector(".sidebar-profile-footer");
+            const trigger = container.querySelector("#sidebarUserMenuButton");
+            const popover = container.querySelector("#sidebarUserPopover");
+            const isSlim = sidebar?.classList.contains("collapsed");
+
+            if (popover && isOpen) {
+                if (isSlim) {
+                    container.appendChild(popover);
+                    popover.classList.add("slim-popover");
+                } else if (footer && popover.parentElement !== footer) {
+                    const directSignout = footer.querySelector(".sidebar-signout-direct");
+                    footer.insertBefore(popover, directSignout);
+                    popover.classList.remove("slim-popover");
+                }
+            }
+
+            footer?.classList.toggle("user-popover-open", isOpen);
+            popover?.classList.toggle("is-open", isOpen);
+            trigger?.setAttribute("aria-expanded", String(isOpen));
+        }
+
+        function getSlimFlyout() {
+            let flyout = container.querySelector(".sidebar-slim-flyout");
+            if (flyout) return flyout;
+
+            flyout = document.createElement("div");
+            flyout.className = "sidebar-slim-flyout";
+            flyout.setAttribute("role", "menu");
+            container.appendChild(flyout);
+            return flyout;
+        }
+
+        function closeSlimFlyout() {
+            const flyout = container.querySelector(".sidebar-slim-flyout");
+            flyout?.classList.remove("is-open");
+            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
+                trigger.classList.remove("slim-flyout-open");
+                if (sidebar?.classList.contains("collapsed")) {
+                    trigger.setAttribute("aria-expanded", "false");
+                }
+            });
+        }
+
+        function positionSlimFlyout(trigger, flyout) {
+            const rect = trigger.getBoundingClientRect();
+            const top = Math.max(12, Math.min(rect.top, window.innerHeight - 260));
+            flyout.style.top = `${top}px`;
+        }
+
+        function openSlimFlyout(trigger) {
+            const targetSelector = trigger.getAttribute("href");
+            const collapse = targetSelector?.startsWith("#") ? container.querySelector(targetSelector) : null;
+            if (!collapse) return;
+
+            const flyout = getSlimFlyout();
+            const title = trigger.querySelector(".nav-label")?.textContent?.trim() || trigger.getAttribute("title") || "Menu";
+            const links = Array.from(collapse.querySelectorAll("a.nav-link-item[href]"));
+
+            flyout.innerHTML = `<div class="sidebar-slim-flyout-title">${title}</div>`;
+            links.forEach(link => {
+                const flyoutLink = document.createElement("a");
+                flyoutLink.className = "sidebar-slim-flyout-link nav-link-item";
+                flyoutLink.href = link.getAttribute("href") || "#";
+                flyoutLink.title = link.getAttribute("title") || link.textContent.trim();
+                flyoutLink.dataset.navPage = link.dataset.navPage || "";
+                flyoutLink.dataset.dashboardView = link.dataset.dashboardView || "";
+                flyoutLink.setAttribute("role", "menuitem");
+                flyoutLink.innerHTML = `${link.querySelector("i")?.outerHTML || ""}<span>${link.querySelector(".nav-label")?.textContent?.trim() || flyoutLink.title}</span>`;
+                if (link.classList.contains("active")) {
+                    flyoutLink.classList.add("active");
+                }
+                flyout.appendChild(flyoutLink);
+            });
+
+            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(item => item.classList.remove("slim-flyout-open"));
+            trigger.classList.add("slim-flyout-open");
+            trigger.setAttribute("aria-expanded", "true");
+            positionSlimFlyout(trigger, flyout);
+            flyout.classList.add("is-open");
+        }
+
+        function handleSlimCollapseClick(event) {
+            const trigger = event.target.closest("a.nav-link-item[data-bs-toggle='collapse']");
+            if (!trigger || !container.contains(trigger)) return;
+            if (!sidebar?.classList.contains("collapsed")) {
+                closeSlimFlyout();
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+
+            const flyout = container.querySelector(".sidebar-slim-flyout");
+            const isSameOpen = flyout?.classList.contains("is-open") && trigger.classList.contains("slim-flyout-open");
+            if (isSameOpen) {
+                closeSlimFlyout();
+                return;
+            }
+
+            setUserPopoverOpen(false);
+            openSlimFlyout(trigger);
+        }
+
+        function closeUserPopoverFromOutside(event) {
+            const footer = container.querySelector(".sidebar-profile-footer");
+            const popover = container.querySelector("#sidebarUserPopover");
+            if (!footer || (!footer.classList.contains("user-popover-open") && !popover?.classList.contains("is-open"))) return;
+            if (footer.contains(event.target)) return;
+            if (popover?.contains(event.target)) return;
+            setUserPopoverOpen(false);
+        }
+
+        function closeSlimFlyoutFromOutside(event) {
+            const flyout = container.querySelector(".sidebar-slim-flyout");
+            if (!flyout || !flyout.classList.contains("is-open")) return;
+            if (flyout.contains(event.target)) return;
+            if (event.target.closest("a.nav-link-item[data-bs-toggle='collapse']")) return;
+            closeSlimFlyout();
+        }
+
+        function handleUserPopoverClick(event) {
+            const trigger = event.target.closest("#sidebarUserMenuButton, .sidebar-user-menu-toggle");
+            if (!trigger || !container.contains(trigger)) return;
+
+            event.preventDefault();
+            const footer = trigger.closest(".sidebar-profile-footer");
+            setUserPopoverOpen(!footer?.classList.contains("user-popover-open"));
+        }
+
+        function handleNavbarKeydown(event) {
+            if (event.key !== "Escape") return;
+            setUserPopoverOpen(false);
+            closeSlimFlyout();
+        }
+
+        function getActiveLabel() {
+            const activePage = getActivePage();
+            const pageMap = {
+                "dashboard": "Dashboard",
+                "products": "Products",
+                "inventory": "Inventory",
+                "supplier": "Suppliers",
+                "settings": "Tenant Settings",
+                "billing": "Billing",
+                "user-settings": "User Settings",
+                "purchase-orders": "Purchase Orders",
+                "pending-orders": "Pending Orders",
+                "arrived-orders": "Arrived Orders",
+                "complete-delivery": "Complete Delivery",
+                "return-damage": "Return/Damage",
+                "expiry-monitoring": "Expiry Monitoring",
+                "pos": "POS",
+                "clerk": "Salesclerk"
+            };
+            return pageMap[activePage] || "Dashboard";
         }
 
         function setSidebarState(isCollapsed) {
@@ -63,6 +267,9 @@
             mainWrapper?.classList.toggle("collapsed", isCollapsed);
             document.body.classList.toggle("navbar-sidebar-collapsed", isCollapsed);
             localStorage.setItem("drpSidebarCollapsed", String(isCollapsed));
+            if (!isCollapsed) {
+                closeSlimFlyout();
+            }
         }
 
         function closeSidebarFromOutside(event) {
@@ -85,6 +292,7 @@
         }
 
         function applyActiveNavigation() {
+            setDashboardViewState();
             container.querySelectorAll("[data-nav-page]").forEach(link => link.classList.remove("active"));
             const activeLink = container.querySelector(`[data-nav-page="${getActivePage()}"]`);
             activeLink?.classList.add("active");
@@ -103,6 +311,13 @@
                 return;
             }
 
+            if (link.closest(".sidebar-user-popover")) {
+                setUserPopoverOpen(false);
+            }
+            if (link.closest(".sidebar-slim-flyout")) {
+                closeSlimFlyout();
+            }
+
             const targetUrl = new URL(link.href, window.location.href);
             const isSamePath = targetUrl.pathname === window.location.pathname;
             const isSameHash = targetUrl.hash === window.location.hash || (!targetUrl.hash && !window.location.hash);
@@ -114,7 +329,11 @@
                 return;
             }
 
-            sessionStorage.setItem("drpLastNavigationTarget", link.dataset.navPage || targetUrl.pathname);
+            const dashboardView = normalizeDashboardView(link.dataset.dashboardView || targetUrl.hash);
+            if (dashboardView) {
+                sessionStorage.setItem("drpDashboardView", dashboardView);
+            }
+            sessionStorage.setItem("drpLastNavigationTarget", dashboardView || link.dataset.navPage || targetUrl.pathname);
         }
 
         function prefetchNavigationTargets() {
@@ -151,8 +370,15 @@
         document.getElementById("sidebarToggle")?.addEventListener("click", () => {
             setSidebarState(!sidebar.classList.contains("collapsed"));
         });
+        container.addEventListener("click", handleSlimCollapseClick, true);
         container.addEventListener("click", handleSidebarNavigation);
+        container.addEventListener("click", handleUserPopoverClick);
         document.addEventListener("pointerdown", closeSidebarFromOutside);
+        document.addEventListener("pointerdown", closeUserPopoverFromOutside);
+        document.addEventListener("pointerdown", closeSlimFlyoutFromOutside);
+        document.addEventListener("keydown", handleNavbarKeydown);
+        window.addEventListener("resize", closeSlimFlyout);
+        window.addEventListener("scroll", closeSlimFlyout, true);
         window.addEventListener("load", enhanceDataTables);
         window.addEventListener("drp:tables-updated", enhanceDataTables);
         window.requestIdleCallback
@@ -165,7 +391,7 @@
         });
         tableObserver.observe(document.body, { childList: true, subtree: true });
 
-        window.dispatchEvent(new CustomEvent("navbar:ready", { detail: { activePage: getActivePage() } }));
+        window.dispatchEvent(new CustomEvent("navbar:ready", { detail: { activePage: getActivePage(), activeLabel: getActiveLabel(), dashboardView: getDashboardView() } }));
     } catch (error) {
         document.body.classList.remove("navbar-state-booting");
         console.error("Unable to load the shared navbar:", error);
@@ -371,7 +597,15 @@ function ensureNavbarRuntimeStyles() {
         }
 
         .table-responsive > table.po-list-table {
-            min-width: 1540px !important;
+            width: max-content !important;
+            min-width: 2020px !important;
+            table-layout: fixed !important;
+        }
+
+        .table-responsive > table.po-items-table {
+            width: max-content !important;
+            min-width: 1700px !important;
+            table-layout: fixed !important;
         }
 
         .table-responsive > table.pending-table,
@@ -409,6 +643,15 @@ function ensureNavbarRuntimeStyles() {
             padding-right: 8px !important;
         }
 
+        .table-responsive > table.po-items-table th,
+        .table-responsive > table.po-items-table td {
+            font-size: 12.5px !important;
+            vertical-align: middle !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+            hyphens: none !important;
+        }
+
         .table-responsive > table.po-list-table .col-date,
         .table-responsive > table.po-list-table td:nth-child(1),
         .table-responsive > table.po-list-table .col-money,
@@ -426,24 +669,32 @@ function ensureNavbarRuntimeStyles() {
         .table-responsive > table.po-list-table .col-date,
         .table-responsive > table.po-list-table td:nth-child(1) { width: 110px !important; }
         .table-responsive > table.po-list-table .col-supplier,
-        .table-responsive > table.po-list-table td:nth-child(2) { width: 120px !important; }
-        .table-responsive > table.po-list-table .col-items,
-        .table-responsive > table.po-list-table td:nth-child(3) { width: 210px !important; }
+        .table-responsive > table.po-list-table td:nth-child(2) { width: 160px !important; min-width: 160px !important; }
         .table-responsive > table.po-list-table .col-brand,
-        .table-responsive > table.po-list-table td:nth-child(4) { width: 155px !important; }
+        .table-responsive > table.po-list-table td:nth-child(3) { width: 140px !important; min-width: 140px !important; }
+        .table-responsive > table.po-list-table .col-items,
+        .table-responsive > table.po-list-table td:nth-child(4) { width: 180px !important; min-width: 180px !important; }
+        .table-responsive > table.po-list-table .col-category,
+        .table-responsive > table.po-list-table td:nth-child(5) { width: 130px !important; min-width: 130px !important; }
+        .table-responsive > table.po-list-table .col-type,
+        .table-responsive > table.po-list-table td:nth-child(6) { width: 130px !important; min-width: 130px !important; }
         .table-responsive > table.po-list-table .col-qty,
-        .table-responsive > table.po-list-table td:nth-child(5) { width: 90px !important; }
+        .table-responsive > table.po-list-table td:nth-child(7) { width: 110px !important; min-width: 110px !important; }
+        .table-responsive > table.po-list-table .col-purchase-unit,
+        .table-responsive > table.po-list-table td:nth-child(8) { width: 150px !important; min-width: 150px !important; }
+        .table-responsive > table.po-list-table .col-inventory-qty,
+        .table-responsive > table.po-list-table td:nth-child(9) { width: 130px !important; min-width: 130px !important; }
         .table-responsive > table.po-list-table .col-terms,
-        .table-responsive > table.po-list-table td:nth-child(6) { width: 105px !important; }
+        .table-responsive > table.po-list-table td:nth-child(10) { width: 120px !important; min-width: 120px !important; }
         .table-responsive > table.po-list-table .col-delivery,
-        .table-responsive > table.po-list-table td:nth-child(7) { width: 130px !important; }
+        .table-responsive > table.po-list-table td:nth-child(11) { width: 160px !important; min-width: 160px !important; }
         .table-responsive > table.po-list-table .col-money,
-        .table-responsive > table.po-list-table td:nth-child(8),
-        .table-responsive > table.po-list-table td:nth-child(9) { width: 130px !important; }
+        .table-responsive > table.po-list-table td:nth-child(12),
+        .table-responsive > table.po-list-table td:nth-child(13) { width: 130px !important; min-width: 130px !important; }
         .table-responsive > table.po-list-table .col-status,
-        .table-responsive > table.po-list-table td:nth-child(10) { width: 105px !important; }
+        .table-responsive > table.po-list-table td:nth-child(14) { width: 120px !important; min-width: 120px !important; }
         .table-responsive > table.po-list-table .col-actions,
-        .table-responsive > table.po-list-table td:nth-child(11) { width: 95px !important; }
+        .table-responsive > table.po-list-table td:nth-child(15) { width: 100px !important; min-width: 100px !important; }
 
         .table-responsive > table#productsTable th:nth-child(1),
         .table-responsive > table#productsTable td:nth-child(1) { width: 150px !important; min-width: 150px !important; }
@@ -610,7 +861,7 @@ function ensureNavbarRuntimeStyles() {
             -webkit-overflow-scrolling: touch !important;
         }
 
-        .table-responsive > table.table,
+        .table-responsive > table.table:not(.po-list-table):not(.po-items-table),
         .data-table-wrapper > table.table,
         table.data-table-enhanced {
             width: 100% !important;
