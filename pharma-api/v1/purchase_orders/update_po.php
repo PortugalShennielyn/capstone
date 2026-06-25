@@ -138,12 +138,16 @@ try {
            AND po_id = :po_id'
     );
 
+    $totalAmount = 0.0;
+
     foreach ($items as $item) {
         $poItemId = cleanId($item['po_item_id'] ?? null);
+        $quantityParams = purchaseOrderQuantityParams($item);
+        $totalAmount += (float) $quantityParams[':line_total'];
         $params = array_merge([
             ':po_id' => $poId,
             ':product_id' => cleanId($item['product_id'])
-        ], purchaseOrderQuantityParams($item), purchaseOrderItemSnapshotParams($item));
+        ], $quantityParams, purchaseOrderItemSnapshotParams($item));
 
         if ($poItemId !== '') {
             if (!in_array($poItemId, $existingItemIds, true)) {
@@ -180,6 +184,12 @@ try {
         $deleteStatement = $pdo->prepare("DELETE FROM purchase_order_items WHERE po_id = ? AND po_item_id IN ({$placeholders})");
         $deleteStatement->execute(array_merge([$poId], $deleteItemIds));
     }
+
+    $totalStatement = $pdo->prepare('UPDATE purchase_orders SET total_amount = :total_amount WHERE po_id = :po_id');
+    $totalStatement->execute([
+        ':total_amount' => $totalAmount,
+        ':po_id' => $poId
+    ]);
 
     $pdo->commit();
     echo json_encode(['status' => 'success', 'message' => 'Purchase order updated successfully.']);

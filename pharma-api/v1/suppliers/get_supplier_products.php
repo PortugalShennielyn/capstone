@@ -16,16 +16,12 @@ try {
         "SELECT
             sp.supplier_product_id,
             sp.supplier_cost_price,
-            COALESCE(NULLIF(sp.purchase_unit, ''), gd.package_type, md.package_type, md.dosage_form, 'pcs') AS purchase_unit,
-            CASE
-                WHEN COALESCE(sp.units_per_purchase_unit, 1) > 1 THEN sp.units_per_purchase_unit
-                WHEN gd.pack_content REGEXP '^[0-9]+' THEN GREATEST(CAST(SUBSTRING_INDEX(gd.pack_content, ' ', 1) AS UNSIGNED), 1)
-                ELSE 1
-            END AS units_per_purchase_unit,
+            sp.purchase_unit,
+            COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit,
             p.product_id,
             p.product_name,
             p.brand_name,
-            COALESCE(sp.supplier_cost_price, p.price, 0) AS price,
+            COALESCE(sp.supplier_cost_price, 0) AS price,
             p.price AS selling_price,
             p.barcode AS variation_barcode,
             p.barcode,

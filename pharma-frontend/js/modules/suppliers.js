@@ -26,8 +26,224 @@ function combineValueUnit(value, unit) {
     return cleanUnit ? `${cleanValue} ${cleanUnit}` : cleanValue;
 }
 
+function cleanText(value) {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return ['N/A', 'NA', 'NULL', 'NONE'].includes(text.toUpperCase()) ? '' : text;
+}
+
+function displayText(value) {
+    const text = cleanText(value);
+    return text.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function sameText(left, right) {
+    return cleanText(left).toLowerCase() === cleanText(right).toLowerCase();
+}
+
+function compactMeasure(value, unit = '') {
+    const cleanValue = cleanText(value);
+    const cleanUnit = cleanText(unit);
+    if (!cleanValue) return '';
+    return cleanUnit ? `${cleanValue}${cleanUnit}` : cleanValue;
+}
+
+function splitLeadingNumber(value) {
+    const text = cleanText(value);
+    const match = text.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+    return {
+        quantity: match ? match[1] : '',
+        unit: match ? cleanText(match[2]) : text
+    };
+}
+
+function peso(value) {
+    return new Intl.NumberFormat('en-PH', {
+        style: 'currency',
+        currency: 'PHP'
+    }).format(Number(value || 0));
+}
+
+function pluralizeStockUnit(unit, quantity = 2) {
+    const raw = cleanText(unit || 'pcs');
+    const lower = raw.toLowerCase();
+    const fixed = {
+        pcs: 'pcs',
+        pc: 'pcs',
+        piece: 'pcs',
+        pieces: 'pcs',
+        can: 'cans',
+        cans: 'cans',
+        bottle: 'bottles',
+        bottles: 'bottles',
+        pack: 'packs',
+        packs: 'packs',
+        sachet: 'sachets',
+        sachets: 'sachets',
+        'blister pack': 'pcs',
+        blister: 'pcs'
+    };
+    const text = fixed[lower] || displayText(raw);
+    if (Number(quantity) === 1 && ['cans', 'bottles', 'packs', 'sachets'].includes(text.toLowerCase())) {
+        return text.replace(/s$/i, '');
+    }
+    if (Number(quantity) === 1 || /s$/i.test(text)) return text;
+    if (/y$/i.test(text)) return text.replace(/y$/i, 'ies');
+    return `${text}s`;
+}
+
+function singularStockUnit(unit) {
+    return pluralizeStockUnit(unit, 1);
+}
+
+function supplierStockUnit(product, quantity = 2) {
+    const packaging = cleanText(product.package_type || product.packaging).toLowerCase();
+    const unit = cleanText(product.product_unit || product.measurement_unit_name || '').toLowerCase();
+    const packageMap = { can: 'can', cans: 'can', bottle: 'bottle', bottles: 'bottle', pack: 'pack', packs: 'pack', sachet: 'sachet', sachets: 'sachet' };
+
+    if (packageMap[packaging]) return pluralizeStockUnit(packageMap[packaging], quantity);
+    if (packaging === 'blister pack') return 'pcs';
+    if (['g', 'gram', 'grams', 'kg', 'mg', 'mcg', 'ml', 'l'].includes(unit)) return 'pcs';
+    return pluralizeStockUnit(unit || 'pcs', quantity);
+}
+
+function packageContentUnitText(unit) {
+    const text = cleanText(unit || 'pcs');
+    return text.toLowerCase() === 'pcs' ? 'pcs' : displayText(text);
+}
+
+function supplierContainsLabel(product) {
+    const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
+    return `${contains} ${packageContentUnitText(supplierStockUnit(product, contains))}`;
+}
+
+function supplierConversionPreview(product) {
+    const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
+    const purchaseUnit = displayText(product.purchase_unit || 'Box');
+    const packaging = product.package_type || product.packaging;
+    const contents = `${contains} ${packageContentUnitText(supplierStockUnit(product, contains))}`;
+    if (sameText(purchaseUnit, packaging)) {
+        return `1 ${purchaseUnit} = ${contents}`;
+    }
+    return `1 ${purchaseUnit} = ${contents}`;
+}
+
+function supplierPreviewDetails(product) {
+    const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
+    const purchaseUnit = displayText(product.purchase_unit || 'Box') || 'Box';
+    const stockUnit = supplierStockUnit(product, contains);
+    const packaging = product.package_type || product.packaging;
+    const isWarning = sameText(purchaseUnit, packaging) && contains > 1;
+    const line = `${contains} ${packageContentUnitText(stockUnit)}`;
+
+    return { purchaseUnit, containsLine: line, inventoryLine: line, isWarning };
+}
+
+function removeBrandPrefix(productName, brandName) {
+    const product = cleanText(productName);
+    const brand = cleanText(brandName);
+    if (!product || !brand) return product;
+    const pattern = new RegExp(`^${brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+`, 'i');
+    return product.replace(pattern, '').trim() || product;
+}
+
+function productDisplayName(product) {
+    const brand = cleanText(product.brand_name);
+    const name = removeBrandPrefix(product.product_name, brand);
+    const base = [brand, name].filter(Boolean).join(' ');
+    return base || cleanText(product.product_name) || 'Unnamed product';
+}
+
+function variantStrengthSize(product) {
+    const category = cleanText(product.category_name).toLowerCase();
+    if (category === 'medicine') {
+        return cleanText(product.strength_size_display || product.strength_size_value || product.strength_value || product.generic_name) || '-';
+    }
+
+    return [
+        cleanText(product.variant_flavor || product.variant),
+        compactMeasure(product.weight_volume_value || product.net_weight || product.size_value || product.display_size, product.weight_volume_unit),
+        cleanText(product.package_type || product.packaging)
+    ].filter(Boolean).join(' \u2022 ') || '-';
+}
+
 const selectedAddCategoryName = () => document.getElementById('supplierProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
 const selectedAddTypeName = () => document.getElementById('supplierProductType')?.selectedOptions?.[0]?.textContent?.trim() || '';
+
+function supplierProductPackaging(product) {
+    return displayText(product.package_type || product.packaging) || '-';
+}
+
+function rowSearchText(product) {
+    return [
+        product.supplier_name,
+        product.brand_name,
+        product.product_name,
+        product.category_name,
+        product.type_name,
+        product.variant_flavor,
+        product.variant,
+        product.strength_size_display,
+        product.strength_size_value,
+        product.strength_value,
+        product.size_value,
+        product.display_size,
+        product.weight_volume_value,
+        product.weight_volume_unit,
+        product.product_unit,
+        product.measurement_unit_name,
+        product.package_type,
+        product.packaging,
+        product.purchase_unit,
+        productDisplayName(product),
+        variantStrengthSize(product)
+    ].map(cleanText).join(' ').toLowerCase();
+}
+
+function populateSupplierProductFilters(rows) {
+    const configs = [
+        ['supplierProductFilterSupplier', (row) => row.supplier_name],
+        ['supplierProductFilterCategory', (row) => row.category_name],
+        ['supplierProductFilterType', (row) => row.type_name],
+        ['supplierProductFilterPackage', (row) => row.purchase_unit]
+    ];
+
+    configs.forEach(([id, getter]) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const current = select.value;
+        const firstLabel = select.options[0]?.textContent || 'All';
+        const values = Array.from(new Set(rows.map(getter).map(displayText).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+        select.innerHTML = `<option value="">${esc(firstLabel)}</option>`;
+        values.forEach((value) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            select.appendChild(option);
+        });
+        select.value = values.includes(current) ? current : '';
+    });
+}
+
+function filteredSupplierProducts() {
+    const search = cleanText(document.getElementById('supplierProductSearch')?.value).toLowerCase();
+    const supplier = cleanText(document.getElementById('supplierProductFilterSupplier')?.value).toLowerCase();
+    const category = cleanText(document.getElementById('supplierProductFilterCategory')?.value).toLowerCase();
+    const type = cleanText(document.getElementById('supplierProductFilterType')?.value).toLowerCase();
+    const packageFilter = cleanText(document.getElementById('supplierProductFilterPackage')?.value).toLowerCase();
+
+    return supplierProductRows.filter((row) => {
+        if (search && !rowSearchText(row).includes(search)) return false;
+        if (supplier && displayText(row.supplier_name).toLowerCase() !== supplier) return false;
+        if (category && displayText(row.category_name).toLowerCase() !== category) return false;
+        if (type && displayText(row.type_name).toLowerCase() !== type) return false;
+        if (packageFilter && displayText(row.purchase_unit).toLowerCase() !== packageFilter) return false;
+        return true;
+    });
+}
+
+function refreshSupplierProductTable() {
+    renderSupplierProducts(filteredSupplierProducts());
+}
 
 function setSelectValue(selectId, value) {
     const select = document.getElementById(selectId);
@@ -140,28 +356,28 @@ function renderSuppliers(rows) {
 function renderSupplierProducts(rows) {
     const body = document.querySelector('#table-supplier-products tbody');
     if (!body) return;
-    supplierProductRows = rows;
+    document.getElementById('table-supplier-products')?.classList.add('supplier-product-table');
 
     body.innerHTML = rows.length
-        ? rows.map((product) => {
-            const details = productDetailCells(product);
-            return `
+        ? rows.map((product) => `
             <tr>
-                <td>${esc(product.supplier_name)}</td>
-                <td>${esc(product.brand_name)}</td>
-                <td>${esc(product.product_name)}</td>
+                <td class="col-supplier">${esc(displayText(product.supplier_name) || '-')}</td>
+                <td class="col-product">
+                    <div class="supplier-product-name">
+                        <strong>${esc(productDisplayName(product))}</strong>
+                    </div>
+                </td>
                 <td>${esc(product.category_name)}</td>
                 <td>${esc(product.type_name)}</td>
-                <td>${details.generic}</td>
-                <td>${details.strength}</td>
-                <td>${details.variant}</td>
-                <td>${details.size}</td>
-                <td>${details.netWeight}</td>
-                <td>${details.packContent}</td>
-                <td>${Number(product.price || 0).toFixed(2)}</td>
+                <td class="col-variant">${esc(variantStrengthSize(product))}</td>
+                <td class="col-price">${peso(product.price)}</td>
+                <td class="col-price">${peso(product.supplier_cost_price)}</td>
+                <td class="col-package">${esc(supplierProductPackaging(product))}</td>
+                <td class="col-package">${esc(displayText(product.purchase_unit) || 'Not set')}</td>
+                <td class="col-contains">${esc(supplierContainsLabel(product))}</td>
                 <td>
                     <div class="supplier-product-actions">
-                        <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-product-id="${esc(product.product_id)}" title="Edit product">
+                        <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" title="Edit supplier purchasing setup">
                             <i class="fa-solid fa-pen"></i>
                         </button>
                         <button class="btn btn-sm btn-outline-danger delete-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" data-product-id="${esc(product.product_id)}" title="Remove product">
@@ -170,16 +386,42 @@ function renderSupplierProducts(rows) {
                     </div>
                 </td>
             </tr>
-        `;
-        }).join('')
-        : '<tr><td colspan="13" class="text-center text-muted py-4">No supplier products found.</td></tr>';
+        `).join('')
+        : '<tr><td colspan="11" class="text-center text-muted py-4">No supplier products found.</td></tr>';
+}
+
+function updateSupplierProductConversionPreview() {
+    const supplierProductId = document.getElementById('editSupplierProductLinkId')?.value || '';
+    const product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(supplierProductId)) || {};
+    const purchaseUnit = document.getElementById('editSupplierProductPurchaseUnit')?.value || product.purchase_unit || 'Box';
+    const contains = Math.max(1, Number(document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.value || 1));
+    const packaging = document.getElementById('editSupplierProductPackaging')?.value || product.package_type || product.packaging;
+    const unit = document.getElementById('editSupplierProductUnit')?.value || product.product_unit || product.measurement_unit_name;
+    const preview = supplierPreviewDetails({
+        ...product,
+        purchase_unit: purchaseUnit,
+        units_per_purchase_unit: contains,
+        package_type: packaging,
+        packaging,
+        product_unit: unit,
+        measurement_unit_name: unit
+    });
+
+    document.getElementById('editPreviewPurchaseUnit').textContent = preview.purchaseUnit;
+    document.getElementById('editPreviewContains').textContent = preview.containsLine;
+    document.getElementById('editPreviewInventoryReceived').textContent = preview.inventoryLine;
+    document.getElementById('editSupplierProductConversionPreview')?.classList.toggle('is-warning', preview.isWarning);
 }
 
 async function loadSupplierProducts() {
     try {
         const data = await fetchJson(endpoint('suppliers/get_supplier_product_list.php'));
-        renderSupplierProducts(data.products || []);
+        supplierProductRows = data.products || [];
+        populateSupplierProductFilters(supplierProductRows);
+        refreshSupplierProductTable();
     } catch (error) {
+        supplierProductRows = [];
+        populateSupplierProductFilters([]);
         renderSupplierProducts([]);
         PharmaUtils.toast.error(error.message);
     }
@@ -361,6 +603,33 @@ async function loadEditMeasurementUnits(selectedUnitId = '') {
         unitSelect.appendChild(option);
     });
     unitSelect.value = selectedUnitId ? String(selectedUnitId) : '';
+}
+
+async function loadEditProductUnitOptions(selectedUnitName = '') {
+    const unitSelect = document.getElementById('editSupplierProductUnit');
+    if (!unitSelect) return;
+    const selected = cleanText(selectedUnitName);
+    const fallbackUnits = ['pcs', 'tablet', 'capsule', 'bottle', 'box', 'pack', 'can', 'sachet', 'tube', 'vial', 'ampule', 'blister', 'pouch', 'jar', 'roll', 'Solution', 'Syrup', 'Drops', 'Suspension'];
+
+    unitSelect.innerHTML = '<option value="">N/A</option>';
+    try {
+        const data = await fetchJson(endpoint('products/get_measurement_units.php'));
+        const lookupUnits = (data.units || []).map((unit) => cleanText(unit.unit_name)).filter(Boolean);
+        Array.from(new Set([...lookupUnits, ...fallbackUnits])).forEach((unitName) => {
+            const option = document.createElement('option');
+            option.value = unitName;
+            option.textContent = unitName;
+            unitSelect.appendChild(option);
+        });
+    } catch (error) {
+        fallbackUnits.forEach((unitName) => {
+            const option = document.createElement('option');
+            option.value = unitName;
+            option.textContent = unitName;
+            unitSelect.appendChild(option);
+        });
+    }
+    setSelectValue('editSupplierProductUnit', selected);
 }
 
 function resetSupplier() {
@@ -573,7 +842,7 @@ function groceryVariationTemplate(canRemove = true) {
                 <div class="col-md-4 d-none"><label class="form-label">Form</label><input class="form-control supplier-product-unit" value=""></div>
                 <div class="col-md-4 ${show('packaging') ? '' : 'd-none'}"><label class="form-label">Package Type</label><select class="form-select supplier-product-packaging">${ruleOptionList(rule.packagingOptions)}</select></div>
                 <div class="col-md-4 ${show('packContent') ? '' : 'd-none'}"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control supplier-product-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" placeholder="12"><select class="form-select supplier-product-pack-content-unit">${ruleOptionList(rule.packContentUnits)}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
-                <div class="col-md-4"><label class="form-label">Price</label><input class="form-control supplier-product-price" type="number" min="0" step=".01" required></div>
+                <div class="col-md-4"><label class="form-label">Selling Price</label><input class="form-control supplier-product-price" type="number" min="0" step=".01" required></div>
                 <div class="col-md-4"><label class="form-label">Barcode</label><input class="form-control supplier-product-barcode" placeholder="Auto/manual"></div>
                 <div class="col-md-4"><label class="form-label">SKU</label><input class="form-control supplier-product-sku" placeholder="Optional"></div>
                 <div class="col-md-4"><label class="form-label">Stock</label><input class="form-control supplier-product-stock" type="number" min="0" step="1" value="0"></div>
@@ -730,76 +999,65 @@ async function submitProduct(event) {
     }
 }
 
-async function openEditSupplierProduct(productId) {
-    const product = supplierProductRows.find((row) => String(row.product_id) === String(productId));
+async function openEditSupplierProduct(supplierProductId) {
+    const product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(supplierProductId));
     if (!product) return;
+    const packContent = splitLeadingNumber(product.pack_content || product.pack_content_unit);
 
     document.getElementById('editSupplierProductLinkId').value = product.supplier_product_id || '';
     document.getElementById('editSupplierProductId').value = product.product_id || '';
+    document.getElementById('editSupplierProductSupplierId').value = product.supplier_id || '';
+    document.getElementById('editSupplierProductCurrentPrice').value = product.price || '0';
+    document.getElementById('editSupplierProductSupplierName').value = product.supplier_name || '';
     document.getElementById('editSupplierProductBrand').value = product.brand_name || '';
-    document.getElementById('editSupplierProductName').value = product.product_name || '';
-    document.getElementById('editSupplierProductGeneric').value = product.generic_name || '';
-    document.getElementById('editSupplierProductStrength').value = product.strength_value || product.strength_size_value || '';
-    setSelectValue('editSupplierProductStrengthUnit', product.strength_unit || '');
-    document.getElementById('editSupplierProductVolumeValue').value = product.volume_value || '';
-    setSelectValue('editSupplierProductVolumeUnit', product.volume_unit || '');
-    setSelectValue('editSupplierProductMedicineSize', product.display_size || product.size_value || 'N/A');
-    setSelectValue('editSupplierProductMedicinePackaging', product.packaging || '');
-    document.getElementById('editSupplierProductVariant').value = product.variant_flavor || '';
-    setSelectValue('editSupplierProductSize', product.size_value || '');
-    document.getElementById('editSupplierProductWeightVolumeValue').value = product.weight_volume_value || '';
-    setSelectValue('editSupplierProductWeightVolumeUnit', product.weight_volume_unit || '');
-    setSelectValue('editSupplierProductPackaging', product.packaging || '');
-    document.getElementById('editSupplierProductPrice').value = product.price || '';
-    document.getElementById('editSupplierProductImageUrl').value = product.image_url || '';
-
+    document.getElementById('editSupplierProductName').value = removeBrandPrefix(product.product_name, product.brand_name) || product.product_name || '';
     await loadEditProductCategories(product.category_id || '');
     await loadEditProductTypes(product.category_id || '', product.type_id || '');
-    await loadEditMeasurementUnits(product.measurement_unit_id || '');
-    toggleEditProductFields();
+    document.getElementById('editSupplierProductVariant').value = cleanText(product.variant_flavor || product.variant);
+    document.getElementById('editSupplierProductStrength').value = cleanText(product.strength_size_display || product.strength_size_value || product.strength_value);
+    document.getElementById('editSupplierProductSize').value = cleanText(product.size_value || product.display_size || product.weight_volume_value || product.net_weight);
+    await loadEditProductUnitOptions(cleanText(product.product_unit || product.measurement_unit_name || packContent.unit || 'pcs'));
+    setSelectValue('editSupplierProductPackaging', cleanText(product.package_type || product.packaging));
+    document.getElementById('editSupplierProductSellingPriceText').textContent = peso(product.price);
+    document.getElementById('editSupplierProductSupplierCost').value = product.supplier_cost_price || '0';
+    setSelectValue('editSupplierProductPurchaseUnit', product.purchase_unit || 'Box');
+    document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = Math.max(1, Number(product.units_per_purchase_unit || 1));
+    updateSupplierProductConversionPreview();
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editSupplierProductModal')).show();
 }
 
 async function submitEditSupplierProduct(event) {
     event.preventDefault();
+    const product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(document.getElementById('editSupplierProductLinkId').value)) || {};
+    const packContent = splitLeadingNumber(product.pack_content || product.pack_content_unit);
 
-    const categorySelect = document.getElementById('editSupplierProductCategory');
-    const categoryName = categorySelect?.selectedOptions?.[0]?.dataset.categoryName || '';
     const payload = {
+        supplier_product_id: document.getElementById('editSupplierProductLinkId').value,
+        supplier_id: document.getElementById('editSupplierProductSupplierId').value,
         product_id: document.getElementById('editSupplierProductId').value,
         brand_name: document.getElementById('editSupplierProductBrand').value.trim(),
         product_name: document.getElementById('editSupplierProductName').value.trim(),
-        category_id: categorySelect?.value || '',
+        category_id: document.getElementById('editSupplierProductCategory').value,
         type_id: document.getElementById('editSupplierProductType').value,
-        measurement_unit_id: document.getElementById('editSupplierProductMeasurementUnit').value,
-        product_unit: document.getElementById('editSupplierProductMeasurementUnit')?.selectedOptions?.[0]?.textContent?.trim() || '',
-        strength_size_value: document.getElementById('editSupplierProductStrength').value.trim() || document.getElementById('editSupplierProductVolumeValue')?.value.trim() || document.getElementById('editSupplierProductMedicineSize')?.value || '',
+        variant_flavor: document.getElementById('editSupplierProductVariant').value.trim(),
         strength_value: document.getElementById('editSupplierProductStrength').value.trim(),
-        strength_unit: document.getElementById('editSupplierProductStrengthUnit')?.value || '',
-        volume_value: document.getElementById('editSupplierProductVolumeValue')?.value.trim() || '',
-        volume_unit: document.getElementById('editSupplierProductVolumeUnit')?.value || '',
-        display_size: categoryName === 'Grocery' ? (document.getElementById('editSupplierProductSize')?.value || '') : (document.getElementById('editSupplierProductMedicineSize')?.value || 'N/A'),
-        weight_volume_value: document.getElementById('editSupplierProductWeightVolumeValue')?.value.trim() || '',
-        weight_volume_unit: document.getElementById('editSupplierProductWeightVolumeUnit')?.value || '',
-        price: document.getElementById('editSupplierProductPrice').value,
-        image_url: document.getElementById('editSupplierProductImageUrl')?.value.trim() || ''
+        size_value: document.getElementById('editSupplierProductSize').value.trim(),
+        unit: document.getElementById('editSupplierProductUnit').value,
+        packaging: document.getElementById('editSupplierProductPackaging').value,
+        pack_content_qty: packContent.quantity || '',
+        supplier_cost_price: document.getElementById('editSupplierProductSupplierCost').value,
+        purchase_unit: document.getElementById('editSupplierProductPurchaseUnit').value,
+        units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value
     };
 
-    if (categoryName === 'Medicine') {
-        payload.generic_name = document.getElementById('editSupplierProductGeneric').value.trim();
-        payload.size_value = document.getElementById('editSupplierProductMedicineSize')?.value || 'N/A';
-        payload.packaging = document.getElementById('editSupplierProductMedicinePackaging')?.value || '';
-    }
-
-    if (categoryName === 'Grocery') {
-        payload.variant_flavor = document.getElementById('editSupplierProductVariant')?.value.trim() || '';
-        payload.size_value = document.getElementById('editSupplierProductSize')?.value.trim() || '';
-        payload.packaging = document.getElementById('editSupplierProductPackaging')?.value.trim() || '';
+    if (!payload.supplier_id || !payload.product_id || !payload.category_id || !payload.type_id || !payload.brand_name || !payload.product_name || Number(payload.supplier_cost_price) < 0 || Number(payload.units_per_purchase_unit) <= 0) {
+        PharmaUtils.toast.error('Enter valid product details, supplier cost, package, and contains value.');
+        return;
     }
 
     try {
-        const data = await fetchJson(endpoint('products/update_product.php'), {
+        const data = await fetchJson(endpoint('suppliers/update_supplier_product.php'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -808,7 +1066,7 @@ async function submitEditSupplierProduct(event) {
         bootstrap.Modal.getInstance(document.getElementById('editSupplierProductModal'))?.hide();
         await loadSupplierProducts();
         window.dispatchEvent(new CustomEvent('products:changed'));
-        PharmaUtils.toast.success(data.message || 'Product updated successfully.');
+        PharmaUtils.toast.success(data.message || 'Supplier product updated successfully.');
     } catch (error) {
         PharmaUtils.toast.error(error.message);
     }
@@ -912,9 +1170,18 @@ document.getElementById('btnOpenAddMeasurementUnit')?.addEventListener('click', 
 document.getElementById('addProductTypeForm')?.addEventListener('submit', submitProductType);
 document.getElementById('addMeasurementUnitForm')?.addEventListener('submit', submitMeasurementUnit);
 document.getElementById('editSupplierProductForm')?.addEventListener('submit', submitEditSupplierProduct);
+document.getElementById('editSupplierProductPurchaseUnit')?.addEventListener('change', updateSupplierProductConversionPreview);
+document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.addEventListener('input', updateSupplierProductConversionPreview);
+document.getElementById('editSupplierProductUnit')?.addEventListener('change', updateSupplierProductConversionPreview);
+document.getElementById('editSupplierProductPackaging')?.addEventListener('change', updateSupplierProductConversionPreview);
+document.getElementById('supplierProductSearch')?.addEventListener('input', refreshSupplierProductTable);
+document.getElementById('supplierProductFilterSupplier')?.addEventListener('change', refreshSupplierProductTable);
+document.getElementById('supplierProductFilterCategory')?.addEventListener('change', refreshSupplierProductTable);
+document.getElementById('supplierProductFilterType')?.addEventListener('change', refreshSupplierProductTable);
+document.getElementById('supplierProductFilterPackage')?.addEventListener('change', refreshSupplierProductTable);
 document.getElementById('editSupplierProductCategory')?.addEventListener('change', async (event) => {
     await loadEditProductTypes(event.target.value, '');
-    toggleEditProductFields();
+    updateSupplierProductConversionPreview();
 });
 document.getElementById('addSupplierProductModal')?.addEventListener('show.bs.modal', () => {
     loadSuppliers();
@@ -939,7 +1206,7 @@ document.getElementById('table-supplier-products')?.addEventListener('click', (e
     const editButton = event.target.closest('.edit-supplier-product-btn');
     const deleteButton = event.target.closest('.delete-supplier-product-btn');
 
-    if (editButton) openEditSupplierProduct(editButton.dataset.productId);
+    if (editButton) openEditSupplierProduct(editButton.dataset.supplierProductId);
     if (deleteButton) deleteSupplierProduct(deleteButton);
 });
 

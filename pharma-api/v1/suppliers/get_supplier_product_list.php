@@ -10,7 +10,7 @@ try {
             sp.supplier_id,
             sp.supplier_cost_price,
             sp.purchase_unit,
-            sp.units_per_purchase_unit,
+            COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit,
             s.supplier_name,
             p.product_id,
             p.brand_name,
@@ -22,6 +22,7 @@ try {
             md.generic_name,
             md.dosage_form,
             COALESCE(md.package_type, gd.package_type) AS package_type,
+            COALESCE(md.package_type, gd.package_type) AS packaging,
             gd.variant AS variant_flavor,
             md.strength AS strength_value,
             '' AS strength_unit,
@@ -29,8 +30,14 @@ try {
             gd.size AS display_size,
             gd.net_weight AS weight_volume_value,
             '' AS weight_volume_unit,
-            '' AS product_unit,
-            '' AS measurement_unit_name,
+            CASE
+                WHEN LOWER(COALESCE(md.dosage_form, '')) IN ('tablet', 'capsule', 'caplet') THEN 'pcs'
+                ELSE COALESCE(md.dosage_form, '')
+            END AS product_unit,
+            CASE
+                WHEN LOWER(COALESCE(md.dosage_form, '')) IN ('tablet', 'capsule', 'caplet') THEN 'pcs'
+                ELSE COALESCE(md.dosage_form, '')
+            END AS measurement_unit_name,
             gd.pack_content,
             gd.pack_content AS pack_content_unit,
             p.price,

@@ -36,8 +36,8 @@ try {
     $poNumber = 'PO-' . date('Ymd-His') . '-' . strtoupper(bin2hex(random_bytes(2)));
     $poId = newUuid($pdo);
     $masterStatement = $pdo->prepare(
-        "INSERT INTO purchase_orders (po_id, supplier_id, po_number, payment_terms, expected_delivery_date, status, created_at)
-         VALUES (:po_id, :supplier_id, :po_number, :payment_terms, :expected_delivery_date, 'Pending', NOW())"
+        "INSERT INTO purchase_orders (po_id, supplier_id, po_number, payment_terms, expected_delivery_date, status, total_amount, created_at)
+         VALUES (:po_id, :supplier_id, :po_number, :payment_terms, :expected_delivery_date, 'Pending', 0.00, NOW())"
     );
     $masterStatement->execute([
         ':po_id' => $poId,
@@ -92,12 +92,22 @@ try {
          )'
     );
 
+    $totalAmount = 0.0;
+
     foreach ($items as $item) {
+        $quantityParams = purchaseOrderQuantityParams($item);
+        $totalAmount += (float) $quantityParams[':line_total'];
         $itemStatement->execute(array_merge([
             ':po_id' => $poId,
             ':product_id' => cleanId($item['product_id'])
-        ], purchaseOrderQuantityParams($item), purchaseOrderItemSnapshotParams($item)));
+        ], $quantityParams, purchaseOrderItemSnapshotParams($item)));
     }
+
+    $totalStatement = $pdo->prepare('UPDATE purchase_orders SET total_amount = :total_amount WHERE po_id = :po_id');
+    $totalStatement->execute([
+        ':total_amount' => $totalAmount,
+        ':po_id' => $poId
+    ]);
 
     $pdo->commit();
 

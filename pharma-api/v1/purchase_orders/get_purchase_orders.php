@@ -28,7 +28,7 @@ try {
     } elseif ($scope === 'all') {
         $whereClause = '';
     } else {
-        $whereClause = "WHERE po.status IN ('Pending', 'Approved by the owner', 'In transit', 'Arrived')";
+        $whereClause = "WHERE po.status IN ('Pending', 'In transit')";
     }
 
     $statement = $pdo->prepare(
@@ -76,7 +76,7 @@ try {
                 END AS purchase_unit,
                 COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
                 COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
-                COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, p.price, 0)) AS stored_line_total,
+                COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, 0)) AS stored_line_total,
                 CASE
                     WHEN NULLIF(TRIM(poi.product_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.product_name_snapshot)) LIKE 'N/A%' THEN p.product_name
                     ELSE poi.product_name_snapshot
@@ -104,7 +104,8 @@ try {
                     ELSE COALESCE(md.dosage_form, '')
                 END AS unit,
                 COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging,
-                COALESCE(poi.unit_price_snapshot, p.price) AS price,
+                COALESCE(poi.unit_price_snapshot, 0) AS price,
+                p.price AS selling_price,
                 COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
                 COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
                 COALESCE(returns.return_quantity, 0) AS returned_quantity

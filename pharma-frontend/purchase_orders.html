@@ -87,57 +87,82 @@
         .po-status-filter { width: 178px; flex: 0 0 auto; }
         .table-responsive { border-radius: 10px; overflow-x: auto; }
         .po-table-scroll { scrollbar-gutter: stable; }
-        .po-list-table { width: max-content; min-width: 2020px; margin-bottom: 0; table-layout: fixed; }
-        #table-purchase-orders.po-list-table { width: max-content !important; min-width: 2020px !important; table-layout: fixed !important; }
+        .po-list-table { width: max-content; min-width: 1450px; margin-bottom: 0; table-layout: auto; border-collapse: separate; border-spacing: 0; }
+        #table-purchase-orders.po-list-table { width: max-content !important; min-width: 1450px; table-layout: auto !important; }
         .po-list-table th { padding: 13px 10px; color: #596274; background: #f8f9fc; font-size: 12.5px; font-weight: 800; line-height: 1.18; text-align: center; white-space: nowrap; vertical-align: middle; }
         .po-list-table td { padding: 14px 10px; color: var(--text-main); font-size: 12.5px; font-weight: 750; line-height: 1.34; text-align: center; vertical-align: middle; overflow-wrap: normal; word-break: normal; }
         #table-purchase-orders.po-list-table th,
         #table-purchase-orders.po-list-table td { overflow-wrap: normal !important; word-break: normal !important; hyphens: none !important; }
         .po-list-table tbody { opacity: 1; transition: opacity .15s ease; }
         .po-list-table tbody.po-table-body-updating { opacity: .72; }
-        .po-list-table .col-date { width: 120px; }
-        .po-list-table .col-po-number { width: 170px; }
-        .po-list-table .col-supplier { width: 160px; }
-        .po-list-table .col-brand { width: 140px; }
-        .po-list-table .col-items { width: 180px; }
+        .po-list-table .col-date { min-width: 118px; }
+        .po-list-table .col-po-number { min-width: 150px; }
+        .po-list-table .col-supplier { min-width: 150px; }
+        .po-list-table .col-items { min-width: 260px; max-width: 340px; }
         .po-list-table .col-category { width: 130px; }
         .po-list-table .col-type { width: 130px; }
-        .po-list-table .col-qty { width: 110px; }
-        .po-list-table .col-purchase-unit { width: 150px; }
-        .po-list-table .col-inventory-qty { width: 130px; }
+        .po-list-table .col-qty { width: 105px; }
+        .po-list-table .col-purchase-unit { width: 135px; }
+        .po-list-table .col-contains { width: 135px; }
+        .po-list-table .col-inventory-qty { width: 150px; }
         .po-list-table .col-terms { width: 120px; }
         .po-list-table .col-delivery { width: 160px; }
         .po-list-table .col-money { width: 130px; }
-        .po-list-table .col-status { width: 120px; }
-        .po-list-table .col-actions { width: 100px; }
+        .po-list-table .col-status { width: 120px; min-width: 120px; max-width: 130px; }
+        .po-list-table .col-actions { width: 110px; min-width: 110px; max-width: 120px; }
         .po-list-table .col-received { width: 110px; }
         .po-list-table .col-payment-status { width: 125px; }
-        .po-list-table th:nth-child(1),
-        .po-list-table td:nth-child(1),
-        .po-list-table th:nth-child(2),
-        .po-list-table td:nth-child(2),
-        .po-list-table th:nth-child(8),
-        .po-list-table td:nth-child(8),
-        .po-list-table th:nth-child(9),
-        .po-list-table td:nth-child(9),
-        .po-list-table th:nth-child(10),
-        .po-list-table td:nth-child(10),
-        .po-list-table th:nth-child(11),
-        .po-list-table td:nth-child(11),
-        .po-list-table th:nth-child(12),
-        .po-list-table td:nth-child(12) {
-            white-space: nowrap;
-            overflow-wrap: normal;
-            word-break: normal;
-        }
+        .po-list-table .col-items,
+        .po-list-table td.po-product-cell { white-space: normal !important; min-width: 260px; max-width: 340px; text-align: left; }
+        .po-list-table .col-money,
+        .po-list-table td.po-price-cell { text-align: right; }
+        .po-list-table .col-qty,
+        .po-list-table .col-contains,
+        .po-list-table .col-inventory-qty,
+        .po-list-table .col-status,
+        .po-list-table .col-actions,
+        .po-list-table td.po-qty-cell,
+        .po-list-table td.po-status-cell,
+        .po-list-table td.po-actions-cell { text-align: center; }
         .po-line-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; text-align: left; }
         .po-line-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 5px; align-items: start; min-height: 18px; }
         .po-line-list .line-index { color: #7b8494; font-size: 12px; font-weight: 800; text-align: right; line-height: 1.3; }
         .po-line-list .line-text { min-width: 0; white-space: normal; overflow-wrap: normal; word-break: normal; hyphens: none; line-height: 1.3; }
+        .po-product-lines { gap: 8px; }
+        .po-product-lines .line-text { display: grid; gap: 2px; }
+        .po-product-primary { display: block; color: var(--text-main); font-size: 13px; font-weight: 850; line-height: 1.28; }
+        .po-product-secondary { display: block; color: #667085; font-size: 11.5px; font-weight: 700; line-height: 1.25; }
         .po-line-list.po-line-list-plain { text-align: center; }
         .po-line-list.po-line-list-plain li { grid-template-columns: 1fr; justify-items: center; }
         .po-money { display: inline-block; min-width: max-content; font-weight: 800; white-space: nowrap; color: var(--text-main); font-size: 13px; }
-        .po-actions { display: inline-flex; flex-wrap: nowrap; justify-content: center; align-items: center; gap: 6px; white-space: nowrap; min-width: 74px; }
+        .po-list-table th.col-actions,
+        .po-list-table td:last-child {
+            position: sticky;
+            right: 0;
+            z-index: 5;
+            min-width: 110px;
+            max-width: 120px;
+            background: var(--bs-table-bg, #fff);
+            border-left: 1px solid #e5e9f1;
+            box-shadow: -6px 0 10px rgba(15, 23, 42, .06);
+        }
+        .po-list-table th.col-actions {
+            z-index: 7;
+            background: #f8f9fc;
+        }
+        .po-list-table tbody tr:hover td:last-child {
+            background: var(--bs-table-hover-bg, #f6f1ff);
+        }
+        .po-list-table td[colspan],
+        .po-items-table td[colspan] {
+            position: static !important;
+            right: auto !important;
+            min-width: 0 !important;
+            width: auto !important;
+            border-left: 0 !important;
+            box-shadow: none !important;
+        }
+        .po-actions { display: inline-flex; flex-wrap: nowrap; justify-content: center; align-items: center; gap: 8px; white-space: nowrap; min-width: max-content; }
         .po-actions .btn { width: 32px; height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
         .status-badge { white-space: nowrap; line-height: 1.2; font-size: 11px; padding: 6px 8px; }
         .po-empty { padding: 42px 16px !important; color: #8790a1 !important; text-align: center; }
@@ -145,40 +170,100 @@
         .po-product-select-wrap .form-select { min-width: 0; width: 100%; max-width: 100%; text-overflow: ellipsis; }
         .po-create-form { display: grid; gap: 16px; margin-bottom: 18px; }
         .po-create-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: end; }
-        .po-create-form-row.po-create-items-row { grid-template-columns: minmax(300px, 1.9fr) 132px 170px 190px 132px; }
+        .po-create-form-row.po-create-items-row { grid-template-columns: minmax(360px, 2.35fr) 112px 168px 150px 132px; }
         .po-create-form .form-label { margin-bottom: 6px; }
         .po-create-form .form-select, .po-create-form .form-control, .po-create-form .btn { min-height: 40px; }
-        .po-selected-product-panel { display: none; margin: -2px 0 18px; padding: 14px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
-        .po-selected-product-panel.is-visible { display: block; }
-        .po-selected-product-grid { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); gap: 10px; }
-        .po-selected-product-grid + .po-selected-product-grid { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e9f1; }
+        .po-selected-product-panel { display: none; margin: -2px 0 18px; }
+        .po-selected-product-panel.is-visible { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(320px, .82fr); gap: 14px; align-items: stretch; }
+        .po-selected-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
+        .po-selected-card h4 { margin: 0 0 12px; color: #344054; font-size: .82rem; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
+        .po-selected-product-grid { display: grid; grid-template-columns: repeat(3, minmax(125px, 1fr)); gap: 10px 14px; }
+        .po-receipt-summary { display: grid; gap: 0; padding-top: 2px; }
+        .po-receipt-row { display: grid; grid-template-columns: minmax(112px, .82fr) minmax(0, 1.18fr); gap: 14px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed #d8dee9; }
+        .po-receipt-row span { color: #667085; font-size: .78rem; font-weight: 800; line-height: 1.25; }
+        .po-receipt-row strong { min-width: 0; color: var(--text-main); font-size: .86rem; font-weight: 850; line-height: 1.25; text-align: right; overflow-wrap: normal; word-break: normal; }
+        .po-receipt-divider { height: 1px; margin: 8px 0; background: #d8dee9; }
+        .po-receipt-row-total { margin-top: 2px; padding-top: 10px; border-bottom: 0; }
+        .po-receipt-row-total span,
+        .po-receipt-row-total strong { color: #111827; font-size: .96rem; font-weight: 950; }
+        .po-receipt-row-highlight { margin-top: 10px; padding: 12px 14px; border: 1px solid #fdba74; border-radius: 8px; background: #fff7ed; }
+        .po-receipt-row-highlight span { color: #9a3412; }
+        .po-receipt-row-highlight strong { color: #c2410c; font-size: 1.18rem; font-weight: 950; }
+        .po-summary-section + .po-summary-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e5e9f1; }
+        .po-summary-section-title { margin: 0 0 10px; color: #4b5563; font-size: .75rem; font-weight: 950; text-transform: uppercase; }
+        .po-summary-items { display: grid; gap: 10px; }
+        .po-summary-item { padding: 10px 0 11px; border-bottom: 1px solid #e5e9f1; }
+        .po-summary-item:last-child { border-bottom: 0; }
+        .po-summary-item-main { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; align-items: start; }
+        .po-summary-check { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: var(--purple); font-size: .7rem; }
+        .po-summary-item-main strong { display: block; color: var(--text-main); font-size: .9rem; font-weight: 900; line-height: 1.25; overflow-wrap: normal; word-break: normal; }
+        .po-summary-item-main span:not(.po-summary-check) { display: block; margin-top: 3px; color: #667085; font-size: .82rem; font-weight: 750; }
+        .po-summary-item-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 9px 0 0 33px; }
+        .po-summary-item-actions .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 9px; font-size: .76rem; font-weight: 800; }
+        .po-summary-empty { padding: 12px; border: 1px dashed #d8dee9; border-radius: 8px; color: #667085; font-size: .86rem; font-weight: 750; text-align: center; }
+        .po-summary-edit-form { display: grid; gap: 12px; text-align: left; }
+        .po-summary-edit-form label { display: grid; gap: 5px; color: #475467; font-size: .82rem; font-weight: 850; }
+        .po-preview-empty { display: flex; align-items: center; min-height: 124px; color: #667085; font-size: .9rem; font-weight: 750; }
+        .po-package-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 240px); gap: 12px; align-items: stretch; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e9f1; }
+        .po-package-row .po-selected-product-grid { margin: 0; padding: 0; border-top: 0; grid-template-columns: repeat(4, minmax(110px, 1fr)); }
+        .po-order-cards { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+        .po-calc-card { min-width: 0; padding: 12px 14px; border-radius: 8px; border: 1px solid transparent; }
+        .po-calc-card span { display: block; margin-bottom: 4px; font-size: .72rem; font-weight: 900; line-height: 1.15; text-transform: uppercase; }
+        .po-calc-card strong { display: block; font-size: .98rem; font-weight: 900; line-height: 1.25; overflow-wrap: normal; word-break: normal; }
+        .po-calc-card-blue { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+        .po-calc-card-green { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+        .po-calc-card-green strong { font-size: 1.18rem; }
+        .po-calc-card-orange { border-color: #fed7aa; background: #fff7ed; color: #c2410c; }
+        .po-conversion-badge { display: flex; gap: 10px; align-items: flex-start; min-width: 0; padding: 11px 12px; border: 1px solid #fed7aa; border-left: 4px solid #f97316; border-radius: 8px; background: #fff7ed; color: #7c2d12; }
+        .po-conversion-badge i { margin-top: 2px; color: #ea580c; font-size: .95rem; }
+        .po-conversion-badge span { display: block; color: #9a3412; font-size: .7rem; font-weight: 900; line-height: 1.15; text-transform: uppercase; }
+        .po-conversion-badge strong { display: block; margin-top: 3px; color: #431407; font-size: .86rem; font-weight: 850; line-height: 1.25; overflow-wrap: normal; word-break: normal; }
         .po-info-metric { min-width: 0; }
         .po-info-metric span { display: block; color: #7b8494; font-size: .72rem; font-weight: 800; line-height: 1.2; text-transform: uppercase; }
         .po-info-metric strong { display: block; margin-top: 4px; color: var(--text-main); font-size: .88rem; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
-        .po-reorder-note { margin-top: 10px; color: #596274; font-size: .82rem; font-weight: 700; }
+        .po-item-editor .form-control[readonly] { color: #475467; background: #f8fafc; border-color: #e5e7eb; cursor: default; }
         .po-items-table th, .po-items-table td { padding: 11px 10px; text-align: center; font-size: .84rem; vertical-align: middle; }
         .po-items-table th { color: #596274; background: #f8f9fc; font-weight: 800; white-space: nowrap; }
-        .po-items-table { width: max-content; table-layout: fixed; min-width: 1700px; }
+        .po-items-table { width: max-content; table-layout: auto; min-width: 1460px; border-collapse: separate; border-spacing: 0; }
         #table-po-items.po-items-table,
-        #table-edit-po-items.po-items-table { width: max-content !important; min-width: 1700px !important; table-layout: fixed !important; }
+        #table-edit-po-items.po-items-table { width: max-content !important; min-width: 1460px !important; table-layout: auto !important; }
         #table-po-items.po-items-table th,
         #table-po-items.po-items-table td,
         #table-edit-po-items.po-items-table th,
         #table-edit-po-items.po-items-table td { overflow-wrap: normal !important; word-break: normal !important; hyphens: none !important; }
         .po-items-table th:nth-child(1), .po-items-table td:nth-child(1) { width: 120px; text-align: left; }
-        .po-items-table th:nth-child(2), .po-items-table td:nth-child(2) { width: 190px; text-align: left; }
+        .po-items-table th:nth-child(2), .po-items-table td:nth-child(2) { min-width: 180px; max-width: 260px; text-align: left; white-space: normal !important; }
         .po-items-table th:nth-child(3), .po-items-table td:nth-child(3) { width: 135px; }
         .po-items-table th:nth-child(4), .po-items-table td:nth-child(4) { width: 140px; }
         .po-items-table th:nth-child(5), .po-items-table td:nth-child(5) { width: 95px; }
         .po-items-table th:nth-child(6), .po-items-table td:nth-child(6) { width: 90px; }
         .po-items-table th:nth-child(7), .po-items-table td:nth-child(7) { width: 115px; }
-        .po-items-table th:nth-child(8), .po-items-table td:nth-child(8) { width: 150px; }
-        .po-items-table th:nth-child(9), .po-items-table td:nth-child(9) { width: 100px; white-space: nowrap; }
-        .po-items-table th:nth-child(10), .po-items-table td:nth-child(10) { width: 150px; white-space: nowrap; }
-        .po-items-table th:nth-child(11), .po-items-table td:nth-child(11) { width: 130px; white-space: nowrap; }
-        .po-items-table th:nth-child(12), .po-items-table td:nth-child(12) { width: 120px; text-align: right; white-space: nowrap; }
-        .po-items-table th:nth-child(13), .po-items-table td:nth-child(13) { width: 125px; text-align: right; white-space: nowrap; }
-        .po-items-table th:nth-child(14), .po-items-table td:nth-child(14) { width: 80px; white-space: nowrap; }
+        .po-items-table th:nth-child(8), .po-items-table td:nth-child(8) { width: 135px; white-space: nowrap; }
+        .po-items-table th:nth-child(9), .po-items-table td:nth-child(9) { width: 150px; white-space: nowrap; }
+        .po-items-table th:nth-child(10), .po-items-table td:nth-child(10) { width: 120px; text-align: right; white-space: nowrap; }
+        .po-items-table th:nth-child(11), .po-items-table td:nth-child(11) { width: 125px; text-align: right; white-space: nowrap; }
+        .po-items-table th:nth-child(12), .po-items-table td:nth-child(12) { width: 116px; min-width: 116px; white-space: nowrap; }
+        #table-po-items.po-items-table th:last-child,
+        #table-po-items.po-items-table td:last-child,
+        #table-edit-po-items.po-items-table th:last-child,
+        #table-edit-po-items.po-items-table td:last-child {
+            position: sticky;
+            right: 0;
+            z-index: 5;
+            min-width: 116px;
+            background: var(--bs-table-bg, #fff);
+            border-left: 1px solid #e5e9f1;
+            box-shadow: -6px 0 10px rgba(15, 23, 42, .06);
+        }
+        #table-po-items.po-items-table th:last-child,
+        #table-edit-po-items.po-items-table th:last-child {
+            z-index: 7;
+            background: #f8f9fc;
+        }
+        #table-po-items.po-items-table tbody tr:hover td:last-child,
+        #table-edit-po-items.po-items-table tbody tr:hover td:last-child {
+            background: var(--bs-table-hover-bg, #f6f1ff);
+        }
         .po-items-table td { overflow-wrap: normal; word-break: normal; hyphens: none; }
         .po-items-table td:nth-child(2) { white-space: normal; overflow-wrap: normal; }
         .po-items-table td:not(:nth-child(2)) { white-space: nowrap; }
@@ -238,31 +323,70 @@
         .po-detail-box { padding: 12px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
         .po-detail-box span { display: block; color: #7b8494; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
         .po-detail-box strong { display: block; margin-top: 4px; color: var(--text-main); font-size: .95rem; font-weight: 800; }
-        .po-item-editor { padding: 14px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
+        .po-item-editor { padding: 18px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
         .po-item-editor .form-label { margin-bottom: 5px; font-size: .82rem; }
-        .po-item-editor .form-control { min-height: 38px; }
-        .po-item-editor-title { margin: 0 0 12px; color: var(--text-main); font-size: .9rem; font-weight: 800; }
+        .po-item-editor .form-control,
+        .po-item-editor .form-select { min-height: 40px; }
+        .po-item-editor-title { margin: 0 0 16px; color: var(--text-main); font-size: .95rem; font-weight: 850; }
         body.dark-mode .po-list-table th, body.dark-mode .po-items-table th { background: #202b3d; color: #cbd5e1; }
-        body.dark-mode .status-card, body.dark-mode .po-detail-box, body.dark-mode .payment-summary-card, body.dark-mode .po-item-editor, body.dark-mode .po-selected-product-panel, body.dark-mode .po-create-summary { background: #182131; }
+        body.dark-mode .po-list-table th.col-actions,
+        body.dark-mode #table-po-items.po-items-table th:last-child,
+        body.dark-mode #table-edit-po-items.po-items-table th:last-child { background: #202b3d; }
+        body.dark-mode .po-list-table td:last-child,
+        body.dark-mode #table-po-items.po-items-table td:last-child,
+        body.dark-mode #table-edit-po-items.po-items-table td:last-child { background: var(--bs-table-bg, #182131); border-left-color: #263244; }
+        body.dark-mode .po-list-table tbody tr:hover td:last-child,
+        body.dark-mode #table-po-items.po-items-table tbody tr:hover td:last-child,
+        body.dark-mode #table-edit-po-items.po-items-table tbody tr:hover td:last-child { background: var(--bs-table-hover-bg, #202b3d); }
+        body.dark-mode .status-card, body.dark-mode .po-detail-box, body.dark-mode .payment-summary-card, body.dark-mode .po-item-editor, body.dark-mode .po-selected-card, body.dark-mode .po-create-summary { background: #182131; }
+        body.dark-mode .po-conversion-badge { border-color: #9a3412; border-left-color: #fb923c; background: #431407; color: #fed7aa; }
+        body.dark-mode .po-conversion-badge span { color: #fdba74; }
+        body.dark-mode .po-conversion-badge strong { color: #ffedd5; }
+        body.dark-mode .po-selected-card { border-color: #263244; }
+        body.dark-mode .po-selected-card h4 { color: #cbd5e1; }
+        body.dark-mode .po-product-secondary { color: #94a3b8; }
+        body.dark-mode .po-receipt-row { border-bottom-color: #334155; }
+        body.dark-mode .po-receipt-row span { color: #94a3b8; }
+        body.dark-mode .po-receipt-row strong { color: #e5e7eb; }
+        body.dark-mode .po-receipt-divider { background: #334155; }
+        body.dark-mode .po-receipt-row-total span,
+        body.dark-mode .po-receipt-row-total strong { color: #f8fafc; }
+        body.dark-mode .po-receipt-row-highlight { border-color: #c2410c; background: #431407; }
+        body.dark-mode .po-receipt-row-highlight span { color: #fdba74; }
+        body.dark-mode .po-receipt-row-highlight strong { color: #fed7aa; }
+        body.dark-mode .po-summary-section + .po-summary-section,
+        body.dark-mode .po-summary-item { border-color: #263244; }
+        body.dark-mode .po-summary-section-title,
+        body.dark-mode .po-summary-item-main span:not(.po-summary-check) { color: #94a3b8; }
+        body.dark-mode .po-summary-empty { border-color: #334155; color: #94a3b8; }
+        body.dark-mode .po-preview-empty { color: #94a3b8; }
+        body.dark-mode .po-calc-card-blue { border-color: #1d4ed8; background: #172554; color: #bfdbfe; }
+        body.dark-mode .po-calc-card-green { border-color: #15803d; background: #052e16; color: #bbf7d0; }
+        body.dark-mode .po-calc-card-orange { border-color: #c2410c; background: #431407; color: #fed7aa; }
+        body.dark-mode .po-item-editor .form-control[readonly] { color: #cbd5e1; background: #111827; border-color: #263244; }
         body.dark-mode .payment-summary-line { border-bottom-color: #263244; }
         @media (min-width: 1500px) {
-            .po-list-table { min-width: 2020px; }
+            .po-list-table { min-width: 1450px; }
         }
         @media (max-width: 1199.98px) {
             .status-summary-grid { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
-            .po-list-table { min-width: 2020px; }
+            .po-list-table { min-width: 1450px; }
         }
         @media (max-width: 991.98px) {
             .page-body { padding: 20px 14px; }
             .po-workspace { width: 100%; max-width: 100%; margin-left: 0; padding-inline: 0; }
-            .po-list-table { min-width: 2020px; }
+            .po-list-table { min-width: 1450px; }
+            .po-selected-product-panel.is-visible { grid-template-columns: 1fr; }
             .po-create-form-row,
             .po-create-form-row.po-create-items-row { grid-template-columns: 1fr; }
+            .po-package-row,
+            .po-order-cards { grid-template-columns: 1fr; }
             .po-selected-product-grid,
             .po-create-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 575.98px) {
             .po-selected-product-grid,
+            .po-order-cards,
             .po-create-summary { grid-template-columns: 1fr; }
         }
     </style>
@@ -310,11 +434,9 @@
                                         <button class="po-view-btn" type="button" data-po-view="delivered">Delivered Orders</button>
                                     </div>
                                     <select id="po-status-filter" class="form-select form-select-sm po-status-filter">
-                                        <option value="">All Active Status</option>
+                                        <option value="">Pending and In Transit</option>
                                         <option value="Pending">Pending</option>
-                                        <option value="Approved by the owner">Approved by the owner</option>
                                         <option value="In transit">In transit</option>
-                                        <option value="Arrived">Arrived</option>
                                     </select>
                                     <button class="btn btn-purple" type="button" data-bs-toggle="modal" data-bs-target="#createPurchaseOrderModal">
                                         <i class="fa-solid fa-plus me-2"></i>Create Purchase Order
@@ -325,19 +447,15 @@
                                 <table id="table-purchase-orders" class="table table-hover align-middle po-list-table">
                                     <thead id="purchase-orders-head">
                                         <tr>
-                                            <th class="col-date">Order Date</th>
                                             <th class="col-supplier">Supplier</th>
-                                            <th class="col-brand">Brand</th>
                                             <th class="col-items">Product</th>
                                             <th class="col-category">Category</th>
-                                            <th class="col-type">Product Type</th>
-                                            <th class="col-qty">Qty Ordered</th>
+                                            <th class="col-qty">Order Qty</th>
                                             <th class="col-purchase-unit">Purchase Unit</th>
-                                            <th class="col-inventory-qty">Inventory Qty</th>
+                                            <th class="col-inventory-qty">Stock to Receive</th>
                                             <th class="col-terms">Payment Terms</th>
-                                            <th class="col-delivery">Expected Delivery Date</th>
+                                            <th class="col-delivery">Expected Delivery</th>
                                             <th class="col-money">Total Amount</th>
-                                            <th class="col-money">Final Payment</th>
                                             <th class="col-status">Status</th>
                                             <th class="col-actions">Actions</th>
                                         </tr>
@@ -393,16 +511,18 @@
                             </select>
                         </div>
                         <div>
-                            <label class="form-label fw-semibold" for="po-quantity">Qty Ordered</label>
+                            <label class="form-label fw-semibold" for="po-quantity">Order Qty</label>
                             <input id="po-quantity" type="number" class="form-control" min="1" value="1">
                         </div>
                         <div>
                             <label class="form-label fw-semibold" for="po-purchase-unit">Purchase Unit</label>
                             <select id="po-purchase-unit" class="form-select">
                                 <option value="Box">Box</option>
-                                <option value="Pack">Pack</option>
                                 <option value="Case">Case</option>
                                 <option value="Carton">Carton</option>
+                                <option value="Bundle">Bundle</option>
+                                <option value="Pallet">Pallet</option>
+                                <option value="Pack">Pack</option>
                                 <option value="Bottle">Bottle</option>
                                 <option value="Can">Can</option>
                                 <option value="Blister Pack">Blister Pack</option>
@@ -435,11 +555,9 @@
                                     <th>Unit</th>
                                     <th>Packaging</th>
                                     <th>Purchase Unit</th>
-                                    <th>Qty Ordered</th>
-                                    <th>Units per Purchase Unit</th>
-                                    <th>Inventory Qty</th>
-                                    <th>Purchase Cost</th>
-                                    <th>Line Total</th>
+                                    <th>Stock to Receive</th>
+                                    <th>Supplier Cost</th>
+                                    <th>Estimated Cost</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -480,8 +598,10 @@
                                     <th>Strength / Size</th>
                                     <th>Unit</th>
                                     <th>Packaging</th>
-                                    <th>Purchase Cost</th>
-                                    <th>Inventory Qty</th>
+                                    <th>Supplier Cost</th>
+                                    <th>Purchase Unit</th>
+                                    <th>Purchase Conversion</th>
+                                    <th>Stock to Receive</th>
                                     <th>Received Qty</th>
                                     <th>Damaged Qty</th>
                                     <th>Returned Amount</th>
@@ -523,7 +643,7 @@
                             </select>
                         </div>
                         <div class="col-lg-2">
-                            <label class="form-label fw-semibold" for="edit-po-quantity">Qty Ordered</label>
+                            <label class="form-label fw-semibold" for="edit-po-quantity">Order Qty</label>
                             <input id="edit-po-quantity" type="number" class="form-control" min="1" value="1">
                         </div>
                         <div class="col-lg-2 d-grid">
@@ -545,7 +665,6 @@
                             <label class="form-label fw-semibold" for="edit-po-status">Status</label>
                             <select id="edit-po-status" class="form-select">
                                 <option value="Pending">Pending</option>
-                                <option value="Approved by the owner">Approved by the owner</option>
                                 <option value="In transit">In transit</option>
                                 <option value="Arrived">Arrived</option>
                                 <option value="Cancelled">Cancelled</option>
@@ -559,11 +678,11 @@
                                 <div class="row g-3">
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-product-name">Product</label>
-                                        <input id="edit-po-editor-product-name" class="form-control" type="text">
+                                        <input id="edit-po-editor-product-name" class="form-control" type="text" readonly>
                                     </div>
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-brand-name">Brand</label>
-                                        <input id="edit-po-editor-brand-name" class="form-control" type="text">
+                                        <input id="edit-po-editor-brand-name" class="form-control" type="text" readonly>
                                     </div>
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-category-name">Category</label>
@@ -571,31 +690,80 @@
                                     </div>
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-type-name">Product Type</label>
-                                        <input id="edit-po-editor-type-name" class="form-control" type="text">
+                                        <input id="edit-po-editor-type-name" class="form-control" type="text" readonly>
                                     </div>
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-generic-variant" id="edit-po-editor-generic-variant-label">Generic / Variant</label>
-                                        <input id="edit-po-editor-generic-variant" class="form-control" type="text">
+                                        <input id="edit-po-editor-generic-variant" class="form-control" type="text" readonly>
                                     </div>
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-strength-size" id="edit-po-editor-strength-size-label">Strength / Size</label>
-                                        <input id="edit-po-editor-strength-size" class="form-control" type="text">
+                                        <input id="edit-po-editor-strength-size" class="form-control" type="text" readonly>
                                     </div>
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-unit">Unit</label>
-                                        <input id="edit-po-editor-unit" class="form-control" type="text">
+                                        <input id="edit-po-editor-unit" class="form-control" type="text" readonly>
                                     </div>
                                     <div class="col-lg-6">
                                         <label class="form-label fw-semibold" for="edit-po-editor-packaging" id="edit-po-editor-packaging-label">Size / Packaging</label>
-                                        <input id="edit-po-editor-packaging" class="form-control" type="text">
+                                        <input id="edit-po-editor-packaging" class="form-control" type="text" readonly>
                                     </div>
                                     <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-price">Price</label>
+                                        <label class="form-label fw-semibold" for="edit-po-editor-purchase-unit">Purchase Unit</label>
+                                        <select id="edit-po-editor-purchase-unit" class="form-select">
+                                            <option value="Box">Box</option>
+                                            <option value="Case">Case</option>
+                                            <option value="Carton">Carton</option>
+                                            <option value="Bundle">Bundle</option>
+                                            <option value="Pallet">Pallet</option>
+                                            <option value="Pack">Pack</option>
+                                            <option value="Bottle">Bottle</option>
+                                            <option value="Can">Can</option>
+                                            <option value="Blister Pack">Blister Pack</option>
+                                            <option value="Sachet">Sachet</option>
+                                            <option value="Piece">Piece</option>
+                                            <option value="pcs">pcs</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-contains">Units per Purchase Unit</label>
+                                        <input id="edit-po-editor-contains" class="form-control" type="number" min="1" value="1">
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-conversion">Purchase Conversion</label>
+                                        <input id="edit-po-editor-conversion" class="form-control" type="text" readonly>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-price">Supplier Cost</label>
                                         <input id="edit-po-editor-price" class="form-control" type="number" min="0" step="0.01">
                                     </div>
                                     <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-quantity">Qty Ordered</label>
+                                        <label class="form-label fw-semibold" for="edit-po-editor-quantity">Order Qty</label>
                                         <input id="edit-po-editor-quantity" class="form-control" type="number" min="1" value="1">
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-stock-receive">Stock to Receive</label>
+                                        <input id="edit-po-editor-stock-receive" class="form-control" type="text" readonly>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-selling-price">Selling Price</label>
+                                        <input id="edit-po-editor-selling-price" class="form-control" type="text" readonly>
+                                    </div>
+                                    <div class="col-lg-3">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-shelf-stock">Shelf Stock</label>
+                                        <input id="edit-po-editor-shelf-stock" class="form-control" type="text" readonly>
+                                    </div>
+                                    <div class="col-lg-3">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-storage-stock">Storage Stock</label>
+                                        <input id="edit-po-editor-storage-stock" class="form-control" type="text" readonly>
+                                    </div>
+                                    <div class="col-lg-3">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-on-hand">On Hand</label>
+                                        <input id="edit-po-editor-on-hand" class="form-control" type="text" readonly>
+                                    </div>
+                                    <div class="col-lg-3">
+                                        <label class="form-label fw-semibold" for="edit-po-editor-reorder-level">Reorder Level</label>
+                                        <input id="edit-po-editor-reorder-level" class="form-control" type="text" readonly>
                                     </div>
                                 </div>
                             </div>
@@ -614,11 +782,9 @@
                                     <th>Unit</th>
                                     <th>Packaging</th>
                                     <th>Purchase Unit</th>
-                                    <th>Qty Ordered</th>
-                                    <th>Units per Purchase Unit</th>
-                                    <th>Inventory Qty</th>
-                                    <th>Purchase Cost</th>
-                                    <th>Line Total</th>
+                                    <th>Stock to Receive</th>
+                                    <th>Supplier Cost</th>
+                                    <th>Estimated Cost</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
@@ -639,7 +805,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
-                        <h2 class="modal-title fs-5 fw-bold" id="receivePurchaseOrderModalLabel">Receive Items</h2>
+                        <h2 class="modal-title fs-5 fw-bold" id="receivePurchaseOrderModalLabel">Inspect Delivery & Receive</h2>
                         <p class="text-muted small mb-0 mt-1">PO <span id="receivePoNumber">-</span> · <span id="receiveSupplierName">-</span></p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -651,9 +817,11 @@
                                 <tr>
                                     <th>Product</th>
                                     <th>Brand</th>
-                                    <th>Inventory Qty</th>
+                                    <th>Stock to Receive</th>
                                     <th>Received Qty</th>
                                     <th>Damaged Qty</th>
+                                    <th>Returned Qty</th>
+                                    <th>Expiry Date</th>
                                     <th>Remarks</th>
                                 </tr>
                             </thead>
@@ -669,11 +837,11 @@
                                     <strong id="receiveOriginalTotal">₱0.00</strong>
                                 </div>
                                 <div class="payment-summary-line">
-                                    <span>Damage/Return Deduction</span>
+                                    <span>Damage / Return Deduction</span>
                                     <strong id="receiveDamageDeduction">₱0.00</strong>
                                 </div>
                                 <div class="mb-2 mt-2">
-                                    <label class="form-label small fw-bold mb-1" for="receiveAdditionalAmount">Additional Amount</label>
+                                    <label class="form-label small fw-bold mb-1" for="receiveAdditionalAmount">Adjusted Payment</label>
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text">₱</span>
                                         <input id="receiveAdditionalAmount" class="form-control" type="number" min="0" step="0.01" value="0">
@@ -684,7 +852,7 @@
                                     <input id="receiveAdjustmentReason" class="form-control form-control-sm" type="text" placeholder="Optional reason...">
                                 </div>
                                 <div class="payment-summary-line payment-summary-total">
-                                    <span>Final Amount to Pay</span>
+                                    <span>Final Payment</span>
                                     <strong id="receiveFinalAmount">₱0.00</strong>
                                 </div>
                             </div>
@@ -705,7 +873,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                    <button id="btnConfirmReceivePo" class="btn btn-purple" type="button">Confirm Receive</button>
+                    <button id="btnConfirmReceivePo" class="btn btn-purple" type="button">Confirm Receiving</button>
                 </div>
             </div>
         </div>
@@ -729,7 +897,7 @@
                                 <tr>
                                     <th>Product</th>
                                     <th>Brand</th>
-                                    <th>Inventory Qty</th>
+                                    <th>Stock to Receive</th>
                                     <th>Received Qty</th>
                                     <th>Damaged Qty</th>
                                     <th>Return Qty</th>
@@ -754,7 +922,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-    <script type="module" src="./js/modules/purchase_orders.js?v=29"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=40"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js';
 

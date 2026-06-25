@@ -272,12 +272,8 @@ function supplierProductSetupByProduct(PDO $pdo, string $supplierId, array $item
         "SELECT
             sp.product_id,
             sp.supplier_cost_price,
-            COALESCE(NULLIF(sp.purchase_unit, ''), gd.package_type, md.package_type, md.dosage_form, 'pcs') AS purchase_unit,
-            CASE
-                WHEN COALESCE(sp.units_per_purchase_unit, 1) > 1 THEN sp.units_per_purchase_unit
-                WHEN gd.pack_content REGEXP '^[0-9]+' THEN GREATEST(CAST(SUBSTRING_INDEX(gd.pack_content, ' ', 1) AS UNSIGNED), 1)
-                ELSE 1
-            END AS units_per_purchase_unit
+            COALESCE(NULLIF(sp.purchase_unit, ''), 'pcs') AS purchase_unit,
+            COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit
          FROM supplier_products sp
          INNER JOIN product p ON p.product_id = sp.product_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
@@ -308,7 +304,7 @@ function applySupplierProductSetup(PDO $pdo, string $supplierId, array $items): 
 
         $item['purchase_unit'] = $purchaseUnit !== '' ? $purchaseUnit : 'pcs';
         $item['units_per_purchase_unit'] = $unitsPerPurchaseUnit;
-        if ($supplierCost !== null && $supplierCost !== '') {
+        if (($item['price'] ?? '') === '' && $supplierCost !== null && $supplierCost !== '') {
             $item['price'] = (float) $supplierCost;
         }
 
