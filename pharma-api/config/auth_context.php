@@ -52,6 +52,64 @@ function recordLoginAttempt(PDO $pdo, string $username, ?string $userId, bool $s
     ]);
 }
 
+function loginLockoutSecondsRemaining(PDO $pdo, string $username): int
+{
+    if (!tableExists($pdo, 'login_attempts')) {
+        return 0;
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT created_at
+         FROM login_attempts
+         WHERE username = :username
+           AND ip_address = :ip_address
+           AND is_successful = 0
+           AND is_active = 1
+           AND is_deleted = 0
+           AND created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+         ORDER BY created_at DESC
+         LIMIT 5'
+    );
+    $stmt->execute([
+        ':username' => $username,
+        ':ip_address' => clientIpAddress(),
+    ]);
+    $failures = $stmt->fetchAll();
+
+    if (count($failures) < 5) {
+        return 0;
+    }
+
+    $oldestOfFive = end($failures);
+    $elapsedStmt = $pdo->prepare('SELECT TIMESTAMPDIFF(SECOND, :locked_at, NOW())');
+    $elapsedStmt->execute([':locked_at' => $oldestOfFive['created_at']]);
+    $elapsedSeconds = (int) $elapsedStmt->fetchColumn();
+
+    return max(0, 300 - $elapsedSeconds);
+}
+
+function resetLoginAttempts(PDO $pdo, string $username): void
+{
+    if (!tableExists($pdo, 'login_attempts')) {
+        return;
+    }
+
+    $stmt = $pdo->prepare(
+        'UPDATE login_attempts
+         SET is_active = 0,
+             updated_at = NOW()
+         WHERE username = :username
+           AND ip_address = :ip_address
+           AND is_successful = 0
+           AND is_active = 1
+           AND is_deleted = 0'
+    );
+    $stmt->execute([
+        ':username' => $username,
+        ':ip_address' => clientIpAddress(),
+    ]);
+}
+
 function loadPrimaryAccountContext(PDO $pdo, string $userId, string $legacyRole): array
 {
     $fallback = [
@@ -145,12 +203,15 @@ function legacyRoleIdentifier(string $role): string
 
 function createAuthSession(PDO $pdo, string $userId, ?string $accountId, ?string $tenantId): ?string
 {
-    if (!tableExists($pdo, 'auth_sessions')) {
-        return null;
-    }
-
     $sessionId = newUuid($pdo);
     $token = bin2hex(random_bytes(32));
+    $_SESSION['tab_token_hash'] = hash('sha256', $token);
+    $_SESSION['tab_token_created_at'] = date('Y-m-d H:i:s');
+
+    if (!tableExists($pdo, 'auth_sessions')) {
+        $_SESSION['auth_session_id'] = $sessionId;
+        return $token;
+    }
 
     $stmt = $pdo->prepare(
         'INSERT INTO auth_sessions
@@ -170,7 +231,28 @@ function createAuthSession(PDO $pdo, string $userId, ?string $accountId, ?string
     ]);
 
     $_SESSION['auth_session_id'] = $sessionId;
-    return $sessionId;
+    return $token;
+}
+
+function requestTabToken(): string
+{
+    return trim((string) ($_SERVER['HTTP_X_TAB_TOKEN'] ?? ''));
+}
+
+function tabTokenIsValid(): bool
+{
+    $expectedHash = $_SESSION['tab_token_hash'] ?? '';
+    $presentedToken = requestTabToken();
+
+    return $expectedHash !== ''
+        && $presentedToken !== ''
+        && hash_equals($expectedHash, hash('sha256', $presentedToken));
+}
+
+function clearCurrentPhpSessionCookie(): void
+{
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000, $params['path'] ?: '/', $params['domain'] ?? '', $params['secure'] ?? false, $params['httponly'] ?? false);
 }
 
 function revokeCurrentAuthSession(PDO $pdo, string $reason = 'logout'): void
@@ -192,6 +274,98 @@ function revokeCurrentAuthSession(PDO $pdo, string $reason = 'logout'): void
         ':reason' => $reason,
         ':auth_session_id' => $_SESSION['auth_session_id'],
     ]);
+}
+
+function preventProtectedPageCache(): void
+{
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Cache-Control: post-check=0, pre-check=0', false);
+    header('Pragma: no-cache');
+    header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
+}
+
+function sendUnauthorizedResponse(string $message = 'Unauthorized'): void
+{
+    http_response_code(401);
+    echo json_encode([
+        'status' => 'error',
+        'message' => $message,
+    ]);
+    exit();
+}
+
+function currentSessionHasAnyRole(array $allowedRoles): bool
+{
+    if (empty($allowedRoles)) {
+        return true;
+    }
+
+    $sessionRoles = $_SESSION['roles'] ?? [];
+    if (!is_array($sessionRoles)) {
+        $sessionRoles = [];
+    }
+
+    $allRoles = array_merge([$_SESSION['role'] ?? ''], $sessionRoles, $_SESSION['role_identifiers'] ?? []);
+    $normalizedRoles = array_map(
+        static fn($role) => strtolower(trim((string) $role)),
+        array_filter($allRoles, static fn($role) => trim((string) $role) !== '')
+    );
+
+    foreach ($allowedRoles as $role) {
+        if (in_array(strtolower(trim((string) $role)), $normalizedRoles, true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function requireValidSession(PDO $pdo, array $allowedRoles = []): void
+{
+    preventProtectedPageCache();
+
+    if (!isset($_SESSION['user_id'], $_SESSION['role'])) {
+        sendUnauthorizedResponse();
+    }
+
+    if (!tabTokenIsValid()) {
+        sendUnauthorizedResponse('This tab is not authenticated. Please sign in again.');
+    }
+
+    if (tableExists($pdo, 'auth_sessions') && !empty($_SESSION['auth_session_id'])) {
+        $stmt = $pdo->prepare(
+            'SELECT expires_at, is_revoked, is_active
+             FROM auth_sessions
+             WHERE auth_session_id = :auth_session_id
+               AND user_id = :user_id
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':auth_session_id' => $_SESSION['auth_session_id'],
+            ':user_id' => $_SESSION['user_id'],
+        ]);
+        $authSession = $stmt->fetch();
+
+        if (!$authSession || (int) $authSession['is_revoked'] === 1 || (int) $authSession['is_active'] !== 1) {
+            sendUnauthorizedResponse();
+        }
+
+        if (!empty($authSession['expires_at']) && strtotime((string) $authSession['expires_at']) <= time()) {
+            sendUnauthorizedResponse('Session expired. Please sign in again.');
+        }
+
+        $_SESSION['auth_session_expires_at'] = $authSession['expires_at'];
+        $_SESSION['auth_session_is_revoked'] = (bool) $authSession['is_revoked'];
+    }
+
+    if (!currentSessionHasAnyRole($allowedRoles)) {
+        http_response_code(403);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Forbidden',
+        ]);
+        exit();
+    }
 }
 
 function currentSessionPayload(): array

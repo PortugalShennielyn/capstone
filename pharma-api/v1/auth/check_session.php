@@ -2,14 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/auth_context.php';
 
-if (!isset($_SESSION['user_id'], $_SESSION['role'])) {
-    http_response_code(401);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Unauthorized'
-    ]);
-    exit();
-}
+requireValidSession($pdo);
 
 $stmt = $pdo->prepare(
     'SELECT username, email, full_name, first_name, last_name, role, status
@@ -39,12 +32,7 @@ if ($user) {
     $_SESSION['tenant_slug'] = $accountContext['tenant_slug'];
     $_SESSION['primary_domain'] = $accountContext['primary_domain'];
 } else {
-    http_response_code(401);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Unauthorized'
-    ]);
-    exit();
+    sendUnauthorizedResponse();
 }
 
 if (tableExists($pdo, 'auth_sessions') && !empty($_SESSION['auth_session_id'])) {

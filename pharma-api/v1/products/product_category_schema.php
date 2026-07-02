@@ -568,6 +568,35 @@ function getProductCategories(PDO $pdo): array
 
 function getProductTypesByCategory(PDO $pdo, string $categoryId): array
 {
+    $categoryStatement = $pdo->prepare(
+        "SELECT category_name
+         FROM product_categories
+         WHERE category_id = :category_id
+         LIMIT 1"
+    );
+    $categoryStatement->execute([':category_id' => $categoryId]);
+    $categoryName = (string) $categoryStatement->fetchColumn();
+
+    if (strcasecmp($categoryName, 'Medicine') === 0) {
+        $statement = $pdo->prepare(
+            "SELECT pt.type_id, pt.category_id, pt.type_name
+             FROM product_types pt
+             WHERE pt.category_id = :category_id
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM product_types medical_pt
+                    INNER JOIN product_categories medical_pc
+                        ON medical_pc.category_id = medical_pt.category_id
+                    WHERE medical_pt.type_name = pt.type_name
+                      AND medical_pc.category_name IN ('Medical Supply', 'Medical Supplies')
+               )
+             ORDER BY pt.type_name ASC"
+        );
+        $statement->execute([':category_id' => $categoryId]);
+
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     $statement = $pdo->prepare(
         "SELECT type_id, category_id, type_name
          FROM product_types

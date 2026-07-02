@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -103,39 +104,49 @@ try {
 
     if ($categoryName === 'Medicine') {
         $genericName = cleanUpdateField($payload, 'generic_name') ?? cleanUpdateField($variation, 'generic_name');
-        $strength = joinUpdateParts(cleanUpdateField($variation, 'strength_value'), cleanUpdateField($variation, 'strength_unit'));
+        $strengthValue = cleanUpdateNumber($variation, 'strength_value');
+        $strengthUnit = cleanUpdateField($variation, 'strength_unit');
+        $strength = cleanUpdateField($variation, 'strength') ?? joinUpdateParts($strengthValue, $strengthUnit);
         $dosageForm = cleanUpdateField($variation, 'dosage_form');
+        $netContentValue = cleanUpdateNumber($variation, 'net_content_value') ?? cleanUpdateNumber($variation, 'volume_value');
+        $netContentUnit = cleanUpdateField($variation, 'net_content_unit') ?? cleanUpdateField($variation, 'volume_unit');
         $packageType = cleanUpdateField($variation, 'package_type');
         $exists = $pdo->prepare('SELECT medicine_detail_id FROM medicine_details WHERE product_id = :product_id LIMIT 1');
         $exists->execute([':product_id' => $productId]);
         if (cleanId($exists->fetchColumn()) !== '') {
-            $detail = $pdo->prepare('UPDATE medicine_details SET generic_name = :generic_name, strength = :strength, dosage_form = :dosage_form, package_type = :package_type WHERE product_id = :product_id');
+            $detail = $pdo->prepare('UPDATE medicine_details SET generic_name = :generic_name, strength_value = :strength_value, strength_unit = :strength_unit, strength = :strength, dosage_form = :dosage_form, net_content_value = :net_content_value, net_content_unit = :net_content_unit, package_type = :package_type WHERE product_id = :product_id');
         } else {
-            $detail = $pdo->prepare('INSERT INTO medicine_details (medicine_detail_id, product_id, generic_name, strength, dosage_form, package_type) VALUES (:detail_id, :product_id, :generic_name, :strength, :dosage_form, :package_type)');
+            $detail = $pdo->prepare('INSERT INTO medicine_details (medicine_detail_id, product_id, generic_name, strength_value, strength_unit, strength, dosage_form, net_content_value, net_content_unit, package_type) VALUES (:detail_id, :product_id, :generic_name, :strength_value, :strength_unit, :strength, :dosage_form, :net_content_value, :net_content_unit, :package_type)');
             $detail->bindValue(':detail_id', newUuid($pdo));
         }
         $detail->bindValue(':product_id', $productId);
         $detail->bindValue(':generic_name', $genericName);
+        $detail->bindValue(':strength_value', $strengthValue);
+        $detail->bindValue(':strength_unit', $strengthUnit);
         $detail->bindValue(':strength', $strength);
         $detail->bindValue(':dosage_form', $dosageForm);
+        $detail->bindValue(':net_content_value', $netContentValue);
+        $detail->bindValue(':net_content_unit', $netContentUnit);
         $detail->bindValue(':package_type', $packageType);
         $detail->execute();
         $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
     } elseif ($categoryName === 'Grocery') {
+        $netWeight = cleanUpdateNumber($variation, 'net_weight') ?? cleanUpdateNumber($variation, 'weight_value') ?? cleanUpdateNumber($variation, 'weight_volume_value');
         $detailValues = [
             ':product_id' => $productId,
             ':variant' => cleanUpdateField($variation, 'variant_name') ?? cleanUpdateField($variation, 'variant_flavor'),
             ':size' => cleanUpdateField($variation, 'size_value') ?? cleanUpdateField($variation, 'display_size'),
-            ':net_weight' => joinUpdateParts(cleanUpdateNumber($variation, 'weight_value') ?? cleanUpdateNumber($variation, 'weight_volume_value'), cleanUpdateField($variation, 'weight_unit') ?? cleanUpdateField($variation, 'weight_volume_unit')),
-            ':package_type' => cleanUpdateField($variation, 'package_type'),
-            ':pack_content' => joinUpdateParts(cleanUpdateNumber($variation, 'pack_content_qty'), cleanUpdateField($variation, 'pack_content_unit'))
+            ':net_weight' => $netWeight,
+            ':unit' => cleanUpdateField($variation, 'unit') ?? cleanUpdateField($variation, 'weight_unit') ?? cleanUpdateField($variation, 'weight_volume_unit'),
+            ':package_type' => cleanUpdateField($variation, 'package_type') ?? cleanUpdateField($variation, 'packaging'),
+            ':pack_content' => cleanUpdateField($variation, 'pack_content') ?? joinUpdateParts(cleanUpdateNumber($variation, 'pack_content_qty'), cleanUpdateField($variation, 'pack_content_unit'))
         ];
         $exists = $pdo->prepare('SELECT grocery_detail_id FROM grocery_details WHERE product_id = :product_id LIMIT 1');
         $exists->execute([':product_id' => $productId]);
         if (cleanId($exists->fetchColumn()) !== '') {
-            $detail = $pdo->prepare('UPDATE grocery_details SET variant = :variant, size = :size, net_weight = :net_weight, package_type = :package_type, pack_content = :pack_content WHERE product_id = :product_id');
+            $detail = $pdo->prepare('UPDATE grocery_details SET variant = :variant, size = :size, net_weight = :net_weight, unit = :unit, package_type = :package_type, pack_content = :pack_content WHERE product_id = :product_id');
         } else {
-            $detail = $pdo->prepare('INSERT INTO grocery_details (grocery_detail_id, product_id, variant, size, net_weight, package_type, pack_content) VALUES (:detail_id, :product_id, :variant, :size, :net_weight, :package_type, :pack_content)');
+            $detail = $pdo->prepare('INSERT INTO grocery_details (grocery_detail_id, product_id, variant, size, net_weight, unit, package_type, pack_content) VALUES (:detail_id, :product_id, :variant, :size, :net_weight, :unit, :package_type, :pack_content)');
             $detailValues[':detail_id'] = newUuid($pdo);
         }
         $detail->execute($detailValues);

@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 require_once '../products/product_category_schema.php';
 
@@ -40,15 +41,17 @@ try {
             COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
             COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
             COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
-            COALESCE(NULLIF(poi.strength_snapshot, ''), md.strength, 'N/A') AS strength,
-            md.strength AS strength_value,
-            '' AS strength_unit,
-            md.dosage_form AS volume_value,
-            '' AS volume_unit,
+            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength, 'N/A') AS strength,
+            COALESCE(md.strength_value, md.strength) AS strength_value,
+            md.strength_unit AS strength_unit,
+            md.net_content_value,
+            md.net_content_unit,
+            md.net_content_value AS volume_value,
+            md.net_content_unit AS volume_unit,
             COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), gd.variant, 'N/A') AS variant_flavor,
             COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, 'N/A') AS size_value,
             gd.net_weight AS weight_volume_value,
-            '' AS weight_volume_unit,
+            gd.unit AS weight_volume_unit,
             COALESCE(NULLIF(poi.unit_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS unit,
             COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS packaging,
             poi.quantity AS ordered_quantity,
@@ -100,11 +103,16 @@ try {
             pt.type_name,
             md.generic_name,
             md.strength,
+            md.strength_value,
+            md.strength_unit,
+            md.net_content_value,
+            md.net_content_unit,
             md.dosage_form,
             md.package_type,
             gd.variant,
             gd.size,
             gd.net_weight,
+            gd.unit,
             gd.package_type,
             poi.quantity
          LIMIT 1"

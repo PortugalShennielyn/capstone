@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -27,15 +28,17 @@ try {
             p.product_name,
             p.brand_name,
             md.generic_name,
-            COALESCE(md.strength, 'N/A') AS strength,
-            md.strength AS strength_value,
-            '' AS strength_unit,
-            NULL AS volume_value,
-            NULL AS volume_unit,
+            COALESCE(NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength, 'N/A') AS strength,
+            COALESCE(md.strength_value, md.strength) AS strength_value,
+            md.strength_unit AS strength_unit,
+            md.net_content_value,
+            md.net_content_unit,
+            md.net_content_value AS volume_value,
+            md.net_content_unit AS volume_unit,
             COALESCE(gd.variant, 'N/A') AS variant_flavor,
             COALESCE(gd.size, 'N/A') AS size_value,
             gd.net_weight AS weight_volume_value,
-            '' AS weight_volume_unit,
+            gd.unit AS weight_volume_unit,
             COALESCE(md.package_type, gd.package_type, 'N/A') AS unit,
             COALESCE(md.package_type, gd.package_type, 'N/A') AS packaging,
             COALESCE(pc.category_name, 'N/A') AS category_name,

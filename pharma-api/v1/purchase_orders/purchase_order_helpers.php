@@ -4,10 +4,29 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(40) NULL");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS expected_delivery_date DATE NULL");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR(40) NOT NULL DEFAULT 'Unpaid'");
+    $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS approval_status ENUM('Pending','Approved','Rejected') NOT NULL DEFAULT 'Pending'");
+    $pdo->exec("ALTER TABLE purchase_orders MODIFY approval_status ENUM('Pending','Approved','Revision Requested','Rejected') NOT NULL DEFAULT 'Pending'");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS final_payment DECIMAL(12,2) NOT NULL DEFAULT 0.00");
     $pdo->exec("ALTER TABLE purchase_orders MODIFY status VARCHAR(40) NOT NULL DEFAULT 'Pending'");
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS purchase_order_approval_audit (
+            audit_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+            po_id CHAR(36) NOT NULL,
+            previous_approval_status VARCHAR(40) NOT NULL,
+            new_approval_status VARCHAR(40) NOT NULL,
+            action VARCHAR(40) NOT NULL,
+            reason TEXT NULL,
+            user_id CHAR(36) NULL,
+            user_name VARCHAR(160) NULL,
+            user_role VARCHAR(80) NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_po_approval_audit_po (po_id),
+            KEY idx_po_approval_audit_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
     $pdo->exec("UPDATE purchase_orders SET status = 'Delivered with Return/Damage' WHERE status = 'Return/Damage'");
+    $pdo->exec("UPDATE purchase_orders SET status = 'Cancelled' WHERE approval_status = 'Rejected' AND status = 'Pending'");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS product_name_snapshot VARCHAR(150) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS brand_name_snapshot VARCHAR(150) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS category_name_snapshot VARCHAR(100) NULL");
@@ -80,7 +99,6 @@ function purchaseOrderStatuses(): array
 {
     return [
         'Pending',
-        'Approved by the owner',
         'In transit',
         'Arrived',
         'Delivered',
@@ -93,10 +111,14 @@ function activePurchaseOrderStatuses(): array
 {
     return [
         'Pending',
-        'Approved by the owner',
         'In transit',
         'Arrived'
     ];
+}
+
+function approvalStatuses(): array
+{
+    return ['Pending', 'Approved', 'Revision Requested', 'Rejected'];
 }
 
 function completeDeliveryStatuses(): array
@@ -149,6 +171,105 @@ function validatePurchaseOrderStatus(array $payload): string
     return $status;
 }
 
+function updatePurchaseOrderApprovalStatus(PDO $pdo, string $poId, string $approvalStatus, ?string $requiredCurrentApproval = null, ?string $requiredCurrentStatus = null): void
+{
+    if (!in_array($approvalStatus, approvalStatuses(), true)) {
+        throw new InvalidArgumentException('Invalid approval status.');
+    }
+
+    $sql = 'UPDATE purchase_orders SET approval_status = :approval_status WHERE po_id = :po_id';
+    $params = [':approval_status' => $approvalStatus, ':po_id' => $poId];
+
+    if ($requiredCurrentApproval !== null) {
+        $sql .= ' AND approval_status = :required_approval_status';
+        $params[':required_approval_status'] = $requiredCurrentApproval;
+    }
+    if ($requiredCurrentStatus !== null) {
+        $sql .= ' AND status = :required_status';
+        $params[':required_status'] = $requiredCurrentStatus;
+    }
+
+    $statement = $pdo->prepare($sql);
+    $statement->execute($params);
+
+    if ($statement->rowCount() === 0) {
+        $checkStatement = $pdo->prepare('SELECT approval_status, status FROM purchase_orders WHERE po_id = :po_id LIMIT 1');
+        $checkStatement->execute([':po_id' => $poId]);
+        $current = $checkStatement->fetch(PDO::FETCH_ASSOC);
+        if ($current === false) {
+            throw new InvalidArgumentException('Purchase order not found.');
+        }
+        if ($requiredCurrentStatus !== null && $current['status'] !== $requiredCurrentStatus) {
+            throw new InvalidArgumentException('Only pending purchase orders can be approved or rejected.');
+        }
+        throw new InvalidArgumentException('Purchase order approval status has already changed.');
+    }
+}
+
+function recordPurchaseOrderApprovalAudit(PDO $pdo, string $poId, string $previousStatus, string $newStatus, string $action, string $reason = ''): void
+{
+    $statement = $pdo->prepare(
+        'INSERT INTO purchase_order_approval_audit
+            (audit_id, po_id, previous_approval_status, new_approval_status, action, reason, user_id, user_name, user_role)
+         VALUES
+            (:audit_id, :po_id, :previous_approval_status, :new_approval_status, :action, :reason, :user_id, :user_name, :user_role)'
+    );
+    $userName = trim((string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? ''));
+    $statement->execute([
+        ':audit_id' => newUuid($pdo),
+        ':po_id' => $poId,
+        ':previous_approval_status' => $previousStatus,
+        ':new_approval_status' => $newStatus,
+        ':action' => $action,
+        ':reason' => trim($reason),
+        ':user_id' => $_SESSION['user_id'] ?? null,
+        ':user_name' => $userName !== '' ? $userName : null,
+        ':user_role' => $_SESSION['role'] ?? null,
+    ]);
+}
+
+function revokePurchaseOrderApproval(PDO $pdo, string $poId, string $reason): void
+{
+    $reason = trim($reason);
+    if ($reason === '') {
+        throw new InvalidArgumentException('A revoke reason is required.');
+    }
+
+    $statement = $pdo->prepare(
+        "SELECT approval_status, status
+         FROM purchase_orders
+         WHERE po_id = :po_id
+         LIMIT 1"
+    );
+    $statement->execute([':po_id' => $poId]);
+    $current = $statement->fetch(PDO::FETCH_ASSOC);
+
+    if ($current === false) {
+        throw new InvalidArgumentException('Purchase order not found.');
+    }
+    if (($current['approval_status'] ?? '') !== 'Approved') {
+        throw new InvalidArgumentException('Only approved purchase orders can have approval revoked.');
+    }
+    if (($current['status'] ?? '') !== 'Pending') {
+        throw new InvalidArgumentException('Approval is locked once the purchase order has been processed or sent to the supplier.');
+    }
+
+    $update = $pdo->prepare(
+        "UPDATE purchase_orders
+         SET approval_status = 'Pending'
+         WHERE po_id = :po_id
+           AND approval_status = 'Approved'
+           AND status = 'Pending'"
+    );
+    $update->execute([':po_id' => $poId]);
+
+    if ($update->rowCount() === 0) {
+        throw new InvalidArgumentException('Purchase order approval status has already changed.');
+    }
+
+    recordPurchaseOrderApprovalAudit($pdo, $poId, 'Approved', 'Pending', 'revoke_approval', $reason);
+}
+
 function validatePurchaseOrderItems(array $items): void
 {
     if (count($items) === 0) {
@@ -156,9 +277,15 @@ function validatePurchaseOrderItems(array $items): void
     }
 
     foreach ($items as $item) {
-        $purchaseQty = (int) ($item['purchase_qty'] ?? $item['quantity'] ?? 0);
-        $unitsPerPurchaseUnit = (int) ($item['units_per_purchase_unit'] ?? 1);
-        if (idIsMissing($item['product_id'] ?? null) || $purchaseQty <= 0 || $unitsPerPurchaseUnit <= 0) {
+        $purchaseQtyRaw = $item['purchase_qty'] ?? $item['quantity'] ?? 0;
+        $unitsPerPurchaseUnitRaw = $item['units_per_purchase_unit'] ?? 1;
+        if (
+            idIsMissing($item['product_id'] ?? null)
+            || !is_numeric($purchaseQtyRaw)
+            || (int) $purchaseQtyRaw <= 0
+            || !is_numeric($unitsPerPurchaseUnitRaw)
+            || (int) $unitsPerPurchaseUnitRaw <= 0
+        ) {
             throw new InvalidArgumentException('Each purchase-order item must have a valid product and quantity.');
         }
 
@@ -201,11 +328,19 @@ function cleanSnapshotPrice(array $item): ?float
     return (float) $item['price'];
 }
 
+function positivePurchaseOrderInt($value, string $message): int
+{
+    if (!is_numeric($value) || (int) $value <= 0) {
+        throw new InvalidArgumentException($message);
+    }
+    return (int) $value;
+}
+
 function purchaseOrderQuantityParams(array $item): array
 {
-    $purchaseQty = max(1, (int) ($item['purchase_qty'] ?? $item['quantity'] ?? 1));
-    $unitsPerPurchaseUnit = max(1, (int) ($item['units_per_purchase_unit'] ?? 1));
-    $inventoryQtyOrdered = max(1, (int) ($item['inventory_qty_ordered'] ?? ($purchaseQty * $unitsPerPurchaseUnit)));
+    $purchaseQty = positivePurchaseOrderInt($item['purchase_qty'] ?? $item['quantity'] ?? 1, 'Order quantity must be numeric and greater than 0.');
+    $unitsPerPurchaseUnit = positivePurchaseOrderInt($item['units_per_purchase_unit'] ?? 1, 'Units per Purchase Unit must be numeric and greater than 0.');
+    $inventoryQtyOrdered = $purchaseQty * $unitsPerPurchaseUnit;
     $unitPrice = cleanSnapshotPrice($item) ?? 0.0;
 
     return [
@@ -298,8 +433,11 @@ function applySupplierProductSetup(PDO $pdo, string $supplierId, array $items): 
     foreach ($items as $item) {
         $productId = cleanId($item['product_id'] ?? null);
         $setup = $setupByProduct[$productId] ?? [];
-        $unitsPerPurchaseUnit = max(1, (int) ($item['units_per_purchase_unit'] ?? $setup['units_per_purchase_unit'] ?? 1));
-        $purchaseUnit = preg_replace('/^by\s+/i', '', trim((string) ($item['purchase_unit'] ?? $setup['purchase_unit'] ?? $item['unit'] ?? 'pcs')));
+        $unitsPerPurchaseUnit = positivePurchaseOrderInt(
+            $setup['units_per_purchase_unit'] ?? $item['units_per_purchase_unit'] ?? 1,
+            'Units per Purchase Unit must be numeric and greater than 0.'
+        );
+        $purchaseUnit = preg_replace('/^by\s+/i', '', trim((string) ($setup['purchase_unit'] ?? $item['purchase_unit'] ?? $item['unit'] ?? 'pcs')));
         $supplierCost = $setup['supplier_cost_price'] ?? null;
 
         $item['purchase_unit'] = $purchaseUnit !== '' ? $purchaseUnit : 'pcs';
@@ -308,7 +446,7 @@ function applySupplierProductSetup(PDO $pdo, string $supplierId, array $items): 
             $item['price'] = (float) $supplierCost;
         }
 
-        $purchaseQty = max(1, (int) ($item['purchase_qty'] ?? $item['quantity'] ?? 1));
+        $purchaseQty = positivePurchaseOrderInt($item['purchase_qty'] ?? $item['quantity'] ?? 1, 'Order quantity must be numeric and greater than 0.');
         $item['purchase_qty'] = $purchaseQty;
         $item['inventory_qty_ordered'] = $purchaseQty * $unitsPerPurchaseUnit;
         $item['quantity'] = $item['inventory_qty_ordered'];

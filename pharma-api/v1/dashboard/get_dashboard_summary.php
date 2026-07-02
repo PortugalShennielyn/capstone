@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once '../purchase_orders/purchase_order_helpers.php';
 require_once '../products/product_category_schema.php';
 

@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'product_category_schema.php';
 
 try {
@@ -17,11 +18,16 @@ try {
             pt.type_name,
             md.generic_name,
             md.strength,
+            md.strength_value AS medicine_strength_value,
+            md.strength_unit,
+            md.net_content_value,
+            md.net_content_unit,
             md.dosage_form,
             md.package_type AS medicine_package_type,
             gd.variant,
             gd.size,
             gd.net_weight,
+            gd.unit AS grocery_unit,
             gd.package_type AS grocery_package_type,
             gd.pack_content,
             supplier_names.supplier_ids,
@@ -73,15 +79,18 @@ try {
             $product['damaged_returned_stock'] = null;
             $product['barcode'] = $product['barcode'] ?? '';
             $product['price'] = $product['price'] ?? 0;
-            $product['strength_value'] = $product['strength'] ?? '';
-            $product['strength_size_value'] = $product['strength'] ?? '';
-            $product['strength_size_display'] = $product['strength'] ?? '';
+            $product['strength_value'] = $product['medicine_strength_value'] ?? ($product['strength'] ?? '');
+            $product['strength_unit'] = $product['strength_unit'] ?? '';
+            $product['strength_size_value'] = $product['strength_value'];
+            $product['strength_size_display'] = trim(($product['strength_value'] ?? '') . ' ' . ($product['strength_unit'] ?? '')) ?: ($product['strength'] ?? '');
+            $product['volume_value'] = $product['net_content_value'] ?? '';
+            $product['volume_unit'] = $product['net_content_unit'] ?? '';
             $product['package_type'] = $product['medicine_package_type'] ?? ($product['grocery_package_type'] ?? '');
             $product['variant_flavor'] = $product['variant'] ?? '';
             $product['size_value'] = $product['size'] ?? '';
             $product['display_size'] = $product['size'] ?? '';
             $product['weight_volume_value'] = $product['net_weight'] ?? '';
-            $product['weight_volume_unit'] = '';
+            $product['weight_volume_unit'] = $product['grocery_unit'] ?? '';
             $product['packaging'] = '';
             $product['packaging_size'] = $product['pack_content'] ?? '';
             $product['pack_content_qty'] = '';

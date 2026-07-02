@@ -1,5 +1,6 @@
 import API_BASE_URL from '../config/config.js';
 import PharmaUtils from '../utils.js';
+import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=6';
 
 let currentSessionUser = null;
 
@@ -52,10 +53,13 @@ function mapSessionUser(user) {
     setDbText('settingsTenantName', tenantName, hasDbValue(user.tenant_name));
     setDbText('settingsSessionSummary', sessionSummary, hasDbValue(user.account_id) || hasDbValue(user.auth_session_id));
     setText('tenantSettingsName', tenantName);
+    setText('tenantSettingsNameInline', tenantName);
     setText('tenantSettingsInitials', initialsFromName(tenantName, 'TN'));
-    setText('tenantIdentitySummary', `Edit workspace name, slug, billing email, website, and logo for ${tenantName} from saas.tenant.`);
+    setText('tenantIdentitySummary', `Edit business profile details for ${tenantName}.`);
     setText('tenantOverviewName', tenantName);
     setText('tenantOverviewSlug', user.tenant_slug || 'Not configured');
+    setText('tenantOverviewBillingEmailInline', user.billing_email || 'Not configured');
+    setText('tenantOverviewWebsiteInline', user.website_url || 'Not configured');
     setText('tenantActivityActor', displayName);
     setText('billingTenantName', tenantName);
     setText('billingOwnerName', displayName);
@@ -415,13 +419,19 @@ function initLogoutLinks() {
                     credentials: 'include'
                 });
             } finally {
-                window.location.href = 'login.html';
+                clearTabToken();
+                window.location.replace('login.html');
             }
         });
     });
 }
 
 async function verifySession() {
+    const hasTabSession = await ensurePageTabSession();
+    if (!hasTabSession) {
+        return null;
+    }
+
     try {
         const user = await PharmaUtils.safeFetch(`${API_BASE_URL}/auth/check_session.php`, {
             method: 'GET',
@@ -435,7 +445,7 @@ async function verifySession() {
         initLogoutLinks();
         return user;
     } catch (err) {
-        window.location.href = 'login.html';
+        redirectToLogin();
         return null;
     }
 }

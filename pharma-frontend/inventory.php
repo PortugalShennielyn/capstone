@@ -1,0 +1,186 @@
+<?php
+require_once __DIR__ . '/auth_page_guard.php';
+?>
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Inventory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=28" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
+    <style>
+        :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
+        body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter",sans-serif; }
+        body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; }
+        .main-wrapper,.main-content { min-width:0; }
+        .main-wrapper { min-height:100vh; margin-left:var(--sidebar-width); transition:var(--transition); }
+        .topbar { height:var(--topbar-height); display:flex; align-items:center; justify-content:space-between; padding:0 26px; background:#fff; border-bottom:1px solid var(--border-soft); position:sticky; top:0; z-index:1020; }
+        body.dark-mode .topbar, body.dark-mode .card { background:#182131; color:var(--text-main); }
+        .topbar-left,.topbar-right { display:flex; align-items:center; gap:14px; }
+        .icon-btn { width:42px; height:42px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:8px; color:#4b5563; background:#f4f6fb; }
+        .page-title-mini { display:flex; flex-direction:column; line-height:1.2; }
+        .page-title-mini strong { font-size:15px; font-weight:800; }
+        .page-title-mini span { margin-top:3px; color:#7b8494; font-size:12px; font-weight:600; }
+        .page-body,.inventory-content { min-width:0; padding:clamp(22px,2vw,34px); }
+        .workspace { width:100%; max-width:1760px; min-width:0; margin:0 auto; }
+        .card { border:1px solid var(--border-soft); border-radius:10px; box-shadow:0 10px 28px rgba(15,23,42,.05); }
+        .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
+        .inventory-summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:clamp(10px,1vw,14px); margin-bottom:24px; align-items:stretch; }
+        .inventory-summary-card { min-width:0; min-height:86px; display:grid; grid-template-columns:26px minmax(0,1fr); align-items:center; gap:8px; padding:14px 12px; border:1px solid var(--border-soft); border-radius:8px; background:#fff; box-shadow:0 10px 24px rgba(15,23,42,.05); overflow:hidden; position:relative; }
+        .inventory-summary-icon { width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; color:var(--summary-color,var(--purple)); background:color-mix(in srgb,var(--summary-color,var(--purple)) 10%,#fff); box-shadow:none; font-size:13px; }
+        .inventory-summary-content { min-width:0; display:flex; flex-direction:column; gap:6px; }
+        .inventory-summary-card strong { display:block; max-width:100%; color:var(--text-main); font-size:clamp(1.05rem,1.05vw,1.28rem); font-weight:850; line-height:1.05; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .inventory-summary-card p { max-width:100%; margin:0; color:#596274; font-size:.7rem; font-weight:800; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .inventory-summary-card::after { content:""; position:absolute; inset:0 auto 0 0; width:3px; border-radius:8px 0 0 8px; background:var(--summary-color,var(--purple)); }
+        .inventory-summary-card.is-value-card { grid-template-columns:24px minmax(0,1fr); gap:6px; padding-right:10px; }
+        .inventory-summary-card.is-value-card .inventory-summary-icon { width:24px; height:24px; font-size:12px; }
+        .inventory-summary-card.is-value-card strong { font-size:clamp(.78rem,.84vw,.94rem); letter-spacing:0; }
+        .inventory-card,.table-wrapper,.inventory-table-wrap { min-width:0; }
+        .inventory-table-wrap { overflow-x:auto; }
+        .inventory-table { width:100%; min-width:1460px; border-collapse:separate; border-spacing:0; font-size:13px; font-weight:700; table-layout:auto; }
+        .inventory-table th,.inventory-table td { padding:12px 11px; border-bottom:1px solid #e5e7eb; vertical-align:middle; overflow-wrap:break-word; word-break:normal; }
+        .inventory-table th { color:#596274; background:#f8fafc; font-size:11px; font-weight:800; text-align:left; text-transform:uppercase; letter-spacing:0; }
+        .inventory-table td { text-align:left; }
+        .inventory-table tbody tr:hover td { background:#fbfdff; }
+        .inventory-table .col-brand { width:clamp(150px,16%,230px); min-width:150px; }
+        .inventory-table .col-product { width:clamp(200px,22%,340px); min-width:200px; }
+        .inventory-table .col-category { width:125px; min-width:125px; }
+        .inventory-table .col-type { width:145px; min-width:145px; }
+        .inventory-table .col-qty { width:96px; }
+        .inventory-table .col-expiry { width:125px; min-width:125px; }
+        .inventory-table .col-received { width:135px; min-width:135px; }
+        .inventory-table .col-actions { width:170px; min-width:170px; }
+        .inventory-table th:nth-child(1), .inventory-table td:nth-child(1) { min-width:150px; text-align:left; }
+        .inventory-table th:nth-child(2), .inventory-table td:nth-child(2) { min-width:200px; text-align:left; }
+        .inventory-table th:nth-child(3), .inventory-table td:nth-child(3) { min-width:125px; }
+        .inventory-table th:nth-child(4), .inventory-table td:nth-child(4) { min-width:145px; }
+        .inventory-table th:nth-child(9), .inventory-table td:nth-child(9) { width:125px; min-width:125px; max-width:125px; text-align:center!important; }
+        .inventory-table th:nth-child(10), .inventory-table td:nth-child(10) { width:135px; min-width:135px; max-width:135px; text-align:center!important; white-space:nowrap!important; }
+        .inventory-table th:nth-child(11), .inventory-table td:nth-child(11) { width:170px; min-width:170px; max-width:170px; position:sticky; right:0; z-index:6; background:#f8fbff; border-left:1px solid #dbeafe; box-shadow:-8px 0 14px rgba(15,23,42,.08); text-align:center!important; white-space:nowrap!important; }
+        .inventory-table th:nth-child(11) { z-index:7; }
+        .brand-cell,.product-cell { display:block; max-width:100%; text-align:left; color:var(--text-main); font-size:13px; font-weight:750; line-height:1.28; white-space:normal; overflow:visible; overflow-wrap:break-word; word-break:normal; }
+        .qty-number { font-variant-numeric:tabular-nums; font-weight:850; }
+        .expiry-cell,.expiry-stack { text-align:center; }
+        .date-stack { display:flex; flex-direction:column; align-items:center; gap:5px; }
+        .expiry-date { display:block; color:#64748b; font-size:11px; font-weight:600; line-height:1.2; margin-top:3px; }
+        .status-badge,.expiry-badge { display:inline-flex; align-items:center; justify-content:center; padding:3px 9px; border-radius:999px; font-size:11px; font-weight:700; line-height:1.2; margin-bottom:3px; white-space:nowrap; }
+        .status-safe { color:#15803d; background:#dcfce7; }
+        .status-soon { color:#b45309; background:#fef3c7; }
+        .status-expired { color:#b91c1c; background:#fee2e2; }
+        .status-na { color:#64748b; background:#f1f5f9; }
+        .batch-badge-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+        .batch-badge { display:inline-flex; align-items:center; padding:3px 7px; border-radius:999px; font-size:10px; font-weight:800; line-height:1.1; white-space:nowrap; }
+        .batch-use-first { color:#065f46; background:#d1fae5; }
+        .batch-new { color:#1d4ed8; background:#dbeafe; }
+        .batch-old { color:#475569; background:#e2e8f0; }
+        .batch-soon { color:#b45309; background:#fef3c7; }
+        .batch-expired { color:#b91c1c; background:#fee2e2; }
+        .batch-neutral { color:#475569; background:#f1f5f9; }
+        .move-batch-list { display:grid; gap:12px; }
+        .move-batch-row { display:grid; grid-template-columns:minmax(0,1fr) 150px; gap:14px; align-items:center; padding:13px; border:1px solid var(--border-soft); border-radius:8px; background:#fff; }
+        .move-batch-row.is-recommended { border-color:#34d399; background:#f0fdf4; box-shadow:inset 3px 0 0 #10b981; }
+        .move-batch-main { min-width:0; }
+        .move-batch-main strong { display:block; overflow-wrap:anywhere; }
+        .move-batch-meta { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:6px; color:#64748b; font-size:12px; font-weight:700; }
+        .move-batch-input { min-width:0; }
+        .move-batch-input .form-control { min-height:40px; }
+        .move-feedback { min-height:20px; color:#dc2626; font-size:12px; font-weight:700; }
+        .move-summary-grid { display:grid; grid-template-columns:minmax(220px,1.35fr) minmax(130px,.7fr) minmax(160px,.85fr); gap:12px; margin-bottom:14px; align-items:stretch; }
+        .move-summary-grid .detail-box { min-width:0; }
+        .move-summary-grid .detail-box strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .inventory-table .table-actions { display:flex!important; align-items:center!important; justify-content:center!important; gap:8px!important; white-space:nowrap!important; }
+        .inventory-table .table-actions .btn { width:34px!important; height:34px!important; min-width:34px!important; padding:0!important; display:inline-flex!important; align-items:center!important; justify-content:center!important; border-radius:8px; background:#fff; }
+        .inventory-table .table-actions .view-inventory-btn { color:#475569; border-color:#cbd5e1; }
+        .inventory-table .table-actions .move-selling-btn { color:#2563eb; border-color:#60a5fa; background:#eff6ff; }
+        .inventory-table .table-actions .history-btn { color:#64748b; border-color:#cbd5e1; }
+        table.inventory-table.data-table-enhanced { width:100%!important; min-width:1460px!important; table-layout:auto!important; }
+        table.inventory-table.data-table-enhanced th, table.inventory-table.data-table-enhanced td { padding:13px 12px!important; line-height:1.28!important; }
+        table.inventory-table.data-table-enhanced th:nth-child(1), table.inventory-table.data-table-enhanced td:nth-child(1), table.inventory-table.data-table-enhanced th:nth-child(2), table.inventory-table.data-table-enhanced td:nth-child(2) { text-align:left!important; }
+        table.inventory-table.data-table-enhanced col.col-brand { width:clamp(150px,16%,230px)!important; min-width:150px!important; }
+        table.inventory-table.data-table-enhanced col.col-product { width:clamp(200px,22%,340px)!important; min-width:200px!important; }
+        table.inventory-table.data-table-enhanced col.col-category { width:125px!important; min-width:125px!important; }
+        table.inventory-table.data-table-enhanced col.col-type { width:145px!important; min-width:145px!important; }
+        table.inventory-table.data-table-enhanced col.col-qty { width:96px!important; }
+        table.inventory-table.data-table-enhanced col.col-expiry { width:125px!important; min-width:125px!important; }
+        table.inventory-table.data-table-enhanced col.col-received { width:135px!important; min-width:135px!important; }
+        table.inventory-table.data-table-enhanced col.col-actions { width:170px!important; min-width:170px!important; }
+        table.inventory-table.data-table-enhanced .table-actions { display:flex!important; gap:8px!important; width:auto!important; max-width:100%!important; }
+        .inventory-table-wrap > table.table.inventory-table.data-table-enhanced { width:100%!important; min-width:1460px!important; table-layout:auto!important; }
+        .inventory-table-wrap > table.table.inventory-table.data-table-enhanced th, .inventory-table-wrap > table.table.inventory-table.data-table-enhanced td { padding:13px 12px!important; line-height:1.28!important; }
+        .inventory-table-wrap > table.table.inventory-table.data-table-enhanced th:nth-child(1), .inventory-table-wrap > table.table.inventory-table.data-table-enhanced td:nth-child(1), .inventory-table-wrap > table.table.inventory-table.data-table-enhanced th:nth-child(2), .inventory-table-wrap > table.table.inventory-table.data-table-enhanced td:nth-child(2) { text-align:left!important; }
+        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced { width:100%!important; min-width:1460px!important; table-layout:auto!important; }
+        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th, .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td { padding:13px 12px!important; line-height:1.28!important; }
+        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(1), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(1), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(2), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(2) { text-align:left!important; }
+        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(9), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(9) { width:125px!important; min-width:125px!important; max-width:125px!important; position:static!important; right:auto!important; z-index:auto!important; text-align:center!important; }
+        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(10), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(10) { width:135px!important; min-width:135px!important; max-width:135px!important; position:static!important; right:auto!important; z-index:auto!important; text-align:center!important; white-space:nowrap!important; }
+        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(11), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(11) { width:170px!important; min-width:170px!important; max-width:170px!important; position:sticky!important; right:0!important; z-index:6!important; background:#f8fbff!important; border-left:1px solid #dbeafe!important; box-shadow:-8px 0 14px rgba(15,23,42,.08)!important; text-align:center!important; white-space:nowrap!important; }
+        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(11) { z-index:7!important; }
+        .empty-row { padding:36px!important; color:#8790a1!important; text-align:center!important; }
+        .detail-section { margin-bottom:20px; }
+        .detail-section h6 { margin:0 0 10px; font-weight:850; color:#374151; }
+        .detail-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; }
+        .detail-box { padding:12px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
+        .detail-box span { display:block; color:#7b8494; font-size:12px; font-weight:800; text-transform:uppercase; }
+        .detail-box strong { display:block; margin-top:4px; font-size:14px; font-weight:800; }
+        .modal-table { font-size:13px; }
+        .modal-table th { color:#6b7280; font-size:11px; text-transform:uppercase; }
+        body.dark-mode .inventory-summary-card { background:#182131; }
+        body.dark-mode .inventory-table th:nth-child(11), body.dark-mode .inventory-table td:nth-child(11), body.dark-mode .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(11), body.dark-mode .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(11) { background:#172033!important; }
+        body.dark-mode .inventory-table tbody tr:hover td { background:#1d2838; }
+        body.dark-mode .detail-box { background:#111827; }
+        body.dark-mode .move-batch-row { background:#111827; }
+        body.dark-mode .move-batch-row.is-recommended { background:#0f2a23; }
+        @media (max-width: 991px) {
+            .main-wrapper { margin-left:0; }
+            .page-body { padding:18px 12px; }
+            .topbar { padding:0 14px; }
+            .inventory-table { min-width:1460px; }
+            .inventory-summary-grid { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
+            .move-summary-grid { grid-template-columns:1fr; }
+            .move-batch-row { grid-template-columns:1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left"><button class="icon-btn" id="sidebarToggle"><i class="fa-solid fa-bars"></i></button><div class="page-title-mini"><strong>Inventory</strong><span>Warehouse stock and sellable shelf movement</span></div></div>
+            <div class="topbar-right"><button class="icon-btn"><i class="fa-regular fa-bell"></i></button><button class="icon-btn" id="themeToggle"><i class="fa-solid fa-moon"></i></button></div>
+        </header>
+        <section class="page-body inventory-content">
+            <div class="workspace">
+                <div id="inventorySummaryCards" class="inventory-summary-grid"></div>
+                <div class="card p-3 inventory-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+                        <div><h1 class="h5 fw-bold mb-1">Inventory Storage</h1><p class="text-muted small mb-0">Received PO stock stays here until moved to Products selling stock.</p></div>
+                        <button id="btnRefreshInventory" class="btn btn-purple"><i class="fa-solid fa-rotate me-2"></i>Refresh</button>
+                    </div>
+                    <div class="inventory-table-wrap table-wrapper">
+                        <table id="table-inventory" class="table table-hover align-middle inventory-table">
+                            <colgroup><col class="col-brand"><col class="col-product"><col class="col-category"><col class="col-type"><col class="col-qty"><col class="col-qty"><col class="col-qty"><col class="col-qty"><col class="col-expiry"><col class="col-received"><col class="col-actions"></colgroup>
+                            <thead><tr><th>Brand</th><th>Product</th><th>Category</th><th>Product Type</th><th>Storage Qty</th><th>Shelf Qty</th><th>Damaged Qty</th><th>Total Qty</th><th>Expiry</th><th>Last Received</th><th>Actions</th></tr></thead>
+                            <tbody><tr><td colspan="11" class="empty-row">Loading inventory...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+    <div class="modal fade" id="inventoryDetailsModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Inventory Details</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="inventoryDetails"></div><div class="modal-footer"><button class="btn btn-light" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    <div class="modal fade" id="moveShelfModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><form id="moveShelfForm"><div class="modal-header"><div><h5 class="modal-title fw-bold">Move Storage to Shelf</h5><p class="text-muted small mb-0">Choose the exact batch quantities to move.</p></div><button class="btn-close" data-bs-dismiss="modal" type="button"></button></div><div class="modal-body"><input id="moveProductId" type="hidden"><div class="move-summary-grid"><div class="detail-box"><span>Product</span><strong id="moveProductName"></strong></div><div class="detail-box"><span>Shelf Qty</span><strong id="moveShelfQty" class="qty-number"></strong></div><div class="detail-box"><span>Total Storage Qty</span><strong id="moveStorageQty" class="qty-number"></strong></div></div><div id="moveBatchList" class="move-batch-list"></div><div id="moveBatchFeedback" class="move-feedback mt-2" aria-live="polite"></div></div><div class="modal-footer"><button class="btn btn-light" data-bs-dismiss="modal" type="button">Cancel</button><button class="btn btn-purple" type="submit"><i class="fa-solid fa-right-left me-2"></i>Move Selected Stock</button></div></form></div></div></div>
+    <div class="modal fade" id="stockHistoryModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Stock Movement History</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="stockHistory"></div></div><div class="modal-footer"><button class="btn btn-light" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script type="module" src="./js/modules/inventory.js?v=12"></script>
+    <script type="module">import verifySession from './js/modules/auth.js'; await verifySession();</script>
+</body>
+</html>

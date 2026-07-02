@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -13,7 +14,15 @@ $supplierId = cleanId($payload['supplier_id'] ?? null);
 $productId = cleanId($payload['product_id'] ?? null);
 $supplierCostPrice = $payload['supplier_cost_price'] ?? null;
 $purchaseUnit = trim((string) ($payload['purchase_unit'] ?? ''));
-$unitsPerPurchaseUnit = max(1, (int) ($payload['units_per_purchase_unit'] ?? 1));
+$unitsPerPurchaseUnitRaw = $payload['units_per_purchase_unit'] ?? null;
+
+if (!is_numeric($unitsPerPurchaseUnitRaw) || (float) $unitsPerPurchaseUnitRaw <= 0) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Units per Purchase Unit must be numeric and greater than 0.']);
+    exit();
+}
+
+$unitsPerPurchaseUnit = (int) $unitsPerPurchaseUnitRaw;
 
 if ($supplierId === '' || $productId === '') {
     http_response_code(400);

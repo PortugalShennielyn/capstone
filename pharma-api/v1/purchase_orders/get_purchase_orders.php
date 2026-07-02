@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 require_once '../products/product_category_schema.php';
 
@@ -10,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
+    ensurePurchaseOrderSchema($pdo);
 
     $status = trim((string) ($_GET['status'] ?? ''));
     $scope = trim((string) ($_GET['scope'] ?? 'active'));
@@ -28,7 +30,7 @@ try {
     } elseif ($scope === 'all') {
         $whereClause = '';
     } else {
-        $whereClause = "WHERE po.status IN ('Pending', 'In transit')";
+        $whereClause = "WHERE po.status IN ('Pending', 'In transit') AND po.approval_status <> 'Rejected'";
     }
 
     $statement = $pdo->prepare(
@@ -38,11 +40,16 @@ try {
             po.created_at AS order_date,
             po.payment_terms,
             po.payment_status,
+            po.approval_status,
             po.final_payment AS stored_final_payment,
             po.expected_delivery_date,
             po.status,
             receiving.received_date,
             receiving.receiving_remarks,
+            audit.action AS approval_action,
+            audit.reason AS approval_reason,
+            audit.created_at AS approval_reason_at,
+            audit.user_name AS approval_reason_by,
             s.supplier_name
          FROM purchase_orders po
          INNER JOIN suppliers s ON s.supplier_id = po.supplier_id
@@ -54,6 +61,17 @@ try {
             FROM purchase_order_receiving
             GROUP BY po_id
          ) receiving ON receiving.po_id = po.po_id
+         LEFT JOIN (
+            SELECT a.po_id, a.action, a.reason, a.created_at, a.user_name
+            FROM purchase_order_approval_audit a
+            INNER JOIN (
+                SELECT po_id, MAX(created_at) AS latest_created_at
+                FROM purchase_order_approval_audit
+                WHERE action IN ('reject', 'cancel', 'request_revision', 'revoke_approval', 'resubmit_revision')
+                GROUP BY po_id
+            ) latest ON latest.po_id = a.po_id AND latest.latest_created_at = a.created_at
+            WHERE a.action IN ('reject', 'cancel', 'request_revision', 'revoke_approval', 'resubmit_revision')
+         ) audit ON audit.po_id = po.po_id
          {$whereClause}
          ORDER BY po.created_at DESC, po.po_id DESC"
     );
@@ -88,16 +106,18 @@ try {
                 COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
                 COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
                 COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
-                COALESCE(NULLIF(poi.strength_snapshot, ''), md.strength, '') AS strength,
-                md.strength AS strength_value,
-                '' AS strength_unit,
+                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength, '') AS strength,
+                COALESCE(md.strength_value, md.strength) AS strength_value,
+                md.strength_unit AS strength_unit,
                 md.dosage_form AS dosage_form,
-                md.dosage_form AS volume_value,
-                '' AS volume_unit,
+                md.net_content_value,
+                md.net_content_unit,
+                md.net_content_value AS volume_value,
+                md.net_content_unit AS volume_unit,
                 COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), gd.variant, '') AS variant_flavor,
                 COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, '') AS size_value,
                 gd.net_weight AS weight_volume_value,
-                '' AS weight_volume_unit,
+                gd.unit AS weight_volume_unit,
                 CASE
                     WHEN NULLIF(poi.unit_snapshot, '') IS NOT NULL AND UPPER(TRIM(poi.unit_snapshot)) NOT LIKE 'N/A%' THEN poi.unit_snapshot
                     WHEN LOWER(COALESCE(md.dosage_form, '')) IN ('tablet', 'capsule', 'caplet') THEN 'pcs'
@@ -122,7 +142,7 @@ try {
                 GROUP BY po_item_id
              ) returns ON returns.po_item_id = poi.po_item_id
              WHERE poi.po_id IN ({$placeholders})
-             GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.package_type, p.price, returns.return_quantity
+             GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.return_quantity
              ORDER BY poi.po_id, poi.po_item_id"
         );
         $itemsStatement->execute($poIds);
@@ -177,11 +197,19 @@ try {
     );
     $counts['Return/Damage'] = $returnDamageCount;
     $counts['Delivered'] = (int) ($counts['Delivered'] ?? 0) + (int) ($counts['Delivered with Return/Damage'] ?? 0);
+    $approvalCounts = array_fill_keys(approvalStatuses(), 0);
+    $approvalCountStatement = $pdo->query('SELECT approval_status, COUNT(*) AS total FROM purchase_orders GROUP BY approval_status');
+    foreach ($approvalCountStatement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (array_key_exists($row['approval_status'], $approvalCounts)) {
+            $approvalCounts[$row['approval_status']] = (int) $row['total'];
+        }
+    }
 
     echo json_encode([
         'status' => 'success',
         'purchase_orders' => $orders,
-        'status_counts' => $counts
+        'status_counts' => $counts,
+        'approval_counts' => $approvalCounts
     ]);
 } catch (InvalidArgumentException $e) {
     http_response_code(400);

@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -42,6 +43,15 @@ function supplierProductNumberOrNull(array $payload, string $field): ?float
     return (float) $value;
 }
 
+function supplierProductPositiveInt(array $payload, string $field): int
+{
+    $value = trim((string) ($payload[$field] ?? ''));
+    if (!is_numeric($value) || (float) $value <= 0) {
+        throw new InvalidArgumentException('Units per Purchase Unit must be numeric and greater than 0.');
+    }
+    return (int) $value;
+}
+
 function supplierProductJoin(?string ...$parts): ?string
 {
     $clean = array_values(array_filter(array_map(static fn($part) => trim((string) ($part ?? '')), $parts), static fn($part) => $part !== ''));
@@ -58,7 +68,7 @@ try {
     $productName = supplierProductRequiredText($payload, 'product_name');
     $supplierCost = supplierProductNumberOrNull($payload, 'supplier_cost_price');
     $purchaseUnit = supplierProductText($payload, 'purchase_unit');
-    $unitsPerPurchaseUnit = max(1, (int) ($payload['units_per_purchase_unit'] ?? 1));
+    $unitsPerPurchaseUnit = supplierProductPositiveInt($payload, 'units_per_purchase_unit');
 
     if ($supplierProductId === '' || $supplierId === '' || $productId === '') {
         throw new InvalidArgumentException('A valid supplier product link is required.');
@@ -95,11 +105,24 @@ try {
 
     $unit = supplierProductText($payload, 'unit');
     $packaging = supplierProductText($payload, 'packaging');
+    $genericName = supplierProductText($payload, 'generic_name');
     $variant = supplierProductText($payload, 'variant_flavor');
-    $strength = supplierProductText($payload, 'strength_value');
+    $strengthValue = supplierProductNumberOrNull($payload, 'strength_value');
+    $strengthUnit = supplierProductText($payload, 'strength_unit');
+    $strength = supplierProductText($payload, 'strength') ?? supplierProductJoin($strengthValue === null ? null : (string) $strengthValue, $strengthUnit);
+    $dosageForm = supplierProductText($payload, 'dosage_form') ?? $unit;
+    $netContentValue = supplierProductNumberOrNull($payload, 'net_content_value');
+    $netContentUnit = supplierProductText($payload, 'net_content_unit');
     $size = supplierProductText($payload, 'size_value');
+    $netWeight = supplierProductText($payload, 'net_weight');
+    if ($categoryName === 'Grocery' && $netWeight !== null && !is_numeric($netWeight)) {
+        throw new InvalidArgumentException('Net weight must be a number only.');
+    }
+    $material = supplierProductText($payload, 'material');
+    $sterileStatus = supplierProductText($payload, 'sterile_status');
     $packContentQty = supplierProductText($payload, 'pack_content_qty');
-    $packContent = supplierProductJoin($packContentQty, $unit);
+    $packContentUnit = supplierProductText($payload, 'pack_content_unit') ?? $unit;
+    $packContent = supplierProductText($payload, 'pack_content') ?? supplierProductJoin($packContentQty, $packContentUnit);
 
     $pdo->beginTransaction();
 
@@ -127,31 +150,47 @@ try {
             $detail = $pdo->prepare(
                 'UPDATE medicine_details
                  SET strength = :strength,
+                     strength_value = :strength_value,
+                     strength_unit = :strength_unit,
+                     generic_name = :generic_name,
                      dosage_form = :dosage_form,
+                     net_content_value = :net_content_value,
+                     net_content_unit = :net_content_unit,
                      package_type = :package_type
                  WHERE product_id = :product_id'
             );
             $detail->execute([
                 ':strength' => $strength,
-                ':dosage_form' => $unit,
+                ':strength_value' => $strengthValue,
+                ':strength_unit' => $strengthUnit,
+                ':generic_name' => $genericName,
+                ':dosage_form' => $dosageForm,
+                ':net_content_value' => $netContentValue,
+                ':net_content_unit' => $netContentUnit,
                 ':package_type' => $packaging,
                 ':product_id' => $productId
             ]);
         } else {
             $detail = $pdo->prepare(
-                'INSERT INTO medicine_details (medicine_detail_id, product_id, generic_name, strength, dosage_form, package_type)
-                 VALUES (:medicine_detail_id, :product_id, NULL, :strength, :dosage_form, :package_type)'
+                'INSERT INTO medicine_details (medicine_detail_id, product_id, generic_name, strength_value, strength_unit, strength, dosage_form, net_content_value, net_content_unit, package_type)
+                 VALUES (:medicine_detail_id, :product_id, :generic_name, :strength_value, :strength_unit, :strength, :dosage_form, :net_content_value, :net_content_unit, :package_type)'
             );
             $detail->execute([
                 ':medicine_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
+                ':generic_name' => $genericName,
+                ':strength_value' => $strengthValue,
+                ':strength_unit' => $strengthUnit,
                 ':strength' => $strength,
-                ':dosage_form' => $unit,
+                ':dosage_form' => $dosageForm,
+                ':net_content_value' => $netContentValue,
+                ':net_content_unit' => $netContentUnit,
                 ':package_type' => $packaging
             ]);
         }
 
         $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+        $pdo->prepare('DELETE FROM medical_supply_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
     } elseif ($categoryName === 'Grocery') {
         $exists = $pdo->prepare('SELECT grocery_detail_id FROM grocery_details WHERE product_id = :product_id LIMIT 1');
         $exists->execute([':product_id' => $productId]);
@@ -162,6 +201,7 @@ try {
                  SET variant = :variant,
                      size = :size,
                      net_weight = :net_weight,
+                     unit = :unit,
                      package_type = :package_type,
                      pack_content = :pack_content
                  WHERE product_id = :product_id'
@@ -169,28 +209,74 @@ try {
             $detail->execute([
                 ':variant' => $variant,
                 ':size' => $size,
-                ':net_weight' => $strength,
+                ':net_weight' => $netWeight,
+                ':unit' => $unit,
                 ':package_type' => $packaging,
                 ':pack_content' => $packContent,
                 ':product_id' => $productId
             ]);
         } else {
             $detail = $pdo->prepare(
-                'INSERT INTO grocery_details (grocery_detail_id, product_id, variant, size, net_weight, package_type, pack_content)
-                 VALUES (:grocery_detail_id, :product_id, :variant, :size, :net_weight, :package_type, :pack_content)'
+                'INSERT INTO grocery_details (grocery_detail_id, product_id, variant, size, net_weight, unit, package_type, pack_content)
+                 VALUES (:grocery_detail_id, :product_id, :variant, :size, :net_weight, :unit, :package_type, :pack_content)'
             );
             $detail->execute([
                 ':grocery_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
                 ':variant' => $variant,
                 ':size' => $size,
-                ':net_weight' => $strength,
+                ':net_weight' => $netWeight,
+                ':unit' => $unit,
                 ':package_type' => $packaging,
                 ':pack_content' => $packContent
             ]);
         }
 
         $pdo->prepare('DELETE FROM medicine_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+        $pdo->prepare('DELETE FROM medical_supply_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+    } elseif (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
+        $exists = $pdo->prepare('SELECT medical_supply_detail_id FROM medical_supply_details WHERE product_id = :product_id LIMIT 1');
+        $exists->execute([':product_id' => $productId]);
+
+        if (cleanId($exists->fetchColumn()) !== '') {
+            $detail = $pdo->prepare(
+                'UPDATE medical_supply_details
+                 SET variant = :variant,
+                     size = :size,
+                     material = :material,
+                     sterile_status = :sterile_status,
+                     package_type = :package_type,
+                     pack_content = :pack_content
+                 WHERE product_id = :product_id'
+            );
+            $detail->execute([
+                ':variant' => $variant,
+                ':size' => $size,
+                ':material' => $material,
+                ':sterile_status' => $sterileStatus,
+                ':package_type' => $packaging,
+                ':pack_content' => $packContent,
+                ':product_id' => $productId
+            ]);
+        } else {
+            $detail = $pdo->prepare(
+                'INSERT INTO medical_supply_details (medical_supply_detail_id, product_id, variant, size, material, sterile_status, package_type, pack_content)
+                 VALUES (:medical_supply_detail_id, :product_id, :variant, :size, :material, :sterile_status, :package_type, :pack_content)'
+            );
+            $detail->execute([
+                ':medical_supply_detail_id' => newUuid($pdo),
+                ':product_id' => $productId,
+                ':variant' => $variant,
+                ':size' => $size,
+                ':material' => $material,
+                ':sterile_status' => $sterileStatus,
+                ':package_type' => $packaging,
+                ':pack_content' => $packContent
+            ]);
+        }
+
+        $pdo->prepare('DELETE FROM medicine_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+        $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
     }
 
     $supplierStatement = $pdo->prepare(

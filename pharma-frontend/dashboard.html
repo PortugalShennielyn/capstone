@@ -11,8 +11,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=9" rel="stylesheet">
-    <script src="./js/navbar.js?v=21" defer></script>
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=28" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
 
     <style>
         :root {
@@ -376,8 +377,8 @@
             align-items: center;
             justify-content: space-between;
             gap: 16px;
-            min-height: 88px;
-            padding: 16px 20px;
+            min-height: 74px;
+            padding: 14px 18px;
             border-radius: 8px;
             background: #fff;
             color: var(--text-main);
@@ -403,7 +404,7 @@
             align-items: center;
             justify-content: flex-end;
             gap: 12px;
-            min-width: 220px;
+            min-width: 320px;
             color: var(--text-main);
             text-align: right;
         }
@@ -422,6 +423,41 @@
             font-weight: 800;
         }
 
+        .dashboard-command-meta {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .command-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            min-height: 28px;
+            padding: 4px 9px;
+            border: 1px solid var(--border-soft);
+            border-radius: 999px;
+            color: #475569;
+            background: #f8fafc;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .command-chip.open {
+            color: #15803d;
+            background: #dcfce7;
+            border-color: #bbf7d0;
+        }
+
+        .command-chip.closed {
+            color: #b91c1c;
+            background: #fee2e2;
+            border-color: #fecaca;
+        }
+
         .welcome-icon {
             width: 42px;
             height: 42px;
@@ -437,9 +473,9 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(6, minmax(150px, 1fr));
-            gap: 14px;
-            margin-top: 18px;
+            grid-template-columns: minmax(220px, 1.25fr) repeat(5, minmax(132px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
         }
 
         .stat-card,
@@ -453,16 +489,37 @@
         .stat-card {
             display: flex;
             align-items: center;
-            gap: 12px;
-            min-height: 96px;
-            padding: 16px;
+            gap: 10px;
+            min-height: 76px;
+            padding: 12px;
             min-width: 0;
+            color: inherit;
+            transition: var(--transition);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-1px);
+            border-color: rgba(124, 58, 237, 0.28);
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+        }
+
+        .stat-card.primary {
+            min-height: 92px;
+            padding: 14px;
+            background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%);
+        }
+
+        .stat-card.primary .stat-icon {
+            width: 46px;
+            height: 46px;
+            min-width: 46px;
+            font-size: 18px;
         }
 
         .stat-icon {
-            width: 42px;
-            height: 42px;
-            min-width: 42px;
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -488,7 +545,7 @@
         }
 
         .stat-icon.expiry {
-            background: #ec4899;
+            background: #ef4444;
         }
 
         .stat-icon.out {
@@ -511,16 +568,29 @@
             display: block;
             margin-top: 6px;
             color: var(--text-main);
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 800;
             overflow-wrap: anywhere;
+        }
+
+        .stat-card.primary .stat-content strong {
+            font-size: 26px;
+        }
+
+        .stat-content small {
+            display: block;
+            margin-top: 4px;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
         }
 
         .dashboard-grid {
             display: grid;
             grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
-            gap: 18px;
-            margin-top: 18px;
+            gap: 16px;
+            margin-top: 16px;
             align-items: stretch;
         }
 
@@ -537,12 +607,12 @@
         }
 
         .panel-header {
-            min-height: 58px;
+            min-height: 52px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 14px;
-            padding: 0 20px;
+            padding: 0 16px;
             border-bottom: 1px solid var(--border-soft);
         }
 
@@ -554,21 +624,21 @@
         }
 
         .panel-body {
-            padding: 18px 20px 20px;
+            padding: 14px 16px 16px;
         }
 
         .quick-actions {
             display: grid;
             grid-template-columns: repeat(4, minmax(150px, 1fr));
-            gap: 12px;
+            gap: 10px;
         }
 
         .quick-action {
-            min-height: 72px;
+            min-height: 54px;
             display: flex;
             align-items: center;
-            gap: 13px;
-            padding: 16px;
+            gap: 11px;
+            padding: 10px 11px;
             border: 1px solid var(--border-soft);
             border-radius: 8px;
             color: var(--text-main);
@@ -585,9 +655,9 @@
         }
 
         .quick-action i {
-            width: 36px;
-            height: 36px;
-            min-width: 36px;
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -604,9 +674,14 @@
         }
 
         .chart-wrap {
-            min-height: 260px;
+            min-height: 180px;
             display: grid;
             align-items: end;
+        }
+
+        .chart-wrap.is-empty {
+            min-height: 92px;
+            align-items: center;
         }
 
         .sales-chart {
@@ -646,16 +721,17 @@
 
         .po-summary {
             display: grid;
-            gap: 10px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
         }
 
         .po-summary-item {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 12px;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 9px;
             align-items: center;
-            min-height: 42px;
-            padding: 10px 12px;
+            min-height: 48px;
+            padding: 9px 10px;
             border: 1px solid var(--border-soft);
             border-radius: 8px;
             color: var(--text-main);
@@ -672,6 +748,20 @@
             overflow-wrap: anywhere;
         }
 
+        .po-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
+
+        .po-summary-item.pending .po-dot { background: #f59e0b; }
+        .po-summary-item.transit .po-dot { background: #06b6d4; }
+        .po-summary-item.arrived .po-dot { background: #8b5cf6; }
+        .po-summary-item.delivered .po-dot { background: #22c55e; }
+        .po-summary-item.returned .po-dot { background: #ef4444; }
+        .po-summary-item.cancelled .po-dot { background: #64748b; }
+
         .po-count {
             min-width: 30px;
             min-height: 28px;
@@ -684,14 +774,28 @@
         }
 
         .health-list,
-        .activity-feed {
+        .activity-feed,
+        .alerts-list,
+        .ranked-products {
             display: grid;
             gap: 12px;
         }
 
+        .health-list {
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
         .health-group {
             display: grid;
-            gap: 8px;
+            grid-template-columns: minmax(115px, .7fr) 42px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 10px;
+            min-height: 54px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            background: #fff;
         }
 
         .health-group h3 {
@@ -702,15 +806,93 @@
             text-transform: uppercase;
         }
 
+        .health-count {
+            color: var(--text-main);
+            font-size: 22px;
+            font-weight: 900;
+            line-height: 1;
+            text-align: center;
+        }
+
         .health-item,
-        .activity-item {
+        .activity-item,
+        .alert-item,
+        .ranked-product {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 12px;
             align-items: center;
-            padding: 11px 12px;
+            padding: 9px 10px;
             border: 1px solid var(--border-soft);
             border-radius: 8px;
+        }
+
+        .alert-item {
+            grid-template-columns: 34px minmax(0, 1fr) auto;
+            min-height: 46px;
+        }
+
+        .alert-icon,
+        .activity-icon {
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+        }
+
+        .alert-icon {
+            color: #fff;
+            background: var(--purple);
+        }
+
+        .alert-item.critical .alert-icon { background: #ef4444; }
+        .alert-item.warning .alert-icon { background: #f59e0b; }
+        .alert-item.info .alert-icon { background: #3b82f6; }
+        .alert-item.success .alert-icon { background: #22c55e; }
+
+        .alert-action,
+        .panel-link {
+            color: var(--purple);
+            font-size: 12px;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .activity-item {
+            grid-template-columns: 4px 34px minmax(0, 1fr) auto;
+            border-left: 0;
+        }
+
+        .activity-stripe {
+            width: 4px;
+            align-self: stretch;
+            border-radius: 999px;
+            background: var(--purple);
+        }
+
+        .activity-icon {
+            color: var(--purple);
+            background: var(--purple-soft);
+        }
+
+        .ranked-product {
+            grid-template-columns: 42px minmax(0, 1fr) auto;
+        }
+
+        .ranked-product strong {
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 850;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+
+        .rank-number {
+            color: var(--purple);
+            font-size: 16px;
+            font-weight: 900;
         }
 
         .item-title {
@@ -731,7 +913,7 @@
 
         .empty-state {
             margin: 0;
-            padding: 22px;
+            padding: 16px;
             color: #7b8494;
             font-size: 13px;
             font-weight: 700;
@@ -739,6 +921,10 @@
             border: 1px dashed var(--border-soft);
             border-radius: 8px;
             background: #fbfcff;
+        }
+
+        body.dark-mode .health-group {
+            background: #182131;
         }
 
         .table {
@@ -1087,6 +1273,187 @@
             min-width: 84px;
         }
 
+        .admin-settings-layout {
+            display: grid;
+            gap: 18px;
+        }
+
+        .admin-settings-intro {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 18px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .admin-settings-intro h2 {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 22px;
+            font-weight: 850;
+        }
+
+        .admin-settings-intro p {
+            max-width: 680px;
+            margin: 6px 0 0;
+            color: #7b8494;
+            font-size: 13px;
+            font-weight: 650;
+            line-height: 1.55;
+        }
+
+        .admin-settings-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .admin-setting-card {
+            display: grid;
+            gap: 14px;
+            align-content: start;
+            padding: 18px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        body.dark-mode .admin-setting-card {
+            background: #182131;
+        }
+
+        .admin-setting-card.is-wide {
+            grid-column: 1 / -1;
+        }
+
+        .admin-setting-card header {
+            display: grid;
+            gap: 4px;
+        }
+
+        .admin-setting-card h3 {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 15px;
+            font-weight: 850;
+        }
+
+        .admin-setting-card p {
+            margin: 0;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 650;
+            line-height: 1.45;
+        }
+
+        .admin-setting-list {
+            display: grid;
+            gap: 4px;
+        }
+
+        .admin-setting-item {
+            min-height: 48px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 0;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        .admin-setting-label {
+            min-width: 0;
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 780;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+        }
+
+        .admin-setting-value {
+            max-width: min(280px, 48vw);
+            color: #4b5563;
+            font-size: 13px;
+            font-weight: 750;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+
+        body.dark-mode .admin-setting-value {
+            color: #cbd5e1;
+        }
+
+        .admin-setting-control {
+            width: min(220px, 48vw);
+            min-height: 36px;
+            padding: 6px 10px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            color: var(--text-main);
+            background: #fff;
+            font-size: 13px;
+            font-weight: 750;
+            text-align: right;
+        }
+
+        body.dark-mode .admin-setting-control {
+            background: #111827;
+        }
+
+        .admin-switch {
+            position: relative;
+            width: 56px;
+            height: 30px;
+            flex: 0 0 56px;
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .admin-switch input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .admin-switch-track {
+            width: 56px;
+            height: 30px;
+            display: inline-block;
+            border-radius: 999px;
+            background: #374151;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+            transition: background .22s ease, box-shadow .22s ease;
+        }
+
+        .admin-switch-track::after {
+            content: "";
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 2px 7px rgba(15,23,42,.22);
+            transition: transform .22s ease;
+        }
+
+        .admin-switch input:checked + .admin-switch-track {
+            background: var(--purple);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), 0 8px 18px rgba(124,58,237,.22);
+        }
+
+        .admin-switch input:checked + .admin-switch-track::after {
+            transform: translateX(26px);
+        }
+
+        .admin-switch input:focus-visible + .admin-switch-track {
+            outline: 3px solid rgba(124,58,237,.24);
+            outline-offset: 3px;
+        }
+
         .btn-purple {
             --bs-btn-color: #fff;
             --bs-btn-bg: var(--purple);
@@ -1126,7 +1493,9 @@
             .stats-grid,
             .dashboard-grid,
             .dashboard-grid.equal,
+            .health-list,
             .settings-shell,
+            .admin-settings-grid,
             .tenant-settings-grid,
             .user-context-grid {
                 grid-template-columns: 1fr;
@@ -1134,6 +1503,11 @@
 
             .tenant-settings-tabs {
                 overflow-x: auto;
+            }
+
+            .admin-settings-intro {
+                align-items: stretch;
+                flex-direction: column;
             }
         }
 
@@ -1165,8 +1539,40 @@
             }
 
             .stats-grid,
+            .po-summary,
             .quick-actions {
                 grid-template-columns: 1fr;
+            }
+
+            .alert-item,
+            .activity-item,
+            .ranked-product {
+                grid-template-columns: 1fr;
+            }
+
+            .dashboard-command-meta {
+                justify-content: flex-start;
+            }
+
+            .health-group {
+                grid-template-columns: 1fr;
+                align-items: start;
+            }
+
+            .health-count {
+                text-align: left;
+            }
+
+            .admin-setting-item {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .admin-setting-value,
+            .admin-setting-control {
+                width: 100%;
+                max-width: 100%;
+                text-align: left;
             }
         }
 
@@ -1258,13 +1664,19 @@
                 <div id="view-dashboard">
                     <div class="welcome-band">
                         <div>
-                            <h1 id="dashboardWelcomeName">Welcome back, Dr. ADMIN</h1>
-                            <p>Here's today's pharmacy operation overview.</p>
+                            <h1 id="dashboardWelcomeName">Good day, Dr. ADMIN</h1>
+                            <p>Pharmacy management overview</p>
                         </div>
                         <div class="dashboard-clock">
                             <div>
                                 <span id="dashboardTodayDate">Today</span>
                                 <strong id="dashboardCurrentTime">--:--</strong>
+                                <div class="dashboard-command-meta">
+                                    <span class="command-chip" id="dashboardStoreStatus">Store status</span>
+                                    <span class="command-chip" id="dashboardBusinessHours">Hours not configured</span>
+                                    <span class="command-chip" id="dashboardNextHolidayChip">Next Holiday: Not configured</span>
+                                    <span class="command-chip" id="dashboardPendingPoChip">Pending POs: --</span>
+                                </div>
                             </div>
                             <div class="welcome-icon">
                                 <i class="fa-solid fa-staff-snake"></i>
@@ -1273,48 +1685,49 @@
                     </div>
 
                     <div class="stats-grid" id="dashboardKpis">
-                        <div class="stat-card">
+                        <a class="stat-card primary" href="pos.html">
                             <div class="stat-icon sales"><i class="fa-solid fa-peso-sign"></i></div>
                             <div class="stat-content">
-                                <span>Today's Sales</span>
+                                <span>Today's Sales / Revenue</span>
                                 <strong id="kpiTodaySales">--</strong>
+                                <small>Today's completed sales</small>
                             </div>
-                        </div>
-                        <div class="stat-card">
+                        </a>
+                        <a class="stat-card" href="pos.html">
                             <div class="stat-icon orders"><i class="fa-solid fa-receipt"></i></div>
                             <div class="stat-content">
                                 <span>Transactions Today</span>
                                 <strong id="kpiTransactionsToday">--</strong>
                             </div>
-                        </div>
-                        <div class="stat-card">
+                        </a>
+                        <a class="stat-card" href="purchase_orders.html?status=Pending">
                             <div class="stat-icon products"><i class="fa-solid fa-truck-ramp-box"></i></div>
                             <div class="stat-content">
                                 <span>Pending POs</span>
                                 <strong id="kpiPendingPo">--</strong>
                             </div>
-                        </div>
-                        <div class="stat-card">
+                        </a>
+                        <a class="stat-card" href="inventory.html?stock=low">
                             <div class="stat-icon alerts"><i class="fa-solid fa-triangle-exclamation"></i></div>
                             <div class="stat-content">
                                 <span>Low Stock</span>
                                 <strong id="kpiLowStock">--</strong>
                             </div>
-                        </div>
-                        <div class="stat-card">
+                        </a>
+                        <a class="stat-card" href="expiry_monitoring.html">
                             <div class="stat-icon expiry"><i class="fa-solid fa-calendar-xmark"></i></div>
                             <div class="stat-content">
                                 <span>Expiring Soon</span>
                                 <strong id="kpiExpiringSoon">--</strong>
                             </div>
-                        </div>
-                        <div class="stat-card">
+                        </a>
+                        <a class="stat-card" href="inventory.html?stock=out">
                             <div class="stat-icon out"><i class="fa-solid fa-box-open"></i></div>
                             <div class="stat-content">
                                 <span>Out of Stock</span>
                                 <strong id="kpiOutOfStock">--</strong>
                             </div>
-                        </div>
+                        </a>
                     </div>
 
                     <div class="dashboard-grid">
@@ -1331,6 +1744,19 @@
 
                         <div class="content-panel">
                             <div class="panel-header">
+                                <h2>Today's Alerts</h2>
+                            </div>
+                            <div class="panel-body">
+                                <div class="alerts-list" id="todayAlertsList">
+                                    <p class="empty-state">Loading alerts...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid equal">
+                        <div class="content-panel">
+                            <div class="panel-header">
                                 <h2>Purchase Order Summary</h2>
                             </div>
                             <div class="panel-body">
@@ -1339,9 +1765,7 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="dashboard-grid equal">
                         <div class="content-panel">
                             <div class="panel-header">
                                 <h2>Inventory Health</h2>
@@ -1352,33 +1776,24 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
 
+                    <div class="dashboard-grid equal">
                         <div class="content-panel">
                             <div class="panel-header">
                                 <h2>Top Selling Products</h2>
                             </div>
-                            <div class="table-responsive">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Product Name</th>
-                                            <th>Brand</th>
-                                            <th>Qty Sold</th>
-                                            <th>Total Sales</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="topSellingProductsBody">
-                                        <tr><td colspan="4" class="text-center text-muted py-4">Loading top products...</td></tr>
-                                    </tbody>
-                                </table>
+                            <div class="panel-body">
+                                <div class="ranked-products" id="topSellingProductsList">
+                                    <p class="empty-state">Loading top products...</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="dashboard-grid single">
                         <div class="content-panel">
                             <div class="panel-header">
                                 <h2>Recent Activities</h2>
+                                <a class="panel-link" href="purchase_orders.html">View all activities</a>
                             </div>
                             <div class="panel-body">
                                 <div class="activity-feed" id="recentActivitiesFeed">
@@ -1395,9 +1810,9 @@
                             </div>
                             <div class="panel-body">
                                 <div class="quick-actions">
-                                    <a href="pos.html" class="quick-action">
-                                        <i class="fa-solid fa-cart-shopping"></i>
-                                        <span>Open POS</span>
+                                    <a href="purchase_orders.html?tab=active" class="quick-action">
+                                        <i class="fa-solid fa-folder-open"></i>
+                                        <span>Open POs</span>
                                     </a>
                                     <a href="products.html" class="quick-action">
                                         <i class="fa-solid fa-boxes-stacked"></i>
@@ -1411,7 +1826,7 @@
                                         <i class="fa-solid fa-file-circle-plus"></i>
                                         <span>Create Purchase Order</span>
                                     </a>
-                                    <a href="arrived_orders.html" class="quick-action">
+                                    <a href="purchase_orders.html?tab=arrived" class="quick-action">
                                         <i class="fa-solid fa-truck-ramp-box"></i>
                                         <span>Receive Delivery</span>
                                     </a>
@@ -1436,256 +1851,7 @@
 
             <div id="view-inventory" class="d-none"></div>
             <div id="view-suppliers" class="d-none"></div>
-            <div id="view-settings" class="content-view d-none">
-                <div class="settings-shell">
-                    <aside class="content-panel settings-profile-card">
-                        <div class="profile-avatar" id="tenantSettingsInitials">DR</div>
-                        <h1 id="tenantSettingsName">Dr. R Pharmacy</h1>
-                        <p>Tenant workspace</p>
-                        <div class="settings-profile-meta">
-                            <span>Tenant table</span>
-                            <strong>saas.tenant</strong>
-                            <span>Settings table</span>
-                            <strong>core.entity_config</strong>
-                            <span>Config scope</span>
-                            <strong>entity_type="tenant_settings"</strong>
-                        </div>
-                    </aside>
-                    <section class="content-panel">
-                        <div class="panel-header">
-                            <h2>Tenant Settings</h2>
-                        </div>
-                        <div class="panel-body">
-                            <div class="tenant-settings-tabs" role="tablist" aria-label="Tenant settings sections">
-                                <button class="tenant-settings-tab is-active" type="button" role="tab" aria-selected="true" data-settings-tab="overview">Overview</button>
-                                <button class="tenant-settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="activity">Activity</button>
-                                <button class="tenant-settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="settings">Settings</button>
-                            </div>
 
-                            <div class="tenant-settings-pane is-active" data-settings-pane="overview" role="tabpanel">
-                                <div class="settings-table-stack">
-                                    <section class="settings-table-section">
-                                        <div class="settings-table-title">
-                                            <h3>Tenant Attributes</h3>
-                                            <span>saas.tenant</span>
-                                        </div>
-                                        <div class="table-responsive">
-                                            <table class="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Attribute</th>
-                                                        <th>Value</th>
-                                                        <th>Source</th>
-                                                        <th>Action</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td>Workspace name</td>
-                                                        <td class="settings-value-cell" id="tenantOverviewName">Dr. R Pharmacy</td>
-                                                        <td><code>tenant.name</code></td>
-                                                        <td><button class="btn btn-sm btn-purple settings-table-action" type="button" id="editTenantIdentityBtn">Edit</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Tenant slug</td>
-                                                        <td class="settings-value-cell" id="tenantOverviewSlug">dr-r-pharmacy</td>
-                                                        <td><code>tenant.slug</code></td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Billing email</td>
-                                                        <td class="settings-value-cell" id="tenantOverviewBillingEmail">Not configured</td>
-                                                        <td><code>tenant.billing_email</code></td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Website</td>
-                                                        <td class="settings-value-cell" id="tenantOverviewWebsite">Not configured</td>
-                                                        <td><code>tenant.website_url</code></td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Logo URL</td>
-                                                        <td class="settings-value-cell" id="tenantOverviewLogo">Not configured</td>
-                                                        <td><code>tenant.logo_url</code></td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </section>
-
-                                    <section class="settings-table-section">
-                                        <div class="settings-table-title">
-                                            <h3>Workspace Scope</h3>
-                                            <span>core.entity_tenant</span>
-                                        </div>
-                                        <div class="table-responsive">
-                                            <table class="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Scope</th>
-                                                        <th>Value</th>
-                                                        <th>Status</th>
-                                                        <th>Notes</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td>Entity owner type</td>
-                                                        <td><code>tenant_settings</code></td>
-                                                        <td><span class="status-pill success">Active</span></td>
-                                                        <td>Settings resolve through tenant-owned configuration rows.</td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Domain binding</td>
-                                                        <td><code>current tenant</code></td>
-                                                        <td><span class="status-pill success">Scoped</span></td>
-                                                        <td>Shared records attach to tenant context before feature rules.</td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </section>
-                                </div>
-                            </div>
-
-                            <div class="tenant-settings-pane" data-settings-pane="activity" role="tabpanel">
-                                <div class="settings-table-stack">
-                                    <section class="settings-table-section">
-                                        <div class="settings-table-title">
-                                            <h3>Recent Configuration Activity</h3>
-                                            <span>tenant audit view</span>
-                                        </div>
-                                        <div class="table-responsive">
-                                            <table class="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Event</th>
-                                                        <th>Actor</th>
-                                                        <th>Target</th>
-                                                        <th>Status</th>
-                                                        <th>When</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td>Tenant identity reviewed</td>
-                                                        <td id="tenantActivityActor">Dr. ADMIN</td>
-                                                        <td><code>saas.tenant</code></td>
-                                                        <td><span class="status-pill success">Current</span></td>
-                                                        <td>Current session</td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Configuration keys available</td>
-                                                        <td>System</td>
-                                                        <td><code>core.entity_config</code></td>
-                                                        <td><span class="status-pill warning">Review</span></td>
-                                                        <td>Pending setup</td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Usage monitoring placeholder</td>
-                                                        <td>System</td>
-                                                        <td><code>saas.usage_summary</code></td>
-                                                        <td><span class="status-pill warning">Draft</span></td>
-                                                        <td>Pending integration</td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </section>
-                                </div>
-                            </div>
-
-                            <div class="tenant-settings-pane" data-settings-pane="settings" role="tabpanel">
-                                <div class="settings-table-stack">
-                                    <section class="settings-table-section">
-                                        <div class="settings-table-title">
-                                            <h3>Configuration Keys</h3>
-                                            <span>core.entity_config</span>
-                                        </div>
-                                        <div class="table-responsive">
-                                            <table class="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Group</th>
-                                                        <th>Key</th>
-                                                        <th>Value</th>
-                                                        <th>Type</th>
-                                                        <th>Action</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td>workspace</td>
-                                                        <td>timezone</td>
-                                                        <td class="settings-value-cell">America/Los_Angeles</td>
-                                                        <td>string</td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Manage</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>billing</td>
-                                                        <td>invoice_mode</td>
-                                                        <td class="settings-value-cell">manual</td>
-                                                        <td>string</td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Manage</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>features</td>
-                                                        <td>expiry_monitoring</td>
-                                                        <td class="settings-value-cell">enabled</td>
-                                                        <td>boolean</td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Manage</button></td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </section>
-
-                                    <section class="settings-table-section">
-                                        <div class="settings-table-title">
-                                            <h3>Tenant Controls</h3>
-                                            <span>related setup views</span>
-                                        </div>
-                                        <div class="table-responsive">
-                                            <table class="table">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Control</th>
-                                                        <th>Description</th>
-                                                        <th>Table</th>
-                                                        <th>Action</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td>Domains and invitations</td>
-                                                        <td>Custom domains and tenant join invites.</td>
-                                                        <td><code>integrations.custom_domain / core.invitation</code></td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Review</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Usage and limits</td>
-                                                        <td>Tenant-level usage counters and limits.</td>
-                                                        <td><code>saas.usage_summary</code></td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Monitor</button></td>
-                                                    </tr>
-                                                    <tr>
-                                                        <td>Feature access</td>
-                                                        <td>Scoped overrides before feature defaults.</td>
-                                                        <td><code>saas.feature_override</code></td>
-                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Configure</button></td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </section>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-            </div>
             <div id="view-user-settings" class="content-view d-none">
                 <div class="settings-shell">
                     <aside class="content-panel settings-profile-card">
@@ -1892,47 +2058,6 @@
         </section>
     </main>
 
-    <div class="modal fade" id="tenantIdentityModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold">Edit Tenant Identity</h5>
-                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <form id="tenantIdentityForm">
-                    <div class="modal-body">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantNameInput">Tenant Name</label>
-                                <input class="form-control" id="tenantNameInput" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantSlugInput">Tenant Slug</label>
-                                <input class="form-control" id="tenantSlugInput" pattern="[a-z0-9-]+" placeholder="dr-r-pharmacy">
-                                <div class="form-text">Lowercase letters, numbers, and hyphens only.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantBillingEmailInput">Billing Email</label>
-                                <input class="form-control" id="tenantBillingEmailInput" type="email" placeholder="billing@example.com">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantWebsiteInput">Website URL</label>
-                                <input class="form-control" id="tenantWebsiteInput" type="url" placeholder="https://example.com">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label" for="tenantLogoInput">Logo URL</label>
-                                <input class="form-control" id="tenantLogoInput" type="url" placeholder="https://example.com/logo.png">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                        <button class="btn btn-purple" type="submit">Save</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -1956,10 +2081,21 @@
         const savedTheme = localStorage.getItem("drpTheme") || "light";
 
         setTheme(savedTheme);
+        const adminDarkModeToggle = document.getElementById("adminDarkModeToggle");
+        if (adminDarkModeToggle) {
+            adminDarkModeToggle.checked = savedTheme === "dark";
+        }
 
         themeToggle.addEventListener("click", () => {
             const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
             setTheme(nextTheme);
+            if (adminDarkModeToggle) {
+                adminDarkModeToggle.checked = nextTheme === "dark";
+            }
+        });
+
+        adminDarkModeToggle?.addEventListener("change", () => {
+            setTheme(adminDarkModeToggle.checked ? "dark" : "light");
         });
 
         toastr.options = {
@@ -1969,178 +2105,22 @@
             timeOut: "2600"
         };
 
-        (function setupTenantIdentityEditor() {
-            const storageKey = 'drpTenantIdentityDraft';
-            const editButton = document.getElementById('editTenantIdentityBtn');
-            const form = document.getElementById('tenantIdentityForm');
-            const modalEl = document.getElementById('tenantIdentityModal');
-            const modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
-            const fields = {
-                name: document.getElementById('tenantNameInput'),
-                slug: document.getElementById('tenantSlugInput'),
-                billingEmail: document.getElementById('tenantBillingEmailInput'),
-                websiteUrl: document.getElementById('tenantWebsiteInput'),
-                logoUrl: document.getElementById('tenantLogoInput')
-            };
-
-            function getDraft() {
-                try {
-                    return JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
-                } catch (error) {
-                    return {};
-                }
-            }
-
-            function slugify(value) {
-                return String(value || '')
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/^-+|-+$/g, '');
-            }
-
-            function getTenantDisplayName() {
-                return document.getElementById('tenantSettingsName')?.textContent?.trim() || 'Dr. R Pharmacy';
-            }
-
-            function initialsFromName(value) {
-                return String(value || '')
-                    .split(/\s+/)
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map(part => part.charAt(0).toUpperCase())
-                    .join('') || 'TN';
-            }
-
-            function setText(id, value) {
-                const target = document.getElementById(id);
-                if (target && value) target.textContent = value;
-            }
-
-            function displayValue(value) {
-                return value || 'Not configured';
-            }
-
-            window.applyTenantSettingsDraft = function applyTenantSettingsDraft() {
-                const draft = getDraft();
-                if (!draft.name) return;
-
-                setText('tenantSettingsName', draft.name);
-                setText('tenantSettingsInitials', initialsFromName(draft.name));
-                setText('tenantIdentitySummary', `Edit workspace name, slug, billing email, website, and logo for ${draft.name} from saas.tenant.`);
-                setText('tenantOverviewName', draft.name);
-                setText('tenantOverviewSlug', displayValue(draft.slug));
-                setText('tenantOverviewBillingEmail', displayValue(draft.billingEmail));
-                setText('tenantOverviewWebsite', displayValue(draft.websiteUrl));
-                setText('tenantOverviewLogo', displayValue(draft.logoUrl));
-                setText('userSettingsTenant', draft.name);
-                setText('settingsTenantName', draft.name);
-                setText('profileTenantName', draft.name);
-                setText('profileSummaryText', `Active dashboard account for ${draft.name}.`);
-                setText('billingTenantName', draft.name);
-                setText('billingSubscriptionTenant', draft.name);
-            };
-
-            function fillForm() {
-                const draft = getDraft();
-                const tenantName = draft.name || getTenantDisplayName();
-                fields.name.value = tenantName;
-                fields.slug.value = draft.slug || slugify(tenantName);
-                fields.billingEmail.value = draft.billingEmail || '';
-                fields.websiteUrl.value = draft.websiteUrl || '';
-                fields.logoUrl.value = draft.logoUrl || '';
-            }
-
-            editButton?.addEventListener('click', () => {
-                fillForm();
-                modal?.show();
-            });
-
-            fields.name?.addEventListener('input', () => {
-                if (!fields.slug.value.trim()) {
-                    fields.slug.value = slugify(fields.name.value);
-                }
-            });
-
-            form?.addEventListener('submit', (event) => {
-                event.preventDefault();
-
-                const name = fields.name.value.trim();
-                const slug = slugify(fields.slug.value || name);
-
-                if (!name) {
-                    fields.name.focus();
-                    return;
-                }
-
-                const draft = {
-                    name,
-                    slug,
-                    billingEmail: fields.billingEmail.value.trim(),
-                    websiteUrl: fields.websiteUrl.value.trim(),
-                    logoUrl: fields.logoUrl.value.trim()
-                };
-
-                localStorage.setItem(storageKey, JSON.stringify(draft));
-                window.applyTenantSettingsDraft();
-                modal?.hide();
-                toastr.success('Tenant identity updated in this dashboard view.');
-            });
-
-            window.applyTenantSettingsDraft();
-        })();
-
-        (function setupTenantSettingsTabs() {
-            const tabs = Array.from(document.querySelectorAll('[data-settings-tab]'));
-            const panes = Array.from(document.querySelectorAll('[data-settings-pane]'));
-
-            function activateTab(targetName) {
-                tabs.forEach(tab => {
-                    const isActive = tab.dataset.settingsTab === targetName;
-                    tab.classList.toggle('is-active', isActive);
-                    tab.setAttribute('aria-selected', String(isActive));
-                });
-
-                panes.forEach(pane => {
-                    pane.classList.toggle('is-active', pane.dataset.settingsPane === targetName);
-                });
-            }
-
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => activateTab(tab.dataset.settingsTab));
-            });
-
-            document.querySelectorAll('[data-settings-action="identity"]').forEach(button => {
-                button.addEventListener('click', () => {
-                    document.getElementById('editTenantIdentityBtn')?.click();
-                });
-            });
-
-            document.querySelectorAll('[data-settings-action="toast"]').forEach(button => {
-                button.addEventListener('click', () => {
-                    const action = button.textContent.trim() || 'Action';
-                    toastr.info(`${action} view is ready for backend wiring.`);
-                });
-            });
-        })();
 
         // Sidebar view routing: show/hide view containers and trigger data loaders
         (function setupSidebarRouting(){
-            const viewIds = ['view-dashboard','view-inventory','view-suppliers','view-settings','view-user-settings','view-billing'];
+            const viewIds = ['view-dashboard','view-inventory','view-suppliers','view-user-settings','view-billing'];
             const pageTitle = document.querySelector('.page-title-mini strong');
             const pageSubtitle = document.querySelector('.page-title-mini span');
             const viewLabels = {
                 dashboard: ['Dashboard', 'Pharmacy management overview'],
                 inventory: ['Inventory', 'Stock batches and availability'],
                 suppliers: ['Suppliers', 'Supplier records and contacts'],
-                settings: ['Tenant Settings', 'Tenant workspace configuration'],
                 'user-settings': ['User Settings', 'Dashboard user preferences and account actions'],
                 billing: ['Billing', 'Tenant billing and payment records']
             };
 
             const dashboardRouteMap = {
                 'dashboard': 'dashboard',
-                'dashboard/settings': 'settings',
                 'dashboard/billing': 'billing',
                 'dashboard/user/settings': 'user-settings',
                 'dashboard/inventory': 'inventory',
@@ -2263,12 +2243,82 @@
             const now = new Date();
             setText('dashboardTodayDate', dateFormatter.format(now));
             setText('dashboardCurrentTime', timeFormatter.format(now));
+            updateStoreStatusChip(now);
         }
 
         function updateDashboardWelcome(user) {
             const name = user?.full_name || user?.username || 'ADMIN';
             const displayName = /^dr\.?\s/i.test(name) ? name : `Dr. ${name}`;
-            setText('dashboardWelcomeName', `Welcome back, ${displayName}`);
+            const hour = new Date().getHours();
+            const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+            setText('dashboardWelcomeName', `${greeting}, ${displayName}`);
+        }
+
+        function readAdminSettings() {
+            try {
+                return JSON.parse(localStorage.getItem('drpAdminSettings') || '{}') || {};
+            } catch (error) {
+                return {};
+            }
+        }
+
+        function dateKey(date) {
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        }
+
+        function formatScheduleTime(value) {
+            if (!value) return '';
+            const [hourText, minuteText = '00'] = String(value).split(':');
+            const hour = Number(hourText);
+            const minute = Number(minuteText);
+            if (Number.isNaN(hour) || Number.isNaN(minute)) return '';
+            const period = hour >= 12 ? 'PM' : 'AM';
+            const hour12 = hour % 12 || 12;
+            return `${hour12}:${String(minute).padStart(2, '0')} ${period}`;
+        }
+
+        function todaySchedule(settings, now = new Date()) {
+            const exception = settings.businessExceptions?.[dateKey(now)];
+            if (exception) return exception;
+            const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(now);
+            return settings.businessSchedule?.[dayName] || {
+                open: true,
+                openTime: settings.businessHours?.open || '08:00',
+                closeTime: settings.businessHours?.close || '21:00'
+            };
+        }
+
+        function updateStoreStatusChip(now = new Date()) {
+            const settings = readAdminSettings();
+            const schedule = todaySchedule(settings, now);
+            const status = document.getElementById('dashboardStoreStatus');
+            const hours = document.getElementById('dashboardBusinessHours');
+            const nextHoliday = document.getElementById('dashboardNextHolidayChip');
+            const openTime = schedule.openTime || '08:00';
+            const closeTime = schedule.closeTime || '21:00';
+            const minutesNow = now.getHours() * 60 + now.getMinutes();
+            const [openHour, openMinute] = openTime.split(':').map(Number);
+            const [closeHour, closeMinute] = closeTime.split(':').map(Number);
+            const isConfiguredOpen = schedule.open !== false;
+            const isOpenNow = isConfiguredOpen
+                && minutesNow >= ((openHour || 0) * 60 + (openMinute || 0))
+                && minutesNow < ((closeHour || 0) * 60 + (closeMinute || 0));
+            if (status) {
+                status.textContent = isOpenNow ? 'Open' : 'Closed';
+                status.classList.toggle('open', isOpenNow);
+                status.classList.toggle('closed', !isOpenNow);
+            }
+            if (hours) {
+                hours.textContent = isConfiguredOpen
+                    ? `${formatScheduleTime(openTime)} - ${formatScheduleTime(closeTime)}`
+                    : 'Closed today';
+            }
+            if (nextHoliday) {
+                const exception = settings.nextBusinessException;
+                nextHoliday.textContent = exception?.date
+                    ? `Next Holiday: ${new Date(`${exception.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`
+                    : 'Next Holiday: Not configured';
+            }
         }
 
         function renderKpis(data) {
@@ -2278,6 +2328,7 @@
             setText('kpiLowStock', wholeNumber.format(Number(data.low_stock || 0)));
             setText('kpiExpiringSoon', wholeNumber.format(Number(data.expiring_soon || 0)));
             setText('kpiOutOfStock', wholeNumber.format(Number(data.out_of_stock || 0)));
+            setText('dashboardPendingPoChip', `Pending POs: ${wholeNumber.format(Number(data.pending_po || 0))}`);
         }
 
         function renderSalesTrend(rows = []) {
@@ -2285,10 +2336,12 @@
             if (!target) return;
 
             if (!rows.length) {
-                target.innerHTML = '<p class="empty-state">No sales data yet.</p>';
+                target.classList.add('is-empty');
+                target.innerHTML = '<p class="empty-state">No completed sales yet. Sales trend will appear after cashier transactions.</p>';
                 return;
             }
 
+            target.classList.remove('is-empty');
             const maxTotal = Math.max(...rows.map(row => Number(row.total_sales || 0)), 1);
             target.innerHTML = `
                 <div class="sales-chart">
@@ -2319,11 +2372,15 @@
                 return;
             }
 
-            target.innerHTML = rows.map(row => {
+            const statusOrder = ['Pending', 'In Transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled'];
+            const rowMap = new Map(rows.map(row => [String(row.status || '').toLowerCase(), row]));
+            const orderedRows = statusOrder.map(status => rowMap.get(status.toLowerCase()) || { status, count: 0 });
+            target.innerHTML = orderedRows.map(row => {
                 const status = row.status || 'Pending';
                 const href = `purchase_orders.html?status=${encodeURIComponent(status)}`;
                 return `
-                    <a class="po-summary-item" href="${href}">
+                    <a class="po-summary-item ${poStatusClass(status)}" href="${href}">
+                        <span class="po-dot" aria-hidden="true"></span>
                         <span>${escapeHtml(status)}</span>
                         <strong class="po-count">${wholeNumber.format(Number(row.count || 0))}</strong>
                     </a>
@@ -2331,50 +2388,64 @@
             }).join('');
         }
 
+        function poStatusClass(status) {
+            const clean = String(status || '').toLowerCase();
+            if (clean.includes('pending')) return 'pending';
+            if (clean.includes('transit')) return 'transit';
+            if (clean.includes('arrived')) return 'arrived';
+            if (clean.includes('return') || clean.includes('damage')) return 'returned';
+            if (clean.includes('cancel')) return 'cancelled';
+            if (clean.includes('deliver')) return 'delivered';
+            return '';
+        }
+
         function renderInventoryHealth(groups = {}) {
             const target = document.getElementById('inventoryHealthList');
             if (!target) return;
 
             const sections = [
-                ['Low Stock Products', groups.low_stock || [], item => `${wholeNumber.format(Number(item.current_stock || 0))} in stock`],
-                ['Expiring Soon Products', groups.expiring_soon || [], item => `${item.days_until_expiry ?? 0} day(s) left`],
-                ['Out of Stock Products', groups.out_of_stock || [], () => '0 in stock']
+                ['Low Stock', groups.low_stock || [], item => `${item.product_name || 'Unnamed product'}`, 'inventory.html?stock=low', 'All good'],
+                ['Expiring Soon', groups.expiring_soon || [], item => `${item.product_name || 'Unnamed product'}`, 'expiry_monitoring.html', 'No items expiring soon'],
+                ['Out of Stock', groups.out_of_stock || [], item => `${item.product_name || 'Unnamed product'}`, 'inventory.html?stock=out', 'No items found']
             ];
 
-            const html = sections.map(([title, items, meta]) => `
+            const html = sections.map(([title, items, meta, href, emptyText]) => {
+                const visible = items.slice(0, 2);
+                const more = Math.max(0, items.length - visible.length);
+                return `
                 <div class="health-group">
                     <h3>${escapeHtml(title)}</h3>
-                    ${items.length ? items.map(item => `
-                        <div class="health-item">
-                            <div>
-                                <p class="item-title">${escapeHtml(item.product_name || 'Unnamed product')}</p>
-                                <p class="item-meta">${escapeHtml(item.brand_name || 'No brand')} - ${escapeHtml(meta(item))}</p>
-                            </div>
-                            <span class="status-pill warning">${escapeHtml(item.status || title)}</span>
-                        </div>
-                    `).join('') : '<p class="empty-state">No items found.</p>'}
+                    <strong class="health-count">${wholeNumber.format(items.length)}</strong>
+                    <div>
+                        ${visible.length ? visible.map(item => `<p class="item-title">${escapeHtml(meta(item))}</p>`).join('') : `<p class="item-meta">${escapeHtml(emptyText)}</p>`}
+                        ${more ? `<p class="item-meta">+ ${wholeNumber.format(more)} more</p>` : ''}
+                    </div>
+                    <a class="panel-link" href="${href}">View All</a>
                 </div>
-            `).join('');
+            `;
+            }).join('');
 
             target.innerHTML = html;
         }
 
         function renderTopSelling(rows = []) {
-            const target = document.getElementById('topSellingProductsBody');
+            const target = document.getElementById('topSellingProductsList');
             if (!target) return;
 
             if (!rows.length) {
-                target.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No sales data yet.</td></tr>';
+                target.innerHTML = '<p class="empty-state">No sales data yet.</p>';
                 return;
             }
 
-            target.innerHTML = rows.map(row => `
-                <tr>
-                    <td>${escapeHtml(row.product_name || 'Unnamed product')}</td>
-                    <td>${escapeHtml(row.brand_name || 'No brand')}</td>
-                    <td>${wholeNumber.format(Number(row.quantity_sold || 0))}</td>
-                    <td>${peso.format(Number(row.total_sales || 0))}</td>
-                </tr>
+            target.innerHTML = rows.slice(0, 5).map((row, index) => `
+                <div class="ranked-product">
+                    <span class="rank-number">#${index + 1}</span>
+                    <div>
+                        <p class="item-title">${escapeHtml(row.product_name || 'Unnamed product')}</p>
+                        <p class="item-meta">${escapeHtml(row.brand_name || 'No brand')} - ${wholeNumber.format(Number(row.quantity_sold || 0))} units sold</p>
+                    </div>
+                    <strong>${peso.format(Number(row.total_sales || 0))}</strong>
+                </div>
             `).join('');
         }
 
@@ -2389,6 +2460,52 @@
             });
         }
 
+        function renderTodayAlerts(data = {}) {
+            const target = document.getElementById('todayAlertsList');
+            if (!target) return;
+            const poRows = Array.isArray(data.po_summary) ? data.po_summary : [];
+            const countByStatus = (needle) => poRows
+                .filter(row => String(row.status || '').toLowerCase().includes(needle))
+                .reduce((sum, row) => sum + Number(row.count || 0), 0);
+            const alerts = [];
+            const outOfStock = Number(data.out_of_stock || 0);
+            const lowStock = Number(data.low_stock || 0);
+            const expiring = Number(data.expiring_soon || 0);
+            const pending = Number(data.pending_po || 0);
+            const arrived = countByStatus('arrived');
+            const returned = poRows
+                .filter(row => /return|damage/i.test(row.status || ''))
+                .reduce((sum, row) => sum + Number(row.count || 0), 0);
+            if (outOfStock) alerts.push(['critical', 'fa-box-open', `${wholeNumber.format(outOfStock)} products are out of stock`, 'View', 'inventory.html?stock=out']);
+            if (lowStock) alerts.push(['warning', 'fa-triangle-exclamation', `${wholeNumber.format(lowStock)} products are low stock`, 'View', 'inventory.html?stock=low']);
+            if (expiring) alerts.push(['critical', 'fa-calendar-xmark', `${wholeNumber.format(expiring)} products expiring soon`, 'Review', 'expiry_monitoring.html']);
+            if (pending) alerts.push(['warning', 'fa-file-circle-exclamation', `${wholeNumber.format(pending)} purchase orders are pending`, 'Open', 'purchase_orders.html?status=Pending']);
+            if (arrived) alerts.push(['info', 'fa-truck-ramp-box', `${wholeNumber.format(arrived)} arrived purchase orders need receiving`, 'Receive', 'purchase_orders.html?tab=arrived']);
+            if (returned) alerts.push(['critical', 'fa-rotate-left', `${wholeNumber.format(returned)} delivered orders have return/damage`, 'Review', 'return_damage.html']);
+
+            const settings = readAdminSettings();
+            if (settings.nextBusinessException?.date) {
+                alerts.push(['info', 'fa-calendar-day', `Upcoming special schedule on ${new Date(`${settings.nextBusinessException.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`, 'View', 'admin_settings.html']);
+            }
+
+            if (!alerts.length) {
+                target.innerHTML = '<p class="empty-state">No urgent alerts today.</p>';
+                return;
+            }
+
+            target.innerHTML = alerts.slice(0, 7).map(([level, icon, message, action, href]) => `
+                <div class="alert-item ${level}">
+                    <span class="alert-icon"><i class="fa-solid ${icon}"></i></span>
+                    <p class="item-title">${escapeHtml(message)}</p>
+                    <a class="alert-action" href="${href}">${escapeHtml(action)}</a>
+                </div>
+            `).join('');
+        }
+
+        function activityIcon(type = '') {
+            return /inventory/i.test(type) ? 'fa-boxes-stacked' : /purchase/i.test(type) ? 'fa-file-invoice-dollar' : 'fa-clock-rotate-left';
+        }
+
         function renderRecentActivities(rows = []) {
             const target = document.getElementById('recentActivitiesFeed');
             if (!target) return;
@@ -2398,8 +2515,10 @@
                 return;
             }
 
-            target.innerHTML = rows.map(row => `
+            target.innerHTML = rows.slice(0, 5).map(row => `
                 <div class="activity-item">
+                    <span class="activity-stripe"></span>
+                    <span class="activity-icon"><i class="fa-solid ${activityIcon(row.type)}"></i></span>
                     <div>
                         <p class="item-title">${escapeHtml(row.message || row.type || 'Activity')}</p>
                         <p class="item-meta">${escapeHtml(row.type || 'System')} - ${escapeHtml(relativeWhen(row.created_at))}</p>
@@ -2421,17 +2540,18 @@
 
                 renderKpis(data);
                 renderSalesTrend(data.sales_trend || []);
+                renderTodayAlerts(data);
                 renderPoSummary(data.po_summary || []);
                 renderInventoryHealth(data.inventory_health || {});
                 renderTopSelling(data.top_selling_products || []);
                 renderRecentActivities(data.recent_activities || []);
             } catch (error) {
                 console.error(error);
-                document.querySelectorAll('#salesTrendChart, #poSummaryList, #inventoryHealthList, #recentActivitiesFeed')
+                document.querySelectorAll('#salesTrendChart, #todayAlertsList, #poSummaryList, #inventoryHealthList, #recentActivitiesFeed')
                     .forEach(el => { el.innerHTML = '<p class="empty-state">Unable to load dashboard data.</p>'; });
-                const topSelling = document.getElementById('topSellingProductsBody');
+                const topSelling = document.getElementById('topSellingProductsList');
                 if (topSelling) {
-                    topSelling.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Unable to load top products.</td></tr>';
+                    topSelling.innerHTML = '<p class="empty-state">Unable to load top products.</p>';
                 }
             }
         }

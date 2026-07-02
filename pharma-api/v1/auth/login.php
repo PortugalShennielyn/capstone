@@ -16,6 +16,16 @@ function sendInvalidLoginResponse(PDO $pdo, string $username = '', ?string $user
     exit();
 }
 
+function sendLockoutResponse(): void
+{
+    http_response_code(429);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Too many failed login attempts. Please try again in 5 minutes.'
+    ]);
+    exit();
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode([
@@ -39,6 +49,10 @@ if ($username === '' || $password === '') {
 }
 
 try {
+    if (loginLockoutSecondsRemaining($pdo, $username) > 0) {
+        sendLockoutResponse();
+    }
+
     $statement = $pdo->prepare(
         "SELECT user_id, username, email, password, role, status, full_name, first_name, last_name
          FROM users
@@ -87,13 +101,15 @@ try {
     $_SESSION['tenant_name'] = $accountContext['tenant_name'];
     $_SESSION['tenant_slug'] = $accountContext['tenant_slug'];
     $_SESSION['primary_domain'] = $accountContext['primary_domain'];
-    createAuthSession($pdo, $user['user_id'], $accountContext['account_id'], $accountContext['tenant_id']);
+    $tabToken = createAuthSession($pdo, $user['user_id'], $accountContext['account_id'], $accountContext['tenant_id']);
     recordLoginAttempt($pdo, $username, $user['user_id'], true, null);
+    resetLoginAttempts($pdo, $username);
 
     echo json_encode([
         'status' => 'success',
         'message' => 'Login successful.',
         'redirect' => $redirects[$user['role']],
+        'tab_token' => $tabToken,
         'session' => currentSessionPayload()
     ]);
 } catch (PDOException $e) {

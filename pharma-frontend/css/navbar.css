@@ -10,6 +10,106 @@
     --transition: all .3s ease;
 }
 
+table {
+    width: 100%;
+    table-layout: auto !important;
+    border-collapse: collapse;
+}
+
+.table-responsive,
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+}
+
+table th,
+table td,
+.table th,
+.table td,
+.data-table th,
+.data-table td,
+.data-table-enhanced th,
+.data-table-enhanced td,
+.modal table th,
+.modal table td {
+    text-align: left !important;
+    vertical-align: middle;
+    white-space: normal !important;
+    word-break: normal;
+    overflow-wrap: break-word;
+    line-height: 1.35;
+}
+
+td,
+th {
+    padding: 12px 14px;
+}
+
+table th {
+    font-weight: 700;
+}
+
+.table th.actions,
+.table td.actions,
+.table th.action-column,
+.table td.action-column,
+.table th.icon-column,
+.table td.icon-column,
+.table th.actions-column,
+.table td.actions-column,
+.table th[data-table-column="actions"],
+.table td[data-table-column="actions"],
+.data-table th.actions,
+.data-table td.actions,
+.data-table th.action-column,
+.data-table td.action-column,
+.data-table th.icon-column,
+.data-table td.icon-column,
+.data-table-enhanced th.actions,
+.data-table-enhanced td.actions,
+.data-table-enhanced th.action-column,
+.data-table-enhanced td.action-column,
+.data-table-enhanced th.icon-column,
+.data-table-enhanced td.icon-column,
+.data-table-enhanced th[data-table-column="actions"],
+.data-table-enhanced td[data-table-column="actions"],
+td.action-column,
+th.action-column,
+td.actions,
+th.actions,
+td.icon-column,
+th.icon-column {
+    text-align: center !important;
+    white-space: nowrap !important;
+}
+
+.table th.text-end,
+.table td.text-end,
+.table th.text-right,
+.table td.text-right,
+.table th.money-cell,
+.table td.money-cell,
+.table th.amount-cell,
+.table td.amount-cell,
+.table th.price-cell,
+.table td.price-cell,
+.table th[class*="money"],
+.table td[class*="money"],
+.table th[class*="amount"],
+.table td[class*="amount"],
+.table th[class*="price"],
+.table td[class*="price"],
+.data-table th.text-end,
+.data-table td.text-end,
+.data-table th.text-right,
+.data-table td.text-right,
+.data-table-enhanced th.text-end,
+.data-table-enhanced td.text-end,
+.data-table-enhanced th.text-right,
+.data-table-enhanced td.text-right {
+    text-align: right !important;
+}
+
 #navbar-container::before {
     content: "";
     position: fixed;
@@ -333,3 +433,107 @@
 .modal .form-select,
 .modal .input-group { min-width: 0; }
 .modal-footer { gap: .5rem; }
+
+.modal .modal-dialog {
+    width: min(var(--drp-modal-width, 760px), calc(100vw - 48px));
+    max-width: min(var(--drp-modal-max-width, 1080px), calc(100vw - 48px));
+    margin: 24px auto;
+}
+
+.modal .modal-content {
+    min-width: min(var(--drp-modal-min-width, 420px), calc(100vw - 48px));
+    max-width: calc(100vw - 48px);
+    min-height: var(--drp-modal-min-height, 240px);
+    max-height: calc(100vh - 48px);
+    resize: both;
+    overflow: hidden;
+}
+
+.modal .modal-header {
+    align-items: flex-start;
+    gap: 14px;
+    user-select: none;
+}
+
+.modal .modal-header.drp-modal-drag-handle {
+    cursor: move;
+}
+
+.modal .modal-body {
+    overflow: auto;
+}
+
+.modal .modal-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    flex-wrap: wrap;
+    background: var(--bs-modal-bg, #fff);
+}
+
+.modal .modal-header .close-modal,
+.modal .modal-header .modal-close,
+.modal .modal-header .modal-x,
+.modal .modal-header .btn-close,
+.modal .modal-header button[aria-label="Close"] {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    flex: 0 0 34px;
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: #f3f4f6;
+    background-image: none !important;
+    color: #374151;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1;
+    opacity: 1;
+    cursor: pointer;
+    transition: background-color .2s ease, color .2s ease, transform .15s ease, box-shadow .15s ease;
+}
+
+.modal .modal-header .close-modal:empty::before,
+.modal .modal-header .modal-close:empty::before,
+.modal .modal-header .modal-x:empty::before,
+.modal .modal-header .btn-close::before,
+.modal .modal-header button[aria-label="Close"]:empty::before {
+    content: "\00d7";
+    color: currentColor;
+    line-height: 1;
+}
+
+.modal .modal-header .close-modal:hover,
+.modal .modal-header .modal-close:hover,
+.modal .modal-header .modal-x:hover,
+.modal .modal-header .btn-close:hover,
+.modal .modal-header button[aria-label="Close"]:hover {
+    background: #dc2626;
+    color: #fff;
+    opacity: 1;
+    transform: scale(1.05);
+}
+
+.modal .modal-header .close-modal:hover *,
+.modal .modal-header .modal-close:hover *,
+.modal .modal-header .modal-x:hover *,
+.modal .modal-header .btn-close:hover *,
+.modal .modal-header button[aria-label="Close"]:hover * {
+    color: #fff;
+    stroke: #fff;
+    fill: none;
+}
+
+.modal .modal-header .close-modal:focus-visible,
+.modal .modal-header .modal-close:focus-visible,
+.modal .modal-header .modal-x:focus-visible,
+.modal .modal-header .btn-close:focus-visible,
+.modal .modal-header button[aria-label="Close"]:focus-visible {
+    outline: 3px solid rgba(220, 38, 38, .35);
+    outline-offset: 2px;
+}

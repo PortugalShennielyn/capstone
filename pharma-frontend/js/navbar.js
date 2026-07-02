@@ -15,7 +15,7 @@
     mainWrapperBeforeLoad?.classList.toggle("collapsed", savedCollapsed);
 
     try {
-            const cacheKey = "drpNavbarHtml:v17";
+            const cacheKey = "drpNavbarHtml:v18";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -50,13 +50,13 @@
             "complete_delivery.html": "complete-delivery",
             "return_damage.html": "return-damage",
             "expiry_monitoring.html": "expiry-monitoring",
+            "admin_settings.html": "settings",
             "pos.html": "pos",
             "clerk.html": "clerk"
         };
 
         const dashboardViewMap = {
             dashboard: "dashboard",
-            "dashboard/settings": "settings",
             "dashboard/billing": "billing",
             "dashboard/user/settings": "user-settings",
             "dashboard/products": "products",
@@ -247,7 +247,7 @@
                 "products": "Products",
                 "inventory": "Inventory",
                 "supplier": "Suppliers",
-                "settings": "Tenant Settings",
+                "settings": "Admin Settings",
                 "billing": "Billing",
                 "user-settings": "User Settings",
                 "purchase-orders": "Purchase Orders",
@@ -397,6 +397,191 @@
         console.error("Unable to load the shared navbar:", error);
     }
 })();
+
+function initGlobalModalBehavior() {
+    if (window.__drpGlobalModalBehaviorInitialized) return;
+    window.__drpGlobalModalBehaviorInitialized = true;
+
+    const modalSelector = '.modal';
+
+    function setStaticBackdrop(modal) {
+        if (!modal || modal.dataset.drpStaticBackdrop === 'true') return;
+        modal.dataset.drpStaticBackdrop = 'true';
+        modal.setAttribute('data-bs-backdrop', 'static');
+    }
+
+    function patchBootstrapModal() {
+        const Modal = window.bootstrap?.Modal;
+        if (!Modal || Modal.__drpStaticBackdropPatched) return false;
+
+        Modal.__drpStaticBackdropPatched = true;
+        if (Modal.Default) {
+            Modal.Default.backdrop = 'static';
+        }
+
+        const originalGetOrCreateInstance = Modal.getOrCreateInstance.bind(Modal);
+        Modal.getOrCreateInstance = function patchedGetOrCreateInstance(element, config = {}) {
+            if (element?.classList?.contains('modal')) {
+                setStaticBackdrop(element);
+            }
+            return originalGetOrCreateInstance(element, { ...config, backdrop: 'static' });
+        };
+
+        const originalConstructor = Modal.prototype.constructor;
+        if (originalConstructor?.Default) {
+            originalConstructor.Default.backdrop = 'static';
+        }
+        return true;
+    }
+
+    function patchSweetAlert() {
+        const Swal = window.Swal;
+        if (!Swal || Swal.__drpOutsideClickPatched || typeof Swal.fire !== 'function') return false;
+
+        const originalFire = Swal.fire.bind(Swal);
+        Swal.fire = function patchedSweetAlertFire(...args) {
+            if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+                return originalFire({ ...args[0], allowOutsideClick: false });
+            }
+            if (args.length >= 1) {
+                return originalFire({
+                    title: args[0],
+                    text: args[1],
+                    icon: args[2],
+                    allowOutsideClick: false
+                });
+            }
+            return originalFire({ allowOutsideClick: false });
+        };
+        Swal.__drpOutsideClickPatched = true;
+        return true;
+    }
+
+    function makeModalDraggable(modal) {
+        if (!modal?.matches(modalSelector) || modal.dataset.drpDraggable === 'true') return;
+        const dialog = modal.querySelector('.modal-dialog');
+        const header = modal.querySelector('.modal-header');
+        if (!dialog || !header) return;
+
+        modal.dataset.drpDraggable = 'true';
+        header.classList.add('drp-modal-drag-handle');
+
+        let startX = 0;
+        let startY = 0;
+        let offsetX = 0;
+        let offsetY = 0;
+        let dragging = false;
+
+        const resetModalLayout = () => {
+            dialog.style.position = '';
+            dialog.style.margin = '';
+            dialog.style.left = '';
+            dialog.style.top = '';
+            dialog.style.transform = '';
+            dialog.style.width = '';
+            dialog.style.height = '';
+            dialog.style.maxWidth = '';
+            const content = dialog.querySelector('.modal-content');
+            if (content) {
+                content.style.width = '';
+                content.style.height = '';
+                content.style.maxWidth = '';
+                content.style.maxHeight = '';
+            }
+            dialog.querySelector('.modal-body')?.scrollTo?.({ top: 0, left: 0 });
+        };
+
+        header.addEventListener('pointerdown', (event) => {
+            if (event.target.closest('button, input, select, textarea, a')) return;
+            if (event.button !== 0 && event.pointerType === 'mouse') return;
+            const rect = dialog.getBoundingClientRect();
+            dragging = true;
+            startX = event.clientX;
+            startY = event.clientY;
+            offsetX = rect.left;
+            offsetY = rect.top;
+            dialog.style.position = 'fixed';
+            dialog.style.margin = '0';
+            dialog.style.left = `${rect.left}px`;
+            dialog.style.top = `${rect.top}px`;
+            dialog.style.transform = 'none';
+            header.setPointerCapture?.(event.pointerId);
+        });
+
+        header.addEventListener('pointermove', (event) => {
+            if (!dragging) return;
+            const rect = dialog.getBoundingClientRect();
+            const maxLeft = Math.max(8, window.innerWidth - Math.min(rect.width, window.innerWidth - 16) - 8);
+            const maxTop = Math.max(8, window.innerHeight - 96);
+            const nextLeft = Math.min(Math.max(8, offsetX + event.clientX - startX), maxLeft);
+            const nextTop = Math.min(Math.max(8, offsetY + event.clientY - startY), maxTop);
+            dialog.style.left = `${nextLeft}px`;
+            dialog.style.top = `${nextTop}px`;
+        });
+
+        const stopDrag = (event) => {
+            dragging = false;
+            if (header.hasPointerCapture?.(event.pointerId)) {
+                header.releasePointerCapture(event.pointerId);
+            }
+        };
+        header.addEventListener('pointerup', stopDrag);
+        header.addEventListener('pointercancel', stopDrag);
+
+        modal.addEventListener('show.bs.modal', resetModalLayout);
+        modal.addEventListener('hidden.bs.modal', resetModalLayout);
+    }
+
+    function enhanceModals(root = document) {
+        root.querySelectorAll?.('.modal').forEach((modal) => {
+            setStaticBackdrop(modal);
+            makeModalDraggable(modal);
+        });
+    }
+
+    enhanceModals();
+    document.addEventListener('show.bs.modal', (event) => {
+        setStaticBackdrop(event.target);
+        makeModalDraggable(event.target);
+    }, true);
+
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+                if (node.nodeType !== Node.ELEMENT_NODE) return;
+                if (node.matches?.('.modal')) {
+                    setStaticBackdrop(node);
+                    makeModalDraggable(node);
+                }
+                enhanceModals(node);
+            });
+        });
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    patchSweetAlert();
+
+    if (!patchBootstrapModal()) {
+        const timer = window.setInterval(() => {
+            if (patchBootstrapModal()) {
+                window.clearInterval(timer);
+                enhanceModals();
+            }
+        }, 50);
+        window.setTimeout(() => window.clearInterval(timer), 5000);
+    }
+
+    if (!window.Swal?.__drpOutsideClickPatched) {
+        const swalTimer = window.setInterval(() => {
+            if (patchSweetAlert()) {
+                window.clearInterval(swalTimer);
+            }
+        }, 50);
+        window.setTimeout(() => window.clearInterval(swalTimer), 5000);
+    }
+}
+
+initGlobalModalBehavior();
 
 function getDataTableColumnType(label) {
     const text = String(label || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -559,7 +744,8 @@ function ensureNavbarRuntimeStyles() {
         .table-responsive {
             width: 100% !important;
             overflow-x: auto !important;
-            overflow-y: hidden !important;
+            overflow-y: auto !important;
+            max-height: min(68vh, 720px) !important;
             border-radius: 10px !important;
             -webkit-overflow-scrolling: touch;
         }
@@ -582,6 +768,13 @@ function ensureNavbarRuntimeStyles() {
             vertical-align: middle !important;
             white-space: normal !important;
             word-break: normal !important;
+        }
+
+        .table-responsive > table.table thead th {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 10 !important;
+            box-shadow: inset 0 -1px 0 #e5e9f1 !important;
         }
 
         .table-responsive > table.table td {
@@ -802,6 +995,8 @@ function ensureNavbarRuntimeStyles() {
 
         .po-actions,
         .arrived-actions,
+        .complete-actions,
+        .approval-actions,
         .return-actions,
         .table-actions,
         .table-responsive td:last-child > div {
@@ -815,6 +1010,8 @@ function ensureNavbarRuntimeStyles() {
 
         .po-actions .btn,
         .arrived-actions .btn,
+        .complete-actions .btn,
+        .approval-actions .btn,
         .return-actions .btn,
         .table-actions .btn,
         .table-responsive td:last-child .btn {
@@ -856,7 +1053,8 @@ function ensureNavbarRuntimeStyles() {
             width: 100% !important;
             max-width: 100% !important;
             overflow-x: auto !important;
-            overflow-y: hidden !important;
+            overflow-y: auto !important;
+            max-height: min(68vh, 720px) !important;
             border-radius: 10px !important;
             -webkit-overflow-scrolling: touch !important;
         }
@@ -892,6 +1090,24 @@ function ensureNavbarRuntimeStyles() {
             color: #596274 !important;
             background: #f8f9fc !important;
             font-weight: 800 !important;
+        }
+
+        .table-responsive > table.table thead th,
+        .data-table-wrapper > table.table thead th,
+        table.data-table-enhanced thead th {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 10 !important;
+            box-shadow: inset 0 -1px 0 #e5e9f1 !important;
+        }
+
+        .table-responsive > table.table thead th[data-table-column="actions"],
+        .data-table-wrapper > table.table thead th[data-table-column="actions"],
+        table.data-table-enhanced thead th[data-table-column="actions"],
+        .table-responsive > table.table thead th:last-child,
+        .data-table-wrapper > table.table thead th:last-child,
+        table.data-table-enhanced thead th:last-child {
+            z-index: 12 !important;
         }
 
         .table-responsive > table.table td,
@@ -943,12 +1159,107 @@ function ensureNavbarRuntimeStyles() {
 
         .table-responsive > table.table [data-table-column="actions"],
         .data-table-wrapper > table.table [data-table-column="actions"],
-        table.data-table-enhanced [data-table-column="actions"] {
+        table.data-table-enhanced [data-table-column="actions"],
+        .table-responsive > table.table .actions-column,
+        .table-responsive > table.table .col-actions,
+        .table-responsive > table.table .actions-cell,
+        .table-responsive > table.table .action-cell,
+        .table-responsive > table.table .po-actions-cell,
+        .table-responsive > table.table .approval-actions-cell,
+        .table-responsive > table.table .complete-actions-cell,
+        .data-table-wrapper > table.table .actions-column,
+        .data-table-wrapper > table.table .col-actions,
+        table.data-table-enhanced .actions-column,
+        table.data-table-enhanced .col-actions {
             width: 120px !important;
             min-width: 120px !important;
             white-space: nowrap !important;
             overflow: visible !important;
             overflow-wrap: normal !important;
+            text-align: center !important;
+        }
+
+        .table-responsive > table.table th[data-table-column="actions"],
+        .table-responsive > table.table td[data-table-column="actions"],
+        .data-table-wrapper > table.table th[data-table-column="actions"],
+        .data-table-wrapper > table.table td[data-table-column="actions"],
+        table.data-table-enhanced th[data-table-column="actions"],
+        table.data-table-enhanced td[data-table-column="actions"],
+        .table-responsive > table.table th.actions-column,
+        .table-responsive > table.table td.actions-column,
+        .table-responsive > table.table th.col-actions,
+        .table-responsive > table.table td.col-actions,
+        .table-responsive > table.table td.actions-cell,
+        .table-responsive > table.table td.action-cell,
+        .table-responsive > table.table td.po-actions-cell,
+        .table-responsive > table.table td.approval-actions-cell,
+        .table-responsive > table.table td.complete-actions-cell,
+        .data-table-wrapper > table.table th.actions-column,
+        .data-table-wrapper > table.table td.actions-column,
+        .data-table-wrapper > table.table th.col-actions,
+        .data-table-wrapper > table.table td.col-actions,
+        table.data-table-enhanced th.actions-column,
+        table.data-table-enhanced td.actions-column,
+        table.data-table-enhanced th.col-actions,
+        table.data-table-enhanced td.col-actions,
+        .table-responsive > table.table th:last-child,
+        .table-responsive > table.table td:last-child,
+        .data-table-wrapper > table.table th:last-child,
+        .data-table-wrapper > table.table td:last-child,
+        table.data-table-enhanced th:last-child,
+        table.data-table-enhanced td:last-child {
+            position: sticky !important;
+            right: 0 !important;
+            z-index: 11 !important;
+            background: var(--bs-table-bg, #fff) !important;
+            background-clip: padding-box !important;
+            border-left: 1px solid #e5e7eb !important;
+            box-shadow: -6px 0 10px rgba(15, 23, 42, 0.06) !important;
+            text-align: center !important;
+        }
+
+        .table-responsive > table.table thead th[data-table-column="actions"],
+        .data-table-wrapper > table.table thead th[data-table-column="actions"],
+        table.data-table-enhanced thead th[data-table-column="actions"],
+        .table-responsive > table.table thead th.actions-column,
+        .table-responsive > table.table thead th.col-actions,
+        .data-table-wrapper > table.table thead th.actions-column,
+        .data-table-wrapper > table.table thead th.col-actions,
+        table.data-table-enhanced thead th.actions-column,
+        table.data-table-enhanced thead th.col-actions,
+        .table-responsive > table.table thead th:last-child,
+        .data-table-wrapper > table.table thead th:last-child,
+        table.data-table-enhanced thead th:last-child {
+            z-index: 15 !important;
+            background: #f8f9fc !important;
+        }
+
+        .table-responsive > table.table tbody tr:hover td[data-table-column="actions"],
+        .data-table-wrapper > table.table tbody tr:hover td[data-table-column="actions"],
+        table.data-table-enhanced tbody tr:hover td[data-table-column="actions"],
+        .table-responsive > table.table tbody tr:hover td.actions-column,
+        .table-responsive > table.table tbody tr:hover td.col-actions,
+        .table-responsive > table.table tbody tr:hover td.actions-cell,
+        .table-responsive > table.table tbody tr:hover td.action-cell,
+        .table-responsive > table.table tbody tr:hover td.po-actions-cell,
+        .table-responsive > table.table tbody tr:hover td.approval-actions-cell,
+        .table-responsive > table.table tbody tr:hover td.complete-actions-cell,
+        .table-responsive > table.table tbody tr:hover td:last-child,
+        .data-table-wrapper > table.table tbody tr:hover td:last-child,
+        table.data-table-enhanced tbody tr:hover td:last-child {
+            background: var(--bs-table-hover-bg, #f8fafc) !important;
+        }
+
+        .table-responsive > table.table td[colspan],
+        .data-table-wrapper > table.table td[colspan],
+        table.data-table-enhanced td[colspan] {
+            position: static !important;
+            right: auto !important;
+            z-index: auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+            border-left: 0 !important;
+            box-shadow: none !important;
         }
 
         .table-responsive > table.table [data-table-column="supplier"],
@@ -1024,6 +1335,58 @@ function ensureNavbarRuntimeStyles() {
         body.dark-mode .table-responsive > table.table th {
             background: #202b3d !important;
             color: #cbd5e1 !important;
+        }
+
+        body.dark-mode .table-responsive > table.table th[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table td[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table th[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table td[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced th[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced td[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table th.actions-column,
+        body.dark-mode .table-responsive > table.table td.actions-column,
+        body.dark-mode .table-responsive > table.table th.col-actions,
+        body.dark-mode .table-responsive > table.table td.col-actions,
+        body.dark-mode .table-responsive > table.table td.actions-cell,
+        body.dark-mode .table-responsive > table.table td.action-cell,
+        body.dark-mode .table-responsive > table.table td.po-actions-cell,
+        body.dark-mode .table-responsive > table.table td.approval-actions-cell,
+        body.dark-mode .table-responsive > table.table td.complete-actions-cell,
+        body.dark-mode .table-responsive > table.table th:last-child,
+        body.dark-mode .table-responsive > table.table td:last-child,
+        body.dark-mode .data-table-wrapper > table.table th:last-child,
+        body.dark-mode .data-table-wrapper > table.table td:last-child,
+        body.dark-mode table.data-table-enhanced th:last-child,
+        body.dark-mode table.data-table-enhanced td:last-child {
+            background: var(--bs-table-bg, #182131) !important;
+            border-left-color: #263244 !important;
+        }
+
+        body.dark-mode .table-responsive > table.table thead th[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table thead th[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced thead th[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table thead th.actions-column,
+        body.dark-mode .table-responsive > table.table thead th.col-actions,
+        body.dark-mode .table-responsive > table.table thead th:last-child,
+        body.dark-mode .data-table-wrapper > table.table thead th:last-child,
+        body.dark-mode table.data-table-enhanced thead th:last-child {
+            background: #202b3d !important;
+        }
+
+        body.dark-mode .table-responsive > table.table tbody tr:hover td[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table tbody tr:hover td[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced tbody tr:hover td[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.actions-column,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.col-actions,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.action-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.po-actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.approval-actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.complete-actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td:last-child,
+        body.dark-mode .data-table-wrapper > table.table tbody tr:hover td:last-child,
+        body.dark-mode table.data-table-enhanced tbody tr:hover td:last-child {
+            background: var(--bs-table-hover-bg, #202b3d) !important;
         }
     `;
     document.head.appendChild(style);

@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'product_category_schema.php';
 
 $categoryId = cleanId($_GET['category_id'] ?? null);

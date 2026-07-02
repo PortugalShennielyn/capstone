@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 
 function receiveResponse(bool $success, string $message, string $error = '', array $extra = [], int $httpCode = 200): void
@@ -12,6 +13,37 @@ function receiveResponse(bool $success, string $message, string $error = '', arr
         'error' => $error
     ], $extra));
     exit();
+}
+
+function receiveIntQuantity($value, string $label): int
+{
+    if (!is_numeric($value) || floor((float) $value) !== (float) $value) {
+        throw new InvalidArgumentException("{$label} must be a whole number.");
+    }
+    return (int) $value;
+}
+
+function receiveDamageAction(array $item, int $damagedQuantity): string
+{
+    $action = strtolower(trim((string) ($item['damage_action'] ?? '')));
+    if ($action === '') {
+        $returnedQuantity = receiveIntQuantity($item['returned_quantity'] ?? 0, 'Return quantity');
+        $action = $returnedQuantity > 0 ? 'return' : ($damagedQuantity > 0 ? 'keep' : 'none');
+    }
+
+    if (!in_array($action, ['none', 'return', 'keep'], true)) {
+        throw new InvalidArgumentException('Invalid damage action.');
+    }
+
+    if ($damagedQuantity === 0 && $action !== 'none') {
+        throw new InvalidArgumentException('Damage action must be None when damaged quantity is zero.');
+    }
+
+    if ($damagedQuantity > 0 && $action === 'none') {
+        throw new InvalidArgumentException('Damage action is required when damaged quantity is greater than zero.');
+    }
+
+    return $action;
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -28,7 +60,7 @@ try {
     $poId = cleanId($payload['po_id'] ?? null);
     $remarks = trim((string) ($payload['remarks'] ?? ''));
     $amountPaidRaw = $payload['amount_paid'] ?? null;
-    $additionalAmountRaw = $payload['additional_amount'] ?? 0;
+    $supplierDiscountRaw = $payload['supplier_discount'] ?? ($payload['manual_adjustment'] ?? ($payload['additional_amount'] ?? 0));
     $adjustmentReason = trim((string) ($payload['adjustment_reason'] ?? ''));
     $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
 
@@ -88,13 +120,26 @@ try {
     }
 
     $hasAdjustment = false;
+    $hasRejectedItems = false;
     $totalAmount = 0.0;
     $goodReceivedAmount = 0.0;
     $returnDamageAmount = 0.0;
-    $additionalAmount = is_numeric($additionalAmountRaw) ? (float) $additionalAmountRaw : 0.0;
+    if ($supplierDiscountRaw === '' || $supplierDiscountRaw === null) {
+        $supplierDiscountRaw = 0;
+    }
 
-    if ($additionalAmount < 0) {
-        throw new InvalidArgumentException('Additional amount cannot be negative.');
+    $supplierDiscount = is_numeric($supplierDiscountRaw) ? (float) $supplierDiscountRaw : 0.0;
+
+    if (!is_numeric($supplierDiscountRaw)) {
+        throw new InvalidArgumentException('Supplier discount must be a valid amount.');
+    }
+
+    if ($supplierDiscount < 0) {
+        throw new InvalidArgumentException('Supplier discount cannot be negative.');
+    }
+
+    if ($supplierDiscount > 0.00001) {
+        $hasAdjustment = true;
     }
 
     foreach ($poItems as $poItem) {
@@ -103,17 +148,17 @@ try {
 
     foreach ($items as $item) {
         $poItemId = cleanId($item['po_item_id'] ?? null);
-        $receivedQuantity = (int) ($item['received_quantity'] ?? 0);
-        $damagedQuantity = (int) ($item['damaged_quantity'] ?? 0);
-        $returnedQuantity = (int) ($item['returned_quantity'] ?? 0);
+        $receivedQuantity = receiveIntQuantity($item['received_quantity'] ?? 0, 'Received quantity');
+        $damagedQuantity = receiveIntQuantity($item['damaged_quantity'] ?? 0, 'Damaged quantity');
+        $damageAction = receiveDamageAction($item, $damagedQuantity);
         $expiryDate = trim((string) ($item['expiry_date'] ?? ''));
 
         if (!isset($poItems[$poItemId])) {
             throw new InvalidArgumentException('A received item does not belong to this purchase order.');
         }
 
-        if ($receivedQuantity < 0 || $damagedQuantity < 0 || $returnedQuantity < 0) {
-            throw new InvalidArgumentException('Received, damaged, and returned quantities cannot be negative.');
+        if ($receivedQuantity < 0 || $damagedQuantity < 0) {
+            throw new InvalidArgumentException('Received and damaged quantities cannot be negative.');
         }
 
         $orderedQuantity = (int) ($poItems[$poItemId]['inventory_qty_ordered'] ?: $poItems[$poItemId]['quantity']);
@@ -123,8 +168,8 @@ try {
             throw new InvalidArgumentException('Received quantity cannot exceed ordered quantity.');
         }
 
-        if (($damagedQuantity + $returnedQuantity) > $receivedQuantity) {
-            throw new InvalidArgumentException('Damaged and returned quantities cannot be greater than received quantity.');
+        if ($damagedQuantity > $receivedQuantity) {
+            throw new InvalidArgumentException('Damaged quantity cannot be greater than received quantity.');
         }
 
         if ($expiryDate !== '') {
@@ -134,16 +179,20 @@ try {
             }
         }
 
-        if ($damagedQuantity > 0 || $returnedQuantity > 0) {
+        if ($damagedQuantity > 0) {
             $hasAdjustment = true;
+            $hasRejectedItems = true;
         }
 
-        $goodQuantity = $receivedQuantity - $damagedQuantity - $returnedQuantity;
+        $rejectedQuantity = $damagedQuantity;
+        $goodQuantity = $receivedQuantity - $rejectedQuantity;
         $goodReceivedAmount += $goodQuantity * $unitPrice;
-        $returnDamageAmount += ($damagedQuantity + $returnedQuantity) * $unitPrice;
+        if ($damageAction === 'return') {
+            $returnDamageAmount += $rejectedQuantity * $unitPrice;
+        }
     }
 
-    $calculatedFinalPayment = max(0, $totalAmount - $returnDamageAmount) + $additionalAmount;
+    $calculatedFinalPayment = $totalAmount - $returnDamageAmount - $supplierDiscount;
 
     if ($amountPaidRaw !== null && $amountPaidRaw !== '' && !is_numeric($amountPaidRaw)) {
         throw new InvalidArgumentException('Amount paid must be a valid number.');
@@ -152,8 +201,10 @@ try {
     $amountPaid = $calculatedFinalPayment;
 
     if ($amountPaid < 0) {
-        throw new InvalidArgumentException('Amount paid cannot be negative.');
+        throw new InvalidArgumentException('Final payment cannot be negative.');
     }
+
+    $receivingRemarks = trim($remarks . ($adjustmentReason !== '' ? (($remarks !== '') ? "\n" : '') . 'Adjustment reason: ' . $adjustmentReason : ''));
 
     $pdo->beginTransaction();
 
@@ -165,7 +216,7 @@ try {
     $receivingStatement->execute([
         ':receiving_id' => $receivingId,
         ':po_id' => $poId,
-        ':remarks' => $remarks
+        ':remarks' => $receivingRemarks
     ]);
 
     $receiveItemStatement = $pdo->prepare(
@@ -209,10 +260,13 @@ try {
 
     foreach ($items as $item) {
         $poItemId = cleanId($item['po_item_id'] ?? null);
-        $receivedQuantity = (int) ($item['received_quantity'] ?? 0);
-        $damagedQuantity = (int) ($item['damaged_quantity'] ?? 0);
-        $returnedQuantity = (int) ($item['returned_quantity'] ?? 0);
-        $goodQuantity = $receivedQuantity - $damagedQuantity - $returnedQuantity;
+        $receivedQuantity = receiveIntQuantity($item['received_quantity'] ?? 0, 'Received quantity');
+        $damagedQuantity = receiveIntQuantity($item['damaged_quantity'] ?? 0, 'Damaged quantity');
+        $damageAction = receiveDamageAction($item, $damagedQuantity);
+        $returnedQuantity = $damageAction === 'return' ? $damagedQuantity : 0;
+        $rejectedQuantity = $damagedQuantity;
+        $damagedNotReturnedQuantity = $damageAction === 'keep' ? $damagedQuantity : 0;
+        $goodQuantity = $receivedQuantity - $rejectedQuantity;
         $expiryDate = trim((string) ($item['expiry_date'] ?? ''));
         $itemRemarks = trim((string) ($item['remarks'] ?? ''));
         $poItem = $poItems[$poItemId];
@@ -249,19 +303,19 @@ try {
                 ':expiry_date' => $expiryDate !== '' ? $expiryDate : null,
                 ':received_qty' => $receivedQuantity,
                 ':storage_qty' => $goodQuantity,
-                ':damaged_qty' => $damagedQuantity,
+                ':damaged_qty' => $damagedNotReturnedQuantity,
                 ':returned_qty' => $returnedQuantity,
                 ':unit_cost' => (float) $poItem['unit_price'],
                 ':batch_status' => $goodQuantity > 0 ? 'active' : (($damagedQuantity > 0 || $returnedQuantity > 0) ? 'damaged' : 'depleted')
             ]);
         }
 
-        if ($damagedQuantity > 0) {
+        if ($damagedNotReturnedQuantity > 0) {
             $returnStatement->execute([
                 ':return_id' => newUuid($pdo),
                 ':po_id' => $poId,
                 ':po_item_id' => $poItemId,
-                ':return_quantity' => $damagedQuantity,
+                ':return_quantity' => $damagedNotReturnedQuantity,
                 ':damage_reason' => 'Damaged during delivery',
                 ':remarks' => $itemRemarks !== ''
                     ? $itemRemarks
@@ -282,8 +336,9 @@ try {
         }
     }
 
-    $newStatus = 'Delivered';
-    $paymentStatus = ($hasAdjustment || $additionalAmount > 0)
+    $newStatus = $hasRejectedItems ? 'Delivered with Return/Damage' : 'Delivered';
+    $hasPaymentChange = abs($returnDamageAmount) > 0.00001 || abs($supplierDiscount) > 0.00001;
+    $paymentStatus = $hasPaymentChange
         ? 'Adjusted'
         : ($amountPaid >= $totalAmount ? 'Paid' : 'Partially Paid');
 
@@ -312,7 +367,8 @@ try {
         'good_received_amount' => $goodReceivedAmount,
         'final_payment' => $amountPaid,
         'return_damage_amount' => $returnDamageAmount,
-        'additional_amount' => $additionalAmount
+        'supplier_credit' => $returnDamageAmount,
+        'supplier_discount' => $supplierDiscount
     ]);
 } catch (InvalidArgumentException $e) {
     if ($pdo->inTransaction()) {

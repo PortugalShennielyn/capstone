@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -33,6 +34,15 @@ function cleanSkuNumber(array $payload, string $field): ?string
     return $value;
 }
 
+function positiveSkuInteger(array $payload, string $field): int
+{
+    $value = trim((string) ($payload[$field] ?? ''));
+    if (!is_numeric($value) || (float) $value <= 0) {
+        throw new InvalidArgumentException('Units per Purchase Unit must be numeric and greater than 0.');
+    }
+    return (int) $value;
+}
+
 function joinSkuParts(?string ...$parts): ?string
 {
     $clean = array_values(array_filter(array_map(static fn($part) => trim((string) ($part ?? '')), $parts), static fn($part) => $part !== ''));
@@ -51,18 +61,29 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
     return [
         'variant' => cleanSkuField($variation, 'variant_name') ?? cleanSkuField($variation, 'variant_flavor') ?? cleanSkuField($variation, 'variation_name'),
         'generic_name' => cleanSkuField($variation, 'generic_name'),
-        'strength' => joinSkuParts(cleanSkuField($variation, 'strength_value'), cleanSkuField($variation, 'strength_unit')),
-        'dosage_form' => cleanSkuField($variation, 'dosage_form'),
-        'medicine_package_type' => cleanSkuField($variation, 'package_type'),
+        'strength_value' => cleanSkuNumber($variation, 'strength_value'),
+        'strength_unit' => cleanSkuField($variation, 'strength_unit'),
+        'strength' => cleanSkuField($variation, 'strength') ?? joinSkuParts(cleanSkuNumber($variation, 'strength_value'), cleanSkuField($variation, 'strength_unit')),
+        'dosage_form' => cleanSkuField($variation, 'dosage_form') ?? cleanSkuField($variation, 'product_unit') ?? cleanSkuField($variation, 'unit'),
+        'net_content_value' => cleanSkuNumber($variation, 'net_content_value') ?? cleanSkuNumber($variation, 'volume_value'),
+        'net_content_unit' => cleanSkuField($variation, 'net_content_unit') ?? cleanSkuField($variation, 'volume_unit'),
+        'medicine_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
         'size' => cleanSkuField($variation, 'size_value') ?? cleanSkuField($variation, 'display_size'),
-        'net_weight' => joinSkuParts(cleanSkuNumber($variation, 'weight_value') ?? cleanSkuNumber($variation, 'weight_volume_value') ?? cleanSkuNumber($variation, 'net_weight'), cleanSkuField($variation, 'weight_unit') ?? cleanSkuField($variation, 'weight_volume_unit')),
-        'grocery_package_type' => cleanSkuField($variation, 'package_type'),
-        'pack_content' => joinSkuParts(cleanSkuNumber($variation, 'pack_content_qty'), cleanSkuField($variation, 'pack_content_unit')),
+        'net_weight' => cleanSkuNumber($variation, 'net_weight') ?? cleanSkuNumber($variation, 'weight_value') ?? cleanSkuNumber($variation, 'weight_volume_value'),
+        'grocery_unit' => cleanSkuField($variation, 'unit') ?? cleanSkuField($variation, 'weight_unit') ?? cleanSkuField($variation, 'weight_volume_unit'),
+        'grocery_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
+        'material' => cleanSkuField($variation, 'material'),
+        'sterile_status' => cleanSkuField($variation, 'sterile_status'),
+        'medical_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
+        'pack_content' => cleanSkuField($variation, 'pack_content') ?? joinSkuParts(cleanSkuNumber($variation, 'pack_content_qty'), cleanSkuField($variation, 'pack_content_unit')),
         'barcode' => $barcode,
         'price' => (float) $price,
         'is_empty_detail' => $categoryName === 'Grocery'
-            ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'weight_value') || cleanSkuField($variation, 'package_type') || cleanSkuNumber($variation, 'pack_content_qty'))
-            : !(cleanSkuField($variation, 'generic_name') || cleanSkuField($variation, 'strength_value') || cleanSkuField($variation, 'dosage_form') || cleanSkuField($variation, 'package_type'))
+            ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
+            : (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)
+                ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuField($variation, 'material') || cleanSkuField($variation, 'sterile_status') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
+            : !(cleanSkuField($variation, 'generic_name') || cleanSkuNumber($variation, 'strength_value') || cleanSkuField($variation, 'strength_unit') || cleanSkuField($variation, 'dosage_form') || cleanSkuNumber($variation, 'net_content_value') || cleanSkuNumber($variation, 'volume_value') || cleanSkuField($variation, 'net_content_unit') || cleanSkuField($variation, 'volume_unit') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging'))
+            )
     ];
 }
 
@@ -73,6 +94,9 @@ try {
     $brandName = requiredProductField($payload, 'brand_name');
     $productName = requiredProductField($payload, 'product_name');
     $fallbackPrice = $payload['price'] ?? '0';
+    $supplierCostPrice = $payload['supplier_cost_price'] ?? null;
+    $purchaseUnit = cleanSkuField($payload, 'purchase_unit');
+    $unitsPerPurchaseUnit = positiveSkuInteger($payload, 'units_per_purchase_unit');
 
     if ($supplierId === '') {
         throw new InvalidArgumentException('A supplier is required.');
@@ -115,16 +139,24 @@ try {
          VALUES (:product_id, :barcode, :brand_name, :product_name, :category_id, :type_id, :price)'
     );
     $medicineInsert = $pdo->prepare(
-        'INSERT INTO medicine_details (medicine_detail_id, product_id, generic_name, strength, dosage_form, package_type)
-         VALUES (:medicine_detail_id, :product_id, :generic_name, :strength, :dosage_form, :package_type)'
+        'INSERT INTO medicine_details (medicine_detail_id, product_id, generic_name, strength_value, strength_unit, strength, dosage_form, net_content_value, net_content_unit, package_type)
+         VALUES (:medicine_detail_id, :product_id, :generic_name, :strength_value, :strength_unit, :strength, :dosage_form, :net_content_value, :net_content_unit, :package_type)'
     );
     $groceryInsert = $pdo->prepare(
-        'INSERT INTO grocery_details (grocery_detail_id, product_id, variant, size, net_weight, package_type, pack_content)
-         VALUES (:grocery_detail_id, :product_id, :variant, :size, :net_weight, :package_type, :pack_content)'
+        'INSERT INTO grocery_details (grocery_detail_id, product_id, variant, size, net_weight, unit, package_type, pack_content)
+         VALUES (:grocery_detail_id, :product_id, :variant, :size, :net_weight, :unit, :package_type, :pack_content)'
+    );
+    $medicalSupplyInsert = $pdo->prepare(
+        'INSERT INTO medical_supply_details (medical_supply_detail_id, product_id, variant, size, material, sterile_status, package_type, pack_content)
+         VALUES (:medical_supply_detail_id, :product_id, :variant, :size, :material, :sterile_status, :package_type, :pack_content)'
     );
     $supplierInsert = $pdo->prepare(
-        'INSERT IGNORE INTO supplier_products (supplier_id, product_id)
-         VALUES (:supplier_id, :product_id)'
+        'INSERT INTO supplier_products (supplier_id, product_id, supplier_cost_price, purchase_unit, units_per_purchase_unit)
+         VALUES (:supplier_id, :product_id, :supplier_cost_price, :purchase_unit, :units_per_purchase_unit)
+         ON DUPLICATE KEY UPDATE
+            supplier_cost_price = VALUES(supplier_cost_price),
+            purchase_unit = VALUES(purchase_unit),
+            units_per_purchase_unit = VALUES(units_per_purchase_unit)'
     );
 
     $createdProductIds = [];
@@ -145,8 +177,12 @@ try {
                 ':medicine_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
                 ':generic_name' => $sku['generic_name'] ?? cleanSkuField($payload, 'generic_name'),
+                ':strength_value' => $sku['strength_value'],
+                ':strength_unit' => $sku['strength_unit'],
                 ':strength' => $sku['strength'],
                 ':dosage_form' => $sku['dosage_form'],
+                ':net_content_value' => $sku['net_content_value'],
+                ':net_content_unit' => $sku['net_content_unit'],
                 ':package_type' => $sku['medicine_package_type']
             ]);
         } elseif ($categoryName === 'Grocery') {
@@ -156,14 +192,29 @@ try {
                 ':variant' => $sku['variant'],
                 ':size' => $sku['size'],
                 ':net_weight' => $sku['net_weight'],
+                ':unit' => $sku['grocery_unit'],
                 ':package_type' => $sku['grocery_package_type'],
+                ':pack_content' => $sku['pack_content']
+            ]);
+        } elseif (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
+            $medicalSupplyInsert->execute([
+                ':medical_supply_detail_id' => newUuid($pdo),
+                ':product_id' => $productId,
+                ':variant' => $sku['variant'],
+                ':size' => $sku['size'],
+                ':material' => $sku['material'],
+                ':sterile_status' => $sku['sterile_status'],
+                ':package_type' => $sku['medical_package_type'],
                 ':pack_content' => $sku['pack_content']
             ]);
         }
 
         $supplierInsert->execute([
             ':supplier_id' => $supplierId,
-            ':product_id' => $productId
+            ':product_id' => $productId,
+            ':supplier_cost_price' => is_numeric($supplierCostPrice) ? (float) $supplierCostPrice : null,
+            ':purchase_unit' => $purchaseUnit,
+            ':units_per_purchase_unit' => $unitsPerPurchaseUnit
         ]);
         $createdProductIds[] = $productId;
     }

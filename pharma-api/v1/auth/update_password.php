@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once '../../config/auth_context.php';
 
 if (!isset($_SESSION['user_id'], $_SESSION['role'])) {

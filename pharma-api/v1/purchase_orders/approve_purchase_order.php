@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -23,7 +24,7 @@ try {
         throw new InvalidArgumentException('Purchase order id is required.');
     }
 
-    updatePurchaseOrderStatus($pdo, $poId, 'Approved by the owner', 'Pending');
+    updatePurchaseOrderApprovalStatus($pdo, $poId, 'Approved', 'Pending', 'Pending');
 
     echo json_encode(['status' => 'success', 'message' => 'Purchase order approved successfully.']);
 } catch (InvalidArgumentException $e) {

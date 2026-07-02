@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -41,11 +42,18 @@ try {
             pt.type_name,
             md.generic_name,
             md.strength,
+            md.strength_value,
+            md.strength_unit,
+            md.net_content_value,
+            md.net_content_unit,
             md.dosage_form,
             COALESCE(md.package_type, gd.package_type) AS package_type,
             gd.variant,
             gd.size,
             gd.net_weight,
+            gd.net_weight AS weight_volume_value,
+            gd.unit,
+            gd.unit AS weight_volume_unit,
             gd.pack_content,
             COALESCE(inv.storage_quantity, 0) AS storage_quantity,
             COALESCE(inv.shelf_quantity, 0) AS shelf_quantity,

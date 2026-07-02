@@ -11,8 +11,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=9" rel="stylesheet">
-    <script src="./js/navbar.js?v=22" defer></script>
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=28" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
 
     <style>
         :root {
@@ -87,33 +88,47 @@
         .po-status-filter { width: 178px; flex: 0 0 auto; }
         .table-responsive { border-radius: 10px; overflow-x: auto; }
         .po-table-scroll { scrollbar-gutter: stable; }
-        .po-list-table { width: max-content; min-width: 1450px; margin-bottom: 0; table-layout: auto; border-collapse: separate; border-spacing: 0; }
-        #table-purchase-orders.po-list-table { width: max-content !important; min-width: 1450px; table-layout: auto !important; }
-        .po-list-table th { padding: 13px 10px; color: #596274; background: #f8f9fc; font-size: 12.5px; font-weight: 800; line-height: 1.18; text-align: center; white-space: nowrap; vertical-align: middle; }
-        .po-list-table td { padding: 14px 10px; color: var(--text-main); font-size: 12.5px; font-weight: 750; line-height: 1.34; text-align: center; vertical-align: middle; overflow-wrap: normal; word-break: normal; }
+        .po-list-table { width: 100%; min-width: 1120px; margin-bottom: 0; table-layout: auto; border-collapse: separate; border-spacing: 0; }
+        #table-purchase-orders.po-list-table { width: 100% !important; min-width: 1120px; table-layout: auto !important; }
+        .po-list-table th { padding: 12px 10px; color: #596274; background: #f8f9fc; font-size: 12.5px; font-weight: 800; line-height: 1.22; text-align: left; white-space: normal; vertical-align: middle; }
+        .po-list-table td { padding: 13px 10px; color: var(--text-main); font-size: 12.5px; font-weight: 750; line-height: 1.34; text-align: left; vertical-align: middle; white-space: normal; overflow-wrap: break-word; word-break: normal; hyphens: none; }
         #table-purchase-orders.po-list-table th,
-        #table-purchase-orders.po-list-table td { overflow-wrap: normal !important; word-break: normal !important; hyphens: none !important; }
+        #table-purchase-orders.po-list-table td { overflow-wrap: break-word !important; word-break: normal !important; hyphens: none !important; }
         .po-list-table tbody { opacity: 1; transition: opacity .15s ease; }
         .po-list-table tbody.po-table-body-updating { opacity: .72; }
-        .po-list-table .col-date { min-width: 118px; }
-        .po-list-table .col-po-number { min-width: 150px; }
-        .po-list-table .col-supplier { min-width: 150px; }
-        .po-list-table .col-items { min-width: 260px; max-width: 340px; }
-        .po-list-table .col-category { width: 130px; }
+        .po-list-table .col-date { width: 130px; min-width: 130px; }
+        .po-list-table .col-po-number { width: 210px; min-width: 210px; }
+        .po-list-table .col-supplier { width: 16%; min-width: 170px; }
+        .po-list-table .col-brand { width: 14%; min-width: 150px; }
+        .po-list-table .col-items { width: 18%; min-width: 200px; }
+        .po-list-table .col-specification { width: 22%; min-width: 240px; }
         .po-list-table .col-type { width: 130px; }
-        .po-list-table .col-qty { width: 105px; }
-        .po-list-table .col-purchase-unit { width: 135px; }
+        .po-list-table .col-qty { width: 105px; min-width: 105px; }
+        .po-list-table .col-purchase-unit { width: 135px; min-width: 120px; }
         .po-list-table .col-contains { width: 135px; }
-        .po-list-table .col-inventory-qty { width: 150px; }
-        .po-list-table .col-terms { width: 120px; }
-        .po-list-table .col-delivery { width: 160px; }
-        .po-list-table .col-money { width: 130px; }
-        .po-list-table .col-status { width: 120px; min-width: 120px; max-width: 130px; }
-        .po-list-table .col-actions { width: 110px; min-width: 110px; max-width: 120px; }
+        .po-list-table .col-inventory-qty { width: 150px; min-width: 135px; }
+        .po-list-table .col-terms { width: 112px; }
+        .po-list-table .col-delivery { width: 130px; min-width: 130px; }
+        .po-list-table .col-money { width: 140px; min-width: 140px; }
+        .po-list-table .col-status { width: 150px; min-width: 150px; }
+        .po-list-table .col-actions { width: 130px; min-width: 130px; }
         .po-list-table .col-received { width: 110px; }
         .po-list-table .col-payment-status { width: 125px; }
+        .po-list-table .col-reason { width: 190px; min-width: 190px; }
         .po-list-table .col-items,
-        .po-list-table td.po-product-cell { white-space: normal !important; min-width: 260px; max-width: 340px; text-align: left; }
+        .po-list-table .col-brand,
+        .po-list-table .col-specification,
+        .po-list-table td.po-supplier-cell,
+        .po-list-table td.po-product-cell,
+        .po-list-table td.po-brand-cell,
+        .po-list-table td.po-spec-cell { white-space: normal !important; text-align: left; }
+        .po-list-table td.po-product-cell { min-width: 200px; }
+        .po-list-table td.po-brand-cell { min-width: 150px; }
+        .po-list-table td.po-spec-cell { min-width: 240px; }
+        .po-list-table th.col-supplier,
+        .po-list-table th.col-brand,
+        .po-list-table th.col-items,
+        .po-list-table th.col-specification { text-align: left; }
         .po-list-table .col-money,
         .po-list-table td.po-price-cell { text-align: right; }
         .po-list-table .col-qty,
@@ -129,19 +144,18 @@
         .po-line-list .line-index { color: #7b8494; font-size: 12px; font-weight: 800; text-align: right; line-height: 1.3; }
         .po-line-list .line-text { min-width: 0; white-space: normal; overflow-wrap: normal; word-break: normal; hyphens: none; line-height: 1.3; }
         .po-product-lines { gap: 8px; }
-        .po-product-lines .line-text { display: grid; gap: 2px; }
-        .po-product-primary { display: block; color: var(--text-main); font-size: 13px; font-weight: 850; line-height: 1.28; }
-        .po-product-secondary { display: block; color: #667085; font-size: 11.5px; font-weight: 700; line-height: 1.25; }
+        .po-product-lines .line-text,
+        .po-brand-lines .line-text,
+        .po-spec-lines .line-text { overflow-wrap: break-word; word-break: normal; hyphens: none; }
         .po-line-list.po-line-list-plain { text-align: center; }
         .po-line-list.po-line-list-plain li { grid-template-columns: 1fr; justify-items: center; }
         .po-money { display: inline-block; min-width: max-content; font-weight: 800; white-space: nowrap; color: var(--text-main); font-size: 13px; }
         .po-list-table th.col-actions,
-        .po-list-table td:last-child {
+        .po-list-table td.po-actions-cell {
             position: sticky;
             right: 0;
             z-index: 5;
-            min-width: 110px;
-            max-width: 120px;
+            min-width: 130px;
             background: var(--bs-table-bg, #fff);
             border-left: 1px solid #e5e9f1;
             box-shadow: -6px 0 10px rgba(15, 23, 42, .06);
@@ -150,7 +164,7 @@
             z-index: 7;
             background: #f8f9fc;
         }
-        .po-list-table tbody tr:hover td:last-child {
+        .po-list-table tbody tr:hover td.po-actions-cell {
             background: var(--bs-table-hover-bg, #f6f1ff);
         }
         .po-list-table td[colspan],
@@ -166,15 +180,393 @@
         .po-actions .btn { width: 32px; height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
         .status-badge { white-space: nowrap; line-height: 1.2; font-size: 11px; padding: 6px 8px; }
         .po-empty { padding: 42px 16px !important; color: #8790a1 !important; text-align: center; }
+        #table-purchase-orders td.po-brand-cell { width: 150px !important; min-width: 150px !important; }
+        #table-purchase-orders td.po-product-cell { width: 200px !important; min-width: 200px !important; }
+        #table-purchase-orders td.po-spec-cell { width: 260px !important; min-width: 240px !important; }
         .po-product-select-wrap { min-width: 0; }
         .po-product-select-wrap .form-select { min-width: 0; width: 100%; max-width: 100%; text-overflow: ellipsis; }
+        #createPurchaseOrderModal {
+            --po-modal-width: min(1180px, calc(100vw - 48px));
+            --po-modal-height: min(760px, calc(100vh - 48px));
+            --po-create-lower-height: 420px;
+            --po-form-primary-height: 80px;
+            --po-form-primary-opacity: 1;
+            --po-form-primary-gap: 10px;
+        }
+        #createPurchaseOrderModal .modal-dialog {
+            width: var(--po-modal-width);
+            max-width: min(1320px, calc(100vw - 32px));
+            height: var(--po-modal-height);
+            max-height: calc(100vh - 24px);
+        }
+        #createPurchaseOrderModal.po-modal-positioned .modal-dialog {
+            position: fixed;
+            left: var(--po-modal-left, 50%);
+            top: var(--po-modal-top, 24px);
+            width: var(--po-modal-width);
+            height: var(--po-modal-height);
+            margin: 0;
+            transform: none;
+        }
+        #createPurchaseOrderModal .modal-content {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-width: min(720px, calc(100vw - 24px));
+            min-height: min(540px, calc(100vh - 24px));
+            overflow: hidden;
+        }
         .po-create-form { display: grid; gap: 16px; margin-bottom: 18px; }
-        .po-create-form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: end; }
-        .po-create-form-row.po-create-items-row { grid-template-columns: minmax(360px, 2.35fr) 112px 168px 150px 132px; }
+        #createPurchaseOrderModal .modal-header {
+            position: relative;
+            z-index: 30;
+            background: #fff;
+            cursor: move;
+            user-select: none;
+        }
+        #createPurchaseOrderModal .modal-header .btn-close {
+            cursor: pointer;
+        }
+        #createPurchaseOrderModal .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding-top: 0;
+            background: #fff;
+            overflow: hidden !important;
+            container-type: inline-size;
+        }
+        #createPurchaseOrderModal .po-create-form {
+            position: sticky;
+            top: 0;
+            z-index: 25;
+            isolation: isolate;
+            margin: 0 -16px 16px;
+            padding: 10px 16px 12px;
+            border-bottom: 1px solid #e5e9f1;
+            background: #fff;
+            box-shadow: 0 8px 16px rgba(15, 23, 42, .08);
+            overflow: hidden;
+            gap: 0;
+        }
+        #createPurchaseOrderModal .po-create-form::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            background: inherit;
+        }
+        .po-create-form-row { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 12px 14px; align-items: end; }
+        .po-create-form-row.po-create-items-row { grid-template-columns: minmax(320px, 2.3fr) minmax(92px, .55fr) minmax(140px, .8fr) minmax(190px, 1fr) minmax(118px, .65fr); }
+        .po-create-form-row > div { min-width: 0; }
+        .po-form-primary-row {
+            height: var(--po-form-primary-height);
+            opacity: var(--po-form-primary-opacity);
+            margin-bottom: var(--po-form-primary-gap);
+            overflow: hidden;
+            transition: height .16s ease, opacity .12s ease, margin .16s ease;
+            will-change: height, opacity;
+        }
+        .po-form-item-row {
+            position: relative;
+            z-index: 1;
+        }
+        #createPurchaseOrderModal.po-form-collapsed .po-form-primary-row {
+            pointer-events: none;
+        }
         .po-create-form .form-label { margin-bottom: 6px; }
+        .po-create-items-row .form-label { min-height: 32px; display: flex; align-items: flex-end; line-height: 1.18; }
         .po-create-form .form-select, .po-create-form .form-control, .po-create-form .btn { min-height: 40px; }
+        #btnAddPoItem {
+            --bs-btn-color: #fff;
+            --bs-btn-bg: #f97316;
+            --bs-btn-border-color: #f97316;
+            --bs-btn-hover-color: #fff;
+            --bs-btn-hover-bg: #ea580c;
+            --bs-btn-hover-border-color: #ea580c;
+            --bs-btn-active-color: #fff;
+            --bs-btn-active-bg: #c2410c;
+            --bs-btn-active-border-color: #c2410c;
+            font-weight: 850;
+            box-shadow: 0 10px 18px rgba(249, 115, 22, .24);
+        }
+        .po-create-resize-divider {
+            flex: 0 0 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: -14px -16px 10px;
+            cursor: row-resize;
+            background: #fff;
+            border-bottom: 1px solid #eef1f6;
+            touch-action: none;
+            user-select: none;
+        }
+        .po-create-resize-divider::before {
+            content: "";
+            width: 68px;
+            height: 4px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
+        .po-create-resize-divider:hover::before,
+        .po-create-resize-divider.is-dragging::before {
+            background: #f97316;
+        }
+        .po-create-lower {
+            flex: 1 1 auto;
+            min-height: 220px;
+            height: var(--po-create-lower-height);
+            overflow: auto;
+            padding-top: 4px;
+            scrollbar-gutter: stable;
+        }
+        .po-create-lower > .table-responsive {
+            max-height: none !important;
+        }
+        .po-modal-corner-resize {
+            position: absolute;
+            right: 6px;
+            bottom: 6px;
+            z-index: 35;
+            width: 18px;
+            height: 18px;
+            cursor: nwse-resize;
+            border-right: 3px solid rgba(124, 58, 237, .55);
+            border-bottom: 3px solid rgba(124, 58, 237, .55);
+            border-radius: 0 0 6px 0;
+            touch-action: none;
+        }
+        .po-modal-corner-resize:hover,
+        .po-modal-corner-resize.is-dragging {
+            border-color: #f97316;
+        }
+        #viewPurchaseOrderModal {
+            --po-view-modal-width: min(1180px, calc(100vw - 48px));
+            --po-view-modal-height: min(760px, calc(100vh - 48px));
+        }
+        #viewPurchaseOrderModal .modal-dialog {
+            width: var(--po-view-modal-width);
+            max-width: min(1320px, calc(100vw - 32px));
+            height: var(--po-view-modal-height);
+            max-height: calc(100vh - 24px);
+        }
+        #viewPurchaseOrderModal.po-modal-positioned .modal-dialog {
+            position: fixed;
+            left: var(--po-view-modal-left, 50%);
+            top: var(--po-view-modal-top, 24px);
+            width: var(--po-view-modal-width);
+            height: var(--po-view-modal-height);
+            margin: 0;
+            transform: none;
+        }
+        #viewPurchaseOrderModal .modal-content {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-width: min(720px, calc(100vw - 24px));
+            min-height: min(520px, calc(100vh - 24px));
+            overflow: hidden;
+        }
+        #viewPurchaseOrderModal .modal-header {
+            position: relative;
+            z-index: 30;
+            flex: 0 0 auto;
+            background: #fff;
+            cursor: move;
+            user-select: none;
+        }
+        #viewPurchaseOrderModal .modal-header .btn-close { cursor: pointer; }
+        #viewPurchaseOrderModal .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+            background: #fff;
+            scrollbar-gutter: stable;
+        }
+        #viewPurchaseOrderModal .modal-footer {
+            flex: 0 0 auto;
+            background: #fff;
+            z-index: 25;
+        }
+        #editPurchaseOrderModal {
+            --po-edit-modal-width: min(1180px, calc(100vw - 48px));
+            --po-edit-modal-height: min(760px, calc(100vh - 48px));
+            --po-edit-lower-height: 420px;
+            --po-edit-form-primary-height: 80px;
+            --po-edit-form-primary-opacity: 1;
+            --po-edit-form-primary-gap: 10px;
+        }
+        #editPurchaseOrderModal .modal-dialog {
+            width: var(--po-edit-modal-width);
+            max-width: min(1320px, calc(100vw - 32px));
+            height: var(--po-edit-modal-height);
+            max-height: calc(100vh - 24px);
+        }
+        #editPurchaseOrderModal.po-modal-positioned .modal-dialog {
+            position: fixed;
+            left: var(--po-edit-modal-left, 50%);
+            top: var(--po-edit-modal-top, 24px);
+            width: var(--po-edit-modal-width);
+            height: var(--po-edit-modal-height);
+            margin: 0;
+            transform: none;
+        }
+        #editPurchaseOrderModal .modal-content {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-width: min(720px, calc(100vw - 24px));
+            min-height: min(540px, calc(100vh - 24px));
+            overflow: hidden;
+        }
+        #editPurchaseOrderModal .modal-header {
+            position: relative;
+            z-index: 30;
+            background: #fff;
+            cursor: move;
+            user-select: none;
+        }
+        #editPurchaseOrderModal .modal-header .btn-close {
+            cursor: pointer;
+        }
+        #editPurchaseOrderModal .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding-top: 0;
+            background: #fff;
+            overflow: hidden !important;
+            container-type: inline-size;
+        }
+        #editPurchaseOrderModal .modal-footer {
+            flex: 0 0 auto;
+            background: #fff;
+            z-index: 25;
+        }
+        .po-edit-form {
+            position: sticky;
+            top: 0;
+            z-index: 25;
+            isolation: isolate;
+            display: grid;
+            gap: 0;
+            margin: 0 -16px 16px;
+            padding: 10px 16px 12px;
+            border-bottom: 1px solid #e5e9f1;
+            background: #fff;
+            box-shadow: 0 8px 16px rgba(15, 23, 42, .08);
+            overflow: hidden;
+        }
+        .po-edit-form-row {
+            display: grid;
+            gap: 12px 14px;
+            align-items: end;
+        }
+        .po-edit-primary-row {
+            grid-template-columns: minmax(240px, 1.25fr) minmax(180px, .85fr) minmax(190px, .9fr);
+            height: var(--po-edit-form-primary-height);
+            opacity: var(--po-edit-form-primary-opacity);
+            margin-bottom: var(--po-edit-form-primary-gap);
+            overflow: hidden;
+            transition: height .16s ease, opacity .12s ease, margin .16s ease;
+            will-change: height, opacity;
+        }
+        .po-edit-item-row {
+            grid-template-columns: minmax(320px, 2.35fr) minmax(92px, .55fr) minmax(140px, .8fr) minmax(190px, 1fr) minmax(118px, .65fr);
+            position: relative;
+            z-index: 1;
+        }
+        .po-edit-form-row > div { min-width: 0; }
+        .po-edit-form .form-label { margin-bottom: 6px; }
+        .po-edit-item-row .form-label { min-height: 32px; display: flex; align-items: flex-end; line-height: 1.18; }
+        .po-edit-form .form-select, .po-edit-form .form-control, .po-edit-form .btn { min-height: 40px; }
+        #editPurchaseOrderModal.po-form-collapsed .po-edit-primary-row { pointer-events: none; }
+        #edit-po-resize-divider { margin-top: -14px; }
+        .po-edit-lower {
+            flex: 1 1 auto;
+            min-height: 220px;
+            height: var(--po-edit-lower-height);
+            overflow: auto;
+            padding-top: 4px;
+            scrollbar-gutter: stable;
+        }
+        .po-edit-layout {
+            display: grid;
+            grid-template-columns: minmax(330px, .9fr) minmax(390px, 1.1fr);
+            gap: 14px;
+            align-items: start;
+        }
+        .po-edit-card {
+            min-width: 0;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            background: #f8f9fc;
+            overflow: hidden;
+        }
+        .po-edit-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 12px 14px;
+            border-bottom: 1px solid #e5e9f1;
+            background: rgba(255, 255, 255, .72);
+        }
+        .po-edit-card-header h4 {
+            margin: 0;
+            color: #344054;
+            font-size: .82rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+        .po-edit-details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(130px, 1fr));
+            gap: 10px 14px;
+            padding: 14px;
+        }
+        .po-edit-items-wrap {
+            max-height: none !important;
+            overflow: auto;
+        }
+        #table-edit-po-items tbody tr[data-index] {
+            cursor: pointer;
+        }
+        #table-edit-po-items tbody tr.is-selected td {
+            background: #fff7ed;
+            box-shadow: inset 0 1px 0 rgba(249, 115, 22, .18), inset 0 -1px 0 rgba(249, 115, 22, .18);
+        }
+        #table-edit-po-items tbody tr.is-selected td:first-child {
+            box-shadow: inset 4px 0 0 #f97316, inset 0 1px 0 rgba(249, 115, 22, .18), inset 0 -1px 0 rgba(249, 115, 22, .18);
+        }
+        .po-edit-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(135px, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .po-edit-summary .po-info-metric {
+            padding: 11px 12px;
+            border: 1px solid #fed7aa;
+            border-radius: 8px;
+            background: #fff7ed;
+        }
+        .po-edit-summary .po-info-metric span { color: #9a3412; }
+        .po-edit-summary .po-info-metric strong { color: #c2410c; font-size: .98rem; }
+        #btnEditAddPoItem {
+            font-weight: 850;
+        }
+        .po-edit-hidden-fields {
+            display: none !important;
+        }
         .po-selected-product-panel { display: none; margin: -2px 0 18px; }
-        .po-selected-product-panel.is-visible { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(320px, .82fr); gap: 14px; align-items: stretch; }
+        .po-selected-product-panel.is-visible { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 14px; align-items: stretch; }
         .po-selected-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
         .po-selected-card h4 { margin: 0 0 12px; color: #344054; font-size: .82rem; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
         .po-selected-product-grid { display: grid; grid-template-columns: repeat(3, minmax(125px, 1fr)); gap: 10px 14px; }
@@ -193,6 +585,9 @@
         .po-summary-section-title { margin: 0 0 10px; color: #4b5563; font-size: .75rem; font-weight: 950; text-transform: uppercase; }
         .po-summary-items { display: grid; gap: 10px; }
         .po-summary-item { padding: 10px 0 11px; border-bottom: 1px solid #e5e9f1; }
+        .po-summary-item[role="button"] { cursor: pointer; border-radius: 8px; padding: 10px 9px 11px; transition: background .14s ease, box-shadow .14s ease, border-color .14s ease; }
+        .po-summary-item[role="button"]:hover { background: #fff7ed; }
+        .po-summary-item.is-selected { background: #fff7ed; box-shadow: inset 3px 0 0 #f97316; }
         .po-summary-item:last-child { border-bottom: 0; }
         .po-summary-item-main { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; align-items: start; }
         .po-summary-check { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: var(--purple); font-size: .7rem; }
@@ -220,29 +615,37 @@
         .po-conversion-badge strong { display: block; margin-top: 3px; color: #431407; font-size: .86rem; font-weight: 850; line-height: 1.25; overflow-wrap: normal; word-break: normal; }
         .po-info-metric { min-width: 0; }
         .po-info-metric span { display: block; color: #7b8494; font-size: .72rem; font-weight: 800; line-height: 1.2; text-transform: uppercase; }
-        .po-info-metric strong { display: block; margin-top: 4px; color: var(--text-main); font-size: .88rem; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+        .po-info-metric strong { display: block; margin-top: 4px; color: var(--text-main); font-size: .88rem; font-weight: 800; line-height: 1.25; overflow-wrap: break-word; word-break: normal; hyphens: none; }
         .po-item-editor .form-control[readonly] { color: #475467; background: #f8fafc; border-color: #e5e7eb; cursor: default; }
-        .po-items-table th, .po-items-table td { padding: 11px 10px; text-align: center; font-size: .84rem; vertical-align: middle; }
-        .po-items-table th { color: #596274; background: #f8f9fc; font-weight: 800; white-space: nowrap; }
-        .po-items-table { width: max-content; table-layout: auto; min-width: 1460px; border-collapse: separate; border-spacing: 0; }
+        .po-items-table th, .po-items-table td { padding: 11px 10px; text-align: left; font-size: .84rem; vertical-align: middle; }
+        .po-items-table th { color: #596274; background: #f8f9fc; font-weight: 800; white-space: normal; }
+        .po-items-table { width: 100%; table-layout: auto; min-width: 1080px; border-collapse: separate; border-spacing: 0; }
         #table-po-items.po-items-table,
-        #table-edit-po-items.po-items-table { width: max-content !important; min-width: 1460px !important; table-layout: auto !important; }
+        #table-edit-po-items.po-items-table { width: 100% !important; min-width: 1080px !important; table-layout: auto !important; }
         #table-po-items.po-items-table th,
         #table-po-items.po-items-table td,
         #table-edit-po-items.po-items-table th,
         #table-edit-po-items.po-items-table td { overflow-wrap: normal !important; word-break: normal !important; hyphens: none !important; }
-        .po-items-table th:nth-child(1), .po-items-table td:nth-child(1) { width: 120px; text-align: left; }
-        .po-items-table th:nth-child(2), .po-items-table td:nth-child(2) { min-width: 180px; max-width: 260px; text-align: left; white-space: normal !important; }
-        .po-items-table th:nth-child(3), .po-items-table td:nth-child(3) { width: 135px; }
-        .po-items-table th:nth-child(4), .po-items-table td:nth-child(4) { width: 140px; }
-        .po-items-table th:nth-child(5), .po-items-table td:nth-child(5) { width: 95px; }
-        .po-items-table th:nth-child(6), .po-items-table td:nth-child(6) { width: 90px; }
-        .po-items-table th:nth-child(7), .po-items-table td:nth-child(7) { width: 115px; }
-        .po-items-table th:nth-child(8), .po-items-table td:nth-child(8) { width: 135px; white-space: nowrap; }
-        .po-items-table th:nth-child(9), .po-items-table td:nth-child(9) { width: 150px; white-space: nowrap; }
-        .po-items-table th:nth-child(10), .po-items-table td:nth-child(10) { width: 120px; text-align: right; white-space: nowrap; }
-        .po-items-table th:nth-child(11), .po-items-table td:nth-child(11) { width: 125px; text-align: right; white-space: nowrap; }
-        .po-items-table th:nth-child(12), .po-items-table td:nth-child(12) { width: 116px; min-width: 116px; white-space: nowrap; }
+        #table-po-items.po-items-table th:nth-child(1), #table-po-items.po-items-table td:nth-child(1),
+        #table-edit-po-items.po-items-table th:nth-child(1), #table-edit-po-items.po-items-table td:nth-child(1) { width: 140px; text-align: left; }
+        #table-po-items.po-items-table th:nth-child(2), #table-po-items.po-items-table td:nth-child(2),
+        #table-edit-po-items.po-items-table th:nth-child(2), #table-edit-po-items.po-items-table td:nth-child(2) { min-width: 190px; max-width: 260px; text-align: left; white-space: normal !important; }
+        #table-po-items.po-items-table th:nth-child(3), #table-po-items.po-items-table td:nth-child(3),
+        #table-edit-po-items.po-items-table th:nth-child(3), #table-edit-po-items.po-items-table td:nth-child(3) { width: 135px; text-align:left; }
+        #table-po-items.po-items-table th:nth-child(4), #table-po-items.po-items-table td:nth-child(4),
+        #table-edit-po-items.po-items-table th:nth-child(4), #table-edit-po-items.po-items-table td:nth-child(4) { width: 120px; text-align:left; }
+        #table-po-items.po-items-table th:nth-child(5), #table-po-items.po-items-table td:nth-child(5),
+        #table-edit-po-items.po-items-table th:nth-child(5), #table-edit-po-items.po-items-table td:nth-child(5) { width: 120px; text-align:left; }
+        #table-po-items.po-items-table th:nth-child(6), #table-po-items.po-items-table td:nth-child(6),
+        #table-edit-po-items.po-items-table th:nth-child(6), #table-edit-po-items.po-items-table td:nth-child(6) { width: 135px; white-space: nowrap; }
+        #table-po-items.po-items-table th:nth-child(7), #table-po-items.po-items-table td:nth-child(7),
+        #table-edit-po-items.po-items-table th:nth-child(7), #table-edit-po-items.po-items-table td:nth-child(7) { width: 150px; white-space: nowrap; }
+        #table-po-items.po-items-table th:nth-child(8), #table-po-items.po-items-table td:nth-child(8),
+        #table-edit-po-items.po-items-table th:nth-child(8), #table-edit-po-items.po-items-table td:nth-child(8) { width: 120px; text-align: right; white-space: nowrap; }
+        #table-po-items.po-items-table th:nth-child(9), #table-po-items.po-items-table td:nth-child(9),
+        #table-edit-po-items.po-items-table th:nth-child(9), #table-edit-po-items.po-items-table td:nth-child(9) { width: 125px; text-align: right; white-space: nowrap; }
+        #table-po-items.po-items-table th:nth-child(10), #table-po-items.po-items-table td:nth-child(10),
+        #table-edit-po-items.po-items-table th:nth-child(10), #table-edit-po-items.po-items-table td:nth-child(10) { width: 116px; min-width: 116px; text-align:center; white-space: nowrap; }
         #table-po-items.po-items-table th:last-child,
         #table-po-items.po-items-table td:last-child,
         #table-edit-po-items.po-items-table th:last-child,
@@ -265,36 +668,39 @@
             background: var(--bs-table-hover-bg, #f6f1ff);
         }
         .po-items-table td { overflow-wrap: normal; word-break: normal; hyphens: none; }
-        .po-items-table td:nth-child(2) { white-space: normal; overflow-wrap: normal; }
-        .po-items-table td:not(:nth-child(2)) { white-space: nowrap; }
+        #table-po-items.po-items-table td:nth-child(2),
+        #table-edit-po-items.po-items-table td:nth-child(2) { white-space: normal; overflow-wrap: normal; }
+        #table-po-items.po-items-table td:not(:nth-child(2)),
+        #table-edit-po-items.po-items-table td:not(:nth-child(2)) { white-space: nowrap; }
         .po-create-summary { display: grid; grid-template-columns: repeat(4, minmax(135px, 1fr)); gap: 12px; margin: 14px 0 0; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
         .po-create-summary span { display: block; color: #7b8494; font-size: .72rem; font-weight: 800; text-transform: uppercase; }
         .po-create-summary strong { display: block; margin-top: 4px; color: var(--text-main); font-size: .95rem; font-weight: 800; }
-        .po-detail-items-table { min-width: 1990px; table-layout: auto; }
+        .po-detail-items-table { width: 100%; min-width: 1120px; table-layout: auto; }
         .po-detail-items-table th,
         .po-detail-items-table td {
-            padding: 14px 16px;
+            padding: 12px 10px;
             vertical-align: middle;
-            white-space: nowrap;
+            white-space: normal;
             word-break: normal;
-            overflow-wrap: normal;
+            overflow-wrap: break-word;
+            text-align: left;
         }
         .po-detail-items-table th:nth-child(1),
-        .po-detail-items-table td:nth-child(1) { min-width: 220px; }
+        .po-detail-items-table td:nth-child(1) { min-width: 210px; max-width: 260px; text-align: left; }
         .po-detail-items-table th:nth-child(2),
-        .po-detail-items-table td:nth-child(2) { min-width: 140px; }
+        .po-detail-items-table td:nth-child(2) { min-width: 150px; max-width: 210px; text-align: left; }
         .po-detail-items-table th:nth-child(3),
-        .po-detail-items-table td:nth-child(3) { min-width: 120px; }
+        .po-detail-items-table td:nth-child(3) { min-width: 130px; }
         .po-detail-items-table th:nth-child(4),
         .po-detail-items-table td:nth-child(4) { min-width: 150px; }
         .po-detail-items-table th:nth-child(5),
-        .po-detail-items-table td:nth-child(5) { min-width: 170px; }
+        .po-detail-items-table td:nth-child(5) { min-width: 120px; }
         .po-detail-items-table th:nth-child(6),
-        .po-detail-items-table td:nth-child(6) { min-width: 150px; }
+        .po-detail-items-table td:nth-child(6) { min-width: 120px; }
         .po-detail-items-table th:nth-child(7),
-        .po-detail-items-table td:nth-child(7) { min-width: 100px; }
+        .po-detail-items-table td:nth-child(7) { min-width: 150px; }
         .po-detail-items-table th:nth-child(8),
-        .po-detail-items-table td:nth-child(8) { min-width: 130px; }
+        .po-detail-items-table td:nth-child(8) { min-width: 135px; }
         .po-detail-items-table th:nth-child(9),
         .po-detail-items-table td:nth-child(9) { min-width: 120px; }
         .po-detail-items-table th:nth-child(10),
@@ -303,20 +709,31 @@
         .po-detail-items-table td:nth-child(11) { min-width: 120px; }
         .po-detail-items-table th:nth-child(12),
         .po-detail-items-table td:nth-child(12) { min-width: 120px; }
-        .po-detail-items-table th:nth-child(13),
-        .po-detail-items-table td:nth-child(13) { min-width: 150px; }
-        .po-detail-items-table th:nth-child(14),
-        .po-detail-items-table td:nth-child(14) { min-width: 130px; }
-        .po-detail-items-table td:nth-child(1) {
+        .po-detail-items-table th:nth-child(5),
+        .po-detail-items-table td:nth-child(5),
+        .po-detail-items-table th:nth-child(8),
+        .po-detail-items-table td:nth-child(8),
+        .po-detail-items-table th:nth-child(9),
+        .po-detail-items-table td:nth-child(9),
+        .po-detail-items-table th:nth-child(10),
+        .po-detail-items-table td:nth-child(10),
+        .po-detail-items-table th:nth-child(11),
+        .po-detail-items-table td:nth-child(11),
+        .po-detail-items-table th:nth-child(12),
+        .po-detail-items-table td:nth-child(12) { white-space: nowrap; }
+        .po-detail-items-table td:nth-child(1),
+        .po-detail-items-table td:nth-child(2),
+        .po-detail-items-table td:nth-child(4) {
             white-space: normal;
             word-break: normal;
             overflow-wrap: normal;
         }
-        .payment-summary-card { max-width: 430px; margin-left: auto; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: 10px; background: #f8f9fc; }
+        .payment-summary-card { width: min(100%, 520px); margin-left: auto; padding: 14px 16px; border: 1px solid #e5e7eb; border-radius: 12px; background: #f6f7fb; box-shadow: 0 10px 24px rgba(15, 23, 42, .04); }
         .payment-summary-card h3 { margin: 0 0 10px; color: var(--text-main); font-size: .98rem; font-weight: 800; }
-        .payment-summary-line { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 0; color: #596274; font-size: .88rem; font-weight: 700; border-bottom: 1px solid #e5e9f1; }
+        .payment-summary-line { display: grid; grid-template-columns: minmax(150px, 1fr) auto; align-items: center; gap: 14px; padding: 7px 0; color: #596274; font-size: .88rem; font-weight: 700; border-bottom: 1px solid #e5e9f1; }
         .payment-summary-line:last-child { border-bottom: 0; }
-        .payment-summary-line strong { color: var(--text-main); white-space: nowrap; }
+        .payment-summary-line strong { color: var(--text-main); text-align: right; white-space: nowrap; }
+        .payment-summary-credit strong { color: #7a4d12; }
         .payment-summary-total { margin-top: 4px; padding-top: 10px; color: var(--text-main); font-size: .96rem; border-top: 2px solid #d8deeb; }
         .payment-summary-total strong { color: var(--purple); font-size: 1.08rem; }
         .po-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
@@ -332,13 +749,32 @@
         body.dark-mode .po-list-table th.col-actions,
         body.dark-mode #table-po-items.po-items-table th:last-child,
         body.dark-mode #table-edit-po-items.po-items-table th:last-child { background: #202b3d; }
-        body.dark-mode .po-list-table td:last-child,
+        body.dark-mode .po-list-table td.po-actions-cell,
         body.dark-mode #table-po-items.po-items-table td:last-child,
         body.dark-mode #table-edit-po-items.po-items-table td:last-child { background: var(--bs-table-bg, #182131); border-left-color: #263244; }
-        body.dark-mode .po-list-table tbody tr:hover td:last-child,
+        body.dark-mode .po-list-table tbody tr:hover td.po-actions-cell,
         body.dark-mode #table-po-items.po-items-table tbody tr:hover td:last-child,
         body.dark-mode #table-edit-po-items.po-items-table tbody tr:hover td:last-child { background: var(--bs-table-hover-bg, #202b3d); }
         body.dark-mode .status-card, body.dark-mode .po-detail-box, body.dark-mode .payment-summary-card, body.dark-mode .po-item-editor, body.dark-mode .po-selected-card, body.dark-mode .po-create-summary { background: #182131; }
+        body.dark-mode #createPurchaseOrderModal .modal-header,
+        body.dark-mode #editPurchaseOrderModal .modal-header,
+        body.dark-mode #viewPurchaseOrderModal .modal-header,
+        body.dark-mode #createPurchaseOrderModal .modal-body,
+        body.dark-mode #editPurchaseOrderModal .modal-body,
+        body.dark-mode #viewPurchaseOrderModal .modal-body,
+        body.dark-mode #editPurchaseOrderModal .modal-footer,
+        body.dark-mode #viewPurchaseOrderModal .modal-footer,
+        body.dark-mode #createPurchaseOrderModal .po-create-form,
+        body.dark-mode #editPurchaseOrderModal .po-edit-form,
+        body.dark-mode .po-create-resize-divider { background: #182131; }
+        body.dark-mode #createPurchaseOrderModal .po-create-form,
+        body.dark-mode #editPurchaseOrderModal .po-edit-form { border-bottom-color: #263244; box-shadow: 0 8px 16px rgba(0, 0, 0, .28); }
+        body.dark-mode .po-create-resize-divider { border-bottom-color: #263244; }
+        body.dark-mode .po-create-resize-divider::before { background: #475569; }
+        body.dark-mode .po-edit-card { background: #182131; border-color: #263244; }
+        body.dark-mode .po-edit-card-header { background: #202b3d; border-bottom-color: #263244; }
+        body.dark-mode #table-edit-po-items tbody tr.is-selected td { background: #431407; }
+        body.dark-mode .po-edit-summary .po-info-metric { border-color: #9a3412; background: #431407; }
         body.dark-mode .po-conversion-badge { border-color: #9a3412; border-left-color: #fb923c; background: #431407; color: #fed7aa; }
         body.dark-mode .po-conversion-badge span { color: #fdba74; }
         body.dark-mode .po-conversion-badge strong { color: #ffedd5; }
@@ -359,6 +795,8 @@
         body.dark-mode .po-summary-section-title,
         body.dark-mode .po-summary-item-main span:not(.po-summary-check) { color: #94a3b8; }
         body.dark-mode .po-summary-empty { border-color: #334155; color: #94a3b8; }
+        body.dark-mode .po-summary-item[role="button"]:hover,
+        body.dark-mode .po-summary-item.is-selected { background: #431407; }
         body.dark-mode .po-preview-empty { color: #94a3b8; }
         body.dark-mode .po-calc-card-blue { border-color: #1d4ed8; background: #172554; color: #bfdbfe; }
         body.dark-mode .po-calc-card-green { border-color: #15803d; background: #052e16; color: #bbf7d0; }
@@ -366,19 +804,67 @@
         body.dark-mode .po-item-editor .form-control[readonly] { color: #cbd5e1; background: #111827; border-color: #263244; }
         body.dark-mode .payment-summary-line { border-bottom-color: #263244; }
         @media (min-width: 1500px) {
-            .po-list-table { min-width: 1450px; }
+            .po-list-table { min-width: 1120px; }
         }
         @media (max-width: 1199.98px) {
             .status-summary-grid { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
-            .po-list-table { min-width: 1450px; }
+            .po-list-table { min-width: 1120px; }
+            .po-create-form-row { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
+            .po-create-form-row.po-create-items-row { grid-template-columns: minmax(260px, 2fr) minmax(90px, .7fr) minmax(130px, 1fr) minmax(180px, 1fr) minmax(112px, .75fr); }
+            .po-edit-primary-row { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+            .po-edit-item-row { grid-template-columns: minmax(260px, 2fr) minmax(90px, .7fr) minmax(130px, 1fr) minmax(180px, 1fr) minmax(112px, .75fr); }
+        }
+        @container (max-width: 980px) {
+            .po-create-form-row.po-create-items-row {
+                grid-template-columns: minmax(280px, 1.7fr) minmax(90px, .55fr) minmax(130px, .8fr);
+            }
+            .po-edit-item-row {
+                grid-template-columns: minmax(280px, 1.7fr) minmax(90px, .55fr) minmax(130px, .8fr);
+            }
+            .po-edit-layout {
+                grid-template-columns: 1fr;
+            }
+            .po-edit-summary {
+                grid-template-columns: repeat(2, minmax(135px, 1fr));
+            }
+        }
+        @container (max-width: 760px) {
+            .po-create-form-row,
+            .po-create-form-row.po-create-items-row,
+            .po-edit-primary-row,
+            .po-edit-item-row {
+                grid-template-columns: 1fr;
+            }
+            .po-create-items-row .form-label,
+            .po-edit-item-row .form-label {
+                min-height: 0;
+            }
+            .po-edit-details-grid,
+            .po-edit-summary {
+                grid-template-columns: 1fr;
+            }
         }
         @media (max-width: 991.98px) {
             .page-body { padding: 20px 14px; }
             .po-workspace { width: 100%; max-width: 100%; margin-left: 0; padding-inline: 0; }
-            .po-list-table { min-width: 1450px; }
+            .po-list-table { min-width: 1120px; }
+            #createPurchaseOrderModal {
+                --po-modal-width: calc(100vw - 20px);
+                --po-modal-height: calc(100vh - 20px);
+            }
+            #editPurchaseOrderModal {
+                --po-edit-modal-width: calc(100vw - 20px);
+                --po-edit-modal-height: calc(100vh - 20px);
+            }
             .po-selected-product-panel.is-visible { grid-template-columns: 1fr; }
             .po-create-form-row,
-            .po-create-form-row.po-create-items-row { grid-template-columns: 1fr; }
+            .po-create-form-row.po-create-items-row,
+            .po-edit-primary-row,
+            .po-edit-item-row { grid-template-columns: 1fr; }
+            .po-create-items-row .form-label,
+            .po-edit-item-row .form-label { min-height: 0; }
+            .po-edit-layout,
+            .po-edit-summary { grid-template-columns: 1fr; }
             .po-package-row,
             .po-order-cards { grid-template-columns: 1fr; }
             .po-selected-product-grid,
@@ -432,11 +918,13 @@
                                         <button class="po-view-btn active" type="button" data-po-view="active">Active Orders</button>
                                         <button class="po-view-btn" type="button" data-po-view="arrived">Arrived Orders</button>
                                         <button class="po-view-btn" type="button" data-po-view="delivered">Delivered Orders</button>
+                                        <button class="po-view-btn" type="button" data-po-view="archived">Archived Orders</button>
                                     </div>
                                     <select id="po-status-filter" class="form-select form-select-sm po-status-filter">
                                         <option value="">Pending and In Transit</option>
                                         <option value="Pending">Pending</option>
                                         <option value="In transit">In transit</option>
+                                        <option value="Cancelled">Cancelled</option>
                                     </select>
                                     <button class="btn btn-purple" type="button" data-bs-toggle="modal" data-bs-target="#createPurchaseOrderModal">
                                         <i class="fa-solid fa-plus me-2"></i>Create Purchase Order
@@ -448,14 +936,14 @@
                                     <thead id="purchase-orders-head">
                                         <tr>
                                             <th class="col-supplier">Supplier</th>
+                                            <th class="col-brand">Brand</th>
                                             <th class="col-items">Product</th>
-                                            <th class="col-category">Category</th>
+                                            <th class="col-specification">Specification</th>
                                             <th class="col-qty">Order Qty</th>
                                             <th class="col-purchase-unit">Purchase Unit</th>
                                             <th class="col-inventory-qty">Stock to Receive</th>
-                                            <th class="col-terms">Payment Terms</th>
-                                            <th class="col-delivery">Expected Delivery</th>
-                                            <th class="col-money">Total Amount</th>
+                                            <th class="col-terms">Payment</th>
+                                            <th class="col-delivery">ETA</th>
                                             <th class="col-status">Status</th>
                                             <th class="col-actions">Actions</th>
                                         </tr>
@@ -482,7 +970,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="po-create-form">
-                        <div class="po-create-form-row">
+                        <div class="po-create-form-row po-form-primary-row">
                         <div>
                             <label class="form-label fw-semibold" for="po-supplier-select">Supplier</label>
                             <select id="po-supplier-select" class="form-select">
@@ -499,11 +987,11 @@
                             </select>
                         </div>
                         <div>
-                            <label class="form-label fw-semibold" for="po-expected-delivery">Expected Delivery Date</label>
+                            <label class="form-label fw-semibold" for="po-expected-delivery">ETA</label>
                             <input id="po-expected-delivery" type="date" class="form-control">
                         </div>
                         </div>
-                        <div class="po-create-form-row po-create-items-row">
+                        <div class="po-create-form-row po-create-items-row po-form-item-row">
                         <div class="po-product-select-wrap">
                             <label class="form-label fw-semibold" for="po-product-select">Product</label>
                             <select id="po-product-select" class="form-select" disabled>
@@ -516,7 +1004,7 @@
                         </div>
                         <div>
                             <label class="form-label fw-semibold" for="po-purchase-unit">Purchase Unit</label>
-                            <select id="po-purchase-unit" class="form-select">
+                            <select id="po-purchase-unit" class="form-select" disabled>
                                 <option value="Box">Box</option>
                                 <option value="Case">Case</option>
                                 <option value="Carton">Carton</option>
@@ -533,7 +1021,7 @@
                         </div>
                         <div>
                             <label class="form-label fw-semibold" for="po-units-per-purchase-unit">Units per Purchase Unit</label>
-                            <input id="po-units-per-purchase-unit" type="number" class="form-control" min="1" value="1">
+                            <input id="po-units-per-purchase-unit" type="number" class="form-control" min="1" value="1" readonly>
                         </div>
                         <div class="d-grid">
                             <button id="btnAddPoItem" class="btn btn-purple" type="button">Add Item</button>
@@ -541,35 +1029,38 @@
                         </div>
                     </div>
 
-                    <div id="po-selected-product-panel" class="po-selected-product-panel" aria-live="polite"></div>
+                    <div id="po-create-resize-divider" class="po-create-resize-divider" role="separator" aria-orientation="horizontal" aria-label="Collapse or expand purchase order fields"></div>
 
-                    <div class="table-responsive border rounded">
-                        <table id="table-po-items" class="table table-hover align-middle mb-0 po-items-table">
-                            <thead>
-                                <tr>
-                                    <th>Brand</th>
-                                    <th>Product</th>
-                                    <th>Category</th>
-                                    <th>Product Type</th>
-                                    <th>Size</th>
-                                    <th>Unit</th>
-                                    <th>Packaging</th>
-                                    <th>Purchase Unit</th>
-                                    <th>Stock to Receive</th>
-                                    <th>Supplier Cost</th>
-                                    <th>Estimated Cost</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                    <div id="po-create-lower" class="po-create-lower">
+                        <div id="po-selected-product-panel" class="po-selected-product-panel" aria-live="polite"></div>
+
+                        <div class="table-responsive border rounded">
+                            <table id="table-po-items" class="table table-hover align-middle mb-0 po-items-table">
+                                <thead>
+                                    <tr>
+                                        <th>Brand</th>
+                                        <th>Product</th>
+                                        <th>Product Type</th>
+                                        <th>Net Weight</th>
+                                        <th>Packaging</th>
+                                        <th>Purchase Unit</th>
+                                        <th>Stock to Receive</th>
+                                        <th>Supplier Cost</th>
+                                        <th>Estimated Cost</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div id="po-create-summary" class="po-create-summary" aria-live="polite"></div>
                     </div>
-                    <div id="po-create-summary" class="po-create-summary" aria-live="polite"></div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
                     <button id="btnSubmitPo" class="btn btn-purple" type="button">Submit Purchase Order</button>
                 </div>
+                <div id="po-modal-corner-resize" class="po-modal-corner-resize" aria-hidden="true"></div>
             </div>
         </div>
     </div>
@@ -590,14 +1081,9 @@
                         <table class="table table-hover align-middle mb-0 po-items-table po-detail-items-table">
                             <thead>
                                 <tr>
-                                    <th>Product</th>
                                     <th>Brand</th>
-                                    <th>Category</th>
-                                    <th>Product Type</th>
-                                    <th>Generic / Variant</th>
-                                    <th>Strength / Size</th>
-                                    <th>Unit</th>
-                                    <th>Packaging</th>
+                                    <th>Product</th>
+                                    <th>Specification</th>
                                     <th>Supplier Cost</th>
                                     <th>Purchase Unit</th>
                                     <th>Purchase Conversion</th>
@@ -615,6 +1101,7 @@
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
                 </div>
+                <div id="view-po-modal-corner-resize" class="po-modal-corner-resize" aria-hidden="true"></div>
             </div>
         </div>
     </div>
@@ -625,31 +1112,19 @@
                 <div class="modal-header">
                     <div>
                         <h2 class="modal-title fs-5 fw-bold" id="editPurchaseOrderModalLabel">Edit Purchase Order</h2>
-                        <p class="text-muted small mb-0 mt-1" id="editPoNumber">Update order details and status.</p>
+                        <p class="text-muted small mb-0 mt-1">PO <span id="editPoNumber">-</span></p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="edit-po-id">
-                    <div class="row g-3 align-items-end mb-4">
-                        <div class="col-lg-4">
+                    <div class="po-edit-form">
+                        <div class="po-edit-form-row po-edit-primary-row">
+                        <div>
                             <label class="form-label fw-semibold" for="edit-po-supplier-select">Supplier</label>
                             <select id="edit-po-supplier-select" class="form-select"></select>
                         </div>
-                        <div class="col-lg-4">
-                            <label class="form-label fw-semibold" for="edit-po-product-select">Product</label>
-                            <select id="edit-po-product-select" class="form-select" disabled>
-                                <option value="" disabled selected>Select product...</option>
-                            </select>
-                        </div>
-                        <div class="col-lg-2">
-                            <label class="form-label fw-semibold" for="edit-po-quantity">Order Qty</label>
-                            <input id="edit-po-quantity" type="number" class="form-control" min="1" value="1">
-                        </div>
-                        <div class="col-lg-2 d-grid">
-                            <button id="btnEditAddPoItem" class="btn btn-purple" type="button">Add Item</button>
-                        </div>
-                        <div class="col-lg-3">
+                        <div>
                             <label class="form-label fw-semibold" for="edit-po-payment-terms">Payment Terms</label>
                             <select id="edit-po-payment-terms" class="form-select">
                                 <option value="Cash">Cash</option>
@@ -657,145 +1132,117 @@
                                 <option value="Bank Transfer">Bank Transfer</option>
                             </select>
                         </div>
-                        <div class="col-lg-3">
-                            <label class="form-label fw-semibold" for="edit-po-expected-delivery">Expected Delivery Date</label>
+                        <div>
+                            <label class="form-label fw-semibold" for="edit-po-expected-delivery">ETA</label>
                             <input id="edit-po-expected-delivery" type="date" class="form-control">
                         </div>
-                        <div class="col-lg-6">
-                            <label class="form-label fw-semibold" for="edit-po-status">Status</label>
-                            <select id="edit-po-status" class="form-select">
-                                <option value="Pending">Pending</option>
-                                <option value="In transit">In transit</option>
-                                <option value="Arrived">Arrived</option>
-                                <option value="Cancelled">Cancelled</option>
+                        </div>
+                        <div class="po-edit-form-row po-edit-item-row">
+                        <div class="po-product-select-wrap">
+                            <label class="form-label fw-semibold" for="edit-po-product-select">Product</label>
+                            <select id="edit-po-product-select" class="form-select" disabled>
+                                <option value="" disabled selected>Select product...</option>
                             </select>
                         </div>
-                        <div class="col-12">
-                            <div id="edit-po-product-editor" class="po-item-editor d-none">
-                                <p class="po-item-editor-title" id="edit-po-product-editor-title">Selected Product Details</p>
-                                <input type="hidden" id="edit-po-editor-index">
-                                <input type="hidden" id="edit-po-editor-product-id">
-                                <div class="row g-3">
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-product-name">Product</label>
-                                        <input id="edit-po-editor-product-name" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-brand-name">Brand</label>
-                                        <input id="edit-po-editor-brand-name" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-category-name">Category</label>
-                                        <input id="edit-po-editor-category-name" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-type-name">Product Type</label>
-                                        <input id="edit-po-editor-type-name" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-generic-variant" id="edit-po-editor-generic-variant-label">Generic / Variant</label>
-                                        <input id="edit-po-editor-generic-variant" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-strength-size" id="edit-po-editor-strength-size-label">Strength / Size</label>
-                                        <input id="edit-po-editor-strength-size" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-unit">Unit</label>
-                                        <input id="edit-po-editor-unit" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-packaging" id="edit-po-editor-packaging-label">Size / Packaging</label>
-                                        <input id="edit-po-editor-packaging" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-purchase-unit">Purchase Unit</label>
-                                        <select id="edit-po-editor-purchase-unit" class="form-select">
-                                            <option value="Box">Box</option>
-                                            <option value="Case">Case</option>
-                                            <option value="Carton">Carton</option>
-                                            <option value="Bundle">Bundle</option>
-                                            <option value="Pallet">Pallet</option>
-                                            <option value="Pack">Pack</option>
-                                            <option value="Bottle">Bottle</option>
-                                            <option value="Can">Can</option>
-                                            <option value="Blister Pack">Blister Pack</option>
-                                            <option value="Sachet">Sachet</option>
-                                            <option value="Piece">Piece</option>
-                                            <option value="pcs">pcs</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-contains">Units per Purchase Unit</label>
-                                        <input id="edit-po-editor-contains" class="form-control" type="number" min="1" value="1">
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-conversion">Purchase Conversion</label>
-                                        <input id="edit-po-editor-conversion" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-price">Supplier Cost</label>
-                                        <input id="edit-po-editor-price" class="form-control" type="number" min="0" step="0.01">
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-quantity">Order Qty</label>
-                                        <input id="edit-po-editor-quantity" class="form-control" type="number" min="1" value="1">
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-stock-receive">Stock to Receive</label>
-                                        <input id="edit-po-editor-stock-receive" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-selling-price">Selling Price</label>
-                                        <input id="edit-po-editor-selling-price" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-3">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-shelf-stock">Shelf Stock</label>
-                                        <input id="edit-po-editor-shelf-stock" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-3">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-storage-stock">Storage Stock</label>
-                                        <input id="edit-po-editor-storage-stock" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-3">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-on-hand">On Hand</label>
-                                        <input id="edit-po-editor-on-hand" class="form-control" type="text" readonly>
-                                    </div>
-                                    <div class="col-lg-3">
-                                        <label class="form-label fw-semibold" for="edit-po-editor-reorder-level">Reorder Level</label>
-                                        <input id="edit-po-editor-reorder-level" class="form-control" type="text" readonly>
-                                    </div>
-                                </div>
-                            </div>
+                        <div>
+                            <label class="form-label fw-semibold" for="edit-po-quantity">Order Qty</label>
+                            <input id="edit-po-quantity" type="number" class="form-control" min="1" value="1">
+                        </div>
+                        <div>
+                            <label class="form-label fw-semibold" for="edit-po-editor-purchase-unit">Purchase Unit</label>
+                            <select id="edit-po-editor-purchase-unit" class="form-select" disabled>
+                                <option value="Box">Box</option>
+                                <option value="Case">Case</option>
+                                <option value="Carton">Carton</option>
+                                <option value="Bundle">Bundle</option>
+                                <option value="Pallet">Pallet</option>
+                                <option value="Pack">Pack</option>
+                                <option value="Bottle">Bottle</option>
+                                <option value="Can">Can</option>
+                                <option value="Blister Pack">Blister Pack</option>
+                                <option value="Sachet">Sachet</option>
+                                <option value="Piece">Piece</option>
+                                <option value="pcs">pcs</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label fw-semibold" for="edit-po-editor-contains">Units per Purchase Unit</label>
+                            <input id="edit-po-editor-contains" class="form-control" type="number" min="1" value="1" readonly>
+                        </div>
+                        <div class="d-grid">
+                            <button id="btnEditAddPoItem" class="btn btn-purple" type="button">Update Item</button>
+                        </div>
                         </div>
                     </div>
 
-                    <div class="table-responsive border rounded">
-                        <table id="table-edit-po-items" class="table table-hover align-middle mb-0 po-items-table">
-                            <thead>
-                                <tr>
-                                    <th>Brand</th>
-                                    <th>Product</th>
-                                    <th>Category</th>
-                                    <th>Product Type</th>
-                                    <th>Size</th>
-                                    <th>Unit</th>
-                                    <th>Packaging</th>
-                                    <th>Purchase Unit</th>
-                                    <th>Stock to Receive</th>
-                                    <th>Supplier Cost</th>
-                                    <th>Estimated Cost</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                    <div id="edit-po-resize-divider" class="po-create-resize-divider" role="separator" aria-orientation="horizontal" aria-label="Collapse or expand edit purchase order fields"></div>
+
+                    <div id="edit-po-lower" class="po-edit-lower">
+                        <div class="po-edit-layout">
+                            <section class="po-edit-card">
+                                <div class="po-edit-card-header">
+                                    <h4>Selected Product Details</h4>
+                                </div>
+                                <div id="edit-po-product-details-grid" class="po-edit-details-grid" aria-live="polite">
+                                    <div class="po-preview-empty">Select or click a PO item to view product details.</div>
+                                </div>
+                            </section>
+                            <section class="po-edit-card">
+                                <div class="po-edit-card-header">
+                                    <h4>PO Items</h4>
+                                </div>
+                                <div class="table-responsive po-edit-items-wrap">
+                                    <table id="table-edit-po-items" class="table table-hover align-middle mb-0 po-items-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Brand</th>
+                                                <th>Product</th>
+                                                <th>Product Type</th>
+                                                <th>Net Weight</th>
+                                                <th>Packaging</th>
+                                                <th>Purchase Unit</th>
+                                                <th>Stock to Receive</th>
+                                                <th>Supplier Cost</th>
+                                                <th>Estimated Cost</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </div>
+                        <div id="edit-po-summary" class="po-edit-summary" aria-live="polite"></div>
+                    </div>
+
+                    <div id="edit-po-product-editor" class="po-edit-hidden-fields d-none">
+                        <p class="po-item-editor-title" id="edit-po-product-editor-title">Selected Product Details</p>
+                        <input type="hidden" id="edit-po-editor-index">
+                        <input type="hidden" id="edit-po-editor-product-id">
+                        <input type="hidden" id="edit-po-editor-product-name">
+                        <input type="hidden" id="edit-po-editor-brand-name">
+                        <input type="hidden" id="edit-po-editor-category-name">
+                        <input type="hidden" id="edit-po-editor-type-name">
+                        <input type="hidden" id="edit-po-editor-generic-variant">
+                        <input type="hidden" id="edit-po-editor-strength-size">
+                        <input type="hidden" id="edit-po-editor-unit">
+                        <input type="hidden" id="edit-po-editor-packaging">
+                        <input type="hidden" id="edit-po-editor-price">
+                        <input type="hidden" id="edit-po-editor-quantity">
+                        <input type="hidden" id="edit-po-editor-conversion">
+                        <input type="hidden" id="edit-po-editor-stock-receive">
+                        <input type="hidden" id="edit-po-editor-selling-price">
+                        <input type="hidden" id="edit-po-editor-shelf-stock">
+                        <input type="hidden" id="edit-po-editor-storage-stock">
+                        <input type="hidden" id="edit-po-editor-on-hand">
+                        <input type="hidden" id="edit-po-editor-reorder-level">
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
                     <button id="btnUpdatePo" class="btn btn-purple" type="button">Save Changes</button>
                 </div>
+                <div id="edit-po-modal-corner-resize" class="po-modal-corner-resize" aria-hidden="true"></div>
             </div>
         </div>
     </div>
@@ -806,7 +1253,7 @@
                 <div class="modal-header">
                     <div>
                         <h2 class="modal-title fs-5 fw-bold" id="receivePurchaseOrderModalLabel">Inspect Delivery & Receive</h2>
-                        <p class="text-muted small mb-0 mt-1">PO <span id="receivePoNumber">-</span> · <span id="receiveSupplierName">-</span></p>
+                        <p class="text-muted small mb-0 mt-1">PO <span id="receivePoNumber">-</span> Ã‚Â· <span id="receiveSupplierName">-</span></p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -815,12 +1262,13 @@
                         <table id="table-receive-items" class="table table-hover align-middle mb-0 po-items-table">
                             <thead>
                                 <tr>
-                                    <th>Product</th>
                                     <th>Brand</th>
+                                    <th>Product</th>
+                                    <th>Specification</th>
                                     <th>Stock to Receive</th>
                                     <th>Received Qty</th>
                                     <th>Damaged Qty</th>
-                                    <th>Returned Qty</th>
+                                    <th>Damage Action</th>
                                     <th>Expiry Date</th>
                                     <th>Remarks</th>
                                 </tr>
@@ -834,26 +1282,26 @@
                                 <h3>Payment Summary</h3>
                                 <div class="payment-summary-line">
                                     <span>Original PO Total</span>
-                                    <strong id="receiveOriginalTotal">₱0.00</strong>
+                                    <strong id="receiveOriginalTotal">Ã¢â€šÂ±0.00</strong>
                                 </div>
                                 <div class="payment-summary-line">
-                                    <span>Damage / Return Deduction</span>
-                                    <strong id="receiveDamageDeduction">₱0.00</strong>
+                                    <span>Rejected Qty</span>
+                                    <strong id="receiveRejectedQty">0 items</strong>
+                                </div>
+                                <div class="payment-summary-line payment-summary-credit">
+                                    <span>Supplier Credit</span>
+                                    <strong id="receiveDamageDeduction">-Ã¢â€šÂ±0.00</strong>
                                 </div>
                                 <div class="mb-2 mt-2">
-                                    <label class="form-label small fw-bold mb-1" for="receiveAdditionalAmount">Adjusted Payment</label>
+                                    <label class="form-label small fw-bold mb-1" for="receiveAdditionalAmount">Supplier Discount</label>
                                     <div class="input-group input-group-sm">
-                                        <span class="input-group-text">₱</span>
-                                        <input id="receiveAdditionalAmount" class="form-control" type="number" min="0" step="0.01" value="0">
+                                        <span class="input-group-text">Ã¢â€šÂ±</span>
+                                        <input id="receiveAdditionalAmount" class="form-control" type="number" min="0" step="0.01" value="0" inputmode="decimal">
                                     </div>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label small fw-bold mb-1" for="receiveAdjustmentReason">Adjustment Reason</label>
-                                    <input id="receiveAdjustmentReason" class="form-control form-control-sm" type="text" placeholder="Optional reason...">
                                 </div>
                                 <div class="payment-summary-line payment-summary-total">
                                     <span>Final Payment</span>
-                                    <strong id="receiveFinalAmount">₱0.00</strong>
+                                    <strong id="receiveFinalAmount">Ã¢â€šÂ±0.00</strong>
                                 </div>
                             </div>
                         </div>
@@ -862,7 +1310,7 @@
                         <div class="col-md-4 ms-auto">
                             <label class="form-label fw-semibold" for="receivePoAmountPaid">Amount Paid</label>
                             <div class="input-group">
-                                <span class="input-group-text">₱</span>
+                                <span class="input-group-text">Ã¢â€šÂ±</span>
                                 <input id="receivePoAmountPaid" class="form-control" type="number" min="0" step="0.01" placeholder="0.00">
                             </div>
                             <div class="form-text">Cannot exceed the purchase order total.</div>
@@ -885,7 +1333,7 @@
                 <div class="modal-header">
                     <div>
                         <h2 class="modal-title fs-5 fw-bold" id="returnDamageModalLabel">Return/Damage</h2>
-                        <p class="text-muted small mb-0 mt-1">PO <span id="returnPoNumber">-</span> · <span id="returnSupplierName">-</span></p>
+                        <p class="text-muted small mb-0 mt-1">PO <span id="returnPoNumber">-</span> Ã‚Â· <span id="returnSupplierName">-</span></p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -920,9 +1368,10 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-    <script type="module" src="./js/modules/purchase_orders.js?v=40"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=60"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js';
 

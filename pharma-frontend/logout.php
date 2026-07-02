@@ -1,14 +1,12 @@
 <?php
-session_set_cookie_params([
-    'path' => '/PharmacySystem_for_DocR/',
-    'samesite' => 'Lax'
-]);
-session_start();
+require_once '../pharma-api/config/db_connection.php';
+require_once '../pharma-api/config/auth_context.php';
+
+revokeCurrentAuthSession($pdo);
 $_SESSION = [];
 session_destroy();
+clearCurrentPhpSessionCookie();
 
-setcookie(session_name(), '', time() - 42000, '/PharmacySystem_for_DocR/');
-
-header('Location: login.html');
+header('Location: login.php');
 exit();
 ?>

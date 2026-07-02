@@ -82,6 +82,11 @@ const PharmaUtils = {
         const shouldRetry = method === 'GET';
         const attempts = shouldRetry ? 2 : 1;
         let lastError;
+        const tabToken = sessionStorage.getItem('pharma_tab_token') || '';
+        const headers = new Headers(options.headers || {});
+        if (tabToken && !headers.has('X-Tab-Token')) {
+            headers.set('X-Tab-Token', tabToken);
+        }
 
         for (let attempt = 0; attempt < attempts; attempt++) {
             const controller = !options.signal ? new AbortController() : null;
@@ -93,6 +98,7 @@ const PharmaUtils = {
             try {
                 const response = await fetch(requestUrl, {
                     ...options,
+                    headers,
                     cache: shouldRetry ? 'no-store' : options.cache,
                     signal: options.signal || controller.signal
                 });
@@ -108,6 +114,12 @@ const PharmaUtils = {
                 }
 
                 if (!response.ok || data.status === 'error') {
+                    if (response.status === 401) {
+                        sessionStorage.removeItem('pharma_tab_token');
+                        if (!window.location.pathname.endsWith('/login.html')) {
+                            window.location.replace('login.html');
+                        }
+                    }
                     throw new Error(data.message || `HTTP Error! Status: ${response.status}`);
                 }
 

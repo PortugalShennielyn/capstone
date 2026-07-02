@@ -5,8 +5,7 @@ require_once '../../config/auth_context.php';
 revokeCurrentAuthSession($pdo);
 $_SESSION = [];
 session_destroy();
-
-setcookie(session_name(), '', time() - 42000, '/PharmacySystem_for_DocR/');
+clearCurrentPhpSessionCookie();
 
 echo json_encode([
     'status' => 'success',

@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
