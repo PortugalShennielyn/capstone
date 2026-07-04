@@ -196,6 +196,11 @@ function legacyRoleIdentifier(string $role): string
         'Admin' => 'ro-admin',
         'Sales Clerk' => 'ro-sales-clerk',
         'Cashier' => 'ro-cashier',
+        'super_admin' => 'ro-super-admin',
+        'admin' => 'ro-admin',
+        'manager' => 'ro-manager',
+        'cashier' => 'ro-cashier',
+        'salesclerk' => 'ro-sales-clerk',
     ];
 
     return $map[$role] ?? strtolower('ro-' . preg_replace('/[^A-Za-z0-9]+/', '-', trim($role)));
@@ -374,6 +379,7 @@ function currentSessionPayload(): array
         'user_id' => $_SESSION['user_id'] ?? '',
         'username' => $_SESSION['username'] ?? '',
         'email' => $_SESSION['email'] ?? null,
+        'contact_number' => $_SESSION['contact_number'] ?? null,
         'full_name' => $_SESSION['full_name'] ?? '',
         'first_name' => $_SESSION['first_name'] ?? null,
         'last_name' => $_SESSION['last_name'] ?? null,

@@ -34,12 +34,14 @@ if (!is_array($payload)) {
 
 $username = trim((string) ($payload['username'] ?? ($_SESSION['username'] ?? '')));
 $email = trim((string) ($payload['email'] ?? ''));
+$contactNumber = trim((string) ($payload['contact_number'] ?? ''));
 $fullName = trim((string) ($payload['full_name'] ?? ''));
 $firstName = trim((string) ($payload['first_name'] ?? ''));
 $lastName = trim((string) ($payload['last_name'] ?? ''));
 
 $username = preg_replace('/\s+/', '', $username);
 $email = preg_replace('/\s+/', '', $email);
+$contactNumber = preg_replace('/\s+/', ' ', $contactNumber);
 $fullName = preg_replace('/\s+/', ' ', $fullName);
 $firstName = preg_replace('/\s+/', ' ', $firstName);
 $lastName = preg_replace('/\s+/', ' ', $lastName);
@@ -85,6 +87,15 @@ if (mb_strlen($firstName) > 100 || mb_strlen($lastName) > 100) {
     echo json_encode([
         'status' => 'error',
         'message' => 'First name and last name must be 100 characters or fewer.'
+    ]);
+    exit();
+}
+
+if (mb_strlen($contactNumber) > 50) {
+    http_response_code(422);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Contact number must be 50 characters or fewer.'
     ]);
     exit();
 }
@@ -142,6 +153,7 @@ try {
         'UPDATE users
          SET username = :username,
              email = :email,
+             contact_number = :contact_number,
              full_name = :full_name,
              first_name = :first_name,
              last_name = :last_name
@@ -150,6 +162,7 @@ try {
     $stmt->execute([
         ':username' => $username,
         ':email' => $email === '' ? null : $email,
+        ':contact_number' => $contactNumber === '' ? null : $contactNumber,
         ':full_name' => $fullName,
         ':first_name' => $firstName === '' ? null : $firstName,
         ':last_name' => $lastName === '' ? null : $lastName,
@@ -160,6 +173,7 @@ try {
 
     $_SESSION['username'] = $username;
     $_SESSION['email'] = $email === '' ? null : $email;
+    $_SESSION['contact_number'] = $contactNumber === '' ? null : $contactNumber;
     $_SESSION['full_name'] = $fullName;
     $_SESSION['first_name'] = $firstName === '' ? null : $firstName;
     $_SESSION['last_name'] = $lastName === '' ? null : $lastName;

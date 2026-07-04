@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Expiry Monitoring</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=12" rel="stylesheet">
+    <script src="./js/navbar.js?v=27" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=2"></script>
+
+    <style>
+        :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
+        * { box-sizing:border-box; }
+        body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter", sans-serif; }
+        body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; }
+        .main-wrapper { min-height:100vh; margin-left:var(--sidebar-width); transition:var(--transition); }
+        .main-wrapper.collapsed { margin-left:var(--sidebar-collapsed-width); }
+        .topbar { position:sticky; top:0; height:var(--topbar-height); display:flex; align-items:center; justify-content:space-between; padding:0 26px; background:#fff; border-bottom:1px solid var(--border-soft); z-index:1020; }
+        body.dark-mode .topbar, body.dark-mode .card, body.dark-mode .summary-card, body.dark-mode .detail-box { background:#182131; color:var(--text-main); }
+        .topbar-left, .topbar-right { display:flex; align-items:center; gap:14px; }
+        .icon-btn { width:42px; height:42px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:8px; color:#4b5563; background:#f4f6fb; }
+        .icon-btn:hover { color:#fff; background:var(--purple); }
+        .page-title-mini { display:flex; flex-direction:column; line-height:1.2; }
+        .page-title-mini strong { color:var(--text-main); font-size:15px; font-weight:800; }
+        .page-title-mini span { margin-top:3px; color:#7b8494; font-size:12px; font-weight:600; }
+        .page-body { padding:clamp(22px, 2vw, 34px); }
+        .workspace { width:100%; max-width:1580px; margin:0 auto; padding-inline:clamp(8px, 1.1vw, 18px); }
+        body.navbar-sidebar-collapsed .workspace { max-width:1680px; padding-inline:clamp(10px, 1.4vw, 24px); }
+        .card, .summary-card { border:1px solid var(--border-soft); border-radius:10px; box-shadow:0 10px 28px rgba(15,23,42,.05); }
+        .summary-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; }
+        .expiry-summary-grid { flex:1 1 auto; display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:clamp(12px,1.2vw,18px); }
+        .summary-card { min-height:112px; display:flex; flex-direction:column; justify-content:center; padding:20px 18px; background:#fff; border-left:5px solid var(--summary-color,#f59e0b); }
+        .summary-card strong { display:block; font-size:1.75rem; font-weight:800; line-height:1; }
+        .summary-card p { margin:10px 0 0; color:#596274; font-size:.9rem; font-weight:800; line-height:1.25; }
+        .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-color:#fff; --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
+        .section-title { color:var(--text-main); font-size:1.05rem; font-weight:800; }
+        .table-responsive { border-radius:10px; overflow-x:auto; overflow-y:hidden; }
+        .expiry-table { width:max-content; min-width:1730px; margin-bottom:0; table-layout:fixed; }
+        .expiry-table th { padding:14px 14px; color:#596274; background:#f8f9fc; font-size:13px; font-weight:800; line-height:1.18; text-align:center; vertical-align:middle; }
+        .expiry-table td { padding:16px 14px; color:var(--text-main); font-size:13px; font-weight:750; line-height:1.34; text-align:center; vertical-align:middle; }
+        .expiry-table th:nth-child(1), .expiry-table td:nth-child(1) { min-width:180px; width:180px; }
+        .expiry-table th:nth-child(2), .expiry-table td:nth-child(2) { min-width:130px; width:130px; }
+        .expiry-table th:nth-child(3), .expiry-table td:nth-child(3) { min-width:120px; width:120px; }
+        .expiry-table th:nth-child(4), .expiry-table td:nth-child(4) { min-width:130px; width:130px; }
+        .expiry-table th:nth-child(5), .expiry-table td:nth-child(5) { min-width:220px; width:220px; }
+        .expiry-table th:nth-child(6), .expiry-table td:nth-child(6),
+        .expiry-table th:nth-child(7), .expiry-table td:nth-child(7) { min-width:120px; width:120px; text-align:center; }
+        .expiry-table th:nth-child(8), .expiry-table td:nth-child(8) { min-width:130px; width:130px; white-space:nowrap; }
+        .expiry-table th:nth-child(9), .expiry-table td:nth-child(9) { min-width:140px; width:140px; white-space:nowrap; }
+        .expiry-table th:nth-child(10), .expiry-table td:nth-child(10) { min-width:140px; width:140px; text-align:center; }
+        .expiry-table th:nth-child(11), .expiry-table td:nth-child(11) { min-width:150px; width:150px; text-align:center; }
+        .expiry-table th:nth-child(12), .expiry-table td:nth-child(12) { min-width:100px; width:100px; text-align:center; }
+        .expiry-table td:nth-child(2),
+        .expiry-table td:nth-child(5) { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .expiry-actions { display:inline-flex; justify-content:center; align-items:center; gap:7px; white-space:nowrap; }
+        .expiry-actions .btn { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+        .empty-row { padding:42px 16px !important; color:#8790a1 !important; text-align:center; }
+        .status-badge { white-space:nowrap; line-height:1.2; font-size:11px; padding:6px 8px; }
+        .detail-box { padding:12px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
+        .detail-box span { display:block; color:#7b8494; font-size:.78rem; font-weight:800; text-transform:uppercase; }
+        .detail-box strong { display:block; margin-top:4px; color:var(--text-main); font-size:.95rem; font-weight:800; }
+        body.dark-mode .expiry-table th { background:#202b3d; color:#cbd5e1; }
+        @media (max-width:991.98px) { .page-body { padding:20px 14px; } .workspace { max-width:100%; padding-inline:0; } }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="page-title-mini">
+                    <strong>Expiry Monitoring</strong>
+                    <span>Track inventory batches by expiry date</span>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <button class="icon-btn" type="button" aria-label="Notifications">
+                    <i class="fa-regular fa-bell"></i>
+                </button>
+                <button class="icon-btn" type="button" id="themeToggle" aria-label="Toggle dark mode">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <section class="page-body">
+            <div class="workspace">
+                <div class="summary-row">
+                    <div id="expirySummaryCards" class="expiry-summary-grid"></div>
+                    <button class="btn btn-purple" type="button" id="btnRefreshExpiry">
+                        <i class="fa-solid fa-rotate me-2"></i>Refresh
+                    </button>
+                </div>
+
+                <div class="card p-3">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                        <div>
+                            <h1 class="section-title mb-1">Expiry Monitoring</h1>
+                            <p class="text-muted small mb-0">Review received inventory batches with expiry dates.</p>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="table-expiry-monitoring" class="table table-hover align-middle expiry-table">
+                            <thead>
+                                <tr>
+                                    <th>Product Name</th>
+                                    <th>Brand Name</th>
+                                    <th>Category</th>
+                                    <th>Product Type</th>
+                                    <th>Batch / PO Number</th>
+                                    <th>Received Quantity</th>
+                                    <th>Available Quantity</th>
+                                    <th>Expiry Date</th>
+                                    <th>Alert Before</th>
+                                    <th>Days Until Expiry</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="12" class="empty-row">Loading expiry records...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="editExpiryDateModal" tabindex="-1" aria-labelledby="editExpiryDateModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title fs-5 fw-bold" id="editExpiryDateModalLabel">Edit Expiry Date</h2>
+                        <p class="text-muted small mb-0 mt-1">Set the expiry date for this received inventory batch.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editExpiryInventoryId">
+                    <div class="detail-box mb-3">
+                        <span>Product</span>
+                        <strong id="editExpiryProductName">-</strong>
+                    </div>
+                    <div class="detail-box mb-3">
+                        <span>Batch / PO Number</span>
+                        <strong id="editExpiryBatchNumber">-</strong>
+                    </div>
+                    <label class="form-label fw-semibold" for="editExpiryDateInput">Expiry Date</label>
+                    <input id="editExpiryDateInput" class="form-control" type="date">
+                    <div class="form-text">Leave blank to mark this batch as No Expiry Date.</div>
+                    <label class="form-label fw-semibold mt-3" for="editExpiryAlertSelect">Alert Before Expiry</label>
+                    <select id="editExpiryAlertSelect" class="form-select">
+                        <option value="7">7 days before</option>
+                        <option value="15">15 days before</option>
+                        <option value="30" selected>30 days before</option>
+                        <option value="60">60 days before</option>
+                        <option value="custom">Custom days</option>
+                    </select>
+                    <div id="editExpiryCustomWrap" class="mt-2 d-none">
+                        <label class="form-label small fw-bold mb-1" for="editExpiryCustomDays">Custom days</label>
+                        <input id="editExpiryCustomDays" class="form-control" type="number" min="1" max="3650" value="30">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                    <button id="btnSaveExpiryDate" class="btn btn-purple" type="button">Save Expiry Date</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script type="module" src="./js/modules/expiry_monitoring.js?v=3"></script>
+    <script type="module">
+        import verifySession from './js/modules/auth.js';
+        await verifySession();
+    </script>
+</body>
+</html>

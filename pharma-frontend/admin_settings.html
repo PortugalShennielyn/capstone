@@ -12,8 +12,8 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=28" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
+    <script src="./js/navbar.js?v=35" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
 
     <style>
         :root {
@@ -2401,6 +2401,195 @@
             background: #f8fafc;
         }
 
+        .user-management-shell {
+            display: grid;
+            gap: 16px;
+        }
+
+        .user-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .user-summary-card {
+            min-width: 0;
+            padding: 16px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+
+        .user-summary-card span {
+            display: block;
+            color: #667085;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .user-summary-card strong {
+            display: block;
+            margin-top: 8px;
+            color: var(--text-main);
+            font-size: 26px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .user-controls-row {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) 160px 150px auto;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .user-controls-row .admin-setting-control {
+            min-height: 42px;
+        }
+
+        .user-table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+        }
+
+        .users-table {
+            width: 100%;
+            min-width: 920px;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .users-table th,
+        .users-table td {
+            padding: 13px 14px;
+            border-bottom: 1px solid var(--border-soft);
+            color: var(--text-main);
+            font-size: 13px;
+            text-align: left;
+            vertical-align: middle;
+            overflow-wrap: break-word;
+            word-break: normal;
+        }
+
+        .users-table th {
+            color: #596274;
+            background: #f8fafc;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .users-table tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .user-status-badge,
+        .user-role-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 26px;
+            padding: 0 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 850;
+            white-space: nowrap;
+        }
+
+        .user-status-badge.active {
+            color: #047857;
+            background: #dcfce7;
+        }
+
+        .user-status-badge.inactive {
+            color: #7f1d1d;
+            background: #fee2e2;
+        }
+
+        .user-role-badge {
+            color: #4c1d95;
+            background: #f1e8ff;
+        }
+
+        .user-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .user-actions .btn {
+            min-height: 32px;
+            padding: 0 10px;
+            font-size: 12px;
+            font-weight: 850;
+        }
+
+        .user-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .user-form-grid .full-span,
+        .user-form-error {
+            grid-column: 1 / -1;
+        }
+
+        .user-form-error {
+            display: none;
+            margin: 0;
+            padding: 10px 12px;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            color: #991b1b;
+            background: #fef2f2;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .user-form-error.is-visible {
+            display: block;
+        }
+
+        .user-detail-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .user-detail-row {
+            display: grid;
+            grid-template-columns: 140px minmax(0, 1fr);
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .user-detail-row span {
+            color: #667085;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .user-detail-row strong {
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 850;
+            overflow-wrap: anywhere;
+        }
+
+        body.dark-mode .user-summary-card,
+        body.dark-mode .users-table th {
+            background: #111827;
+        }
+
+        @media (max-width: 900px) {
+            .user-summary-grid,
+            .user-controls-row,
+            .user-form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .permission-grid {
             display: grid;
             gap: 8px;
@@ -3155,28 +3344,51 @@
                                         </div>
                                     </section>
 
-                                    <section class="admin-setting-card">
+                                    <section class="admin-setting-card is-wide user-management-card">
                                         <header>
                                             <h3>Users &amp; Roles</h3>
-                                            <p>Staff access and password rules.</p>
+                                            <p>Create staff accounts and manage access.</p>
                                         </header>
-                                        <div class="admin-setting-list">
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Require Strong Passwords</span>
-                                                <label class="admin-switch" aria-label="Require Strong Passwords"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
+                                        <div class="user-management-shell">
+                                            <div class="user-summary-grid" aria-label="User summary">
+                                                <div class="user-summary-card"><span>Total Users</span><strong id="totalUsersCard">0</strong></div>
+                                                <div class="user-summary-card"><span>Active Users</span><strong id="activeUsersCard">0</strong></div>
+                                                <div class="user-summary-card"><span>Inactive Users</span><strong id="inactiveUsersCard">0</strong></div>
                                             </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Allow User Invites</span>
-                                                <label class="admin-switch" aria-label="Allow User Invites"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Default New User Role</span>
-                                                <select class="admin-setting-control" aria-label="Default New User Role">
-                                                    <option selected>Sales Clerk</option>
-                                                    <option>Cashier</option>
-                                                    <option>Owner/Manager</option>
-                                                    <option>Admin</option>
+                                            <div class="user-controls-row">
+                                                <input class="admin-setting-control" id="userSearchInput" type="search" placeholder="Search full name, username, or role" aria-label="Search users">
+                                                <select class="admin-setting-control" id="userRoleFilter" aria-label="Filter by role">
+                                                    <option value="">All Roles</option>
+                                                    <option value="super_admin">Super Admin</option>
+                                                    <option value="admin">Admin</option>
+                                                    <option value="manager">Manager / Owner</option>
+                                                    <option value="cashier">Cashier</option>
+                                                    <option value="salesclerk">Sales Clerk</option>
                                                 </select>
+                                                <select class="admin-setting-control" id="userStatusFilter" aria-label="Filter by status">
+                                                    <option value="">All Status</option>
+                                                    <option value="Active">Active</option>
+                                                    <option value="Inactive">Inactive</option>
+                                                </select>
+                                                <button class="btn btn-purple" type="button" id="addUserBtn"><i class="fa-solid fa-user-plus me-2"></i>Add User</button>
+                                            </div>
+                                            <div class="user-table-wrap">
+                                                <table class="users-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Full Name</th>
+                                                            <th>Username</th>
+                                                            <th>Role</th>
+                                                            <th>Status</th>
+                                                            <th>Last Login</th>
+                                                            <th>Created Date</th>
+                                                            <th>Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="usersTableBody">
+                                                        <tr><td colspan="7">Loading users...</td></tr>
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
                                     </section>
@@ -3655,6 +3867,119 @@
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="userFormModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <form id="userForm" novalidate>
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold" id="userFormTitle">Add User</h5>
+                        <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="userIdInput">
+                        <p class="user-form-error" id="userFormError"></p>
+                        <div class="user-form-grid">
+                            <div>
+                                <label class="form-label" for="fullNameInput">Full Name</label>
+                                <input class="form-control" id="fullNameInput" required>
+                            </div>
+                            <div>
+                                <label class="form-label" for="usernameInput">Username</label>
+                                <input class="form-control" id="usernameInput" autocomplete="off" required>
+                            </div>
+                            <div class="password-field">
+                                <label class="form-label" for="tempPasswordInput">Temporary Password</label>
+                                <input class="form-control" id="tempPasswordInput" type="password" autocomplete="new-password">
+                            </div>
+                            <div class="password-field">
+                                <label class="form-label" for="confirmPasswordInput">Confirm Password</label>
+                                <input class="form-control" id="confirmPasswordInput" type="password" autocomplete="new-password">
+                            </div>
+                            <div>
+                                <label class="form-label" for="roleInput">Role</label>
+                                <select class="form-select" id="roleInput" required>
+                                    <option value="">Select role</option>
+                                    <option value="super_admin">Super Admin</option>
+                                    <option value="admin">Admin</option>
+                                    <option value="manager">Manager / Owner</option>
+                                    <option value="cashier">Cashier</option>
+                                    <option value="salesclerk">Sales Clerk</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" for="statusInput">Status</label>
+                                <select class="form-select" id="statusInput">
+                                    <option value="Active" selected>Active</option>
+                                    <option value="Inactive">Inactive</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" for="emailInput">Email optional</label>
+                                <input class="form-control" id="emailInput" type="email">
+                            </div>
+                            <div>
+                                <label class="form-label" for="contactNumberInput">Contact Number optional</label>
+                                <input class="form-control" id="contactNumberInput">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-purple" type="submit" id="saveUserBtn">Save User</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="userDetailsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">User Details</h5>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="user-detail-list" id="userDetailsBody"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form id="resetPasswordForm" novalidate>
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold">Reset Password</h5>
+                        <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="resetUserIdInput">
+                        <p class="user-form-error" id="resetPasswordError"></p>
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label class="form-label" for="resetPasswordInput">Temporary Password</label>
+                                <input class="form-control" id="resetPasswordInput" type="password" autocomplete="new-password" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="resetConfirmPasswordInput">Confirm Password</label>
+                                <input class="form-control" id="resetConfirmPasswordInput" type="password" autocomplete="new-password" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-purple" type="submit">Reset Password</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -4571,6 +4896,278 @@
             autoLogoutToggle?.addEventListener('change', saveSecuritySettings);
 
             applySettings();
+        })();
+        (function setupUserManagement() {
+            const apiBaseUrl = window.location.port
+                ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
+                : "../pharma-api/v1";
+            const state = { users: [], editingUser: null };
+            const roleLabels = {
+                super_admin: 'Super Admin',
+                admin: 'Admin',
+                manager: 'Manager / Owner',
+                cashier: 'Cashier',
+                salesclerk: 'Sales Clerk'
+            };
+            const els = {
+                total: document.getElementById('totalUsersCard'),
+                active: document.getElementById('activeUsersCard'),
+                inactive: document.getElementById('inactiveUsersCard'),
+                search: document.getElementById('userSearchInput'),
+                role: document.getElementById('userRoleFilter'),
+                status: document.getElementById('userStatusFilter'),
+                add: document.getElementById('addUserBtn'),
+                body: document.getElementById('usersTableBody'),
+                form: document.getElementById('userForm'),
+                formTitle: document.getElementById('userFormTitle'),
+                error: document.getElementById('userFormError'),
+                userId: document.getElementById('userIdInput'),
+                fullName: document.getElementById('fullNameInput'),
+                username: document.getElementById('usernameInput'),
+                password: document.getElementById('tempPasswordInput'),
+                confirm: document.getElementById('confirmPasswordInput'),
+                roleInput: document.getElementById('roleInput'),
+                statusInput: document.getElementById('statusInput'),
+                email: document.getElementById('emailInput'),
+                contact: document.getElementById('contactNumberInput'),
+                detailsBody: document.getElementById('userDetailsBody'),
+                resetForm: document.getElementById('resetPasswordForm'),
+                resetError: document.getElementById('resetPasswordError'),
+                resetUserId: document.getElementById('resetUserIdInput'),
+                resetPassword: document.getElementById('resetPasswordInput'),
+                resetConfirm: document.getElementById('resetConfirmPasswordInput')
+            };
+            const modals = {
+                form: document.getElementById('userFormModal') && window.bootstrap ? new bootstrap.Modal(document.getElementById('userFormModal')) : null,
+                details: document.getElementById('userDetailsModal') && window.bootstrap ? new bootstrap.Modal(document.getElementById('userDetailsModal')) : null,
+                reset: document.getElementById('resetPasswordModal') && window.bootstrap ? new bootstrap.Modal(document.getElementById('resetPasswordModal')) : null
+            };
+
+            function escapeHtml(value) {
+                return String(value ?? '').replace(/[&<>"']/g, char => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                })[char]);
+            }
+
+            function formatDate(value) {
+                if (!value) return 'Never';
+                const date = new Date(String(value).replace(' ', 'T'));
+                return Number.isNaN(date.getTime())
+                    ? String(value)
+                    : date.toLocaleString([], { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            }
+
+            function setError(target, message = '') {
+                if (!target) return;
+                target.textContent = message;
+                target.classList.toggle('is-visible', Boolean(message));
+            }
+
+            async function userRequest(path, options = {}) {
+                const response = await fetch(`${apiBaseUrl}/users/${path}`, {
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-Tab-Token': sessionStorage.getItem('pharma_tab_token') || '',
+                        ...(options.headers || {})
+                    },
+                    ...options
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.success === false) {
+                    throw new Error(data.message || 'Unable to process user request.');
+                }
+                return data;
+            }
+
+            function filteredUsers() {
+                const q = (els.search?.value || '').trim().toLowerCase();
+                const role = els.role?.value || '';
+                const status = els.status?.value || '';
+                return state.users.filter(user => {
+                    const text = `${user.full_name || ''} ${user.username || ''} ${roleLabels[user.role] || user.role || ''}`.toLowerCase();
+                    return (!q || text.includes(q))
+                        && (!role || user.role === role)
+                        && (!status || user.status === status);
+                });
+            }
+
+            function renderUsers() {
+                const users = filteredUsers();
+                if (!els.body) return;
+                if (!users.length) {
+                    els.body.innerHTML = '<tr><td colspan="7">No users found.</td></tr>';
+                    return;
+                }
+                els.body.innerHTML = users.map(user => {
+                    const statusClass = String(user.status || '').toLowerCase();
+                    const nextStatus = user.status === 'Active' ? 'Inactive' : 'Active';
+                    return `
+                        <tr>
+                            <td><strong>${escapeHtml(user.full_name || '-')}</strong></td>
+                            <td>${escapeHtml(user.username || '-')}</td>
+                            <td><span class="user-role-badge">${escapeHtml(roleLabels[user.role] || user.role || '-')}</span></td>
+                            <td><span class="user-status-badge ${statusClass}">${escapeHtml(user.status || '-')}</span></td>
+                            <td>${escapeHtml(formatDate(user.last_login))}</td>
+                            <td>${escapeHtml(formatDate(user.created_at))}</td>
+                            <td>
+                                <div class="user-actions">
+                                    <button class="btn btn-light" type="button" data-user-action="view" data-user-id="${escapeHtml(user.user_id)}">View</button>
+                                    <button class="btn btn-light" type="button" data-user-action="edit" data-user-id="${escapeHtml(user.user_id)}">Edit</button>
+                                    <button class="btn btn-light" type="button" data-user-action="reset" data-user-id="${escapeHtml(user.user_id)}">Reset Password</button>
+                                    <button class="btn btn-outline-danger" type="button" data-user-action="toggle" data-user-id="${escapeHtml(user.user_id)}" data-next-status="${nextStatus}">${nextStatus === 'Active' ? 'Activate' : 'Deactivate'}</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            async function loadUsers() {
+                try {
+                    const data = await userRequest('fetch_users.php');
+                    state.users = data.data?.users || [];
+                    const summary = data.data?.summary || {};
+                    if (els.total) els.total.textContent = summary.total_users ?? state.users.length;
+                    if (els.active) els.active.textContent = summary.active_users ?? state.users.filter(user => user.status === 'Active').length;
+                    if (els.inactive) els.inactive.textContent = summary.inactive_users ?? state.users.filter(user => user.status === 'Inactive').length;
+                    renderUsers();
+                } catch (error) {
+                    if (els.body) els.body.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message || 'Unable to load users.')}</td></tr>`;
+                }
+            }
+
+            function findUser(userId) {
+                return state.users.find(user => user.user_id === userId);
+            }
+
+            function openUserForm(user = null) {
+                state.editingUser = user;
+                setError(els.error);
+                els.form?.reset();
+                els.userId.value = user?.user_id || '';
+                els.fullName.value = user?.full_name || '';
+                els.username.value = user?.username || '';
+                els.roleInput.value = user?.role || '';
+                els.statusInput.value = user?.status || 'Active';
+                els.email.value = user?.email || '';
+                els.contact.value = user?.contact_number || '';
+                document.querySelectorAll('.password-field').forEach(field => field.classList.toggle('d-none', Boolean(user)));
+                if (els.formTitle) els.formTitle.textContent = user ? 'Edit User' : 'Add User';
+                modals.form?.show();
+            }
+
+            function openDetails(user) {
+                if (!user || !els.detailsBody) return;
+                const rows = [
+                    ['Full Name', user.full_name],
+                    ['Username', user.username],
+                    ['Role', roleLabels[user.role] || user.role],
+                    ['Status', user.status],
+                    ['Email', user.email || 'Not provided'],
+                    ['Contact Number', user.contact_number || 'Not provided'],
+                    ['Last Login', formatDate(user.last_login)],
+                    ['Created Date', formatDate(user.created_at)]
+                ];
+                els.detailsBody.innerHTML = rows.map(([label, value]) => `
+                    <div class="user-detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '-')}</strong></div>
+                `).join('');
+                modals.details?.show();
+            }
+
+            function openReset(user) {
+                if (!user) return;
+                setError(els.resetError);
+                els.resetForm?.reset();
+                els.resetUserId.value = user.user_id;
+                modals.reset?.show();
+            }
+
+            els.add?.addEventListener('click', () => openUserForm());
+            [els.search, els.role, els.status].forEach(control => {
+                control?.addEventListener('input', renderUsers);
+                control?.addEventListener('change', renderUsers);
+            });
+            els.body?.addEventListener('click', async event => {
+                const button = event.target.closest('[data-user-action]');
+                if (!button) return;
+                const user = findUser(button.dataset.userId);
+                if (!user) return;
+                if (button.dataset.userAction === 'view') openDetails(user);
+                if (button.dataset.userAction === 'edit') openUserForm(user);
+                if (button.dataset.userAction === 'reset') openReset(user);
+                if (button.dataset.userAction === 'toggle') {
+                    try {
+                        await userRequest('toggle_user_status.php', {
+                            method: 'POST',
+                            body: JSON.stringify({ user_id: user.user_id, status: button.dataset.nextStatus })
+                        });
+                        toastr.success(button.dataset.nextStatus === 'Active' ? 'User activated.' : 'User deactivated.');
+                        await loadUsers();
+                    } catch (error) {
+                        toastr.error(error.message || 'Unable to update status.');
+                    }
+                }
+            });
+            els.form?.addEventListener('submit', async event => {
+                event.preventDefault();
+                setError(els.error);
+                const isEdit = Boolean(els.userId.value);
+                const payload = {
+                    user_id: els.userId.value,
+                    full_name: els.fullName.value.trim(),
+                    username: els.username.value.trim(),
+                    password: els.password.value,
+                    confirm_password: els.confirm.value,
+                    role: els.roleInput.value,
+                    status: els.statusInput.value,
+                    email: els.email.value.trim(),
+                    contact_number: els.contact.value.trim()
+                };
+                if (!payload.full_name) return setError(els.error, 'Full Name is required.');
+                if (!payload.username) return setError(els.error, 'Username is required.');
+                if (!payload.role) return setError(els.error, 'Role is required.');
+                if (!isEdit && payload.password !== payload.confirm_password) return setError(els.error, 'Password and Confirm Password must match.');
+                try {
+                    await userRequest(isEdit ? 'update_user.php' : 'add_user.php', {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    toastr.success(isEdit ? 'User updated.' : 'User created.');
+                    modals.form?.hide();
+                    await loadUsers();
+                } catch (error) {
+                    setError(els.error, error.message || 'Unable to save user.');
+                }
+            });
+            els.resetForm?.addEventListener('submit', async event => {
+                event.preventDefault();
+                setError(els.resetError);
+                if (els.resetPassword.value !== els.resetConfirm.value) {
+                    return setError(els.resetError, 'Password and Confirm Password must match.');
+                }
+                try {
+                    await userRequest('reset_user_password.php', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            user_id: els.resetUserId.value,
+                            password: els.resetPassword.value,
+                            confirm_password: els.resetConfirm.value
+                        })
+                    });
+                    toastr.success('Password reset.');
+                    modals.reset?.hide();
+                } catch (error) {
+                    setError(els.resetError, error.message || 'Unable to reset password.');
+                }
+            });
+
+            loadUsers();
         })();
         (function setupAdminSettingsSections() {
             const buttons = Array.from(document.querySelectorAll('[data-admin-section]'));

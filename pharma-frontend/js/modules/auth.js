@@ -1,6 +1,6 @@
 import API_BASE_URL from '../config/config.js';
 import PharmaUtils from '../utils.js';
-import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=6';
+import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=8';
 
 let currentSessionUser = null;
 
@@ -404,7 +404,7 @@ function escapeHtml(value) {
 }
 
 function initLogoutLinks() {
-    document.querySelectorAll('a[href="logout.php"]').forEach((link) => {
+    document.querySelectorAll('a[href="logout.php"], [data-auth-action="logout"]').forEach((link) => {
         if (link.dataset.logoutBound === 'true') {
             return;
         }

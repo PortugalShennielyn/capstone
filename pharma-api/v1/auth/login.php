@@ -1,6 +1,7 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/auth_context.php';
+require_once '../users/users_helpers.php';
 
 function sendInvalidLoginResponse(PDO $pdo, string $username = '', ?string $userId = null, string $reason = 'invalid_credentials'): void
 {
@@ -49,12 +50,14 @@ if ($username === '' || $password === '') {
 }
 
 try {
+    ensureUserManagementSchema($pdo);
+
     if (loginLockoutSecondsRemaining($pdo, $username) > 0) {
         sendLockoutResponse();
     }
 
     $statement = $pdo->prepare(
-        "SELECT user_id, username, email, password, role, status, full_name, first_name, last_name
+        "SELECT user_id, username, email, contact_number, password, password_hash, role, status, full_name, first_name, last_name
          FROM users
          WHERE username = :username
            AND status = 'Active'
@@ -66,12 +69,18 @@ try {
     ]);
 
     $user = $statement->fetch();
+    $storedHash = (string) ($user['password_hash'] ?? $user['password'] ?? '');
 
-    if (!$user || !password_verify($password, $user['password'])) {
+    if (!$user || !password_verify($password, $storedHash)) {
         sendInvalidLoginResponse($pdo, $username, $user['user_id'] ?? null);
     }
 
     $redirects = [
+        'super_admin' => 'dashboard.html',
+        'admin' => 'dashboard.html',
+        'manager' => 'dashboard.html',
+        'cashier' => 'cashier.html',
+        'salesclerk' => 'clerk.html',
         'Admin' => 'dashboard.html',
         'Sales Clerk' => 'clerk.html',
         'Cashier' => 'cashier.html'
@@ -88,6 +97,7 @@ try {
     $_SESSION['user_id'] = $user['user_id'];
     $_SESSION['username'] = $user['username'];
     $_SESSION['email'] = $user['email'];
+    $_SESSION['contact_number'] = $user['contact_number'];
     $_SESSION['role'] = $user['role'];
     $_SESSION['user_status'] = $user['status'];
     $_SESSION['full_name'] = $user['full_name'];
@@ -104,6 +114,8 @@ try {
     $tabToken = createAuthSession($pdo, $user['user_id'], $accountContext['account_id'], $accountContext['tenant_id']);
     recordLoginAttempt($pdo, $username, $user['user_id'], true, null);
     resetLoginAttempts($pdo, $username);
+    $lastLoginStmt = $pdo->prepare('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE user_id = :user_id');
+    $lastLoginStmt->execute([':user_id' => $user['user_id']]);
 
     echo json_encode([
         'status' => 'success',

@@ -65,7 +65,7 @@ if (strlen($newPassword) < 8 || strlen($newPassword) > 72) {
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT password
+        'SELECT password, password_hash
          FROM users
          WHERE user_id = :user_id
          LIMIT 1'
@@ -73,7 +73,9 @@ try {
     $stmt->execute([':user_id' => $_SESSION['user_id']]);
     $user = $stmt->fetch();
 
-    if (!$user || !password_verify($currentPassword, $user['password'])) {
+    $currentHash = (string) ($user['password_hash'] ?? $user['password'] ?? '');
+
+    if (!$user || !password_verify($currentPassword, $currentHash)) {
         http_response_code(422);
         echo json_encode([
             'status' => 'error',
@@ -82,7 +84,7 @@ try {
         exit();
     }
 
-    if (password_verify($newPassword, $user['password'])) {
+    if (password_verify($newPassword, $currentHash)) {
         http_response_code(422);
         echo json_encode([
             'status' => 'error',
@@ -93,13 +95,16 @@ try {
 
     $pdo->beginTransaction();
 
+    $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
     $updateStmt = $pdo->prepare(
         'UPDATE users
-         SET password = :password
+         SET password = :password,
+             password_hash = :password_hash
          WHERE user_id = :user_id'
     );
     $updateStmt->execute([
-        ':password' => password_hash($newPassword, PASSWORD_DEFAULT),
+        ':password' => $newHash,
+        ':password_hash' => $newHash,
         ':user_id' => $_SESSION['user_id'],
     ]);
 

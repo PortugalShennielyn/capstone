@@ -1,13 +1,16 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/auth_context.php';
+require_once '../users/users_helpers.php';
 
 requireValidSession($pdo);
+ensureUserManagementSchema($pdo);
 
 $stmt = $pdo->prepare(
-    'SELECT username, email, full_name, first_name, last_name, role, status
+    'SELECT username, email, contact_number, full_name, first_name, last_name, role, status
      FROM users
      WHERE user_id = :user_id
+       AND status = "Active"
      LIMIT 1'
 );
 $stmt->execute([':user_id' => $_SESSION['user_id']]);
@@ -16,6 +19,7 @@ $user = $stmt->fetch();
 if ($user) {
     $_SESSION['username'] = $user['username'];
     $_SESSION['email'] = $user['email'];
+    $_SESSION['contact_number'] = $user['contact_number'];
     $_SESSION['full_name'] = $user['full_name'];
     $_SESSION['first_name'] = $user['first_name'];
     $_SESSION['last_name'] = $user['last_name'];

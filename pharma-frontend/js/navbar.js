@@ -15,7 +15,7 @@
     mainWrapperBeforeLoad?.classList.toggle("collapsed", savedCollapsed);
 
     try {
-            const cacheKey = "drpNavbarHtml:v18";
+            const cacheKey = "drpNavbarHtml:v25";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -52,8 +52,272 @@
             "expiry_monitoring.html": "expiry-monitoring",
             "admin_settings.html": "settings",
             "pos.html": "pos",
-            "clerk.html": "clerk"
+            "clerk.html": "clerk",
+            "sales_clerk_orders.html": "sales-clerk-orders",
+            "sales_clerk_pos.html": "sales-clerk-pos",
+            "cashier_queue.html": "cashier-queue",
+            "completed_sales.html": "completed-sales",
+            "cancelled_sales.html": "cancelled-sales",
+            "sales_history.html": "sales-history"
         };
+
+        function normalizeRole(role) {
+            return String(role || "")
+                .trim()
+                .toLowerCase()
+                .replace(/[\s-]+/g, "_")
+                .replace("sales_clerk", "salesclerk")
+                .replace("owner/manager", "manager")
+                .replace("manager_/_owner", "manager");
+        }
+
+        function tabToken() {
+            try {
+                return sessionStorage.getItem("pharma_tab_token") || "";
+            } catch (error) {
+                return "";
+            }
+        }
+
+        function apiBaseUrl() {
+            return window.location.port
+                ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
+                : "../pharma-api/v1";
+        }
+
+        async function loadCurrentSession() {
+            const token = tabToken();
+            if (!token) return null;
+            try {
+                const response = await fetch(`${apiBaseUrl()}/auth/check_session.php`, {
+                    credentials: "include",
+                    cache: "no-store",
+                    headers: { "X-Tab-Token": token }
+                });
+                return response.ok ? response.json() : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function sessionRoleSet(session) {
+            const roles = [
+                session?.role,
+                ...(Array.isArray(session?.roles) ? session.roles : []),
+                ...(Array.isArray(session?.role_identifiers) ? session.role_identifiers : [])
+            ];
+            return new Set(roles.map(normalizeRole).filter(Boolean));
+        }
+
+        function setProfileIdentity(session) {
+            const name = session?.full_name || session?.username || "User";
+            const roleLabels = {
+                super_admin: "Super Admin",
+                admin: "Admin",
+                manager: "Manager / Owner",
+                cashier: "Cashier",
+                salesclerk: "Sales Clerk"
+            };
+            const role = roleLabels[normalizeRole(session?.role)] || session?.role || "Account";
+            const initials = String(name)
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map(part => part.charAt(0).toUpperCase())
+                .join("") || "U";
+            container.querySelectorAll(".profile-name, .sidebar-user-summary strong").forEach(node => {
+                node.textContent = name;
+            });
+            container.querySelectorAll(".avatar-initials").forEach(node => {
+                node.textContent = initials;
+            });
+            const roleNode = container.querySelector(".sidebar-user-summary span");
+            if (roleNode) roleNode.textContent = role;
+        }
+
+        function ensureProfileModal(session) {
+            if (document.getElementById("navbarProfileModal")) return;
+            const modal = document.createElement("div");
+            modal.className = "modal fade";
+            modal.id = "navbarProfileModal";
+            modal.tabIndex = -1;
+            modal.setAttribute("aria-hidden", "true");
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <form id="navbarProfileForm" novalidate>
+                            <div class="modal-header">
+                                <h5 class="modal-title fw-bold">User Settings</h5>
+                                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="navbar-profile-error" id="navbarProfileError"></p>
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <label class="form-label" for="navbarProfileFullName">Full Name</label>
+                                        <input class="form-control" id="navbarProfileFullName" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarProfileEmail">Email</label>
+                                        <input class="form-control" id="navbarProfileEmail" type="email">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarProfileContact">Contact Number</label>
+                                        <input class="form-control" id="navbarProfileContact">
+                                    </div>
+                                    <div class="col-12"><hr class="my-1"></div>
+                                    <div class="col-12">
+                                        <label class="form-label" for="navbarCurrentPassword">Current Password</label>
+                                        <input class="form-control" id="navbarCurrentPassword" type="password" autocomplete="current-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarNewPassword">New Password</label>
+                                        <input class="form-control" id="navbarNewPassword" type="password" autocomplete="new-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarConfirmPassword">Confirm Password</label>
+                                        <input class="form-control" id="navbarConfirmPassword" type="password" autocomplete="new-password">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                                <button class="btn btn-primary" type="submit">Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            const style = document.createElement("style");
+            style.id = "navbar-profile-modal-styles";
+            style.textContent = `
+                .navbar-profile-error{display:none;margin:0 0 12px;padding:10px 12px;border:1px solid #fecaca;border-radius:8px;color:#991b1b;background:#fef2f2;font-size:13px;font-weight:800}
+                .navbar-profile-error.is-visible{display:block}
+            `;
+            document.head.appendChild(style);
+
+            const form = document.getElementById("navbarProfileForm");
+            const error = document.getElementById("navbarProfileError");
+            const fields = {
+                fullName: document.getElementById("navbarProfileFullName"),
+                email: document.getElementById("navbarProfileEmail"),
+                contact: document.getElementById("navbarProfileContact"),
+                currentPassword: document.getElementById("navbarCurrentPassword"),
+                newPassword: document.getElementById("navbarNewPassword"),
+                confirmPassword: document.getElementById("navbarConfirmPassword")
+            };
+
+            function setError(message = "") {
+                error.textContent = message;
+                error.classList.toggle("is-visible", Boolean(message));
+            }
+
+            window.__drpOpenNavbarProfile = function openNavbarProfile(currentSession = session) {
+                setError("");
+                form.reset();
+                fields.fullName.value = currentSession?.full_name || "";
+                fields.email.value = currentSession?.email || "";
+                fields.contact.value = currentSession?.contact_number || "";
+                window.bootstrap?.Modal.getOrCreateInstance(modal)?.show();
+            };
+
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                setError("");
+                const fullName = fields.fullName.value.trim();
+                const email = fields.email.value.trim();
+                const contactNumber = fields.contact.value.trim();
+                const currentPassword = fields.currentPassword.value;
+                const newPassword = fields.newPassword.value;
+                const confirmPassword = fields.confirmPassword.value;
+                if (!fullName) {
+                    setError("Full Name is required.");
+                    return;
+                }
+                if ((currentPassword || newPassword || confirmPassword) && (!currentPassword || !newPassword || !confirmPassword)) {
+                    setError("Current password, new password, and confirmation are required to change password.");
+                    return;
+                }
+                if (newPassword && newPassword !== confirmPassword) {
+                    setError("New password and confirmation do not match.");
+                    return;
+                }
+                try {
+                    const headers = {
+                        "Content-Type": "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "X-Tab-Token": tabToken()
+                    };
+                    const profileResponse = await fetch(`${apiBaseUrl()}/auth/update_profile.php`, {
+                        method: "POST",
+                        credentials: "include",
+                        headers,
+                        body: JSON.stringify({ full_name: fullName, email, contact_number: contactNumber })
+                    });
+                    const profileData = await profileResponse.json().catch(() => ({}));
+                    if (!profileResponse.ok || profileData.status === "error") {
+                        throw new Error(profileData.message || "Unable to update profile.");
+                    }
+                    if (newPassword) {
+                        const passwordResponse = await fetch(`${apiBaseUrl()}/auth/update_password.php`, {
+                            method: "POST",
+                            credentials: "include",
+                            headers,
+                            body: JSON.stringify({
+                                current_password: currentPassword,
+                                new_password: newPassword,
+                                confirm_password: confirmPassword
+                            })
+                        });
+                        const passwordData = await passwordResponse.json().catch(() => ({}));
+                        if (!passwordResponse.ok || passwordData.status === "error") {
+                            throw new Error(passwordData.message || "Unable to update password.");
+                        }
+                    }
+                    setProfileIdentity({ ...session, ...profileData, full_name: fullName, email, contact_number: contactNumber });
+                    window.bootstrap?.Modal.getOrCreateInstance(modal)?.hide();
+                    if (window.toastr) toastr.success("Profile updated.");
+                } catch (errorMessage) {
+                    setError(errorMessage.message || "Unable to update profile.");
+                }
+            });
+        }
+
+        function applyRoleNavigation(session) {
+            const roles = sessionRoleSet(session);
+            setProfileIdentity(session);
+            ensureProfileModal(session);
+
+            if (!roles.has("salesclerk") && !roles.has("ro_sales_clerk")) {
+                return;
+            }
+
+            const allowedPages = new Set(["dashboard", "clerk", "sales-clerk-pos", "sales-clerk-orders", "sales-clerk-history"]);
+            container.querySelectorAll("[data-nav-page]").forEach(link => {
+                const page = link.dataset.navPage || "";
+                const isAllowed = allowedPages.has(page);
+                link.classList.toggle("d-none", !isAllowed);
+                link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
+            });
+            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
+                const target = trigger.getAttribute("href") || "";
+                const isSales = target === "#salesTransactionsCollapse";
+                trigger.classList.toggle("d-none", !isSales);
+                trigger.setAttribute("aria-hidden", isSales ? "false" : "true");
+            });
+            container.querySelector("[data-nav-page='dashboard']")?.setAttribute("href", "clerk.html");
+            container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
+                const isUserSettings = link.dataset.navPage === "user-settings";
+                link.classList.toggle("d-none", !isUserSettings);
+                link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
+                if (isUserSettings) {
+                    link.href = "#";
+                    link.querySelector("span").textContent = "User Settings";
+                    link.dataset.profileAction = "open";
+                }
+            });
+        }
 
         const dashboardViewMap = {
             dashboard: "dashboard",
@@ -68,8 +332,16 @@
             "dashboard/pending-orders": "pending-orders",
             "dashboard/arrived-orders": "arrived-orders",
             "dashboard/complete-delivery": "complete-delivery",
+            "dashboard/cancelled-purchase-orders": "cancelled-purchase-orders",
             "dashboard/return-damage": "return-damage",
-            "dashboard/expiry-monitoring": "expiry-monitoring"
+            "dashboard/expiry-monitoring": "expiry-monitoring",
+            "dashboard/sales-clerk-orders": "sales-clerk-orders",
+            "dashboard/sales-clerk-history": "sales-clerk-history",
+            "dashboard/sales-clerk-pos": "sales-clerk-pos",
+            "dashboard/cashier-queue": "cashier-queue",
+            "dashboard/completed-sales": "completed-sales",
+            "dashboard/cancelled-sales": "cancelled-sales",
+            "dashboard/sales-history": "sales-history"
         };
 
         function normalizeDashboardView(view) {
@@ -254,10 +526,17 @@
                 "pending-orders": "Pending Orders",
                 "arrived-orders": "Arrived Orders",
                 "complete-delivery": "Complete Delivery",
+                "cancelled-purchase-orders": "Cancelled Purchase Orders",
                 "return-damage": "Return/Damage",
                 "expiry-monitoring": "Expiry Monitoring",
                 "pos": "POS",
-                "clerk": "Salesclerk"
+                "clerk": "Salesclerk",
+                "sales-clerk-orders": "Sales Clerk Orders",
+                "sales-clerk-history": "Transaction History",
+                "cashier-queue": "Cashier Queue",
+                "completed-sales": "Completed Sales",
+                "cancelled-sales": "Cancelled Sales",
+                "sales-history": "Sales History"
             };
             return pageMap[activePage] || "Dashboard";
         }
@@ -356,6 +635,14 @@
             });
         }
 
+        container.addEventListener("click", (event) => {
+            const profileLink = event.target.closest("[data-profile-action='open']");
+            if (!profileLink || !container.contains(profileLink)) return;
+            event.preventDefault();
+            setUserPopoverOpen(false);
+            window.__drpOpenNavbarProfile?.();
+        });
+
         container.querySelectorAll(".collapse").forEach(collapse => {
             setCollapseArrow(collapse);
             collapse.addEventListener("shown.bs.collapse", () => setCollapseArrow(collapse));
@@ -384,6 +671,13 @@
         window.requestIdleCallback
             ? window.requestIdleCallback(prefetchNavigationTargets, { timeout: 1500 })
             : window.setTimeout(prefetchNavigationTargets, 600);
+
+        loadCurrentSession()
+            .then(currentSession => {
+                applyRoleNavigation(currentSession);
+                applyActiveNavigation();
+            })
+            .catch(() => {});
 
         const tableObserver = new MutationObserver(() => {
             window.clearTimeout(window.__drpTableEnhanceTimer);
@@ -787,6 +1081,11 @@ function ensureNavbarRuntimeStyles() {
             vertical-align: middle !important;
             word-break: normal !important;
             overflow-wrap: break-word !important;
+        }
+
+        .table-responsive > table.sales-table th,
+        .table-responsive > table.sales-table td {
+            text-align: left !important;
         }
 
         .table-responsive > table.po-list-table {

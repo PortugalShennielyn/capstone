@@ -13,6 +13,7 @@ let ownerHeartbeat = null;
 let fetchPatched = false;
 let inactivityTimer = null;
 let inactivityLogoutStarted = false;
+let currentSession = null;
 
 function tabToken() {
     try {
@@ -286,10 +287,86 @@ async function serverSessionIsActive() {
             }
         });
 
-        return response.ok;
+        if (!response.ok) {
+            currentSession = null;
+            return false;
+        }
+
+        try {
+            currentSession = await response.json();
+        } catch (error) {
+            currentSession = null;
+        }
+
+        return true;
     } catch (error) {
         return false;
     }
+}
+
+function normalizeRole(role) {
+    return String(role || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_')
+        .replace('sales_clerk', 'salesclerk')
+        .replace('owner/manager', 'manager')
+        .replace('manager_/_owner', 'manager');
+}
+
+function sessionRoles() {
+    const roles = [
+        currentSession?.role,
+        ...(Array.isArray(currentSession?.roles) ? currentSession.roles : []),
+        ...(Array.isArray(currentSession?.role_identifiers) ? currentSession.role_identifiers : [])
+    ];
+
+    return roles.map(normalizeRole).filter(Boolean);
+}
+
+function roleAllowedForPage() {
+    const filename = window.location.pathname.split('/').pop() || '';
+    const allowed = {
+        'admin_settings.html': ['super_admin', 'admin', 'ro_admin', 'ro_super_admin'],
+        'dashboard.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'products.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'inventory.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'supplier.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'purchase_orders.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'pending_orders.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'arrived_orders.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'complete_delivery.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'return_damage.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'expiry_monitoring.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'pos.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'completed_sales.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier'],
+        'cancelled_sales.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier'],
+        'sales_history.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
+        'clerk.html': ['super_admin', 'admin', 'manager', 'salesclerk', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_sales_clerk'],
+        'sales_clerk_pos.html': ['super_admin', 'admin', 'manager', 'salesclerk', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_sales_clerk'],
+        'sales_clerk_orders.html': ['super_admin', 'admin', 'manager', 'salesclerk', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_sales_clerk'],
+        'cashier.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier'],
+        'cashier_queue.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier']
+    }[filename];
+
+    if (!allowed) {
+        return true;
+    }
+
+    return sessionRoles().some(role => allowed.includes(role));
+}
+
+function redirectUnauthorizedPage() {
+    const roles = sessionRoles();
+    if (roles.includes('salesclerk') || roles.includes('ro_sales_clerk')) {
+        window.location.replace('clerk.html');
+        return;
+    }
+    if (roles.includes('cashier') || roles.includes('ro_cashier')) {
+        window.location.replace('cashier.html');
+        return;
+    }
+    window.location.replace('dashboard.html');
 }
 
 async function ensurePageTabSession() {
@@ -308,6 +385,11 @@ async function ensurePageTabSession() {
 
     if (!await serverSessionIsActive()) {
         redirectToLogin();
+        return false;
+    }
+
+    if (!roleAllowedForPage()) {
+        redirectUnauthorizedPage();
         return false;
     }
 
