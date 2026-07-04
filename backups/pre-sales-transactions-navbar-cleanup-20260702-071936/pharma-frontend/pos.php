@@ -1,0 +1,478 @@
+<?php
+require_once __DIR__ . '/auth_page_guard.php';
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | POS</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=28" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
+
+    <style>
+        :root {
+            --purple: #8A2BE2;
+            --purple-dark: #7020bd;
+            --purple-soft: rgba(138, 43, 226, 0.12);
+            --bg: #f4f6fb;
+            --panel: #ffffff;
+            --border: #e7ebf3;
+            --text: #252b37;
+            --muted: #747d8c;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: var(--text);
+            background: var(--bg);
+            letter-spacing: 0;
+        }
+
+        .pos-shell {
+            height: 100vh;
+            display: grid;
+            grid-template-columns: minmax(0, 7fr) minmax(360px, 3fr);
+            gap: 18px;
+            padding: 18px;
+        }
+
+        .pos-panel,
+        .checkout-card {
+            min-height: 0;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+        }
+
+        .pos-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .pos-header {
+            min-height: 74px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .brand-lockup {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pos-header .brand-mark {
+            width: 42px;
+            height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            color: #fff;
+            background: linear-gradient(135deg, var(--purple), #a855f7);
+            box-shadow: 0 12px 24px rgba(138, 43, 226, 0.24);
+        }
+
+        .brand-lockup h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .brand-lockup span,
+        .cashier-label {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .search-wrap {
+            padding: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .search-wrap .input-group-text {
+            width: 48px;
+            justify-content: center;
+            color: var(--purple);
+            background: var(--purple-soft);
+            border-color: var(--border);
+        }
+
+        .search-wrap .form-control {
+            min-height: 50px;
+            border-color: var(--border);
+            font-weight: 600;
+        }
+
+        .cart-area {
+            min-height: 0;
+            flex: 1;
+            overflow: auto;
+        }
+
+        .table {
+            margin: 0;
+        }
+
+        .table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            color: var(--muted);
+            background: #f9fafc;
+            border-bottom-color: var(--border);
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .table tbody td {
+            padding: 16px 14px;
+            border-bottom-color: var(--border);
+            vertical-align: middle;
+            font-weight: 600;
+        }
+
+        .qty-stepper {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .qty-stepper button {
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+        }
+
+        .qty-value {
+            width: 34px;
+            text-align: center;
+            font-weight: 800;
+        }
+
+        .checkout-card {
+            display: flex;
+            flex-direction: column;
+            padding: 22px;
+        }
+
+        .checkout-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 22px;
+        }
+
+        .checkout-title h2 {
+            margin: 0;
+            font-size: 19px;
+            font-weight: 800;
+        }
+
+        .total-box {
+            padding: 22px;
+            border-radius: 10px;
+            color: #fff;
+            background: linear-gradient(135deg, var(--purple), var(--purple-dark));
+            box-shadow: 0 18px 34px rgba(138, 43, 226, 0.22);
+        }
+
+        .total-box span {
+            display: block;
+            color: rgba(255, 255, 255, 0.78);
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .grand-total {
+            margin-top: 8px;
+            font-size: clamp(38px, 5vw, 58px);
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .summary-lines {
+            margin: 22px 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .summary-lines li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 700;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .summary-lines strong {
+            color: var(--text);
+        }
+
+        .form-label {
+            color: #3f4654;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .form-control,
+        .form-select {
+            min-height: 46px;
+            border-color: var(--border);
+            font-weight: 700;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            border-color: rgba(138, 43, 226, 0.48);
+            box-shadow: 0 0 0 0.22rem rgba(138, 43, 226, 0.12);
+        }
+
+        .change-due {
+            min-height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 16px;
+            padding: 16px;
+            border-radius: 10px;
+            background: #f8fafc;
+            border: 1px solid var(--border);
+        }
+
+        .change-due span {
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .change-due strong {
+            font-size: 28px;
+            font-weight: 800;
+        }
+
+        .btn-purple {
+            --bs-btn-color: #fff;
+            --bs-btn-bg: var(--purple);
+            --bs-btn-border-color: var(--purple);
+            --bs-btn-hover-color: #fff;
+            --bs-btn-hover-bg: var(--purple-dark);
+            --bs-btn-hover-border-color: var(--purple-dark);
+            --bs-btn-focus-shadow-rgb: 138, 43, 226;
+        }
+
+        .process-btn {
+            min-height: 62px;
+            margin-top: auto;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 800;
+            box-shadow: 0 16px 30px rgba(138, 43, 226, 0.24);
+        }
+
+        @media (max-width: 991.98px) {
+            body {
+                overflow: auto;
+            }
+
+            .pos-shell {
+                height: auto;
+                grid-template-columns: 1fr;
+            }
+
+            .checkout-card {
+                min-height: 620px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+    <main class="pos-shell navbar-page-content">
+        <section class="pos-panel">
+            <header class="pos-header">
+                <div class="brand-lockup">
+                    <div class="brand-mark"><i class="fa-solid fa-cash-register"></i></div>
+                    <div>
+                        <h1>Active Checkout</h1>
+                        <span>Dr. R Pharmacy POS</span>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <div class="cashier-label">Signed in as</div>
+                    <strong id="profileName">Loading...</strong>
+                </div>
+            </header>
+
+            <div class="search-wrap">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input type="search" class="form-control" id="productSearch" placeholder="Search product name or scan barcode">
+                </div>
+            </div>
+
+            <div class="cart-area">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Price</th>
+                            <th>Qty</th>
+                            <th>Subtotal</th>
+                            <th class="text-end">Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cartTableBody">
+                        <tr>
+                            <td>
+                                <strong>Paracetamol</strong>
+                                <div class="text-muted small">500mg Tablet</div>
+                            </td>
+                            <td>5.00</td>
+                            <td>
+                                <div class="qty-stepper">
+                                    <button class="btn btn-outline-secondary btn-sm" type="button"><i class="fa-solid fa-minus"></i></button>
+                                    <span class="qty-value">2</span>
+                                    <button class="btn btn-outline-secondary btn-sm" type="button"><i class="fa-solid fa-plus"></i></button>
+                                </div>
+                            </td>
+                            <td>10.00</td>
+                            <td class="text-end">
+                                <button class="btn btn-outline-danger btn-sm" type="button"><i class="fa-solid fa-xmark"></i></button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <aside class="checkout-card">
+            <div class="checkout-title">
+                <h2>Checkout Summary</h2>
+                <a href="dashboard.html" class="btn btn-light btn-sm"><i class="fa-solid fa-arrow-left me-1"></i>Dashboard</a>
+            </div>
+
+            <div class="total-box">
+                <span>Grand Total</span>
+                <div class="grand-total" id="grandTotal">10.00</div>
+            </div>
+
+            <ul class="summary-lines">
+                <li>
+                    <span>Subtotal</span>
+                    <strong id="subtotalAmount">10.00</strong>
+                </li>
+                <li>
+                    <span>Tax</span>
+                    <select class="form-select form-select-sm w-auto" id="taxSelect">
+                        <option value="0">No Tax</option>
+                        <option value="0.12">12% VAT</option>
+                    </select>
+                </li>
+                <li>
+                    <span>Discount</span>
+                    <select class="form-select form-select-sm w-auto" id="discountSelect">
+                        <option value="0">None</option>
+                        <option value="0.05">5%</option>
+                        <option value="0.10">10%</option>
+                        <option value="0.20">20%</option>
+                    </select>
+                </li>
+            </ul>
+
+            <div class="mb-3">
+                <label for="paymentReceived" class="form-label">Payment Received</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fa-solid fa-peso-sign"></i></span>
+                    <input type="number" class="form-control" id="paymentReceived" min="0" step="0.01" placeholder="0.00">
+                </div>
+            </div>
+
+            <div class="change-due">
+                <span>Change Due</span>
+                <strong id="changeDue">0.00</strong>
+            </div>
+
+            <button class="btn btn-purple process-btn w-100" type="button">
+                <i class="fa-solid fa-print me-2"></i>Process Sale &amp; Print Receipt
+            </button>
+        </aside>
+    </main>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+    <script type="module">
+        import verifySession from './js/modules/auth.js';
+
+        const user = await verifySession();
+
+        if (user && !['Admin', 'Sales Clerk', 'Cashier'].includes(user.role)) {
+            window.location.href = 'login.php';
+        }
+
+        const subtotalAmount = document.getElementById('subtotalAmount');
+        const grandTotal = document.getElementById('grandTotal');
+        const taxSelect = document.getElementById('taxSelect');
+        const discountSelect = document.getElementById('discountSelect');
+        const paymentReceived = document.getElementById('paymentReceived');
+        const changeDue = document.getElementById('changeDue');
+
+        function money(value) {
+            return Number(value).toFixed(2);
+        }
+
+        function recalculateCheckout() {
+            const subtotal = 10;
+            const tax = subtotal * Number(taxSelect.value);
+            const discount = subtotal * Number(discountSelect.value);
+            const total = Math.max(subtotal + tax - discount, 0);
+            const payment = Number(paymentReceived.value || 0);
+
+            subtotalAmount.textContent = money(subtotal);
+            grandTotal.textContent = money(total);
+            changeDue.textContent = money(Math.max(payment - total, 0));
+        }
+
+        taxSelect.addEventListener('change', recalculateCheckout);
+        discountSelect.addEventListener('change', recalculateCheckout);
+        paymentReceived.addEventListener('input', recalculateCheckout);
+        recalculateCheckout();
+    </script>
+</body>
+</html>

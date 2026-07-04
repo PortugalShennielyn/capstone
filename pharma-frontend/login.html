@@ -115,6 +115,24 @@
             background: var(--brand-purple-dark);
         }
 
+        .login-message {
+            display: none;
+            margin-bottom: 16px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 1px solid #f3b4b4;
+            color: #8a1f1f;
+            background: #fff1f1;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+
+        .login-message.is-visible {
+            display: block;
+        }
+
         .login-footer {
             margin-top: 22px;
             color: var(--text-muted);
@@ -141,6 +159,8 @@
             </div>
 
             <form id="loginForm" novalidate>
+                <div class="login-message" id="loginMessage" role="alert" aria-live="polite"></div>
+
                 <div class="mb-3">
                     <label for="username" class="form-label">Username</label>
                     <div class="input-group">
@@ -172,10 +192,15 @@
 
     <script type="module">
         import API_BASE_URL from './js/config/config.js';
+        import { clearTabToken, setTabToken } from './js/modules/auth_guard.js?v=8';
 
         const loginForm = document.getElementById('loginForm');
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
+        const loginMessage = document.getElementById('loginMessage');
+        const submitButton = loginForm.querySelector('button[type="submit"]');
+
+        clearTabToken();
 
         toastr.options = {
             closeButton: true,
@@ -184,16 +209,30 @@
             timeOut: '2600'
         };
 
+        function showLoginMessage(message) {
+            loginMessage.textContent = message;
+            loginMessage.classList.add('is-visible');
+        }
+
+        function clearLoginMessage() {
+            loginMessage.textContent = '';
+            loginMessage.classList.remove('is-visible');
+        }
+
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            clearLoginMessage();
 
             const username = usernameInput.value.trim();
             const password = passwordInput.value;
 
             if (!username || !password) {
+                showLoginMessage('Please fill in all fields');
                 toastr.error('Please fill in all fields');
                 return;
             }
+
+            submitButton.disabled = true;
 
             try {
                 const response = await fetch(`${API_BASE_URL}/auth/login.php`, {
@@ -214,17 +253,28 @@
                 }
 
                 if (!response.ok) {
+                    showLoginMessage(data.message || 'Login failed');
                     toastr.error(data.message || 'Login failed');
                     return;
                 }
 
+                if (!data.tab_token) {
+                    showLoginMessage('Login could not create a secure tab session. Please try again.');
+                    toastr.error('Login failed');
+                    return;
+                }
+
+                setTabToken(data.tab_token);
                 toastr.success('Login successful! Redirecting...');
 
                 setTimeout(() => {
-                    window.location.href = data.redirect;
+                    window.location.replace(data.redirect);
                 }, 1500);
             } catch (err) {
+                showLoginMessage(err.message || 'Login failed');
                 toastr.error(err.message || 'Login failed');
+            } finally {
+                submitButton.disabled = false;
             }
         });
     </script>

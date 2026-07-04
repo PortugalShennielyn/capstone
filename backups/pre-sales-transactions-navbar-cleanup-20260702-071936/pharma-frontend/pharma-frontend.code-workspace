@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../pharma-api"
+		}
+	],
+    "settings": {
+        "liveServer.settings.multiRootWorkspaceName": "pharma-frontend",
+        "liveServer.settings.port": 5501
+    }
+}

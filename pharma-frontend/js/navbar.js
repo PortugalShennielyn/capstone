@@ -15,7 +15,7 @@
     mainWrapperBeforeLoad?.classList.toggle("collapsed", savedCollapsed);
 
     try {
-            const cacheKey = "drpNavbarHtml:v12";
+            const cacheKey = "drpNavbarHtml:v25";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -39,23 +39,506 @@
         const mainWrapper = document.getElementById("mainWrapper");
         const filename = window.location.pathname.split("/").pop() || "dashboard.html";
 
-        function getActivePage() {
-            const hash = window.location.hash.replace("#", "");
-            const pageMap = {
-                "dashboard.html": "dashboard",
-                "products.html": "products",
-                "inventory.html": "inventory",
-                "supplier.html": "supplier",
-                "purchase_orders.html": "purchase-orders",
-                "pending_orders.html": "pending-orders",
-                "arrived_orders.html": "arrived-orders",
-                "complete_delivery.html": "complete-delivery",
-                "return_damage.html": "return-damage",
-                "expiry_monitoring.html": "expiry-monitoring",
-                "pos.html": "pos",
-                "clerk.html": "clerk"
+        const pageMap = {
+            "dashboard.html": "dashboard",
+            "products.html": "products",
+            "inventory.html": "inventory",
+            "supplier.html": "supplier",
+            "purchase_orders.html": "purchase-orders",
+            "pending_orders.html": "pending-orders",
+            "arrived_orders.html": "arrived-orders",
+            "complete_delivery.html": "complete-delivery",
+            "return_damage.html": "return-damage",
+            "expiry_monitoring.html": "expiry-monitoring",
+            "admin_settings.html": "settings",
+            "pos.html": "pos",
+            "clerk.html": "clerk",
+            "sales_clerk_orders.html": "sales-clerk-orders",
+            "sales_clerk_pos.html": "sales-clerk-pos",
+            "cashier_queue.html": "cashier-queue",
+            "completed_sales.html": "completed-sales",
+            "cancelled_sales.html": "cancelled-sales",
+            "sales_history.html": "sales-history"
+        };
+
+        function normalizeRole(role) {
+            return String(role || "")
+                .trim()
+                .toLowerCase()
+                .replace(/[\s-]+/g, "_")
+                .replace("sales_clerk", "salesclerk")
+                .replace("owner/manager", "manager")
+                .replace("manager_/_owner", "manager");
+        }
+
+        function tabToken() {
+            try {
+                return sessionStorage.getItem("pharma_tab_token") || "";
+            } catch (error) {
+                return "";
+            }
+        }
+
+        function apiBaseUrl() {
+            return window.location.port
+                ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
+                : "../pharma-api/v1";
+        }
+
+        async function loadCurrentSession() {
+            const token = tabToken();
+            if (!token) return null;
+            try {
+                const response = await fetch(`${apiBaseUrl()}/auth/check_session.php`, {
+                    credentials: "include",
+                    cache: "no-store",
+                    headers: { "X-Tab-Token": token }
+                });
+                return response.ok ? response.json() : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function sessionRoleSet(session) {
+            const roles = [
+                session?.role,
+                ...(Array.isArray(session?.roles) ? session.roles : []),
+                ...(Array.isArray(session?.role_identifiers) ? session.role_identifiers : [])
+            ];
+            return new Set(roles.map(normalizeRole).filter(Boolean));
+        }
+
+        function setProfileIdentity(session) {
+            const name = session?.full_name || session?.username || "User";
+            const roleLabels = {
+                super_admin: "Super Admin",
+                admin: "Admin",
+                manager: "Manager / Owner",
+                cashier: "Cashier",
+                salesclerk: "Sales Clerk"
             };
+            const role = roleLabels[normalizeRole(session?.role)] || session?.role || "Account";
+            const initials = String(name)
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map(part => part.charAt(0).toUpperCase())
+                .join("") || "U";
+            container.querySelectorAll(".profile-name, .sidebar-user-summary strong").forEach(node => {
+                node.textContent = name;
+            });
+            container.querySelectorAll(".avatar-initials").forEach(node => {
+                node.textContent = initials;
+            });
+            const roleNode = container.querySelector(".sidebar-user-summary span");
+            if (roleNode) roleNode.textContent = role;
+        }
+
+        function ensureProfileModal(session) {
+            if (document.getElementById("navbarProfileModal")) return;
+            const modal = document.createElement("div");
+            modal.className = "modal fade";
+            modal.id = "navbarProfileModal";
+            modal.tabIndex = -1;
+            modal.setAttribute("aria-hidden", "true");
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <form id="navbarProfileForm" novalidate>
+                            <div class="modal-header">
+                                <h5 class="modal-title fw-bold">User Settings</h5>
+                                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p class="navbar-profile-error" id="navbarProfileError"></p>
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <label class="form-label" for="navbarProfileFullName">Full Name</label>
+                                        <input class="form-control" id="navbarProfileFullName" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarProfileEmail">Email</label>
+                                        <input class="form-control" id="navbarProfileEmail" type="email">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarProfileContact">Contact Number</label>
+                                        <input class="form-control" id="navbarProfileContact">
+                                    </div>
+                                    <div class="col-12"><hr class="my-1"></div>
+                                    <div class="col-12">
+                                        <label class="form-label" for="navbarCurrentPassword">Current Password</label>
+                                        <input class="form-control" id="navbarCurrentPassword" type="password" autocomplete="current-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarNewPassword">New Password</label>
+                                        <input class="form-control" id="navbarNewPassword" type="password" autocomplete="new-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="navbarConfirmPassword">Confirm Password</label>
+                                        <input class="form-control" id="navbarConfirmPassword" type="password" autocomplete="new-password">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                                <button class="btn btn-primary" type="submit">Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+
+            const style = document.createElement("style");
+            style.id = "navbar-profile-modal-styles";
+            style.textContent = `
+                .navbar-profile-error{display:none;margin:0 0 12px;padding:10px 12px;border:1px solid #fecaca;border-radius:8px;color:#991b1b;background:#fef2f2;font-size:13px;font-weight:800}
+                .navbar-profile-error.is-visible{display:block}
+            `;
+            document.head.appendChild(style);
+
+            const form = document.getElementById("navbarProfileForm");
+            const error = document.getElementById("navbarProfileError");
+            const fields = {
+                fullName: document.getElementById("navbarProfileFullName"),
+                email: document.getElementById("navbarProfileEmail"),
+                contact: document.getElementById("navbarProfileContact"),
+                currentPassword: document.getElementById("navbarCurrentPassword"),
+                newPassword: document.getElementById("navbarNewPassword"),
+                confirmPassword: document.getElementById("navbarConfirmPassword")
+            };
+
+            function setError(message = "") {
+                error.textContent = message;
+                error.classList.toggle("is-visible", Boolean(message));
+            }
+
+            window.__drpOpenNavbarProfile = function openNavbarProfile(currentSession = session) {
+                setError("");
+                form.reset();
+                fields.fullName.value = currentSession?.full_name || "";
+                fields.email.value = currentSession?.email || "";
+                fields.contact.value = currentSession?.contact_number || "";
+                window.bootstrap?.Modal.getOrCreateInstance(modal)?.show();
+            };
+
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                setError("");
+                const fullName = fields.fullName.value.trim();
+                const email = fields.email.value.trim();
+                const contactNumber = fields.contact.value.trim();
+                const currentPassword = fields.currentPassword.value;
+                const newPassword = fields.newPassword.value;
+                const confirmPassword = fields.confirmPassword.value;
+                if (!fullName) {
+                    setError("Full Name is required.");
+                    return;
+                }
+                if ((currentPassword || newPassword || confirmPassword) && (!currentPassword || !newPassword || !confirmPassword)) {
+                    setError("Current password, new password, and confirmation are required to change password.");
+                    return;
+                }
+                if (newPassword && newPassword !== confirmPassword) {
+                    setError("New password and confirmation do not match.");
+                    return;
+                }
+                try {
+                    const headers = {
+                        "Content-Type": "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "X-Tab-Token": tabToken()
+                    };
+                    const profileResponse = await fetch(`${apiBaseUrl()}/auth/update_profile.php`, {
+                        method: "POST",
+                        credentials: "include",
+                        headers,
+                        body: JSON.stringify({ full_name: fullName, email, contact_number: contactNumber })
+                    });
+                    const profileData = await profileResponse.json().catch(() => ({}));
+                    if (!profileResponse.ok || profileData.status === "error") {
+                        throw new Error(profileData.message || "Unable to update profile.");
+                    }
+                    if (newPassword) {
+                        const passwordResponse = await fetch(`${apiBaseUrl()}/auth/update_password.php`, {
+                            method: "POST",
+                            credentials: "include",
+                            headers,
+                            body: JSON.stringify({
+                                current_password: currentPassword,
+                                new_password: newPassword,
+                                confirm_password: confirmPassword
+                            })
+                        });
+                        const passwordData = await passwordResponse.json().catch(() => ({}));
+                        if (!passwordResponse.ok || passwordData.status === "error") {
+                            throw new Error(passwordData.message || "Unable to update password.");
+                        }
+                    }
+                    setProfileIdentity({ ...session, ...profileData, full_name: fullName, email, contact_number: contactNumber });
+                    window.bootstrap?.Modal.getOrCreateInstance(modal)?.hide();
+                    if (window.toastr) toastr.success("Profile updated.");
+                } catch (errorMessage) {
+                    setError(errorMessage.message || "Unable to update profile.");
+                }
+            });
+        }
+
+        function applyRoleNavigation(session) {
+            const roles = sessionRoleSet(session);
+            setProfileIdentity(session);
+            ensureProfileModal(session);
+
+            if (!roles.has("salesclerk") && !roles.has("ro_sales_clerk")) {
+                return;
+            }
+
+            const allowedPages = new Set(["dashboard", "clerk", "sales-clerk-pos", "sales-clerk-orders", "sales-clerk-history"]);
+            container.querySelectorAll("[data-nav-page]").forEach(link => {
+                const page = link.dataset.navPage || "";
+                const isAllowed = allowedPages.has(page);
+                link.classList.toggle("d-none", !isAllowed);
+                link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
+            });
+            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
+                const target = trigger.getAttribute("href") || "";
+                const isSales = target === "#salesTransactionsCollapse";
+                trigger.classList.toggle("d-none", !isSales);
+                trigger.setAttribute("aria-hidden", isSales ? "false" : "true");
+            });
+            container.querySelector("[data-nav-page='dashboard']")?.setAttribute("href", "clerk.html");
+            container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
+                const isUserSettings = link.dataset.navPage === "user-settings";
+                link.classList.toggle("d-none", !isUserSettings);
+                link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
+                if (isUserSettings) {
+                    link.href = "#";
+                    link.querySelector("span").textContent = "User Settings";
+                    link.dataset.profileAction = "open";
+                }
+            });
+        }
+
+        const dashboardViewMap = {
+            dashboard: "dashboard",
+            "dashboard/billing": "billing",
+            "dashboard/user/settings": "user-settings",
+            "dashboard/products": "products",
+            "dashboard/inventory": "inventory",
+            "dashboard/suppliers": "supplier",
+            "dashboard/pos": "pos",
+            "dashboard/clerk": "clerk",
+            "dashboard/purchase-orders": "purchase-orders",
+            "dashboard/pending-orders": "pending-orders",
+            "dashboard/arrived-orders": "arrived-orders",
+            "dashboard/complete-delivery": "complete-delivery",
+            "dashboard/cancelled-purchase-orders": "cancelled-purchase-orders",
+            "dashboard/return-damage": "return-damage",
+            "dashboard/expiry-monitoring": "expiry-monitoring",
+            "dashboard/sales-clerk-orders": "sales-clerk-orders",
+            "dashboard/sales-clerk-history": "sales-clerk-history",
+            "dashboard/sales-clerk-pos": "sales-clerk-pos",
+            "dashboard/cashier-queue": "cashier-queue",
+            "dashboard/completed-sales": "completed-sales",
+            "dashboard/cancelled-sales": "cancelled-sales",
+            "dashboard/sales-history": "sales-history"
+        };
+
+        function normalizeDashboardView(view) {
+            return String(view || "")
+                .replace(/^#/, "")
+                .replace(/^\/+/, "")
+                .replace(/\/+$/, "")
+                || "dashboard";
+        }
+
+        function getDashboardView() {
+            const hashView = normalizeDashboardView(window.location.hash);
+            if (hashView && hashView !== "dashboard") return hashView;
+
+            const activePage = pageMap[filename] || "dashboard";
+            const activeLink = container.querySelector(`[data-nav-page="${activePage}"]`);
+            return normalizeDashboardView(activeLink?.dataset.dashboardView || activePage);
+        }
+
+        function getActivePage() {
+            const dashboardView = getDashboardView();
+            if (dashboardViewMap[dashboardView]) return dashboardViewMap[dashboardView];
+
             return pageMap[filename] || "";
+        }
+
+        function setDashboardViewState() {
+            const view = getDashboardView();
+            document.body.dataset.dashboardView = view;
+            document.body.dataset.dashboardPage = "dashboard";
+            sessionStorage.setItem("drpDashboardView", view);
+        }
+
+        function setUserPopoverOpen(isOpen) {
+            const footer = container.querySelector(".sidebar-profile-footer");
+            const trigger = container.querySelector("#sidebarUserMenuButton");
+            const popover = container.querySelector("#sidebarUserPopover");
+            const isSlim = sidebar?.classList.contains("collapsed");
+
+            if (popover && isOpen) {
+                if (isSlim) {
+                    container.appendChild(popover);
+                    popover.classList.add("slim-popover");
+                } else if (footer && popover.parentElement !== footer) {
+                    const directSignout = footer.querySelector(".sidebar-signout-direct");
+                    footer.insertBefore(popover, directSignout);
+                    popover.classList.remove("slim-popover");
+                }
+            }
+
+            footer?.classList.toggle("user-popover-open", isOpen);
+            popover?.classList.toggle("is-open", isOpen);
+            trigger?.setAttribute("aria-expanded", String(isOpen));
+        }
+
+        function getSlimFlyout() {
+            let flyout = container.querySelector(".sidebar-slim-flyout");
+            if (flyout) return flyout;
+
+            flyout = document.createElement("div");
+            flyout.className = "sidebar-slim-flyout";
+            flyout.setAttribute("role", "menu");
+            container.appendChild(flyout);
+            return flyout;
+        }
+
+        function closeSlimFlyout() {
+            const flyout = container.querySelector(".sidebar-slim-flyout");
+            flyout?.classList.remove("is-open");
+            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
+                trigger.classList.remove("slim-flyout-open");
+                if (sidebar?.classList.contains("collapsed")) {
+                    trigger.setAttribute("aria-expanded", "false");
+                }
+            });
+        }
+
+        function positionSlimFlyout(trigger, flyout) {
+            const rect = trigger.getBoundingClientRect();
+            const top = Math.max(12, Math.min(rect.top, window.innerHeight - 260));
+            flyout.style.top = `${top}px`;
+        }
+
+        function openSlimFlyout(trigger) {
+            const targetSelector = trigger.getAttribute("href");
+            const collapse = targetSelector?.startsWith("#") ? container.querySelector(targetSelector) : null;
+            if (!collapse) return;
+
+            const flyout = getSlimFlyout();
+            const title = trigger.querySelector(".nav-label")?.textContent?.trim() || trigger.getAttribute("title") || "Menu";
+            const links = Array.from(collapse.querySelectorAll("a.nav-link-item[href]"));
+
+            flyout.innerHTML = `<div class="sidebar-slim-flyout-title">${title}</div>`;
+            links.forEach(link => {
+                const flyoutLink = document.createElement("a");
+                flyoutLink.className = "sidebar-slim-flyout-link nav-link-item";
+                flyoutLink.href = link.getAttribute("href") || "#";
+                flyoutLink.title = link.getAttribute("title") || link.textContent.trim();
+                flyoutLink.dataset.navPage = link.dataset.navPage || "";
+                flyoutLink.dataset.dashboardView = link.dataset.dashboardView || "";
+                flyoutLink.setAttribute("role", "menuitem");
+                flyoutLink.innerHTML = `${link.querySelector("i")?.outerHTML || ""}<span>${link.querySelector(".nav-label")?.textContent?.trim() || flyoutLink.title}</span>`;
+                if (link.classList.contains("active")) {
+                    flyoutLink.classList.add("active");
+                }
+                flyout.appendChild(flyoutLink);
+            });
+
+            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(item => item.classList.remove("slim-flyout-open"));
+            trigger.classList.add("slim-flyout-open");
+            trigger.setAttribute("aria-expanded", "true");
+            positionSlimFlyout(trigger, flyout);
+            flyout.classList.add("is-open");
+        }
+
+        function handleSlimCollapseClick(event) {
+            const trigger = event.target.closest("a.nav-link-item[data-bs-toggle='collapse']");
+            if (!trigger || !container.contains(trigger)) return;
+            if (!sidebar?.classList.contains("collapsed")) {
+                closeSlimFlyout();
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+
+            const flyout = container.querySelector(".sidebar-slim-flyout");
+            const isSameOpen = flyout?.classList.contains("is-open") && trigger.classList.contains("slim-flyout-open");
+            if (isSameOpen) {
+                closeSlimFlyout();
+                return;
+            }
+
+            setUserPopoverOpen(false);
+            openSlimFlyout(trigger);
+        }
+
+        function closeUserPopoverFromOutside(event) {
+            const footer = container.querySelector(".sidebar-profile-footer");
+            const popover = container.querySelector("#sidebarUserPopover");
+            if (!footer || (!footer.classList.contains("user-popover-open") && !popover?.classList.contains("is-open"))) return;
+            if (footer.contains(event.target)) return;
+            if (popover?.contains(event.target)) return;
+            setUserPopoverOpen(false);
+        }
+
+        function closeSlimFlyoutFromOutside(event) {
+            const flyout = container.querySelector(".sidebar-slim-flyout");
+            if (!flyout || !flyout.classList.contains("is-open")) return;
+            if (flyout.contains(event.target)) return;
+            if (event.target.closest("a.nav-link-item[data-bs-toggle='collapse']")) return;
+            closeSlimFlyout();
+        }
+
+        function handleUserPopoverClick(event) {
+            const trigger = event.target.closest("#sidebarUserMenuButton, .sidebar-user-menu-toggle");
+            if (!trigger || !container.contains(trigger)) return;
+
+            event.preventDefault();
+            const footer = trigger.closest(".sidebar-profile-footer");
+            setUserPopoverOpen(!footer?.classList.contains("user-popover-open"));
+        }
+
+        function handleNavbarKeydown(event) {
+            if (event.key !== "Escape") return;
+            setUserPopoverOpen(false);
+            closeSlimFlyout();
+        }
+
+        function getActiveLabel() {
+            const activePage = getActivePage();
+            const pageMap = {
+                "dashboard": "Dashboard",
+                "products": "Products",
+                "inventory": "Inventory",
+                "supplier": "Suppliers",
+                "settings": "Admin Settings",
+                "billing": "Billing",
+                "user-settings": "User Settings",
+                "purchase-orders": "Purchase Orders",
+                "pending-orders": "Pending Orders",
+                "arrived-orders": "Arrived Orders",
+                "complete-delivery": "Complete Delivery",
+                "cancelled-purchase-orders": "Cancelled Purchase Orders",
+                "return-damage": "Return/Damage",
+                "expiry-monitoring": "Expiry Monitoring",
+                "pos": "POS",
+                "clerk": "Salesclerk",
+                "sales-clerk-orders": "Sales Clerk Orders",
+                "sales-clerk-history": "Transaction History",
+                "cashier-queue": "Cashier Queue",
+                "completed-sales": "Completed Sales",
+                "cancelled-sales": "Cancelled Sales",
+                "sales-history": "Sales History"
+            };
+            return pageMap[activePage] || "Dashboard";
         }
 
         function setSidebarState(isCollapsed) {
@@ -63,6 +546,9 @@
             mainWrapper?.classList.toggle("collapsed", isCollapsed);
             document.body.classList.toggle("navbar-sidebar-collapsed", isCollapsed);
             localStorage.setItem("drpSidebarCollapsed", String(isCollapsed));
+            if (!isCollapsed) {
+                closeSlimFlyout();
+            }
         }
 
         function closeSidebarFromOutside(event) {
@@ -85,6 +571,7 @@
         }
 
         function applyActiveNavigation() {
+            setDashboardViewState();
             container.querySelectorAll("[data-nav-page]").forEach(link => link.classList.remove("active"));
             const activeLink = container.querySelector(`[data-nav-page="${getActivePage()}"]`);
             activeLink?.classList.add("active");
@@ -103,6 +590,13 @@
                 return;
             }
 
+            if (link.closest(".sidebar-user-popover")) {
+                setUserPopoverOpen(false);
+            }
+            if (link.closest(".sidebar-slim-flyout")) {
+                closeSlimFlyout();
+            }
+
             const targetUrl = new URL(link.href, window.location.href);
             const isSamePath = targetUrl.pathname === window.location.pathname;
             const isSameHash = targetUrl.hash === window.location.hash || (!targetUrl.hash && !window.location.hash);
@@ -114,7 +608,11 @@
                 return;
             }
 
-            sessionStorage.setItem("drpLastNavigationTarget", link.dataset.navPage || targetUrl.pathname);
+            const dashboardView = normalizeDashboardView(link.dataset.dashboardView || targetUrl.hash);
+            if (dashboardView) {
+                sessionStorage.setItem("drpDashboardView", dashboardView);
+            }
+            sessionStorage.setItem("drpLastNavigationTarget", dashboardView || link.dataset.navPage || targetUrl.pathname);
         }
 
         function prefetchNavigationTargets() {
@@ -137,6 +635,14 @@
             });
         }
 
+        container.addEventListener("click", (event) => {
+            const profileLink = event.target.closest("[data-profile-action='open']");
+            if (!profileLink || !container.contains(profileLink)) return;
+            event.preventDefault();
+            setUserPopoverOpen(false);
+            window.__drpOpenNavbarProfile?.();
+        });
+
         container.querySelectorAll(".collapse").forEach(collapse => {
             setCollapseArrow(collapse);
             collapse.addEventListener("shown.bs.collapse", () => setCollapseArrow(collapse));
@@ -151,13 +657,27 @@
         document.getElementById("sidebarToggle")?.addEventListener("click", () => {
             setSidebarState(!sidebar.classList.contains("collapsed"));
         });
+        container.addEventListener("click", handleSlimCollapseClick, true);
         container.addEventListener("click", handleSidebarNavigation);
+        container.addEventListener("click", handleUserPopoverClick);
         document.addEventListener("pointerdown", closeSidebarFromOutside);
+        document.addEventListener("pointerdown", closeUserPopoverFromOutside);
+        document.addEventListener("pointerdown", closeSlimFlyoutFromOutside);
+        document.addEventListener("keydown", handleNavbarKeydown);
+        window.addEventListener("resize", closeSlimFlyout);
+        window.addEventListener("scroll", closeSlimFlyout, true);
         window.addEventListener("load", enhanceDataTables);
         window.addEventListener("drp:tables-updated", enhanceDataTables);
         window.requestIdleCallback
             ? window.requestIdleCallback(prefetchNavigationTargets, { timeout: 1500 })
             : window.setTimeout(prefetchNavigationTargets, 600);
+
+        loadCurrentSession()
+            .then(currentSession => {
+                applyRoleNavigation(currentSession);
+                applyActiveNavigation();
+            })
+            .catch(() => {});
 
         const tableObserver = new MutationObserver(() => {
             window.clearTimeout(window.__drpTableEnhanceTimer);
@@ -165,12 +685,197 @@
         });
         tableObserver.observe(document.body, { childList: true, subtree: true });
 
-        window.dispatchEvent(new CustomEvent("navbar:ready", { detail: { activePage: getActivePage() } }));
+        window.dispatchEvent(new CustomEvent("navbar:ready", { detail: { activePage: getActivePage(), activeLabel: getActiveLabel(), dashboardView: getDashboardView() } }));
     } catch (error) {
         document.body.classList.remove("navbar-state-booting");
         console.error("Unable to load the shared navbar:", error);
     }
 })();
+
+function initGlobalModalBehavior() {
+    if (window.__drpGlobalModalBehaviorInitialized) return;
+    window.__drpGlobalModalBehaviorInitialized = true;
+
+    const modalSelector = '.modal';
+
+    function setStaticBackdrop(modal) {
+        if (!modal || modal.dataset.drpStaticBackdrop === 'true') return;
+        modal.dataset.drpStaticBackdrop = 'true';
+        modal.setAttribute('data-bs-backdrop', 'static');
+    }
+
+    function patchBootstrapModal() {
+        const Modal = window.bootstrap?.Modal;
+        if (!Modal || Modal.__drpStaticBackdropPatched) return false;
+
+        Modal.__drpStaticBackdropPatched = true;
+        if (Modal.Default) {
+            Modal.Default.backdrop = 'static';
+        }
+
+        const originalGetOrCreateInstance = Modal.getOrCreateInstance.bind(Modal);
+        Modal.getOrCreateInstance = function patchedGetOrCreateInstance(element, config = {}) {
+            if (element?.classList?.contains('modal')) {
+                setStaticBackdrop(element);
+            }
+            return originalGetOrCreateInstance(element, { ...config, backdrop: 'static' });
+        };
+
+        const originalConstructor = Modal.prototype.constructor;
+        if (originalConstructor?.Default) {
+            originalConstructor.Default.backdrop = 'static';
+        }
+        return true;
+    }
+
+    function patchSweetAlert() {
+        const Swal = window.Swal;
+        if (!Swal || Swal.__drpOutsideClickPatched || typeof Swal.fire !== 'function') return false;
+
+        const originalFire = Swal.fire.bind(Swal);
+        Swal.fire = function patchedSweetAlertFire(...args) {
+            if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+                return originalFire({ ...args[0], allowOutsideClick: false });
+            }
+            if (args.length >= 1) {
+                return originalFire({
+                    title: args[0],
+                    text: args[1],
+                    icon: args[2],
+                    allowOutsideClick: false
+                });
+            }
+            return originalFire({ allowOutsideClick: false });
+        };
+        Swal.__drpOutsideClickPatched = true;
+        return true;
+    }
+
+    function makeModalDraggable(modal) {
+        if (!modal?.matches(modalSelector) || modal.dataset.drpDraggable === 'true') return;
+        const dialog = modal.querySelector('.modal-dialog');
+        const header = modal.querySelector('.modal-header');
+        if (!dialog || !header) return;
+
+        modal.dataset.drpDraggable = 'true';
+        header.classList.add('drp-modal-drag-handle');
+
+        let startX = 0;
+        let startY = 0;
+        let offsetX = 0;
+        let offsetY = 0;
+        let dragging = false;
+
+        const resetModalLayout = () => {
+            dialog.style.position = '';
+            dialog.style.margin = '';
+            dialog.style.left = '';
+            dialog.style.top = '';
+            dialog.style.transform = '';
+            dialog.style.width = '';
+            dialog.style.height = '';
+            dialog.style.maxWidth = '';
+            const content = dialog.querySelector('.modal-content');
+            if (content) {
+                content.style.width = '';
+                content.style.height = '';
+                content.style.maxWidth = '';
+                content.style.maxHeight = '';
+            }
+            dialog.querySelector('.modal-body')?.scrollTo?.({ top: 0, left: 0 });
+        };
+
+        header.addEventListener('pointerdown', (event) => {
+            if (event.target.closest('button, input, select, textarea, a')) return;
+            if (event.button !== 0 && event.pointerType === 'mouse') return;
+            const rect = dialog.getBoundingClientRect();
+            dragging = true;
+            startX = event.clientX;
+            startY = event.clientY;
+            offsetX = rect.left;
+            offsetY = rect.top;
+            dialog.style.position = 'fixed';
+            dialog.style.margin = '0';
+            dialog.style.left = `${rect.left}px`;
+            dialog.style.top = `${rect.top}px`;
+            dialog.style.transform = 'none';
+            header.setPointerCapture?.(event.pointerId);
+        });
+
+        header.addEventListener('pointermove', (event) => {
+            if (!dragging) return;
+            const rect = dialog.getBoundingClientRect();
+            const maxLeft = Math.max(8, window.innerWidth - Math.min(rect.width, window.innerWidth - 16) - 8);
+            const maxTop = Math.max(8, window.innerHeight - 96);
+            const nextLeft = Math.min(Math.max(8, offsetX + event.clientX - startX), maxLeft);
+            const nextTop = Math.min(Math.max(8, offsetY + event.clientY - startY), maxTop);
+            dialog.style.left = `${nextLeft}px`;
+            dialog.style.top = `${nextTop}px`;
+        });
+
+        const stopDrag = (event) => {
+            dragging = false;
+            if (header.hasPointerCapture?.(event.pointerId)) {
+                header.releasePointerCapture(event.pointerId);
+            }
+        };
+        header.addEventListener('pointerup', stopDrag);
+        header.addEventListener('pointercancel', stopDrag);
+
+        modal.addEventListener('show.bs.modal', resetModalLayout);
+        modal.addEventListener('hidden.bs.modal', resetModalLayout);
+    }
+
+    function enhanceModals(root = document) {
+        root.querySelectorAll?.('.modal').forEach((modal) => {
+            setStaticBackdrop(modal);
+            makeModalDraggable(modal);
+        });
+    }
+
+    enhanceModals();
+    document.addEventListener('show.bs.modal', (event) => {
+        setStaticBackdrop(event.target);
+        makeModalDraggable(event.target);
+    }, true);
+
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+                if (node.nodeType !== Node.ELEMENT_NODE) return;
+                if (node.matches?.('.modal')) {
+                    setStaticBackdrop(node);
+                    makeModalDraggable(node);
+                }
+                enhanceModals(node);
+            });
+        });
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+
+    patchSweetAlert();
+
+    if (!patchBootstrapModal()) {
+        const timer = window.setInterval(() => {
+            if (patchBootstrapModal()) {
+                window.clearInterval(timer);
+                enhanceModals();
+            }
+        }, 50);
+        window.setTimeout(() => window.clearInterval(timer), 5000);
+    }
+
+    if (!window.Swal?.__drpOutsideClickPatched) {
+        const swalTimer = window.setInterval(() => {
+            if (patchSweetAlert()) {
+                window.clearInterval(swalTimer);
+            }
+        }, 50);
+        window.setTimeout(() => window.clearInterval(swalTimer), 5000);
+    }
+}
+
+initGlobalModalBehavior();
 
 function getDataTableColumnType(label) {
     const text = String(label || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -333,7 +1038,8 @@ function ensureNavbarRuntimeStyles() {
         .table-responsive {
             width: 100% !important;
             overflow-x: auto !important;
-            overflow-y: hidden !important;
+            overflow-y: auto !important;
+            max-height: min(68vh, 720px) !important;
             border-radius: 10px !important;
             -webkit-overflow-scrolling: touch;
         }
@@ -358,6 +1064,13 @@ function ensureNavbarRuntimeStyles() {
             word-break: normal !important;
         }
 
+        .table-responsive > table.table thead th {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 10 !important;
+            box-shadow: inset 0 -1px 0 #e5e9f1 !important;
+        }
+
         .table-responsive > table.table td {
             padding: 15px 10px !important;
             color: var(--text-main, #252b37) !important;
@@ -370,8 +1083,21 @@ function ensureNavbarRuntimeStyles() {
             overflow-wrap: break-word !important;
         }
 
+        .table-responsive > table.sales-table th,
+        .table-responsive > table.sales-table td {
+            text-align: left !important;
+        }
+
         .table-responsive > table.po-list-table {
-            min-width: 1540px !important;
+            width: max-content !important;
+            min-width: 2020px !important;
+            table-layout: fixed !important;
+        }
+
+        .table-responsive > table.po-items-table {
+            width: max-content !important;
+            min-width: 1700px !important;
+            table-layout: fixed !important;
         }
 
         .table-responsive > table.pending-table,
@@ -409,6 +1135,15 @@ function ensureNavbarRuntimeStyles() {
             padding-right: 8px !important;
         }
 
+        .table-responsive > table.po-items-table th,
+        .table-responsive > table.po-items-table td {
+            font-size: 12.5px !important;
+            vertical-align: middle !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+            hyphens: none !important;
+        }
+
         .table-responsive > table.po-list-table .col-date,
         .table-responsive > table.po-list-table td:nth-child(1),
         .table-responsive > table.po-list-table .col-money,
@@ -426,24 +1161,32 @@ function ensureNavbarRuntimeStyles() {
         .table-responsive > table.po-list-table .col-date,
         .table-responsive > table.po-list-table td:nth-child(1) { width: 110px !important; }
         .table-responsive > table.po-list-table .col-supplier,
-        .table-responsive > table.po-list-table td:nth-child(2) { width: 120px !important; }
-        .table-responsive > table.po-list-table .col-items,
-        .table-responsive > table.po-list-table td:nth-child(3) { width: 210px !important; }
+        .table-responsive > table.po-list-table td:nth-child(2) { width: 160px !important; min-width: 160px !important; }
         .table-responsive > table.po-list-table .col-brand,
-        .table-responsive > table.po-list-table td:nth-child(4) { width: 155px !important; }
+        .table-responsive > table.po-list-table td:nth-child(3) { width: 140px !important; min-width: 140px !important; }
+        .table-responsive > table.po-list-table .col-items,
+        .table-responsive > table.po-list-table td:nth-child(4) { width: 180px !important; min-width: 180px !important; }
+        .table-responsive > table.po-list-table .col-category,
+        .table-responsive > table.po-list-table td:nth-child(5) { width: 130px !important; min-width: 130px !important; }
+        .table-responsive > table.po-list-table .col-type,
+        .table-responsive > table.po-list-table td:nth-child(6) { width: 130px !important; min-width: 130px !important; }
         .table-responsive > table.po-list-table .col-qty,
-        .table-responsive > table.po-list-table td:nth-child(5) { width: 90px !important; }
+        .table-responsive > table.po-list-table td:nth-child(7) { width: 110px !important; min-width: 110px !important; }
+        .table-responsive > table.po-list-table .col-purchase-unit,
+        .table-responsive > table.po-list-table td:nth-child(8) { width: 150px !important; min-width: 150px !important; }
+        .table-responsive > table.po-list-table .col-inventory-qty,
+        .table-responsive > table.po-list-table td:nth-child(9) { width: 130px !important; min-width: 130px !important; }
         .table-responsive > table.po-list-table .col-terms,
-        .table-responsive > table.po-list-table td:nth-child(6) { width: 105px !important; }
+        .table-responsive > table.po-list-table td:nth-child(10) { width: 120px !important; min-width: 120px !important; }
         .table-responsive > table.po-list-table .col-delivery,
-        .table-responsive > table.po-list-table td:nth-child(7) { width: 130px !important; }
+        .table-responsive > table.po-list-table td:nth-child(11) { width: 160px !important; min-width: 160px !important; }
         .table-responsive > table.po-list-table .col-money,
-        .table-responsive > table.po-list-table td:nth-child(8),
-        .table-responsive > table.po-list-table td:nth-child(9) { width: 130px !important; }
+        .table-responsive > table.po-list-table td:nth-child(12),
+        .table-responsive > table.po-list-table td:nth-child(13) { width: 130px !important; min-width: 130px !important; }
         .table-responsive > table.po-list-table .col-status,
-        .table-responsive > table.po-list-table td:nth-child(10) { width: 105px !important; }
+        .table-responsive > table.po-list-table td:nth-child(14) { width: 120px !important; min-width: 120px !important; }
         .table-responsive > table.po-list-table .col-actions,
-        .table-responsive > table.po-list-table td:nth-child(11) { width: 95px !important; }
+        .table-responsive > table.po-list-table td:nth-child(15) { width: 100px !important; min-width: 100px !important; }
 
         .table-responsive > table#productsTable th:nth-child(1),
         .table-responsive > table#productsTable td:nth-child(1) { width: 150px !important; min-width: 150px !important; }
@@ -551,6 +1294,8 @@ function ensureNavbarRuntimeStyles() {
 
         .po-actions,
         .arrived-actions,
+        .complete-actions,
+        .approval-actions,
         .return-actions,
         .table-actions,
         .table-responsive td:last-child > div {
@@ -564,6 +1309,8 @@ function ensureNavbarRuntimeStyles() {
 
         .po-actions .btn,
         .arrived-actions .btn,
+        .complete-actions .btn,
+        .approval-actions .btn,
         .return-actions .btn,
         .table-actions .btn,
         .table-responsive td:last-child .btn {
@@ -605,12 +1352,13 @@ function ensureNavbarRuntimeStyles() {
             width: 100% !important;
             max-width: 100% !important;
             overflow-x: auto !important;
-            overflow-y: hidden !important;
+            overflow-y: auto !important;
+            max-height: min(68vh, 720px) !important;
             border-radius: 10px !important;
             -webkit-overflow-scrolling: touch !important;
         }
 
-        .table-responsive > table.table,
+        .table-responsive > table.table:not(.po-list-table):not(.po-items-table),
         .data-table-wrapper > table.table,
         table.data-table-enhanced {
             width: 100% !important;
@@ -641,6 +1389,24 @@ function ensureNavbarRuntimeStyles() {
             color: #596274 !important;
             background: #f8f9fc !important;
             font-weight: 800 !important;
+        }
+
+        .table-responsive > table.table thead th,
+        .data-table-wrapper > table.table thead th,
+        table.data-table-enhanced thead th {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 10 !important;
+            box-shadow: inset 0 -1px 0 #e5e9f1 !important;
+        }
+
+        .table-responsive > table.table thead th[data-table-column="actions"],
+        .data-table-wrapper > table.table thead th[data-table-column="actions"],
+        table.data-table-enhanced thead th[data-table-column="actions"],
+        .table-responsive > table.table thead th:last-child,
+        .data-table-wrapper > table.table thead th:last-child,
+        table.data-table-enhanced thead th:last-child {
+            z-index: 12 !important;
         }
 
         .table-responsive > table.table td,
@@ -692,12 +1458,107 @@ function ensureNavbarRuntimeStyles() {
 
         .table-responsive > table.table [data-table-column="actions"],
         .data-table-wrapper > table.table [data-table-column="actions"],
-        table.data-table-enhanced [data-table-column="actions"] {
+        table.data-table-enhanced [data-table-column="actions"],
+        .table-responsive > table.table .actions-column,
+        .table-responsive > table.table .col-actions,
+        .table-responsive > table.table .actions-cell,
+        .table-responsive > table.table .action-cell,
+        .table-responsive > table.table .po-actions-cell,
+        .table-responsive > table.table .approval-actions-cell,
+        .table-responsive > table.table .complete-actions-cell,
+        .data-table-wrapper > table.table .actions-column,
+        .data-table-wrapper > table.table .col-actions,
+        table.data-table-enhanced .actions-column,
+        table.data-table-enhanced .col-actions {
             width: 120px !important;
             min-width: 120px !important;
             white-space: nowrap !important;
             overflow: visible !important;
             overflow-wrap: normal !important;
+            text-align: center !important;
+        }
+
+        .table-responsive > table.table th[data-table-column="actions"],
+        .table-responsive > table.table td[data-table-column="actions"],
+        .data-table-wrapper > table.table th[data-table-column="actions"],
+        .data-table-wrapper > table.table td[data-table-column="actions"],
+        table.data-table-enhanced th[data-table-column="actions"],
+        table.data-table-enhanced td[data-table-column="actions"],
+        .table-responsive > table.table th.actions-column,
+        .table-responsive > table.table td.actions-column,
+        .table-responsive > table.table th.col-actions,
+        .table-responsive > table.table td.col-actions,
+        .table-responsive > table.table td.actions-cell,
+        .table-responsive > table.table td.action-cell,
+        .table-responsive > table.table td.po-actions-cell,
+        .table-responsive > table.table td.approval-actions-cell,
+        .table-responsive > table.table td.complete-actions-cell,
+        .data-table-wrapper > table.table th.actions-column,
+        .data-table-wrapper > table.table td.actions-column,
+        .data-table-wrapper > table.table th.col-actions,
+        .data-table-wrapper > table.table td.col-actions,
+        table.data-table-enhanced th.actions-column,
+        table.data-table-enhanced td.actions-column,
+        table.data-table-enhanced th.col-actions,
+        table.data-table-enhanced td.col-actions,
+        .table-responsive > table.table th:last-child,
+        .table-responsive > table.table td:last-child,
+        .data-table-wrapper > table.table th:last-child,
+        .data-table-wrapper > table.table td:last-child,
+        table.data-table-enhanced th:last-child,
+        table.data-table-enhanced td:last-child {
+            position: sticky !important;
+            right: 0 !important;
+            z-index: 11 !important;
+            background: var(--bs-table-bg, #fff) !important;
+            background-clip: padding-box !important;
+            border-left: 1px solid #e5e7eb !important;
+            box-shadow: -6px 0 10px rgba(15, 23, 42, 0.06) !important;
+            text-align: center !important;
+        }
+
+        .table-responsive > table.table thead th[data-table-column="actions"],
+        .data-table-wrapper > table.table thead th[data-table-column="actions"],
+        table.data-table-enhanced thead th[data-table-column="actions"],
+        .table-responsive > table.table thead th.actions-column,
+        .table-responsive > table.table thead th.col-actions,
+        .data-table-wrapper > table.table thead th.actions-column,
+        .data-table-wrapper > table.table thead th.col-actions,
+        table.data-table-enhanced thead th.actions-column,
+        table.data-table-enhanced thead th.col-actions,
+        .table-responsive > table.table thead th:last-child,
+        .data-table-wrapper > table.table thead th:last-child,
+        table.data-table-enhanced thead th:last-child {
+            z-index: 15 !important;
+            background: #f8f9fc !important;
+        }
+
+        .table-responsive > table.table tbody tr:hover td[data-table-column="actions"],
+        .data-table-wrapper > table.table tbody tr:hover td[data-table-column="actions"],
+        table.data-table-enhanced tbody tr:hover td[data-table-column="actions"],
+        .table-responsive > table.table tbody tr:hover td.actions-column,
+        .table-responsive > table.table tbody tr:hover td.col-actions,
+        .table-responsive > table.table tbody tr:hover td.actions-cell,
+        .table-responsive > table.table tbody tr:hover td.action-cell,
+        .table-responsive > table.table tbody tr:hover td.po-actions-cell,
+        .table-responsive > table.table tbody tr:hover td.approval-actions-cell,
+        .table-responsive > table.table tbody tr:hover td.complete-actions-cell,
+        .table-responsive > table.table tbody tr:hover td:last-child,
+        .data-table-wrapper > table.table tbody tr:hover td:last-child,
+        table.data-table-enhanced tbody tr:hover td:last-child {
+            background: var(--bs-table-hover-bg, #f8fafc) !important;
+        }
+
+        .table-responsive > table.table td[colspan],
+        .data-table-wrapper > table.table td[colspan],
+        table.data-table-enhanced td[colspan] {
+            position: static !important;
+            right: auto !important;
+            z-index: auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+            border-left: 0 !important;
+            box-shadow: none !important;
         }
 
         .table-responsive > table.table [data-table-column="supplier"],
@@ -773,6 +1634,58 @@ function ensureNavbarRuntimeStyles() {
         body.dark-mode .table-responsive > table.table th {
             background: #202b3d !important;
             color: #cbd5e1 !important;
+        }
+
+        body.dark-mode .table-responsive > table.table th[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table td[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table th[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table td[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced th[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced td[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table th.actions-column,
+        body.dark-mode .table-responsive > table.table td.actions-column,
+        body.dark-mode .table-responsive > table.table th.col-actions,
+        body.dark-mode .table-responsive > table.table td.col-actions,
+        body.dark-mode .table-responsive > table.table td.actions-cell,
+        body.dark-mode .table-responsive > table.table td.action-cell,
+        body.dark-mode .table-responsive > table.table td.po-actions-cell,
+        body.dark-mode .table-responsive > table.table td.approval-actions-cell,
+        body.dark-mode .table-responsive > table.table td.complete-actions-cell,
+        body.dark-mode .table-responsive > table.table th:last-child,
+        body.dark-mode .table-responsive > table.table td:last-child,
+        body.dark-mode .data-table-wrapper > table.table th:last-child,
+        body.dark-mode .data-table-wrapper > table.table td:last-child,
+        body.dark-mode table.data-table-enhanced th:last-child,
+        body.dark-mode table.data-table-enhanced td:last-child {
+            background: var(--bs-table-bg, #182131) !important;
+            border-left-color: #263244 !important;
+        }
+
+        body.dark-mode .table-responsive > table.table thead th[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table thead th[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced thead th[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table thead th.actions-column,
+        body.dark-mode .table-responsive > table.table thead th.col-actions,
+        body.dark-mode .table-responsive > table.table thead th:last-child,
+        body.dark-mode .data-table-wrapper > table.table thead th:last-child,
+        body.dark-mode table.data-table-enhanced thead th:last-child {
+            background: #202b3d !important;
+        }
+
+        body.dark-mode .table-responsive > table.table tbody tr:hover td[data-table-column="actions"],
+        body.dark-mode .data-table-wrapper > table.table tbody tr:hover td[data-table-column="actions"],
+        body.dark-mode table.data-table-enhanced tbody tr:hover td[data-table-column="actions"],
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.actions-column,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.col-actions,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.action-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.po-actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.approval-actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td.complete-actions-cell,
+        body.dark-mode .table-responsive > table.table tbody tr:hover td:last-child,
+        body.dark-mode .data-table-wrapper > table.table tbody tr:hover td:last-child,
+        body.dark-mode table.data-table-enhanced tbody tr:hover td:last-child {
+            background: var(--bs-table-hover-bg, #202b3d) !important;
         }
     `;
     document.head.appendChild(style);

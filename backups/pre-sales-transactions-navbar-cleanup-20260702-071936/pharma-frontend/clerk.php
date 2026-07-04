@@ -1,0 +1,41 @@
+<?php
+require_once __DIR__ . '/auth_page_guard.php';
+?>
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Salesclerk</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=28" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
+    <style>
+        body { margin: 0; min-height: 100vh; color: #252b37; background: #f4f6fb; font-family: "Inter", sans-serif; }
+        .topbar { height: 70px; display: flex; align-items: center; gap: 14px; padding: 0 26px; background: #fff; border-bottom: 1px solid #e8ecf3; }
+        .icon-btn { width: 42px; height: 42px; border: 0; border-radius: 8px; color: #4b5563; background: #f4f6fb; }
+        .page-body { padding: 28px; }
+        .card { border: 1px solid #e8ecf3; border-radius: 8px; box-shadow: 0 10px 28px rgba(15,23,42,.05); }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
+            <div><strong>Salesclerk</strong><div class="text-muted small">Salesclerk workspace</div></div>
+        </header>
+        <section class="page-body">
+            <div class="card p-4">
+                <h1 class="h4 mb-2">Salesclerk</h1>
+                <p class="text-muted mb-0">Salesclerk tools can be managed from this workspace.</p>
+            </div>
+        </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">import verifySession from './js/modules/auth.js'; await verifySession();</script>
+</body>
+</html>

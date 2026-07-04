@@ -3,34 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dr. R Pharmacy | Salesclerk</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>Dr. R Pharmacy | Sales Clerk Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=5" rel="stylesheet">
-    <script src="./js/navbar.js?v=17" defer></script>
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=35" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
     <style>
-        body { margin: 0; min-height: 100vh; color: #252b37; background: #f4f6fb; font-family: "Inter", sans-serif; }
-        .topbar { height: 70px; display: flex; align-items: center; gap: 14px; padding: 0 26px; background: #fff; border-bottom: 1px solid #e8ecf3; }
-        .icon-btn { width: 42px; height: 42px; border: 0; border-radius: 8px; color: #4b5563; background: #f4f6fb; }
-        .page-body { padding: 28px; }
-        .card { border: 1px solid #e8ecf3; border-radius: 8px; box-shadow: 0 10px 28px rgba(15,23,42,.05); }
+        :root { --purple: #6d28d9; --ink: #101936; --muted: #667085; --line: #e6eaf2; --soft: #f6f8fc; --shadow: 0 14px 34px rgba(16, 25, 54, .07); }
+        * { box-sizing: border-box; }
+        body { min-height: 100vh; margin: 0; color: var(--ink); background: var(--soft); font-family: "Inter", system-ui, sans-serif; letter-spacing: 0; }
+        .topbar { position: sticky; top: 0; z-index: 1020; min-height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 26px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(10px); }
+        .topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .icon-btn, .brand-tile { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 42px; border: 0; border-radius: 8px; }
+        .icon-btn { color: #4b5563; background: #f1f4fa; }
+        .brand-tile { color: #fff; background: linear-gradient(135deg, var(--purple), #8b5cf6); box-shadow: 0 12px 22px rgba(109,40,217,.24); }
+        .page-title strong { display: block; font-size: clamp(20px, 1.8vw, 27px); font-weight: 900; line-height: 1.1; }
+        .page-title span { display: block; margin-top: 4px; color: #475467; font-size: 13px; font-weight: 650; }
+        .page-body { padding: clamp(18px, 1.8vw, 28px); }
+        .dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+        .metric-card, .quick-panel { border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: var(--shadow); }
+        .metric-card { min-height: 138px; display: grid; align-content: space-between; gap: 16px; padding: 20px; }
+        .metric-card span { color: var(--muted); font-size: 13px; font-weight: 800; }
+        .metric-card strong { color: var(--ink); font-size: 34px; font-weight: 900; line-height: 1; }
+        .metric-icon { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--purple); background: #f1e8ff; }
+        .quick-panel { margin-top: 18px; padding: 22px; }
+        .quick-panel h2 { margin: 0 0 14px; font-size: 20px; font-weight: 900; }
+        .quick-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+        .quick-actions .btn { min-height: 44px; border-radius: 8px; font-weight: 850; }
+        @media (max-width: 1100px) { .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 640px) { .topbar { align-items: flex-start; flex-direction: column; } .dashboard-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
     <div id="navbar-container"></div>
-    <main class="main-wrapper" id="mainWrapper">
+    <main class="main-content" id="mainWrapper">
         <header class="topbar">
-            <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
-            <div><strong>Salesclerk</strong><div class="text-muted small">Salesclerk workspace</div></div>
+            <div class="topbar-left">
+                <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
+                <div class="brand-tile"><i class="fa-solid fa-gauge-high"></i></div>
+                <div class="page-title">
+                    <strong>Sales Clerk Dashboard</strong>
+                    <span>Track forwarded orders and open the Sales Clerk POS.</span>
+                </div>
+            </div>
         </header>
         <section class="page-body">
-            <div class="card p-4">
-                <h1 class="h4 mb-2">Salesclerk</h1>
-                <p class="text-muted mb-0">Salesclerk tools can be managed from this workspace.</p>
+            <div class="dashboard-grid">
+                <article class="metric-card"><div class="metric-icon"><i class="fa-solid fa-paper-plane"></i></div><span>Today's Forwarded Orders</span><strong id="todayForwardedOrders">0</strong></article>
+                <article class="metric-card"><div class="metric-icon"><i class="fa-solid fa-clock"></i></div><span>Pending for Cashier</span><strong id="pendingForCashier">0</strong></article>
+                <article class="metric-card"><div class="metric-icon"><i class="fa-solid fa-circle-check"></i></div><span>Completed Transactions</span><strong id="completedTransactions">0</strong></article>
+                <article class="metric-card"><div class="metric-icon"><i class="fa-solid fa-boxes-stacked"></i></div><span>Total Items Sold Today</span><strong id="itemsSoldToday">0</strong></article>
             </div>
+            <section class="quick-panel">
+                <h2>Sales &amp; Transactions</h2>
+                <div class="quick-actions">
+                    <a class="btn btn-primary" href="sales_clerk_pos.html"><i class="fa-solid fa-cash-register me-2"></i>Sales Clerk Transaction / POS</a>
+                    <a class="btn btn-light" href="sales_clerk_orders.html"><i class="fa-solid fa-clipboard-list me-2"></i>Transaction History</a>
+                </div>
+            </section>
         </section>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module">import verifySession from './js/modules/auth.js'; await verifySession();</script>
+    <script>
+        const apiBaseUrl = window.location.port ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1" : "../pharma-api/v1";
+        async function loadSalesClerkDashboard() {
+            try {
+                const response = await fetch(`${apiBaseUrl}/sales/get_sales_clerk_dashboard.php`, {
+                    credentials: 'include',
+                    cache: 'no-store',
+                    headers: { 'X-Tab-Token': sessionStorage.getItem('pharma_tab_token') || '' }
+                });
+                const data = await response.json();
+                const stats = data.data || {};
+                document.getElementById('todayForwardedOrders').textContent = stats.today_forwarded_orders ?? 0;
+                document.getElementById('pendingForCashier').textContent = stats.pending_for_cashier ?? 0;
+                document.getElementById('completedTransactions').textContent = stats.completed_transactions ?? 0;
+                document.getElementById('itemsSoldToday').textContent = stats.total_items_sold_today ?? 0;
+            } catch (error) {}
+        }
+        loadSalesClerkDashboard();
+    </script>
 </body>
 </html>
