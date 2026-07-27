@@ -2,6 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
+require_once 'purchase_order_payment_helpers.php';
 require_once '../products/product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -68,10 +69,35 @@ try {
         exit();
     }
 
+    $order['inspection_in_progress'] = false;
+    $order['inspection_draft'] = null;
+    $draftPrefix = "[INSPECTION_DRAFT_V1]\n";
+    $receivingRemarks = (string) ($order['receiving_remarks'] ?? '');
+    if (str_starts_with($receivingRemarks, $draftPrefix)) {
+        $draft = json_decode(substr($receivingRemarks, strlen($draftPrefix)), true);
+        if (is_array($draft)) {
+            $order['inspection_in_progress'] = true;
+            $order['inspection_draft'] = $draft;
+            $order['receiving_remarks'] = '';
+            $order['received_date'] = null;
+        }
+    }
+    $receivingMetaPrefix = "[RECEIVING_META_V1]\n";
+    if (str_starts_with($receivingRemarks, $receivingMetaPrefix)) {
+        $metaAndRemarks = substr($receivingRemarks, strlen($receivingMetaPrefix));
+        [$metaJson, $plainRemarks] = array_pad(explode("\n", $metaAndRemarks, 2), 2, '');
+        $receivingMeta = json_decode($metaJson, true);
+        if (is_array($receivingMeta)) {
+            $order['receiving_payment'] = $receivingMeta;
+            $order['receiving_remarks'] = $plainRemarks;
+        }
+    }
+
     $itemsStatement = $pdo->prepare(
         "SELECT
             poi.po_item_id,
             poi.product_id,
+            p.status AS product_status,
             poi.quantity,
             poi.purchase_qty,
             CASE
@@ -116,6 +142,7 @@ try {
             COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
             COALESCE(returns.return_quantity, 0) AS returned_quantity,
             COALESCE(returns.supplier_credit_quantity, 0) AS supplier_credit_quantity,
+            COALESCE(returns.replacement_pending_quantity, 0) AS replacement_pending_quantity,
             COALESCE(returns.return_reasons, '') AS return_reasons,
             COALESCE(returns.return_remarks, '') AS return_remarks,
             MAX(ib.expiry_date) AS received_expiry_date,
@@ -134,7 +161,23 @@ try {
             SELECT
                 po_item_id,
                 SUM(return_quantity) AS return_quantity,
-                SUM(CASE WHEN damage_reason = 'Returned during receiving' THEN return_quantity ELSE 0 END) AS supplier_credit_quantity,
+                SUM(CASE
+                    WHEN damage_reason = 'Returned during receiving' THEN return_quantity
+                    WHEN remarks LIKE '[RETURN_META_V1]%'
+                         AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) IN ('return_for_credit', 'reject_without_replacement')
+                    THEN return_quantity
+                    ELSE 0
+                END) AS supplier_credit_quantity,
+                SUM(CASE
+                    WHEN remarks LIKE '[RETURN_META_V1]%'
+                         AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) = 'return_for_replacement'
+                    THEN GREATEST(
+                        CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_expected_qty')), '0') AS SIGNED)
+                        - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED),
+                        0
+                    )
+                    ELSE 0
+                END) AS replacement_pending_quantity,
                 GROUP_CONCAT(damage_reason ORDER BY return_id SEPARATOR ', ') AS return_reasons,
             GROUP_CONCAT(NULLIF(remarks, '') ORDER BY return_id SEPARATOR '; ') AS return_remarks
             FROM purchase_order_returns
@@ -152,33 +195,60 @@ try {
             GROUP BY product_id
          ) inv ON inv.product_id = poi.product_id
          WHERE poi.po_id = :po_id
-         GROUP BY poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.return_quantity, returns.supplier_credit_quantity, returns.return_reasons, returns.return_remarks, inv.storage_qty, inv.shelf_qty, inv.damaged_qty
+         GROUP BY poi.po_item_id, poi.product_id, p.status, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.return_quantity, returns.supplier_credit_quantity, returns.replacement_pending_quantity, returns.return_reasons, returns.return_remarks, inv.storage_qty, inv.shelf_qty, inv.damaged_qty
          ORDER BY poi.po_item_id"
     );
     $itemsStatement->execute([':po_id' => $poId]);
 
     $items = $itemsStatement->fetchAll(PDO::FETCH_ASSOC);
+
+    $batchStatement = $pdo->prepare(
+        "SELECT ib.po_item_id,
+                COALESCE(pi.batch_number, ib.batch_id) AS batch_identifier,
+                ib.storage_qty + ib.shelf_qty AS accepted_quantity,
+                ib.expiry_date
+         FROM inventory_batches ib
+         LEFT JOIN product_inventory pi ON pi.inventory_id = ib.legacy_inventory_id
+         WHERE ib.po_item_id IN (SELECT po_item_id FROM purchase_order_items WHERE po_id = :po_id)
+           AND (ib.storage_qty > 0 OR ib.shelf_qty > 0)
+         ORDER BY ib.received_date, ib.created_at, ib.batch_id"
+    );
+    $batchStatement->execute([':po_id' => $poId]);
+    $batchesByItem = [];
+    foreach ($batchStatement->fetchAll(PDO::FETCH_ASSOC) as $batch) {
+        $batch['accepted_quantity'] = (int) ($batch['accepted_quantity'] ?? 0);
+        $batchesByItem[cleanId($batch['po_item_id'])][] = $batch;
+    }
     $totalAmount = 0;
     $returnedAmount = 0;
+    $replacementPendingAmount = 0;
 
     foreach ($items as &$item) {
-        $quantity = (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
+        $inventoryQuantity = (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
         $price = (float) $item['price'];
         $returnedQuantity = (int) $item['supplier_credit_quantity'];
-        $item['line_total'] = (float) ($item['stored_line_total'] ?: ($quantity * $price));
+        $item['line_total'] = round($inventoryQuantity * $price, 2);
         $item['returned_amount'] = $returnedQuantity * $price;
         $item['supplier_credit_amount'] = $item['returned_amount'];
+        $item['replacement_pending_amount'] = (int) ($item['replacement_pending_quantity'] ?? 0) * $price;
+        $item['accepted_batches'] = $batchesByItem[cleanId($item['po_item_id'])] ?? [];
         $totalAmount += (float) $item['line_total'];
         $returnedAmount += (float) $item['returned_amount'];
+        $replacementPendingAmount += (float) $item['replacement_pending_amount'];
     }
     unset($item);
 
     $order['items'] = $items;
     $order['total_amount'] = $totalAmount;
     $order['returned_amount'] = $returnedAmount;
+    $order['replacement_value_pending'] = $replacementPendingAmount;
     $storedFinalPayment = (float) ($order['stored_final_payment'] ?? 0);
     $order['final_payment'] = $storedFinalPayment > 0 ? $storedFinalPayment : max(0, $totalAmount - $returnedAmount);
-    $order['payment_state'] = $order['payment_status'] ?: ($returnedAmount > 0 ? 'Adjusted' : 'Unpaid');
+    $paymentSummary = purchaseOrderPaymentSummary($pdo, $poId, (float) $order['final_payment']);
+    $order['total_paid'] = $paymentSummary['total_paid'];
+    $order['remaining_balance'] = $paymentSummary['remaining_balance'];
+    $order['payment_status'] = $paymentSummary['payment_status'];
+    $order['payment_state'] = $paymentSummary['payment_status'];
 
     echo json_encode(['status' => 'success', 'purchase_order' => $order]);
 } catch (Throwable $e) {

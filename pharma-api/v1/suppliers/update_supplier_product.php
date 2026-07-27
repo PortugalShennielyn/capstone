@@ -70,6 +70,13 @@ try {
     $purchaseUnit = supplierProductText($payload, 'purchase_unit');
     $unitsPerPurchaseUnit = supplierProductPositiveInt($payload, 'units_per_purchase_unit');
 
+    if ($supplierCost === null) {
+        throw new InvalidArgumentException('Supplier cost must be a non-negative number.');
+    }
+    if ($purchaseUnit === null) {
+        throw new InvalidArgumentException('Purchase Unit is required.');
+    }
+
     if ($supplierProductId === '' || $supplierId === '' || $productId === '') {
         throw new InvalidArgumentException('A valid supplier product link is required.');
     }

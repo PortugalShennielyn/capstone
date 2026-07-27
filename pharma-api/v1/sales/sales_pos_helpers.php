@@ -1,10 +1,39 @@
 <?php
+require_once __DIR__ . '/../activity_log_helpers.php';
 
 function salesReadJsonBody(): array
 {
     $raw = file_get_contents('php://input');
     $data = json_decode($raw ?: '{}', true);
     return is_array($data) ? $data : [];
+}
+
+if (!function_exists('salesColumnExists')) {
+    function salesColumnExists(PDO $pdo, string $table, string $column): bool
+    {
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = :table
+               AND COLUMN_NAME = :column'
+        );
+        $stmt->execute([
+            ':table' => $table,
+            ':column' => $column,
+        ]);
+        return (int) $stmt->fetchColumn() > 0;
+    }
+}
+
+function ensureSalesOrderCashSchema(PDO $pdo): void
+{
+    if (!salesColumnExists($pdo, 'sales_orders', 'cash_received')) {
+        $pdo->exec('ALTER TABLE sales_orders ADD COLUMN cash_received DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER total_amount');
+    }
+    if (!salesColumnExists($pdo, 'sales_orders', 'change_amount')) {
+        $pdo->exec('ALTER TABLE sales_orders ADD COLUMN change_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER cash_received');
+    }
 }
 
 function salesCurrentUserId(): string
@@ -17,6 +46,25 @@ function salesCurrentUserName(): string
     return trim((string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Sales Clerk'));
 }
 
+function salesCurrentUserIsSalesClerk(): bool
+{
+    $roles = array_merge(
+        [$_SESSION['role'] ?? ''],
+        is_array($_SESSION['roles'] ?? null) ? $_SESSION['roles'] : [],
+        is_array($_SESSION['role_identifiers'] ?? null) ? $_SESSION['role_identifiers'] : []
+    );
+
+    foreach ($roles as $role) {
+        $normalized = strtolower(trim((string) $role));
+        $normalized = str_replace([' ', '-'], ['', '_'], $normalized);
+        if (in_array($normalized, ['salesclerk', 'sales_clerk', 'rosalesclerk', 'ro_sales_clerk'], true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function salesStatusLabel(string $status): string
 {
     $labels = [
@@ -25,11 +73,30 @@ function salesStatusLabel(string $status): string
         'accepted_by_cashier' => 'Accepted by Cashier',
         'processing_payment' => 'Processing Payment',
         'completed' => 'Completed',
+        'paid' => 'Completed',
         'cancelled' => 'Cancelled',
         'rejected' => 'Rejected',
     ];
 
     return $labels[$status] ?? ucwords(str_replace('_', ' ', $status));
+}
+
+function salesClerkStatusGroup(string $status): string
+{
+    if (in_array($status, ['accepted_by_cashier', 'processing_payment', 'processing'], true)) {
+        return 'processing';
+    }
+
+    if ($status === 'paid') {
+        return 'completed';
+    }
+
+    return $status;
+}
+
+function salesClerkStatusLabel(string $status): string
+{
+    return salesClerkStatusGroup($status) === 'processing' ? 'Processing' : salesStatusLabel($status);
 }
 
 function salesSpecificationValue($value): string
@@ -52,18 +119,46 @@ function salesSpecificationText($value): string
     return in_array(strtolower($text), ['null', 'undefined', 'n/a'], true) ? '' : $text;
 }
 
+function salesSpecificationUnit($value): string
+{
+    $unit = salesSpecificationText($value);
+    $normalized = strtolower($unit);
+    return [
+        'ml' => 'mL',
+        'l' => 'L',
+        'mg' => 'mg',
+        'mcg' => 'mcg',
+        'g' => 'g',
+        'kg' => 'kg',
+        'iu' => 'IU',
+        'pcs' => 'pcs',
+        '%' => '%',
+    ][$normalized] ?? $unit;
+}
+
+function salesSpecificationMeasurement($value, $unit): string
+{
+    $amount = salesSpecificationValue($value);
+    $normalizedUnit = salesSpecificationUnit($unit);
+    if ($amount === '') {
+        return '';
+    }
+    if ($normalizedUnit === '') {
+        return $amount;
+    }
+    return $normalizedUnit === '%' ? $amount . '%' : $amount . ' ' . $normalizedUnit;
+}
+
+function salesSpecificationContent($value, $unit): string
+{
+    $measurement = salesSpecificationMeasurement($value, $unit);
+    return $measurement !== '' ? $measurement : salesSpecificationUnit($unit);
+}
+
 function salesBuildSpecification(array $row): string
 {
     $parts = [];
-
-    $genericName = salesSpecificationText($row['generic_name'] ?? '');
-    $strengthValue = salesSpecificationValue($row['strength_value'] ?? '');
-    $strengthUnit = salesSpecificationText($row['strength_unit'] ?? '');
-    $strength = trim($strengthValue . $strengthUnit);
-
-    $netContentValue = salesSpecificationValue($row['net_content_value'] ?? '');
-    $netContentUnit = salesSpecificationText($row['net_content_unit'] ?? '');
-    $netContent = trim($netContentValue . ' ' . $netContentUnit);
+    $category = strtolower(salesSpecificationText($row['category_name'] ?? ''));
     $packaging = salesSpecificationText(
         $row['packaging']
         ?? $row['medicine_package_type']
@@ -72,13 +167,40 @@ function salesBuildSpecification(array $row): string
         ?? ''
     );
 
-    foreach ([
-        $genericName,
-        $strength,
-        $row['dosage_form'] ?? '',
-        $netContent,
-        $packaging,
-    ] as $value) {
+    if ($category === 'medicine') {
+        $values = [
+            $row['generic_name'] ?? '',
+            salesSpecificationMeasurement($row['strength_value'] ?? '', $row['strength_unit'] ?? '')
+                ?: salesSpecificationText($row['strength'] ?? ''),
+            $row['dosage_form'] ?? '',
+            salesSpecificationContent(
+                $row['net_content_value'] ?? $row['volume_value'] ?? '',
+                $row['net_content_unit'] ?? $row['volume_unit'] ?? ''
+            ),
+            $packaging,
+        ];
+    } elseif (in_array($category, ['medical supply', 'medical supplies'], true)) {
+        $values = [
+            $row['medical_variant'] ?? $row['variant'] ?? '',
+            $row['medical_size'] ?? $row['size'] ?? '',
+            $row['material'] ?? '',
+            $row['sterile_status'] ?? '',
+            $packaging,
+            $row['medical_pack_content'] ?? $row['pack_content'] ?? '',
+        ];
+    } else {
+        $values = [
+            $row['variant'] ?? $row['variant_flavor'] ?? '',
+            $row['size'] ?? $row['size_value'] ?? '',
+            salesSpecificationMeasurement(
+                $row['net_weight'] ?? $row['weight_volume_value'] ?? '',
+                $row['grocery_unit'] ?? $row['weight_volume_unit'] ?? $row['unit'] ?? ''
+            ),
+            $packaging,
+        ];
+    }
+
+    foreach ($values as $value) {
         $value = salesSpecificationText($value);
         $exists = array_filter($parts, static fn ($part) => strcasecmp($part, $value) === 0);
         if ($value !== '' && !$exists) {
@@ -86,7 +208,7 @@ function salesBuildSpecification(array $row): string
         }
     }
 
-    return implode(' / ', $parts);
+    return implode(' • ', $parts);
 }
 
 function salesProductStock(PDO $pdo, string $productId): int
@@ -134,7 +256,10 @@ function salesLoadProductsByIds(PDO $pdo, array $productIds): array
                 p.brand_name,
                 p.product_name,
                 p.price,
+                p.status,
+                pc.category_name,
                 md.generic_name,
+                md.strength,
                 md.strength_value,
                 md.strength_unit,
                 md.dosage_form,
@@ -143,12 +268,18 @@ function salesLoadProductsByIds(PDO $pdo, array $productIds): array
                 md.package_type AS medicine_package_type,
                 gd.variant,
                 gd.size,
+                gd.net_weight,
+                gd.unit AS grocery_unit,
                 gd.package_type AS grocery_package_type,
                 msd.variant AS medical_variant,
                 msd.size AS medical_size,
+                msd.material,
+                msd.sterile_status,
                 msd.package_type AS medical_package_type,
+                msd.pack_content AS medical_pack_content,
                 COALESCE(stock.available_stock, 0) AS available_stock
             FROM product p
+            LEFT JOIN product_categories pc ON pc.category_id = p.category_id
             LEFT JOIN medicine_details md ON md.product_id = p.product_id
             LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
             LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
@@ -235,17 +366,90 @@ function salesWriteOrderItems(PDO $pdo, int $orderId, array $items, array $produ
 
 function salesOrderTotalFromPayload(array $payload, float $subtotal): float
 {
-    $payloadTotal = round((float) ($payload['total_amount'] ?? $subtotal), 2);
-    if ($payloadTotal < 0) {
-        return 0.0;
+    return salesOrderTotalsFromPayload($payload, $subtotal)['total_amount'];
+}
+
+function salesOrderTotalsFromPayload(array $payload, float $subtotal): array
+{
+    $subtotal = round(max(0, $subtotal), 2);
+    $discount = round((float) ($payload['discount'] ?? 0), 2);
+    $discount = min(max($discount, 0), $subtotal);
+    $taxable = max($subtotal - $discount, 0);
+    $vat = round((float) ($payload['vat'] ?? ($taxable * 0.12)), 2);
+    $vat = min(max($vat, 0), round($taxable * 0.12, 2));
+    $computedTotal = round($taxable + $vat, 2);
+    $payloadTotal = round((float) ($payload['total_amount'] ?? $computedTotal), 2);
+
+    return [
+        'subtotal' => $subtotal,
+        'discount' => $discount,
+        'vat' => $vat,
+        'total_amount' => min(max($payloadTotal, 0), $computedTotal),
+    ];
+}
+
+function salesCashTotalsFromPayload(array $payload, float $totalAmount): array
+{
+    $cashReceived = round(max(0, (float) ($payload['cash_received'] ?? 0)), 2);
+    return [
+        'cash_received' => $cashReceived,
+        'change_amount' => round(max(0, $cashReceived - max(0, $totalAmount)), 2),
+    ];
+}
+
+function salesRecordStatusChange(PDO $pdo, int $orderId, ?string $oldStatus, string $newStatus, ?string $changedBy, string $remarks): bool
+{
+    if ($oldStatus !== null && $oldStatus === $newStatus) {
+        return false;
     }
 
-    $maxExpected = round($subtotal * 1.12, 2);
-    if ($payloadTotal > $maxExpected) {
-        return $maxExpected;
-    }
+    $history = $pdo->prepare(
+        "INSERT INTO sales_order_status_history
+            (order_id, old_status, new_status, changed_by, remarks)
+         VALUES
+            (:order_id, :old_status, :new_status, :changed_by, :remarks)"
+    );
+    $history->execute([
+        ':order_id' => $orderId,
+        ':old_status' => $oldStatus,
+        ':new_status' => $newStatus,
+        ':changed_by' => $changedBy,
+        ':remarks' => $remarks,
+    ]);
 
-    return $payloadTotal;
+    $orderStmt = $pdo->prepare('SELECT order_no FROM sales_orders WHERE order_id = :order_id LIMIT 1');
+    $orderStmt->execute([':order_id' => $orderId]);
+    $orderNo = trim((string) $orderStmt->fetchColumn());
+    $orderLabel = $orderNo !== '' ? $orderNo : (string) $orderId;
+    $module = in_array($newStatus, ['accepted_by_cashier', 'processing_payment', 'completed'], true) ? 'Cashier' : 'Sales';
+    $actionLabels = [
+        'draft' => 'Created',
+        'waiting_cashier' => 'Sent to Cashier',
+        'accepted_by_cashier' => 'Accepted',
+        'processing_payment' => 'Processing Payment',
+        'completed' => 'Completed',
+        'cancelled' => 'Cancelled',
+        'rejected' => 'Rejected',
+    ];
+    $descriptions = [
+        'draft' => 'Sales Clerk created Order #' . $orderLabel,
+        'waiting_cashier' => 'Sales Clerk sent Order #' . $orderLabel . ' to Cashier',
+        'accepted_by_cashier' => 'Cashier accepted Order #' . $orderLabel,
+        'processing_payment' => 'Cashier is processing payment for Order #' . $orderLabel,
+        'completed' => 'Cashier completed Sale #' . $orderLabel,
+        'cancelled' => 'Sales Clerk cancelled Order #' . $orderLabel,
+        'rejected' => 'Cashier rejected Order #' . $orderLabel,
+    ];
+    recordActivityLog(
+        $pdo,
+        $module,
+        $actionLabels[$newStatus] ?? salesStatusLabel($newStatus),
+        $descriptions[$newStatus] ?? ('Sales order #' . $orderLabel . ' is ' . salesStatusLabel($newStatus)),
+        (string) $orderId,
+        $changedBy
+    );
+
+    return true;
 }
 
 function salesValidateCartStock(array $items, array $products): array
@@ -254,6 +458,16 @@ function salesValidateCartStock(array $items, array $products): array
         $product = $products[$item['product_id']] ?? null;
         if (!$product) {
             return [false, 'A selected product is no longer available.'];
+        }
+
+        if (strcasecmp(trim((string) ($product['status'] ?? 'Active')), 'Active') !== 0) {
+            return [
+                false,
+                sprintf(
+                    '%s is now inactive. Remove it from the order before continuing.',
+                    $product['product_name'] ?? 'Selected product'
+                ),
+            ];
         }
 
         if ((int) $item['quantity'] > (int) $product['available_stock']) {

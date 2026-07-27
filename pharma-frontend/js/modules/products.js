@@ -8,6 +8,7 @@ import {
     optionList as ruleOptionList,
     uniqueDetailRows
 } from './variation_rules.js';
+import { formatProductSpecification } from './product_specification.js';
 
 function getValue(id) {
     return document.getElementById(id)?.value.trim() || '';
@@ -46,10 +47,11 @@ const productState = {
     products: [],
     categories: [],
     types: [],
-    units: [],
-    inventoryBatches: {}
+    units: []
 };
-let openAddStockFromButton = null;
+
+let activeProductDetailsId = null;
+let productDetailsRequestSequence = 0;
 
 function formatPrice(value) {
     return `\u20b1${Number(value || 0).toLocaleString('en-PH', {
@@ -458,7 +460,10 @@ function renderProductCard(product) {
                         </button>
                     </div>
                 </div>
-                <div class="product-meta">${escapeHtml(cleanCardText(product.category_name) || 'Product')} &bull; ${escapeHtml(cleanCardText(product.type_name) || 'General')}</div>
+                <div class="product-meta">${escapeHtml(PharmaUtils.formatProductIdentity([
+                    cleanCardText(product.category_name) || 'Product',
+                    cleanCardText(product.type_name) || 'General'
+                ]))}</div>
                 ${productVariationChips(product)}
                 <div class="product-detail-list">
                     ${detailRows.map(([label, value]) => `<div class="product-detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}
@@ -471,14 +476,11 @@ function renderProductCard(product) {
                     <span class="product-price">${formatPrice(getActiveProductPrice(product))}</span>
                 </div>
                 <div class="product-card-actions">
-                    <button class="btn btn-sm btn-purple btn-icon add-stock-btn" data-id="${escapeHtml(product.product_id)}" title="Move to selling shelf" aria-label="Move to selling shelf">
-                        <i class="fa-solid fa-boxes-stacked"></i>
+                    <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product" aria-label="Edit product">
+                        <i class="fa-solid fa-pen" aria-hidden="true"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product">
-                        <i class="fa-solid fa-pen"></i>
-                    </button>
-                    <button type="button" class="btn btn-outline-danger btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Delete product">
-                        <i class="fa-solid fa-trash-can"></i>
+                    <button type="button" class="btn btn-outline-danger btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Delete product" aria-label="Delete product">
+                        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
                     </button>
                 </div>
             </div>
@@ -495,17 +497,16 @@ function getFilteredProducts() {
     const searchValue = document.getElementById('productSearchInput')?.value.trim().toLowerCase() || '';
     const categoryValue = document.getElementById('productCategoryFilter')?.value || '';
     const typeValue = document.getElementById('productTypeFilter')?.value || '';
-    const stockValue = document.getElementById('productStockFilter')?.value || 'all';
+    const statusValue = document.getElementById('productStatusFilter')?.value || 'all';
     const sortValue = document.getElementById('productSortSelect')?.value || 'name-asc';
 
     const filtered = productState.products.filter(product => {
-        const stockStatus = getStockStatus(getProductStock(product));
         const matchesSearch = !searchValue || productSearchText(product).includes(searchValue);
         const matchesCategory = !categoryValue || String(product.category_id) === String(categoryValue);
         const matchesType = !typeValue || String(product.type_id) === String(typeValue);
-        const matchesStock = stockValue === 'all' || stockStatus === stockValue;
+        const matchesStatus = statusValue === 'all' || String(product.status || 'Active') === statusValue;
 
-        return matchesSearch && matchesCategory && matchesType && matchesStock;
+        return matchesSearch && matchesCategory && matchesType && matchesStatus;
     });
 
     filtered.sort((a, b) => {
@@ -543,13 +544,13 @@ function renderProductCards() {
     const products = getFilteredProducts();
 
     if (!products.length) {
-        tableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No products found.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No products found.</td></tr>';
         return;
     }
 
     tableBody.innerHTML = products.map((product) => {
-        const stock = getActiveProductStock(product);
-        const stockStatus = getStockStatus(stock);
+        const status = product.status || 'Active';
+        const isActive = status === 'Active';
 
         return `
             <tr class="product-row" data-product-id="${escapeHtml(product.product_id)}" title="View product details">
@@ -560,22 +561,20 @@ function renderProductCards() {
                 </td>
                 <td><span class="product-clamp">${escapeHtml(dash(product.brand_name))}</span></td>
                 <td><span class="product-clamp">${escapeHtml(dash(product.product_name))}</span></td>
-                <td>${escapeHtml(dash(product.category_name))}</td>
                 <td>${escapeHtml(dash(product.type_name))}</td>
-                <td><span class="product-clamp">${escapeHtml(productVariantGeneric(product))}</span></td>
-                <td>${escapeHtml(productSubDetail(product))}</td>
+                <td><span class="product-clamp">${escapeHtml(formatProductSpecification(product))}</span></td>
                 <td>${formatPrice(product.price)}</td>
-                <td><span class="stock-pill ${stockStatus}"><i class="fa-solid fa-boxes-stacked"></i>${escapeHtml(stock)}</span></td>
+                <td><span class="badge ${isActive ? 'text-bg-success' : 'text-bg-secondary'}">${escapeHtml(status)}</span></td>
                 <td>
                     <div class="product-actions" role="group" aria-label="Product actions">
-                        <button class="btn btn-sm btn-purple btn-icon add-stock-btn" data-id="${escapeHtml(product.product_id)}" title="Move to selling shelf" aria-label="Move to selling shelf">
-                            <i class="fa-solid fa-boxes-stacked"></i>
+                        <button type="button" class="btn btn-outline-secondary btn-icon view-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="View product details" aria-label="View product details">
+                            <i class="fa-regular fa-eye" aria-hidden="true"></i>
                         </button>
-                        <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product">
-                            <i class="fa-solid fa-pen"></i>
+                        <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Edit product" aria-label="Edit product">
+                            <i class="fa-solid fa-pen" aria-hidden="true"></i>
                         </button>
-                        <button type="button" class="btn btn-outline-danger btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="Delete product">
-                            <i class="fa-solid fa-trash-can"></i>
+                        <button type="button" class="btn ${isActive ? 'btn-outline-warning' : 'btn-outline-success'} btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" title="${isActive ? 'Deactivate' : 'Reactivate'} product" aria-label="${isActive ? 'Deactivate' : 'Reactivate'} product">
+                            <i class="fa-solid ${isActive ? 'fa-ban' : 'fa-circle-check'}" aria-hidden="true"></i>
                         </button>
                     </div>
                 </td>
@@ -584,51 +583,191 @@ function renderProductCards() {
     }).join('');
 }
 
-function detailBox(label, value) {
+function productDetailValue(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return 'Not provided';
+    return String(value);
+}
+
+function productDetailCombinedValue(value, unit) {
+    const cleanValue = String(value ?? '').trim();
+    const cleanUnit = String(unit ?? '').trim();
+    if (!cleanValue) return null;
+    return cleanUnit ? `${cleanValue} ${cleanUnit}` : cleanValue;
+}
+
+function formatProductDetailDate(value) {
+    if (!value) return 'Not provided';
+    const text = String(value);
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(text)
+        ? `${text}T00:00:00`
+        : text.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})$/, '$1T$2');
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return productDetailValue(value);
+    return date.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit' });
+}
+
+function productDetailPair(label, value, html = false) {
+    const content = html ? value : escapeHtml(productDetailValue(value));
+    return `<div class="product-details-pair"><dt>${escapeHtml(label)}</dt><dd>${content}</dd></div>`;
+}
+
+function productDetailSection(title, rows) {
+    if (!rows.length) return '';
     return `
-        <div class="product-details-box">
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(dash(value))}</strong>
+        <section class="product-details-section">
+            <h6>${escapeHtml(title)}</h6>
+            <dl class="product-details-list">${rows.join('')}</dl>
+        </section>
+    `;
+}
+
+function normalizedProductStatus(status) {
+    return String(status || '').trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
+}
+
+function renderProductDetails(payload) {
+    const container = document.getElementById('productDetailsContent');
+    if (!container) return;
+
+    const product = payload.product || {};
+    const inventory = payload.inventory_summary || {};
+    const suppliers = Array.isArray(payload.suppliers) ? payload.suppliers : [];
+    const productStatus = normalizedProductStatus(product.status);
+    const productIsActive = productStatus === 'Active';
+    const identity = [product.brand_name, product.product_name].filter(Boolean).join(' \u00b7 ') || 'Product record';
+    const identityLine = document.getElementById('productDetailsIdentityLine');
+    if (identityLine) identityLine.textContent = product.barcode ? `${identity} \u00b7 ${product.barcode}` : identity;
+
+    const inventoryLink = document.getElementById('productDetailsInventoryLink');
+    if (inventoryLink) inventoryLink.href = `inventory.html?product_id=${encodeURIComponent(product.product_id || '')}`;
+
+    const productRows = [
+        productDetailPair('Barcode', product.barcode),
+        productDetailPair('Brand', product.brand_name),
+        productDetailPair('Product Name', product.product_name),
+        productDetailPair('Category', product.category_name),
+        productDetailPair('Product Type', product.type_name),
+        productDetailPair('Product Status', productStatus),
+        productDetailPair('Created', formatProductDetailDate(product.created_at))
+    ];
+
+    const specificationRows = [];
+    if (product.category_name === 'Medicine') {
+        specificationRows.push(productDetailPair('Generic Name', product.generic_name));
+        specificationRows.push(productDetailPair('Strength', product.strength || productDetailCombinedValue(product.strength_value, product.strength_unit)));
+        specificationRows.push(productDetailPair('Dosage Form', product.dosage_form));
+        specificationRows.push(productDetailPair('Net Content', productDetailCombinedValue(product.net_content_value, product.net_content_unit)));
+        specificationRows.push(productDetailPair('Package Type', product.package_type));
+    } else if (product.category_name === 'Grocery') {
+        specificationRows.push(productDetailPair(groceryVariantLabel(product.type_name), product.variant));
+        specificationRows.push(productDetailPair('Size', product.size));
+        specificationRows.push(productDetailPair('Net Weight', productDetailCombinedValue(product.net_weight, product.unit)));
+        specificationRows.push(productDetailPair('Package Type', product.package_type));
+        specificationRows.push(productDetailPair('Pack Content', product.pack_content));
+    } else if (['Medical Supply', 'Medical Supplies'].includes(product.category_name)) {
+        specificationRows.push(productDetailPair('Variant / Description', product.medical_variant || product.variant));
+        specificationRows.push(productDetailPair('Size', product.medical_size || product.size));
+        specificationRows.push(productDetailPair('Material', product.material));
+        specificationRows.push(productDetailPair('Sterile Status', product.sterile_status));
+        specificationRows.push(productDetailPair('Package Type', product.package_type));
+        specificationRows.push(productDetailPair('Pack Content', product.pack_content));
+    }
+
+    const supplierMarkup = suppliers.length
+        ? `<div class="product-details-suppliers">${suppliers.map((supplier) => {
+            const baseUnit = product.package_type || product.dosage_form || product.unit || 'pc';
+            const cost = supplier.supplier_cost_price === null || supplier.supplier_cost_price === undefined
+                ? 'Cost not provided'
+                : `${formatPrice(supplier.supplier_cost_price)} / ${escapeHtml(baseUnit)}`;
+            const unitNote = Number(supplier.units_per_purchase_unit || 1) > 1
+                ? `<span class="product-details-supplier-note">${escapeHtml(supplier.units_per_purchase_unit)} inventory units per purchase unit</span>`
+                : '';
+            return `<span>${escapeHtml(supplier.supplier_name || 'Unnamed supplier')} &mdash; ${cost}</span>${unitNote}`;
+        }).join('')}</div>`
+        : 'Not provided';
+
+    const pricingRows = [
+        productDetailPair('Selling Price', formatPrice(product.price)),
+        productDetailPair('Supplier / Cost', supplierMarkup, true)
+    ];
+    const inventoryRows = [
+        productDetailPair('Shelf Quantity', inventory.shelf_quantity ?? 0),
+        productDetailPair('Storage Quantity', inventory.storage_quantity ?? 0),
+        productDetailPair('Current On Hand', inventory.on_hand_quantity ?? 0),
+        productDetailPair('Nearest Expiry', formatProductDetailDate(inventory.nearest_expiry_date)),
+        productDetailPair('Active Batches', inventory.active_batch_count ?? 0)
+    ];
+
+    const damagedQuantity = Number(inventory.damaged_quantity || 0);
+    const returnedQuantity = Number(inventory.returned_quantity || 0);
+    const replacementPending = Number(inventory.replacement_pending_quantity || 0);
+    const exceptions = [
+        `<span class="product-exception ${damagedQuantity === 0 ? 'is-zero' : ''}" title="Units currently recorded as damaged and excluded from sellable on-hand stock"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>Damaged Quantity</span><strong>${escapeHtml(damagedQuantity)}</strong></span>`,
+        `<span class="product-exception is-returned ${returnedQuantity === 0 ? 'is-zero' : ''}" title="Units returned to the supplier; these are excluded from sellable on-hand stock"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Returned Quantity</span><strong>${escapeHtml(returnedQuantity)}</strong></span>`
+    ];
+    if (replacementPending > 0) {
+        exceptions.push(`<span class="product-exception is-pending" title="Replacement units still expected from the supplier"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span>Replacement Pending</span><strong>${escapeHtml(replacementPending)}</strong></span>`);
+    }
+
+    const tags = [product.category_name, product.type_name, product.barcode].filter(Boolean);
+    container.innerHTML = `
+        <div class="product-details-overview">
+            <div class="product-details-primary">
+                <div class="product-details-kicker">Product master record</div>
+                <h4 class="product-details-name">${escapeHtml(product.product_name || 'Unnamed product')}</h4>
+                <div class="product-details-brand">${escapeHtml(product.brand_name || 'Brand not provided')}</div>
+                <div class="product-details-tags">
+                    ${tags.map((tag) => `<span class="product-details-tag">${escapeHtml(tag)}</span>`).join('')}
+                    <span class="product-details-tag product-status-tag ${productIsActive ? 'is-active' : 'is-inactive'}">${escapeHtml(productStatus)}</span>
+                </div>
+            </div>
+            <div class="product-details-stock-grid" aria-label="Current inventory summary">
+                <div class="product-details-stock-tile"><span>Shelf</span><strong>${escapeHtml(inventory.shelf_quantity ?? 0)}</strong></div>
+                <div class="product-details-stock-tile"><span>Storage</span><strong>${escapeHtml(inventory.storage_quantity ?? 0)}</strong></div>
+                <div class="product-details-stock-tile is-total" title="Shelf plus storage; damaged and returned units are excluded"><span>On Hand</span><strong>${escapeHtml(inventory.on_hand_quantity ?? 0)}</strong></div>
+                <div class="product-details-stock-tile"><span>Active Batches</span><strong>${escapeHtml(inventory.active_batch_count ?? 0)}</strong></div>
+            </div>
+        </div>
+        <div class="product-details-sections">
+            ${productDetailSection('Product Information', productRows)}
+            ${productDetailSection('Product Specification', specificationRows)}
+            ${productDetailSection('Pricing and Supplier', pricingRows)}
+            ${productDetailSection('Inventory Snapshot', inventoryRows)}
+            <section class="product-details-section">
+                <h6>Stock Exceptions</h6>
+                <p class="product-details-exception-note">These quantities are tracked separately and are not included in current on-hand stock.</p>
+                <div class="product-details-exceptions">${exceptions.join('')}</div>
+            </section>
         </div>
     `;
 }
 
-function openProductDetailsModal(productId) {
+async function openProductDetailsModal(productId) {
     const product = getProductById(productId);
     const container = document.getElementById('productDetailsContent');
-    if (!product || !container) return;
+    const modalElement = document.getElementById('productDetailsModal');
+    if (!product || !container || !modalElement) return;
 
-    const rows = [
-        ['Barcode', product.barcode],
-        ['Supplier Name', product.supplier_name],
-        ['Brand Name', product.brand_name],
-        ['Product Name', product.product_name],
-        ['Category', product.category_name],
-        ['Product Type', product.type_name],
-        ['Price', formatPrice(product.price)],
-        ['Selling/Shelf Stock', String(product.selling_stock ?? 0)],
-        ['Total Inventory Quantity', String(product.total_inventory_quantity ?? 0)],
-        ['Available Quantity', String(product.available_stock ?? 0)],
-        ['Damaged/Returned Quantity', product.damaged_returned_stock],
-        ['Nearest Expiry Date', formatDate(product.nearest_expiry_date)],
-        ['Created Date', formatDate(product.created_at)]
-    ];
+    activeProductDetailsId = productId;
+    const requestSequence = ++productDetailsRequestSequence;
+    const identityLine = document.getElementById('productDetailsIdentityLine');
+    if (identityLine) identityLine.textContent = [product.brand_name, product.product_name].filter(Boolean).join(' \u00b7 ') || 'Loading product record...';
+    container.innerHTML = '<div class="product-details-loading"><div><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading verified product details...</div></div>';
+    bootstrap.Modal.getOrCreateInstance(modalElement).show();
 
-    if (isMedicine(product)) {
-        rows.push(['Generic Name', product.generic_name]);
-        rows.push(['Strength', product.strength]);
-        rows.push(['Dosage Form', product.dosage_form]);
-        rows.push(['Package Type', product.package_type]);
-    } else {
-        rows.push([groceryVariantLabel(product.type_name), product.variant]);
-        rows.push(['Size', product.size]);
-        rows.push(['Net Weight', product.net_weight]);
-        rows.push(['Package Type', product.package_type]);
-        rows.push(['Pack Content', product.pack_content]);
+    try {
+        const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/get_product_details.php?product_id=${encodeURIComponent(productId)}&t=${Date.now()}`, {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        if (requestSequence !== productDetailsRequestSequence) return;
+        renderProductDetails(response?.data || {});
+        bootstrap.Modal.getInstance(modalElement)?.handleUpdate();
+    } catch (error) {
+        if (requestSequence !== productDetailsRequestSequence) return;
+        container.innerHTML = `<div class="product-details-error"><div><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><div class="fw-bold mb-1">Product details could not be loaded.</div><div>${escapeHtml(error.message || 'Please try again.')}</div></div></div>`;
     }
-
-    container.innerHTML = rows.map(([label, value]) => detailBox(label, value)).join('');
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('productDetailsModal')).show();
 }
 
 function openBarcodeModal(productId) {
@@ -648,13 +787,6 @@ function openBarcodeModal(productId) {
 
     const modal = document.getElementById('productBarcodeModal');
     if (modal) bootstrap.Modal.getOrCreateInstance(modal).show();
-}
-
-function inventoryBatchLabel(batch) {
-    const batchNumber = dash(batch.batch_number);
-    const available = Number(batch.quantity_remaining || 0);
-    const expirationDate = formatDate(batch.expiration_date);
-    return `Batch: ${batchNumber} | Available: ${available} | Expiry: ${expirationDate}`;
 }
 
 async function populateProductCardFilters() {
@@ -741,7 +873,6 @@ function buildProductPayload() {
     const categoryName = getSelectedAddCategoryName();
 
     const payload = {
-        supplier_id: getValue('supplier_id') || null,
         brand_name: getValue('productBrandName'),
         product_name: getValue('productName'),
         category_id: getValue('productCategory'),
@@ -752,6 +883,7 @@ function buildProductPayload() {
         unit: getVariationProductUnit(firstVariation),
         price: firstVariation.price || '0',
         barcode: firstVariation.barcode || '',
+        status: getValue('productStatus') || 'Active',
         variations
     };
 
@@ -873,19 +1005,14 @@ function closeAddProductModal() {
     modalInstance?.hide();
 }
 
-function closeAddStockModal() {
-    const modalElement = document.getElementById('addStockModal');
-    const modalInstance = bootstrap.Modal.getInstance(modalElement);
-
-    modalInstance?.hide();
-}
-
 function initAddProductForm() {
     const addProductForm = document.getElementById('addProductForm');
 
     if (!addProductForm) {
         return;
     }
+    if (addProductForm.dataset.productControllerReady === '1') return;
+    addProductForm.dataset.productControllerReady = '1';
 
     loadMeasurementUnitCache().then(() => {
         renderAddVariations({ variations: collectAddVariations() }, getSelectedAddCategoryName());
@@ -929,7 +1056,7 @@ function initAddProductForm() {
         try {
             PharmaUtils.modal.loading('Saving Product...');
 
-            await PharmaUtils.safeFetch(`${API_BASE_URL}/products/add_product.php`, {
+            const result = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/add_product.php`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
@@ -937,6 +1064,9 @@ function initAddProductForm() {
                 },
                 body: JSON.stringify(payload)
             });
+            window.dispatchEvent(new CustomEvent('products:created', {
+                detail: { productIds: result.product_ids || [result.product_id].filter(Boolean) }
+            }));
 
             PharmaUtils.modal.close();
             await PharmaUtils.modal.success('Product Saved', 'Item added to system master files successfully.');
@@ -1124,9 +1254,19 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
     const deleteButton = canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Remove variant"><i class="fa-solid fa-trash-can"></i></button>' : '';
     const medicineFields = `
                 <div class="col-md-6"><label class="form-label">Generic Name</label><input class="form-control edit-var-generic-name" value="${escapeHtml(variation.generic_name || '')}" placeholder="Povidone-Iodine"></div>
-                <div class="col-md-6"><label class="form-label">Strength</label><input class="form-control edit-var-strength-value" type="text" value="${escapeHtml(variation.strength_value || '')}" placeholder="10% or 500 mg"></div>
+                <div class="col-md-6"><label class="form-label">Strength</label><div class="variation-pair"><input class="form-control edit-var-strength-value" type="number" min="0" step="any" value="${escapeHtml(variation.strength_value || '')}" placeholder="70"><select class="form-select edit-var-strength-unit">${measurementUnitOptionList(variation.strength_unit || '', ['mg', 'mcg', 'g', 'mL', '%', 'IU'])}</select></div></div>
                 <div class="col-md-6"><label class="form-label">Dosage Form</label><input class="form-control edit-var-dosage-form" value="${escapeHtml(variation.dosage_form || '')}" placeholder="Solution"></div>
+                <div class="col-md-6"><label class="form-label">Net Content</label><div class="variation-pair"><input class="form-control edit-var-net-content-value" type="number" min="0" step="any" value="${escapeHtml(variation.net_content_value || '')}" placeholder="500"><select class="form-select edit-var-net-content-unit">${measurementUnitOptionList(variation.net_content_unit || '', ['mL', 'L', 'g', 'mg'])}</select></div></div>
                 <div class="col-md-6"><label class="form-label">Package Type</label><select class="form-select edit-var-package-type">${measurementUnitOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule'])}</select></div>
+                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
+                <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
+    `;
+    const medicalFields = `
+                <div class="col-md-6"><label class="form-label">Variant / Description</label><input class="form-control edit-var-name" value="${escapeHtml(variation.variant_name || '')}" placeholder="Ethyl Alcohol 70%"></div>
+                <div class="col-md-6"><label class="form-label">Size</label><input class="form-control edit-var-size-value" value="${escapeHtml(variation.size_value || '')}" placeholder="500 mL"></div>
+                <div class="col-md-6"><label class="form-label">Material</label><input class="form-control edit-var-material" value="${escapeHtml(variation.material || '')}"></div>
+                <div class="col-md-6"><label class="form-label">Sterile Status</label><select class="form-select edit-var-sterile-status"><option value="">-</option><option ${variation.sterile_status === 'Sterile' ? 'selected' : ''}>Sterile</option><option ${variation.sterile_status === 'Non-sterile' ? 'selected' : ''}>Non-sterile</option></select></div>
+                <div class="col-md-6"><label class="form-label">Package Type</label><select class="form-select edit-var-package-type">${measurementUnitOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'roll', 'tube'])}</select></div>
                 <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
     `;
@@ -1140,6 +1280,40 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
     `;
 
+    const addMedicineFields = `
+        <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Generic Name</label><input class="form-control edit-var-generic-name" value="${escapeHtml(variation.generic_name || '')}" placeholder="Povidone-Iodine"></div>
+            <div class="col-md-6"><label class="form-label">Strength</label><div class="variation-pair"><input class="form-control edit-var-strength-value" type="number" min="0" step="any" value="${escapeHtml(variation.strength_value || '')}" placeholder="70"><select class="form-select edit-var-strength-unit">${measurementUnitOptionList(variation.strength_unit || '', ['mg', 'mcg', 'g', 'mL', '%', 'IU'])}</select></div></div>
+            <div class="col-md-6"><label class="form-label">Dosage Form</label><input class="form-control edit-var-dosage-form" value="${escapeHtml(variation.dosage_form || '')}" placeholder="Solution"></div>
+            <div class="col-md-6"><label class="form-label">Net Content</label><div class="variation-pair"><input class="form-control edit-var-net-content-value" type="number" min="0" step="any" value="${escapeHtml(variation.net_content_value || '')}" placeholder="500"><select class="form-select edit-var-net-content-unit">${measurementUnitOptionList(variation.net_content_unit || '', ['mL', 'L', 'g', 'mg'])}</select></div></div>
+            <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
+        </div>
+        <div class="add-variant-purchasing">
+            <h6 class="add-variant-subtitle">Purchasing Details</h6>
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Package Type</label><select class="form-select edit-var-package-type">${measurementUnitOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule'])}</select></div>
+                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
+            </div>
+        </div>
+    `;
+    const addMedicalFields = `<div class="row g-3">${medicalFields}</div>`;
+    const addGroceryFields = `
+        <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">${escapeHtml(groceryVariantLabel(typeName))}</label><input class="form-control edit-var-name" list="${rowId}-variant" value="${escapeHtml(variation.variant_name || '')}" placeholder="Select or type">${datalist(`${rowId}-variant`, rule.variantOptions)}</div>
+            <div class="col-md-6"><label class="form-label">Size</label><select class="form-select edit-var-size-value">${optionList(rule.sizeOptions, variation.size_value || '')}</select></div>
+            <div class="col-md-6"><label class="form-label">Net Weight</label><div class="variation-pair"><input class="form-control edit-var-weight-value" list="${rowId}-weight" type="number" min="0" step="any" value="${escapeHtml(variation.weight_value || '')}" placeholder="155"><select class="form-select edit-var-weight-unit">${measurementUnitOptionList(variation.weight_unit || '', rule.weightUnits)}</select></div>${datalist(`${rowId}-weight`, rule.weightValues)}</div>
+            <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
+        </div>
+        <div class="add-variant-purchasing">
+            <h6 class="add-variant-subtitle">Purchasing Details</h6>
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Package Type</label><select class="form-select edit-var-package-type">${measurementUnitOptionList(variation.package_type || '', ['can', 'bottle', 'box', 'pack', 'sachet', 'tube', 'jar', 'pouch'])}</select></div>
+                <div class="col-md-6"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control edit-var-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" value="${escapeHtml(variation.pack_content_qty || '')}" placeholder="12"><select class="form-select edit-var-pack-content-unit">${measurementUnitOptionList(variation.pack_content_unit || '', rule.packContentUnits)}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
+                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
+            </div>
+        </div>
+    `;
+
     return `
         <div class="edit-variation-entry">
             <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
@@ -1149,9 +1323,9 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                     ${deleteButton}
                 </div>
             </div>
-            <div class="row g-3">
-                ${categoryName === 'Medicine' ? medicineFields : groceryFields}
-            </div>
+            ${mode === 'add'
+                ? (categoryName === 'Medicine' ? addMedicineFields : (categoryName === 'Medical Supplies' || categoryName === 'Medical Supply' ? addMedicalFields : addGroceryFields))
+                : `<div class="row g-3">${categoryName === 'Medicine' ? medicineFields : (categoryName === 'Medical Supplies' || categoryName === 'Medical Supply' ? medicalFields : groceryFields)}</div>`}
         </div>
     `;
 }
@@ -1184,6 +1358,8 @@ function collectVariationEntries(containerSelector) {
         variant_name: entry.querySelector('.edit-var-name')?.value.trim() || '',
         strength_value: entry.querySelector('.edit-var-strength-value')?.value.trim() || '',
         strength_unit: entry.querySelector('.edit-var-strength-unit')?.value || '',
+        net_content_value: entry.querySelector('.edit-var-net-content-value')?.value.trim() || '',
+        net_content_unit: entry.querySelector('.edit-var-net-content-unit')?.value || '',
         dosage_form: entry.querySelector('.edit-var-dosage-form')?.value.trim() || '',
         size_value: entry.querySelector('.edit-var-size-value')?.value || '',
         weight_value: entry.querySelector('.edit-var-weight-value')?.value.trim() || '',
@@ -1191,6 +1367,8 @@ function collectVariationEntries(containerSelector) {
         package_type: entry.querySelector('.edit-var-package-type')?.value.trim() || '',
         pack_content_qty: entry.querySelector('.edit-var-pack-content-qty')?.value || '',
         pack_content_unit: entry.querySelector('.edit-var-pack-content-unit')?.value || '',
+        material: entry.querySelector('.edit-var-material')?.value.trim() || '',
+        sterile_status: entry.querySelector('.edit-var-sterile-status')?.value || '',
         price: entry.querySelector('.edit-var-price')?.value || '0',
         barcode: entry.querySelector('.edit-var-barcode')?.value.trim() || '',
         is_default: entry.querySelector('.edit-var-default')?.checked ? 1 : 0,
@@ -1211,10 +1389,25 @@ function productToVariation(product) {
         return {
             generic_name: product.generic_name || '',
             variant_name: '',
-            strength_value: product.strength || '',
-            strength_unit: '',
+            strength_value: product.medicine_strength_value || product.strength_value || '',
+            strength_unit: product.strength_unit || '',
             dosage_form: product.dosage_form || '',
+            net_content_value: product.net_content_value || '',
+            net_content_unit: product.net_content_unit || '',
             package_type: product.package_type || product.medicine_package_type || '',
+            price: product.price || '',
+            barcode: product.barcode || '',
+            is_default: 1
+        };
+    }
+
+    if (['Medical Supply', 'Medical Supplies'].includes(product.category_name)) {
+        return {
+            variant_name: product.medical_variant || product.variant || '',
+            size_value: product.medical_size || product.size || '',
+            material: product.material || '',
+            sterile_status: product.sterile_status || '',
+            package_type: product.medical_package_type || product.package_type || '',
             price: product.price || '',
             barcode: product.barcode || '',
             is_default: 1
@@ -1243,13 +1436,8 @@ async function openCreateAnotherVariant(product) {
     if (!modalElement || !form || !product) return;
 
     form.reset();
-    await populateSupplierDropdown();
     await populateAddCategories(product.category_id || '');
     await populateAddTypes(product.category_id || '', product.type_id || '');
-
-    const supplierId = String(product.supplier_ids || '').split(',').map(item => item.trim()).filter(Boolean)[0] || '';
-    const supplierSelect = document.getElementById('supplier_id');
-    if (supplierSelect && supplierId) supplierSelect.value = supplierId;
 
     document.getElementById('productBrandName').value = product.brand_name || '';
     document.getElementById('productName').value = product.product_name || '';
@@ -1270,8 +1458,7 @@ async function openEditProduct(productId) {
     document.getElementById('editProductId').value = product.product_id || '';
     document.getElementById('editProductBrand').value = product.brand_name || '';
     document.getElementById('editProductName').value = product.product_name || '';
-    await populateEditSupplierDropdown(String(product.supplier_ids || '').split(',').map(item => item.trim()).filter(Boolean)[0] || '');
-
+    document.getElementById('editProductStatus').value = product.status || 'Active';
     await populateEditCategories(product.category_id || '');
     await populateEditTypes(product.category_id || '', product.type_id || '');
     toggleEditGenericField();
@@ -1290,9 +1477,9 @@ async function submitEditProduct(event) {
         product_id: getValue('editProductId'),
         brand_name: getValue('editProductBrand'),
         product_name: getValue('editProductName'),
-        supplier_id: getValue('editSupplierId') || null,
         category_id: getValue('editProductCategory'),
         type_id: getValue('editProductType'),
+        status: getValue('editProductStatus') || 'Active',
         variations: collectEditVariations()
     };
 
@@ -1304,6 +1491,22 @@ async function submitEditProduct(event) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        const additionalVariations = payload.variations.slice(1).filter(variation => !variation.delete);
+        if (additionalVariations.length) {
+            await PharmaUtils.safeFetch(`${API_BASE_URL}/products/add_product.php`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    brand_name: payload.brand_name,
+                    product_name: payload.product_name,
+                    category_id: payload.category_id,
+                    type_id: payload.type_id,
+                    status: payload.status,
+                    variations: additionalVariations
+                })
+            });
+        }
 
         PharmaUtils.modal.close();
         bootstrap.Modal.getInstance(document.getElementById('editProductModal'))?.hide();
@@ -1317,38 +1520,37 @@ async function submitEditProduct(event) {
 
 async function deleteProduct(productId) {
     const product = getProductById(productId);
+    const nextStatus = (product?.status || 'Active') === 'Active' ? 'Inactive' : 'Active';
     const confirmed = await PharmaUtils.modal.confirm(
-        'Delete Product?',
-        `Delete ${product?.product_name || 'this product'} from the product master file?`,
-        'Delete'
+        nextStatus === 'Active' ? 'Reactivate Product?' : 'Deactivate Product?',
+        nextStatus === 'Active'
+            ? 'This product will become available in the POS and new purchase orders again. Existing inventory and history will remain unchanged.'
+            : 'This product will no longer be available in the POS or new purchase orders. Existing stock, batches, and transaction history will remain available.',
+        nextStatus === 'Active' ? 'Reactivate' : 'Deactivate Product'
     );
 
     if (!confirmed) return;
 
     try {
-        PharmaUtils.modal.loading('Deleting Product...');
-        const data = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/delete_product.php`, {
+        PharmaUtils.modal.loading(`${nextStatus === 'Active' ? 'Activating' : 'Deactivating'} Product...`);
+        const data = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/set_product_status.php`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ product_id: productId })
+            body: JSON.stringify({ product_id: productId, status: nextStatus })
         });
 
-        productState.products = productState.products.filter(product => String(product.product_id) !== String(productId));
-        renderProductCards();
         PharmaUtils.modal.close();
-        await loadProductsTable();
-        PharmaUtils.toast.success(data.status === 'already_deleted' ? 'Product already removed.' : (data.message || 'Product deleted successfully.'));
+        if (product) {
+            product.status = data.product_status || nextStatus;
+        }
+        renderProductCards();
+        PharmaUtils.toast.success(data.message || (nextStatus === 'Active'
+            ? 'Product reactivated. Existing inventory and history were retained.'
+            : 'Product deactivated. Existing inventory and history were retained.'));
     } catch (err) {
         PharmaUtils.modal.close();
-        if (/product not found/i.test(err.message || '')) {
-            productState.products = productState.products.filter(product => String(product.product_id) !== String(productId));
-            renderProductCards();
-            await loadProductsTable();
-            PharmaUtils.toast.success('Product already removed.');
-            return;
-        }
-        PharmaUtils.modal.error('Failed to delete product', err.message);
+        PharmaUtils.modal.error('Failed to change product status', err.message);
     }
 }
 
@@ -1356,7 +1558,7 @@ function initProductCards() {
     populateProductCardFilters();
     loadProductTypeFilter();
 
-    ['productSearchInput', 'productTypeFilter', 'productStockFilter', 'productSortSelect'].forEach(id => {
+    ['productSearchInput', 'productTypeFilter', 'productStatusFilter', 'productSortSelect'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', renderProductCards);
         document.getElementById(id)?.addEventListener('change', renderProductCards);
     });
@@ -1370,7 +1572,7 @@ function initProductCards() {
         const search = document.getElementById('productSearchInput');
         const category = document.getElementById('productCategoryFilter');
         const type = document.getElementById('productTypeFilter');
-        const stock = document.getElementById('productStockFilter');
+        const stock = document.getElementById('productStatusFilter');
         const sort = document.getElementById('productSortSelect');
 
         if (search) search.value = '';
@@ -1383,7 +1585,7 @@ function initProductCards() {
     });
 
     document.getElementById('table-products')?.addEventListener('click', (event) => {
-        const addStockButton = event.target.closest('.add-stock-btn');
+        const viewButton = event.target.closest('.view-product-btn');
         const editButton = event.target.closest('.edit-product-btn');
         const deleteButton = event.target.closest('.delete-product-btn');
         const barcodeButton = event.target.closest('.product-barcode-toggle');
@@ -1395,9 +1597,9 @@ function initProductCards() {
             return;
         }
 
-        if (addStockButton) {
+        if (viewButton) {
             event.stopPropagation();
-            if (typeof openAddStockFromButton === 'function') openAddStockFromButton(addStockButton);
+            openProductDetailsModal(viewButton.dataset.productId);
             return;
         }
 
@@ -1416,6 +1618,24 @@ function initProductCards() {
         if (row) openProductDetailsModal(row.dataset.productId);
     });
 
+    document.getElementById('productDetailsEditButton')?.addEventListener('click', () => {
+        const productId = activeProductDetailsId;
+        const detailsModal = document.getElementById('productDetailsModal');
+        if (!productId || !detailsModal) return;
+
+        detailsModal.addEventListener('hidden.bs.modal', () => openEditProduct(productId), { once: true });
+        bootstrap.Modal.getOrCreateInstance(detailsModal).hide();
+    });
+
+    document.getElementById('productDetailsModal')?.addEventListener('shown.bs.modal', () => {
+        document.getElementById('productDetailsModalTitle')?.focus({ preventScroll: true });
+    });
+
+    document.getElementById('productDetailsModal')?.addEventListener('hidden.bs.modal', () => {
+        activeProductDetailsId = null;
+        productDetailsRequestSequence += 1;
+    });
+
     document.getElementById('editProductCategory')?.addEventListener('change', async (event) => {
         await populateEditTypes(event.target.value, '');
         toggleEditGenericField();
@@ -1430,7 +1650,11 @@ function initProductCards() {
     });
     document.getElementById('btnAddEditVariation')?.addEventListener('click', () => {
         const product = getProductById(getValue('editProductId'));
-        if (product) openCreateAnotherVariant(product);
+        if (!product) return;
+        const variations = collectEditVariations().filter(variation => !variation.delete);
+        variations.push({ price: product.price || '', is_default: 0 });
+        const categoryName = document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || product.category_name || '';
+        renderEditVariations({ ...product, variations }, categoryName);
     });
     document.getElementById('editVariationList')?.addEventListener('click', (event) => {
         const removeButton = event.target.closest('.btn-remove-edit-variation');
@@ -1503,177 +1727,7 @@ async function loadInventoryTable() {
     }
 }
 
-function initAddStockForm() {
-    const addStockModal = document.getElementById('addStockModal');
-    const addStockForm = document.getElementById('addStockForm');
-    const stockProductId = document.getElementById('stockProductId');
-    const inventoryBatchSelect = document.getElementById('inventoryBatchSelect');
-    const quantityToMove = document.getElementById('quantityToMove');
-    const noBatchMessage = document.getElementById('noInventoryBatchMessage');
-    const moveSubmit = document.getElementById('moveToShelfSubmit');
-    const moveProductName = document.getElementById('moveShelfProductName');
-    const moveBrand = document.getElementById('moveShelfBrand');
-    const moveCategory = document.getElementById('moveShelfCategory');
-    const moveType = document.getElementById('moveShelfType');
-    const moveAvailableTotal = document.getElementById('moveShelfAvailableTotal');
-    const moveBatchNumber = document.getElementById('moveShelfBatchNumber');
-    const moveBatchAvailable = document.getElementById('moveShelfBatchAvailable');
-    const moveBatchExpiry = document.getElementById('moveShelfBatchExpiry');
-    if (!addStockModal || !addStockForm || !stockProductId || !inventoryBatchSelect || !quantityToMove || !moveSubmit) {
-        return;
-    }
-
-    function setMoveFormEnabled(isEnabled, showNoBatchMessage = !isEnabled) {
-        inventoryBatchSelect.disabled = !isEnabled;
-        quantityToMove.disabled = !isEnabled;
-        moveSubmit.disabled = !isEnabled;
-        noBatchMessage?.classList.toggle('d-none', !showNoBatchMessage);
-    }
-
-    function selectedInventoryBatch() {
-        return productState.inventoryBatches[stockProductId.value]?.find((batch) => String(batch.inventory_id) === String(inventoryBatchSelect.value));
-    }
-
-    function renderSelectedBatchDetails() {
-        const batch = selectedInventoryBatch();
-        if (moveBatchNumber) moveBatchNumber.textContent = dash(batch?.batch_number);
-        if (moveBatchAvailable) moveBatchAvailable.textContent = batch ? String(Number(batch.quantity_remaining || 0)) : '-';
-        if (moveBatchExpiry) moveBatchExpiry.textContent = batch ? formatDate(batch.expiration_date) : '-';
-    }
-
-    function updateQuantityLimit() {
-        const batch = selectedInventoryBatch();
-        const available = Number(batch?.quantity_remaining || 0);
-        quantityToMove.max = available > 0 ? String(available) : '';
-        if (available > 0 && Number(quantityToMove.value || 0) > available) {
-            quantityToMove.value = String(available);
-        }
-        renderSelectedBatchDetails();
-    }
-
-    async function loadAvailableInventoryBatches(productId) {
-        inventoryBatchSelect.innerHTML = '<option value="" selected>Loading available batches...</option>';
-        quantityToMove.value = '';
-        if (moveAvailableTotal) moveAvailableTotal.textContent = '0';
-        renderSelectedBatchDetails();
-        setMoveFormEnabled(false, false);
-
-        const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/inventory/get_available_batches.php?product_id=${encodeURIComponent(productId)}`, {
-            credentials: 'include'
-        });
-        const batches = Array.isArray(response.data) ? response.data : [];
-        productState.inventoryBatches[productId] = batches;
-        const totalAvailable = batches.reduce((total, batch) => total + Number(batch.quantity_remaining || 0), 0);
-        if (moveAvailableTotal) moveAvailableTotal.textContent = String(totalAvailable);
-
-        if (!batches.length) {
-            inventoryBatchSelect.innerHTML = '<option value="" selected>No available inventory batch</option>';
-            renderSelectedBatchDetails();
-            setMoveFormEnabled(false, true);
-            return;
-        }
-
-        inventoryBatchSelect.innerHTML = [
-            '<option value="" selected disabled>Select inventory batch...</option>',
-            ...batches.map((batch) => `<option value="${escapeHtml(batch.inventory_id)}">${escapeHtml(inventoryBatchLabel(batch))}</option>`)
-        ].join('');
-        inventoryBatchSelect.value = batches[0].inventory_id;
-        updateQuantityLimit();
-        setMoveFormEnabled(true);
-    }
-
-    inventoryBatchSelect.addEventListener('change', updateQuantityLimit);
-
-    openAddStockFromButton = async (addStockButton) => {
-        stockProductId.value = addStockButton.dataset.id || '';
-        const product = getProductById(stockProductId.value);
-        if (moveProductName) moveProductName.textContent = dash(product?.product_name);
-        if (moveBrand) moveBrand.textContent = dash(product?.brand_name);
-        if (moveCategory) moveCategory.textContent = dash(product?.category_name);
-        if (moveType) moveType.textContent = dash(product?.type_name);
-        if (moveAvailableTotal) moveAvailableTotal.textContent = String(Number(product?.available_stock || 0));
-        renderSelectedBatchDetails();
-
-        bootstrap.Modal.getOrCreateInstance(addStockModal).show();
-        try {
-            await loadAvailableInventoryBatches(stockProductId.value);
-        } catch (err) {
-            inventoryBatchSelect.innerHTML = '<option value="" selected>Unable to load batches</option>';
-            setMoveFormEnabled(false, false);
-            PharmaUtils.toast?.error?.(err.message || 'Unable to load inventory batches.');
-        }
-    };
-
-    document.addEventListener('click', (event) => {
-        const addStockButton = event.target.closest('.add-stock-btn');
-
-        if (!addStockButton) {
-            return;
-        }
-
-        event.stopPropagation();
-        openAddStockFromButton(addStockButton);
-    });
-
-    addStockForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-
-        const batch = selectedInventoryBatch();
-        const quantity = Number(quantityToMove.value || 0);
-        const available = Number(batch?.quantity_remaining || 0);
-
-        if (!batch) {
-            PharmaUtils.modal.error('Select Inventory Batch', 'Please select an available inventory batch.');
-            return;
-        }
-
-        if (quantity <= 0) {
-            PharmaUtils.modal.error('Invalid Quantity', 'Quantity to move must be greater than zero.');
-            return;
-        }
-
-        if (quantity > available) {
-            PharmaUtils.modal.error('Invalid Quantity', 'Quantity to move cannot exceed the selected batch available quantity.');
-            return;
-        }
-
-        const payload = {
-            product_id: stockProductId.value,
-            inventory_id: batch.inventory_id,
-            quantity_to_move: quantity
-        };
-
-        try {
-            PharmaUtils.modal.loading('Moving Stock...');
-
-            await PharmaUtils.safeFetch(`${API_BASE_URL}/inventory/move_to_selling_stock.php`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
-
-            PharmaUtils.modal.close();
-            await PharmaUtils.modal.success('Stock Moved', 'Stock moved to selling shelf successfully.');
-
-            const movedProductId = stockProductId.value;
-            addStockForm.reset();
-            productState.inventoryBatches[movedProductId] = [];
-            closeAddStockModal();
-            await loadProductsTable();
-            if (document.querySelector('#table-inventory tbody')) {
-                await loadInventoryTable();
-            }
-        } catch (err) {
-            PharmaUtils.modal.close();
-            PharmaUtils.modal.error('Failed to move stock', err.message);
-        }
-    });
-}
-
-export { initAddProductForm, initAddStockForm, initProductCards, loadProductsTable, loadInventoryTable };
+export { initAddProductForm, initProductCards, loadProductsTable, loadInventoryTable };
 export default initAddProductForm;
 
 // Populate suppliers when add product modal opens

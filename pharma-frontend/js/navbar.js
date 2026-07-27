@@ -10,12 +10,22 @@
     const savedCollapsed = localStorage.getItem("drpSidebarCollapsed") === "true";
     const mainWrapperBeforeLoad = document.getElementById("mainWrapper");
     document.body.classList.add("navbar-state-booting");
+    document.body.classList.add("role-loading");
     ensureNavbarRuntimeStyles();
     document.body.classList.toggle("navbar-sidebar-collapsed", savedCollapsed);
     mainWrapperBeforeLoad?.classList.toggle("collapsed", savedCollapsed);
+    const revealShell = () => {
+        requestAnimationFrame(() => {
+            document.body.classList.remove("navbar-state-booting");
+            document.body.classList.remove("role-loading");
+            document.documentElement.classList.add("app-ready");
+        });
+    };
+    const revealFailSafe = window.setTimeout(revealShell, 2500);
 
     try {
-            const cacheKey = "drpNavbarHtml:v25";
+        const rbac = await import("./modules/rbac.js?v=3");
+            const cacheKey = "drpNavbarHtml:v39";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -41,35 +51,33 @@
 
         const pageMap = {
             "dashboard.html": "dashboard",
+            "cashier_dashboard.html": "dashboard",
             "products.html": "products",
             "inventory.html": "inventory",
             "supplier.html": "supplier",
             "purchase_orders.html": "purchase-orders",
+            "inspect_deliveries.html": "inspect-deliveries",
             "pending_orders.html": "pending-orders",
             "arrived_orders.html": "arrived-orders",
             "complete_delivery.html": "complete-delivery",
             "return_damage.html": "return-damage",
             "expiry_monitoring.html": "expiry-monitoring",
+            "reports.html": "reports",
             "admin_settings.html": "settings",
             "pos.html": "pos",
             "clerk.html": "clerk",
             "sales_clerk_orders.html": "sales-clerk-orders",
             "sales_clerk_pos.html": "sales-clerk-pos",
+            "cashier_pos.html": "cashier-pos",
             "cashier_queue.html": "cashier-queue",
-            "completed_sales.html": "completed-sales",
+            "completed_sales.html": "cashier-history",
+            "cashier_transaction_history.html": "cashier-history",
             "cancelled_sales.html": "cancelled-sales",
+            "receipt_history.html": "receipt-history",
+            "cashier_shift_summary.html": "cashier-shift",
+            "cashier_profile.html": "cashier-profile",
             "sales_history.html": "sales-history"
         };
-
-        function normalizeRole(role) {
-            return String(role || "")
-                .trim()
-                .toLowerCase()
-                .replace(/[\s-]+/g, "_")
-                .replace("sales_clerk", "salesclerk")
-                .replace("owner/manager", "manager")
-                .replace("manager_/_owner", "manager");
-        }
 
         function tabToken() {
             try {
@@ -88,37 +96,26 @@
         async function loadCurrentSession() {
             const token = tabToken();
             if (!token) return null;
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 10000);
             try {
                 const response = await fetch(`${apiBaseUrl()}/auth/check_session.php`, {
                     credentials: "include",
                     cache: "no-store",
+                    signal: controller.signal,
                     headers: { "X-Tab-Token": token }
                 });
-                return response.ok ? response.json() : null;
+                return response.ok ? await response.json() : null;
             } catch (error) {
                 return null;
+            } finally {
+                window.clearTimeout(timeoutId);
             }
-        }
-
-        function sessionRoleSet(session) {
-            const roles = [
-                session?.role,
-                ...(Array.isArray(session?.roles) ? session.roles : []),
-                ...(Array.isArray(session?.role_identifiers) ? session.role_identifiers : [])
-            ];
-            return new Set(roles.map(normalizeRole).filter(Boolean));
         }
 
         function setProfileIdentity(session) {
             const name = session?.full_name || session?.username || "User";
-            const roleLabels = {
-                super_admin: "Super Admin",
-                admin: "Admin",
-                manager: "Manager / Owner",
-                cashier: "Cashier",
-                salesclerk: "Sales Clerk"
-            };
-            const role = roleLabels[normalizeRole(session?.role)] || session?.role || "Account";
+            const role = rbac.roleLabel(session);
             const initials = String(name)
                 .split(/\s+/)
                 .filter(Boolean)
@@ -285,38 +282,85 @@
         }
 
         function applyRoleNavigation(session) {
-            const roles = sessionRoleSet(session);
+            const roles = rbac.sessionRoleSet(session);
+            if (!session || !roles.size) {
+                container.querySelectorAll("[data-nav-page]").forEach(link => {
+                    link.classList.add("d-none");
+                    link.setAttribute("aria-hidden", "true");
+                });
+                return;
+            }
+            const accessRole = rbac.primaryAccessRole(session);
+            const currentFilename = window.location.pathname.split("/").pop() || "";
+            if (!rbac.isPageAllowed(session, currentFilename)) {
+                const safePage = accessRole === "salesclerk"
+                    ? "sales_clerk_pos.html"
+                    : accessRole === "cashier"
+                        ? "cashier_pos.html"
+                        : "dashboard.html";
+                window.location.replace(`${safePage}?access=denied`);
+                return;
+            }
+            const allowedPages = rbac.allowedNavigationPages(session);
+            const allowAll = allowedPages === "*";
+            document.body.dataset.sessionRole = accessRole;
             setProfileIdentity(session);
             ensureProfileModal(session);
 
-            if (!roles.has("salesclerk") && !roles.has("ro_sales_clerk")) {
-                return;
-            }
-
-            const allowedPages = new Set(["dashboard", "clerk", "sales-clerk-pos", "sales-clerk-orders", "sales-clerk-history"]);
             container.querySelectorAll("[data-nav-page]").forEach(link => {
                 const page = link.dataset.navPage || "";
-                const isAllowed = allowedPages.has(page);
+                const isAllowed = allowAll || allowedPages.has(page);
                 link.classList.toggle("d-none", !isAllowed);
                 link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
             });
-            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
-                const target = trigger.getAttribute("href") || "";
-                const isSales = target === "#salesTransactionsCollapse";
-                trigger.classList.toggle("d-none", !isSales);
-                trigger.setAttribute("aria-hidden", isSales ? "false" : "true");
-            });
-            container.querySelector("[data-nav-page='dashboard']")?.setAttribute("href", "clerk.html");
-            container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
-                const isUserSettings = link.dataset.navPage === "user-settings";
-                link.classList.toggle("d-none", !isUserSettings);
-                link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
-                if (isUserSettings) {
-                    link.href = "#";
-                    link.querySelector("span").textContent = "User Settings";
-                    link.dataset.profileAction = "open";
+
+            if (accessRole === "manager") {
+                const userManagementLink = container.querySelector("[data-nav-page='settings']");
+                if (userManagementLink) {
+                    userManagementLink.href = "admin_settings.html?section=users";
+                    userManagementLink.title = "User Management";
+                    const label = userManagementLink.querySelector(".nav-label");
+                    if (label) label.textContent = "User Management";
                 }
+            }
+
+            container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
+                const selector = trigger.getAttribute("href") || "";
+                const group = selector.startsWith("#") ? container.querySelector(selector) : null;
+                const hasVisibleChild = Boolean(group?.querySelector("[data-nav-page]:not(.d-none)"));
+                trigger.classList.toggle("d-none", !hasVisibleChild);
+                trigger.setAttribute("aria-hidden", hasVisibleChild ? "false" : "true");
+                group?.classList.toggle("d-none", !hasVisibleChild);
             });
+
+            if (accessRole === "cashier") {
+                container.querySelector(".sidebar-brand")?.setAttribute("href", "cashier_pos.html");
+                container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
+                    const isUserSettings = link.dataset.navPage === "user-settings";
+                    link.classList.toggle("d-none", !isUserSettings);
+                    link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
+                    if (isUserSettings) {
+                        link.href = "cashier_profile.html";
+                        link.querySelector("span").textContent = "Profile Settings";
+                        delete link.dataset.profileAction;
+                    }
+                });
+                return;
+            }
+
+            if (accessRole === "salesclerk") {
+                container.querySelector(".sidebar-brand")?.setAttribute("href", "sales_clerk_pos.html");
+                container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
+                    const isUserSettings = link.dataset.navPage === "user-settings";
+                    link.classList.toggle("d-none", !isUserSettings);
+                    link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
+                    if (isUserSettings) {
+                        link.href = "#";
+                        link.querySelector("span").textContent = "User Settings";
+                        link.dataset.profileAction = "open";
+                    }
+                });
+            }
         }
 
         const dashboardViewMap = {
@@ -324,6 +368,7 @@
             "dashboard/billing": "billing",
             "dashboard/user/settings": "user-settings",
             "dashboard/products": "products",
+            "dashboard/inspect-deliveries": "inspect-deliveries",
             "dashboard/inventory": "inventory",
             "dashboard/suppliers": "supplier",
             "dashboard/pos": "pos",
@@ -336,11 +381,14 @@
             "dashboard/return-damage": "return-damage",
             "dashboard/expiry-monitoring": "expiry-monitoring",
             "dashboard/sales-clerk-orders": "sales-clerk-orders",
-            "dashboard/sales-clerk-history": "sales-clerk-history",
             "dashboard/sales-clerk-pos": "sales-clerk-pos",
+            "dashboard/cashier-pos": "cashier-pos",
             "dashboard/cashier-queue": "cashier-queue",
+            "dashboard/cashier-history": "cashier-history",
             "dashboard/completed-sales": "completed-sales",
             "dashboard/cancelled-sales": "cancelled-sales",
+            "dashboard/receipt-history": "receipt-history",
+            "dashboard/cashier-shift": "cashier-shift",
             "dashboard/sales-history": "sales-history"
         };
 
@@ -523,7 +571,7 @@
                 "billing": "Billing",
                 "user-settings": "User Settings",
                 "purchase-orders": "Purchase Orders",
-                "pending-orders": "Pending Orders",
+                "pending-orders": "Owner PO Approval",
                 "arrived-orders": "Arrived Orders",
                 "complete-delivery": "Complete Delivery",
                 "cancelled-purchase-orders": "Cancelled Purchase Orders",
@@ -531,11 +579,14 @@
                 "expiry-monitoring": "Expiry Monitoring",
                 "pos": "POS",
                 "clerk": "Salesclerk",
-                "sales-clerk-orders": "Sales Clerk Orders",
-                "sales-clerk-history": "Transaction History",
-                "cashier-queue": "Cashier Queue",
-                "completed-sales": "Completed Sales",
+                "sales-clerk-orders": "My Orders",
+                "cashier-pos": "Cashier POS",
+                "cashier-queue": "Order Queue",
+                "cashier-history": "Cashier Transaction History",
                 "cancelled-sales": "Cancelled Sales",
+                "receipt-history": "Receipt History",
+                "cashier-shift": "Shift Summary",
+                "cashier-profile": "Profile Settings",
                 "sales-history": "Sales History"
             };
             return pageMap[activePage] || "Dashboard";
@@ -613,6 +664,12 @@
                 sessionStorage.setItem("drpDashboardView", dashboardView);
             }
             sessionStorage.setItem("drpLastNavigationTarget", dashboardView || link.dataset.navPage || targetUrl.pathname);
+
+            // Make navigation deterministic even while a module is still finishing
+            // background API work. Native link navigation can otherwise appear stuck
+            // while the current document remains in its loading state.
+            event.preventDefault();
+            window.location.assign(targetUrl.href);
         }
 
         function prefetchNavigationTargets() {
@@ -653,7 +710,6 @@
         enhanceDataTables();
         window.addEventListener("hashchange", applyActiveNavigation);
         setSidebarState(savedCollapsed);
-        requestAnimationFrame(() => document.body.classList.remove("navbar-state-booting"));
         document.getElementById("sidebarToggle")?.addEventListener("click", () => {
             setSidebarState(!sidebar.classList.contains("collapsed"));
         });
@@ -668,16 +724,20 @@
         window.addEventListener("scroll", closeSlimFlyout, true);
         window.addEventListener("load", enhanceDataTables);
         window.addEventListener("drp:tables-updated", enhanceDataTables);
-        window.requestIdleCallback
-            ? window.requestIdleCallback(prefetchNavigationTargets, { timeout: 1500 })
-            : window.setTimeout(prefetchNavigationTargets, 600);
+        // Do not preload every module document. On the local development server this
+        // creates a burst of competing requests and can leave the browser throbber
+        // running while the user is trying to open another module.
 
         loadCurrentSession()
             .then(currentSession => {
                 applyRoleNavigation(currentSession);
                 applyActiveNavigation();
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => {
+                window.clearTimeout(revealFailSafe);
+                revealShell();
+            });
 
         const tableObserver = new MutationObserver(() => {
             window.clearTimeout(window.__drpTableEnhanceTimer);
@@ -687,7 +747,10 @@
 
         window.dispatchEvent(new CustomEvent("navbar:ready", { detail: { activePage: getActivePage(), activeLabel: getActiveLabel(), dashboardView: getDashboardView() } }));
     } catch (error) {
+        window.clearTimeout(revealFailSafe);
         document.body.classList.remove("navbar-state-booting");
+        document.body.classList.remove("role-loading");
+        document.documentElement.classList.add("app-ready");
         console.error("Unable to load the shared navbar:", error);
     }
 })();
@@ -767,6 +830,9 @@ function initGlobalModalBehavior() {
         let dragging = false;
 
         const resetModalLayout = () => {
+            if (modal.dataset.drpManagedSize === 'true') {
+                return;
+            }
             dialog.style.position = '';
             dialog.style.margin = '';
             dialog.style.left = '';
@@ -896,6 +962,8 @@ function getDataTableColumnType(label) {
 
 function enhanceDataTables() {
     document.querySelectorAll('table.table').forEach(table => {
+        if (table.dataset.tableEnhance === 'false') return;
+
         let wrapper = table.closest('.table-responsive, .data-table-wrapper');
 
         if (!wrapper) {
@@ -945,7 +1013,15 @@ function ensureNavbarRuntimeStyles() {
         body.navbar-state-booting #mainWrapper,
         body.navbar-state-booting .main-wrapper,
         body.navbar-state-booting .navbar-page-content {
+            animation: none !important;
             transition: none !important;
+        }
+
+        body.role-loading #navbar-container,
+        body.role-loading #mainWrapper,
+        body.role-loading .main-wrapper,
+        body.role-loading .app-shell {
+            visibility: hidden !important;
         }
 
         #navbar-container .app-sidebar {
@@ -1008,7 +1084,8 @@ function ensureNavbarRuntimeStyles() {
         .navbar-page-content {
             margin-left: var(--sidebar-width) !important;
             width: calc(100% - var(--sidebar-width)) !important;
-            transition: margin-left .24s var(--navbar-ease), width .24s var(--navbar-ease) !important;
+            animation: drpPageEnter .16s ease-out both;
+            transition: margin-left .22s var(--navbar-ease), width .22s var(--navbar-ease) !important;
         }
 
         body.navbar-sidebar-collapsed #mainWrapper,
@@ -1018,6 +1095,28 @@ function ensureNavbarRuntimeStyles() {
         .main-wrapper.collapsed {
             margin-left: var(--sidebar-collapsed-width) !important;
             width: calc(100% - var(--sidebar-collapsed-width)) !important;
+        }
+
+        @keyframes drpPageEnter {
+            from { opacity: .97; transform: translateY(2px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #navbar-container .app-sidebar,
+            #navbar-container .nav-link-item,
+            #navbar-container .sidebar-brand,
+            #navbar-container .sidebar-profile-footer,
+            #navbar-container .nav-label,
+            #navbar-container .profile-name,
+            #navbar-container .signout-btn,
+            #navbar-container .collapse-arrow,
+            #mainWrapper,
+            .main-wrapper,
+            .navbar-page-content {
+                animation: none !important;
+                transition: none !important;
+            }
         }
 
         @media (max-width: 768px) {

@@ -1,0 +1,158 @@
+<?php
+require_once '../../config/db_connection.php';
+$allowedRoles = ['super_admin', 'admin', 'Cashier', 'cashier', 'ro-super-admin', 'ro-admin', 'ro-cashier'];
+require_once '../../config/require_auth.php';
+require_once 'cashier_helpers.php';
+
+try {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['status' => 'error', 'message' => 'POST is required.']);
+        exit();
+    }
+
+    ensureActivityLogSchema($pdo);
+    ensureSalesOrderCashSchema($pdo);
+    ensureCashierPaymentDiscountSchema($pdo);
+
+    $payload = salesReadJsonBody();
+    $orderId = (int) ($payload['order_id'] ?? 0);
+    $amountPaid = cashierMoney($payload['amount_paid'] ?? $payload['cash_received'] ?? 0);
+    $cashierDiscountType = strtolower(trim((string) ($payload['cashier_discount_type'] ?? 'none')));
+    $cashierDiscountAmount = cashierMoney($payload['cashier_discount_amount'] ?? 0);
+    if ($orderId <= 0) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'Missing order_id.']);
+        exit();
+    }
+
+    $cashierId = cashierCurrentUserId();
+    $pdo->beginTransaction();
+
+    $stmt = $pdo->prepare(
+        "SELECT order_id, order_no, customer_name, sales_clerk_id, assigned_cashier_id, status, subtotal, discount, total_amount, cash_received
+         FROM sales_orders
+         WHERE order_id = :order_id
+         LIMIT 1
+         FOR UPDATE"
+    );
+    $stmt->execute([':order_id' => $orderId]);
+    $order = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$order) {
+        throw new RuntimeException('Order not found.');
+    }
+
+    $oldStatus = (string) ($order['status'] ?? '');
+    if (!in_array($oldStatus, ['accepted_by_cashier', 'processing_payment', 'processing'], true)) {
+        throw new RuntimeException('Only accepted cashier orders can be completed.');
+    }
+
+    $totals = cashierPaymentTotals(
+        cashierMoney($order['subtotal'] ?? 0),
+        $cashierDiscountType,
+        $cashierDiscountAmount
+    );
+    $totalAmount = $totals['final_amount'];
+    if ($amountPaid <= 0) {
+        $amountPaid = cashierMoney($order['cash_received'] ?? 0);
+    }
+    if ($amountPaid < $totalAmount) {
+        throw new RuntimeException('Cash must be equal to or greater than the total amount.');
+    }
+
+    $existsStmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM sales_payments
+         WHERE order_id = :order_id
+           AND payment_status = 'paid'"
+    );
+    $existsStmt->execute([':order_id' => $orderId]);
+    if ((int) $existsStmt->fetchColumn() > 0) {
+        throw new RuntimeException('This order already has a completed payment.');
+    }
+
+    cashierAssertOrderProductsActive($pdo, $orderId);
+
+    cashierDeductShelfStock($pdo, $orderId);
+
+    $changeAmount = cashierMoney($amountPaid - $totalAmount);
+    cashierPersistCashReceived($pdo, $orderId, $amountPaid, $totalAmount);
+
+    $payment = $pdo->prepare(
+        "INSERT INTO sales_payments
+            (order_id, cashier_id, payment_method, total_amount, sales_clerk_discount, cashier_discount_type, cashier_discount_amount, final_amount, amount_paid, change_amount, payment_status, paid_at)
+         VALUES
+            (:order_id, :cashier_id, 'cash', :total_amount, :sales_clerk_discount, :cashier_discount_type, :cashier_discount_amount, :final_amount, :amount_paid, :change_amount, 'paid', NOW())"
+    );
+    $payment->execute([
+        ':order_id' => $orderId,
+        ':cashier_id' => $cashierId,
+        ':total_amount' => $totalAmount,
+        ':sales_clerk_discount' => cashierMoney($order['discount'] ?? 0),
+        ':cashier_discount_type' => $totals['discount_type'],
+        ':cashier_discount_amount' => $totals['discount_amount'],
+        ':final_amount' => $totalAmount,
+        ':amount_paid' => $amountPaid,
+        ':change_amount' => $changeAmount,
+    ]);
+
+    $receiptNo = cashierGenerateReceiptNo($pdo);
+    $receipt = $pdo->prepare(
+        "INSERT INTO sales_receipts
+            (order_id, receipt_no, customer_name, sales_clerk_id, cashier_id, total_amount, payment_method, printed_at, created_at)
+         VALUES
+            (:order_id, :receipt_no, :customer_name, :sales_clerk_id, :cashier_id, :total_amount, 'cash', NOW(), NOW())"
+    );
+    $receipt->execute([
+        ':order_id' => $orderId,
+        ':receipt_no' => $receiptNo,
+        ':customer_name' => cashierDisplay($order['customer_name'] ?? '', 'Walk-in Customer'),
+        ':sales_clerk_id' => $order['sales_clerk_id'],
+        ':cashier_id' => $cashierId,
+        ':total_amount' => $totalAmount,
+    ]);
+
+    $update = $pdo->prepare(
+        "UPDATE sales_orders
+         SET status = 'completed',
+             assigned_cashier_id = :cashier_id,
+             completed_at = NOW()
+         WHERE order_id = :order_id"
+    );
+    $update->execute([
+        ':cashier_id' => $cashierId,
+        ':order_id' => $orderId,
+    ]);
+
+    $queue = $pdo->prepare(
+        "UPDATE cashier_queue
+         SET cashier_id = :cashier_id,
+             queue_status = 'completed',
+             completed_at = NOW()
+         WHERE order_id = :order_id"
+    );
+    $queue->execute([
+        ':cashier_id' => $cashierId,
+        ':order_id' => $orderId,
+    ]);
+
+    salesRecordStatusChange($pdo, $orderId, $oldStatus, 'completed', $cashierId, 'Payment completed by cashier.');
+    $pdo->commit();
+
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'Payment completed.',
+        'data' => cashierLoadOrderDetail($pdo, $orderId),
+    ]);
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    http_response_code(400);
+    echo json_encode([
+        'status' => 'error',
+        'message' => $e->getMessage(),
+    ]);
+}
+
+?>

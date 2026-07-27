@@ -18,6 +18,7 @@ if (!is_array($payload)) {
 
 try {
     ensurePurchaseOrderSchema($pdo);
+    ensureActivityLogSchema($pdo);
 
     $poId = cleanId($payload['po_id'] ?? null);
     $status = trim((string) ($payload['status'] ?? ''));

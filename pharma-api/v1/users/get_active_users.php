@@ -13,12 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit();
 }
 
-$stmt = $pdo->query(
-    "SELECT user_id, username, full_name, first_name, last_name, role
+$sql = "SELECT user_id, username, full_name, first_name, last_name, role
      FROM users
-     WHERE LOWER(COALESCE(status, '')) = 'active'
-     ORDER BY role, full_name, username"
-);
+     WHERE LOWER(COALESCE(status, '')) = 'active'";
+if (currentSessionHasRbacRole('manager') || currentSessionHasRbacRole('ro_manager')) {
+    $sql .= " AND role IN ('cashier', 'salesclerk')";
+}
+$sql .= ' ORDER BY role, full_name, username';
+$stmt = $pdo->query($sql);
 
 $users = array_map(static function (array $user): array {
     $nameParts = array_filter([

@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../activity_log_helpers.php';
 require_once 'users_helpers.php';
 
 requireUserAdmin($pdo);
@@ -22,11 +23,20 @@ if ($userId === '') sendUserJson(false, 'User record is missing.', null, 422);
 if ($fullName === '') sendUserJson(false, 'Full Name is required.', null, 422);
 if ($username === '') sendUserJson(false, 'Username is required.', null, 422);
 if (!in_array($role, validUserRoles(), true)) sendUserJson(false, 'Role is required.', null, 422);
+assertAssignableUserRole($role);
+$target = assertCanManageUser($pdo, $userId, $role);
 
 $exists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username AND user_id <> :user_id');
 $exists->execute([':username' => $username, ':user_id' => $userId]);
 if ((int) $exists->fetchColumn() > 0) {
     sendUserJson(false, 'Username is already taken.', null, 409);
+}
+if ($email !== '') {
+    $emailExists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE LOWER(email) = LOWER(:email) AND user_id <> :user_id');
+    $emailExists->execute([':email' => $email, ':user_id' => $userId]);
+    if ((int) $emailExists->fetchColumn() > 0) {
+        sendUserJson(false, 'Email address is already in use.', null, 409);
+    }
 }
 
 $stmt = $pdo->prepare(
@@ -50,6 +60,8 @@ $stmt->execute([
     ':contact_number' => $contactNumber !== '' ? $contactNumber : null,
     ':user_id' => $userId,
 ]);
+
+recordActivityLog($pdo, 'User Management', 'Updated', userManagementActorLabel() . ' updated user ' . $fullName, $userId);
 
 sendUserJson(true, 'User updated successfully.');
 ?>

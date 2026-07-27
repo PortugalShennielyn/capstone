@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/id_helpers.php';
+require_once __DIR__ . '/rbac.php';
 
 function tableExists(PDO $pdo, string $table): bool
 {
@@ -293,6 +294,18 @@ function sendUnauthorizedResponse(string $message = 'Unauthorized'): void
 {
     http_response_code(401);
     echo json_encode([
+        'success' => false,
+        'status' => 'error',
+        'message' => $message,
+    ]);
+    exit();
+}
+
+function sendForbiddenResponse(string $message = 'Access denied.'): void
+{
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
         'status' => 'error',
         'message' => $message,
     ]);
@@ -364,13 +377,10 @@ function requireValidSession(PDO $pdo, array $allowedRoles = []): void
     }
 
     if (!currentSessionHasAnyRole($allowedRoles)) {
-        http_response_code(403);
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'Forbidden',
-        ]);
-        exit();
+        sendForbiddenResponse();
     }
+
+    enforceManagerApiBoundary();
 }
 
 function currentSessionPayload(): array

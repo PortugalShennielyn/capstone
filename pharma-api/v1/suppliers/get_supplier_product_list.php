@@ -13,6 +13,46 @@ try {
             sp.purchase_unit,
             COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit,
             s.supplier_name,
+            supplier_totals.supplier_count,
+            (SELECT COUNT(*)
+             FROM purchase_order_items poi
+             INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+             WHERE po.supplier_id = sp.supplier_id
+               AND poi.product_id = sp.product_id
+               AND LOWER(TRIM(po.status)) NOT IN (
+                   'cancelled',
+                   'canceled',
+                   'rejected',
+                   'delivered',
+                   'delivered with return/damage',
+                   'completed'
+               )) AS active_purchase_order_count,
+            (SELECT COUNT(*)
+             FROM purchase_order_items poi
+             INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+             WHERE po.supplier_id = sp.supplier_id
+               AND poi.product_id = sp.product_id) AS historical_purchase_order_count,
+            (SELECT po.po_number
+             FROM purchase_order_items poi
+             INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+             WHERE po.supplier_id = sp.supplier_id
+               AND poi.product_id = sp.product_id
+             ORDER BY po.created_at DESC, po.po_id DESC
+             LIMIT 1) AS latest_purchase_order_number,
+            (SELECT po.status
+             FROM purchase_order_items poi
+             INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+             WHERE po.supplier_id = sp.supplier_id
+               AND poi.product_id = sp.product_id
+             ORDER BY po.created_at DESC, po.po_id DESC
+             LIMIT 1) AS latest_purchase_order_status,
+            (SELECT po.created_at
+             FROM purchase_order_items poi
+             INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+             WHERE po.supplier_id = sp.supplier_id
+               AND poi.product_id = sp.product_id
+             ORDER BY po.created_at DESC, po.po_id DESC
+             LIMIT 1) AS latest_purchase_date,
             p.product_id,
             p.brand_name,
             p.product_name,
@@ -59,11 +99,17 @@ try {
          FROM supplier_products sp
          INNER JOIN suppliers s ON sp.supplier_id = s.supplier_id
          INNER JOIN product p ON sp.product_id = p.product_id
+         INNER JOIN (
+            SELECT product_id, COUNT(DISTINCT supplier_id) AS supplier_count
+            FROM supplier_products
+            GROUP BY product_id
+         ) supplier_totals ON supplier_totals.product_id = sp.product_id
          LEFT JOIN product_categories pc ON p.category_id = pc.category_id
          LEFT JOIN product_types pt ON p.type_id = pt.type_id
          LEFT JOIN medicine_details md ON p.product_id = md.product_id
          LEFT JOIN grocery_details gd ON p.product_id = gd.product_id
          LEFT JOIN medical_supply_details msd ON p.product_id = msd.product_id
+         WHERE s.archived_at IS NULL
          ORDER BY s.supplier_name ASC, p.product_name ASC, sp.supplier_product_id ASC"
     );
 

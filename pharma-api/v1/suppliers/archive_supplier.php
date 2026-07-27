@@ -21,6 +21,29 @@ if ($supplierId === '') {
 try {
     ensureSupplierArchiveColumn($pdo);
 
+    $activeOrders = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM purchase_orders
+         WHERE supplier_id = :supplier_id
+           AND LOWER(TRIM(status)) NOT IN (
+               'cancelled',
+               'canceled',
+               'rejected',
+               'delivered',
+               'delivered with return/damage',
+               'completed'
+           )"
+    );
+    $activeOrders->execute([':supplier_id' => $supplierId]);
+    if ((int) $activeOrders->fetchColumn() > 0) {
+        http_response_code(409);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'This supplier has an active purchase order and cannot be deactivated yet.'
+        ]);
+        exit();
+    }
+
     $statement = $pdo->prepare(
         'UPDATE suppliers
          SET archived_at = CURRENT_TIMESTAMP

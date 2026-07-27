@@ -1,0 +1,530 @@
+/* Shared Product Master form and Supplier assignment workflow */
+#addProductModal .modal-dialog,
+#editProductModal .modal-dialog {
+    width: min(1020px, 92vw);
+    max-width: none;
+    height: min(89vh, 880px);
+    margin: clamp(14px, 3vh, 28px) auto;
+}
+
+#addProductModal .modal-content,
+#editProductModal .modal-content {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 14px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .22);
+}
+
+#addProductModal .modal-header,
+#editProductModal .modal-header,
+#addProductModal .modal-footer,
+#editProductModal .modal-footer {
+    flex: 0 0 auto;
+    padding-inline: 24px;
+    background: #fff;
+}
+
+#addProductModal .modal-body,
+#editProductModal .modal-body {
+    padding: 20px 24px 30px;
+    background: #f7f8fb;
+}
+
+#addProductModal .add-product-section,
+#editProductModal .add-product-section {
+    padding: 18px;
+    border: 1px solid #e4e8f0;
+    border-radius: 11px;
+    background: #fff;
+}
+
+#addProductModal .add-product-section + .add-product-section,
+#editProductModal .add-product-section + .add-product-section {
+    margin-top: 16px;
+    border-top: 1px solid #e4e8f0;
+}
+
+.product-variants-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+    padding: 11px 12px;
+    border: 1px solid #e6e9ef;
+    border-radius: 9px;
+    background: #fafbfc;
+}
+
+.product-variants-toolbar strong,
+.product-variants-toolbar small {
+    display: block;
+}
+
+.product-variants-toolbar strong {
+    color: #344054;
+    font-size: .82rem;
+}
+
+.product-variants-toolbar small {
+    margin-top: 2px;
+    color: #667085;
+    font-size: .72rem;
+}
+
+#addProductModal .edit-variation-entry,
+#editProductModal .edit-variation-entry {
+    border-color: #e4e8f0;
+    box-shadow: 0 3px 12px rgba(15, 23, 42, .035);
+}
+
+#assignSupplierProductsModal .modal-dialog {
+    width: min(1180px, 94vw);
+    max-width: none;
+    height: min(90vh, 900px);
+    margin: clamp(12px, 3vh, 28px) auto;
+}
+
+#assignSupplierProductsModal .modal-content {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .24);
+}
+
+#assignSupplierProductsModal .modal-header,
+#assignSupplierProductsModal .assignment-progress,
+#assignSupplierProductsModal .modal-footer {
+    flex: 0 0 auto;
+    background: #fff;
+}
+
+#assignSupplierProductsModal .modal-header {
+    padding: 18px 22px 14px;
+}
+
+#assignSupplierProductsModal .assignment-progress {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0 22px 14px;
+    border-bottom: 1px solid #e8ebf1;
+}
+
+.assignment-progress-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 9px 11px;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    color: #667085;
+    background: #f8fafc;
+    font-size: .76rem;
+    font-weight: 800;
+}
+
+.assignment-progress-step span {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 50%;
+    background: #e9edf4;
+}
+
+.assignment-progress-step.is-active {
+    border-color: #a78bfa;
+    color: #5b21b6;
+    background: #f5f3ff;
+}
+
+.assignment-progress-step.is-active span,
+.assignment-progress-step.is-complete span {
+    color: #fff;
+    background: #7c3aed;
+}
+
+#supplierAssignmentForm {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#assignSupplierProductsModal .modal-body {
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 18px 22px 28px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    background: #f6f7fb;
+}
+
+#assignSupplierProductsModal .modal-footer {
+    min-height: 66px;
+    padding: 12px 22px;
+    border-top: 1px solid #e5e8ef;
+}
+
+.assignment-step {
+    min-height: 100%;
+}
+
+.assignment-section-card {
+    padding: 16px;
+    border: 1px solid #e3e7ee;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.assignment-step-heading {
+    margin-bottom: 14px;
+}
+
+.assignment-step-heading h6 {
+    margin: 0;
+    color: #344054;
+    font-size: .95rem;
+    font-weight: 850;
+}
+
+.assignment-step-heading p {
+    margin: 4px 0 0;
+    color: #667085;
+    font-size: .78rem;
+}
+
+.assignment-mode-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.assignment-existing-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, .9fr);
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.assignment-panel {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #e3e7ee;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.assignment-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #e8ebf0;
+}
+
+.assignment-panel-header h6 {
+    margin: 0;
+    font-size: .82rem;
+    font-weight: 850;
+}
+
+.assignment-product-results {
+    height: clamp(280px, 43vh, 440px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.assignment-product-row {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 10px;
+    padding: 11px 14px;
+    border-bottom: 1px solid #edf0f4;
+    cursor: pointer;
+}
+
+.assignment-product-row:last-child {
+    border-bottom: 0;
+}
+
+.assignment-product-row:hover {
+    background: #faf9ff;
+}
+
+.assignment-product-row.is-disabled {
+    cursor: not-allowed;
+    opacity: .68;
+    background: #f8fafc;
+}
+
+.assignment-product-identity,
+.assignment-selected-identity {
+    color: #253047;
+    font-size: .83rem;
+    font-weight: 850;
+    overflow-wrap: anywhere;
+}
+
+.assignment-product-meta,
+.assignment-selected-meta {
+    margin-top: 3px;
+    color: #667085;
+    font-size: .72rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.assignment-selected-list {
+    display: grid;
+    max-height: clamp(280px, 43vh, 440px);
+    gap: 9px;
+    padding: 12px;
+    overflow-y: auto;
+}
+
+.assignment-selected-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 11px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fafbfc;
+}
+
+.assignment-selected-card .btn {
+    align-self: start;
+}
+
+.assignment-empty {
+    display: grid;
+    min-height: 150px;
+    padding: 24px;
+    place-items: center;
+    color: #667085;
+    font-size: .8rem;
+    text-align: center;
+}
+
+.assignment-term-list,
+.assignment-review-list {
+    display: grid;
+    gap: 12px;
+}
+
+.assignment-term-card,
+.assignment-review-card {
+    padding: 15px;
+    border: 1px solid #e1e5ec;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.assignment-term-card.is-invalid {
+    border-color: #fda4af;
+    box-shadow: 0 0 0 3px rgba(225, 29, 72, .08);
+}
+
+.assignment-term-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.assignment-term-grid,
+.assignment-review-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.assignment-preview {
+    grid-column: 1 / -1;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: #5b21b6;
+    background: #f5f3ff;
+    font-size: .76rem;
+    font-weight: 700;
+}
+
+.assignment-field-error {
+    min-height: 17px;
+    margin-top: 4px;
+    color: #be123c;
+    font-size: .7rem;
+    font-weight: 700;
+}
+
+.assignment-error-summary {
+    margin-bottom: 13px;
+    padding: 11px 13px;
+    border: 1px solid #fecdd3;
+    border-radius: 8px;
+    color: #9f1239;
+    background: #fff1f2;
+    font-size: .78rem;
+}
+
+.assignment-review-supplier {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border-left: 4px solid #7c3aed;
+    border-radius: 8px;
+    background: #f5f3ff;
+}
+
+.assignment-review-grid div {
+    min-width: 0;
+}
+
+.assignment-review-grid span {
+    display: block;
+    color: #667085;
+    font-size: .68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.assignment-review-grid strong {
+    display: block;
+    margin-top: 3px;
+    color: #344054;
+    font-size: .8rem;
+    overflow-wrap: anywhere;
+}
+
+.assignment-shared-form {
+    margin-top: 16px;
+}
+
+.assignment-shared-form > #addProductModal {
+    display: block;
+}
+
+.assignment-shared-form #addProductForm {
+    display: block;
+}
+
+.assignment-shared-form #addProductModal .modal-body {
+    padding: 0;
+    overflow: visible;
+    background: transparent;
+}
+
+.assignment-shared-form #addProductModal .modal-footer {
+    justify-content: flex-end;
+    padding: 14px 0 0;
+    border-top: 0;
+    background: transparent;
+}
+
+.assignment-shared-form #addProductModal .modal-footer [data-bs-dismiss="modal"] {
+    display: none;
+}
+
+body.dark-mode #addProductModal .modal-content,
+body.dark-mode #editProductModal .modal-content,
+body.dark-mode #addProductModal .modal-header,
+body.dark-mode #editProductModal .modal-header,
+body.dark-mode #addProductModal .modal-footer,
+body.dark-mode #editProductModal .modal-footer,
+body.dark-mode #addProductModal .add-product-section,
+body.dark-mode #editProductModal .add-product-section,
+body.dark-mode #assignSupplierProductsModal .modal-content,
+body.dark-mode #assignSupplierProductsModal .modal-header,
+body.dark-mode #assignSupplierProductsModal .assignment-progress,
+body.dark-mode #assignSupplierProductsModal .modal-footer,
+body.dark-mode .assignment-section-card,
+body.dark-mode .assignment-panel,
+body.dark-mode .assignment-term-card,
+body.dark-mode .assignment-review-card {
+    color: #e5e7eb;
+    border-color: #334155;
+    background: #182131;
+}
+
+@media (max-width: 991.98px) {
+    #assignSupplierProductsModal .modal-dialog,
+    #addProductModal .modal-dialog,
+    #editProductModal .modal-dialog {
+        width: 95vw;
+        height: 92vh;
+        margin: 4vh auto;
+    }
+
+    .assignment-existing-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .assignment-product-results,
+    .assignment-selected-list {
+        height: auto;
+        max-height: 310px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    #assignSupplierProductsModal .modal-dialog,
+    #addProductModal .modal-dialog,
+    #editProductModal .modal-dialog {
+        width: calc(100vw - 12px);
+        height: calc(100vh - 12px);
+        margin: 6px auto;
+    }
+
+    #assignSupplierProductsModal .modal-header,
+    #assignSupplierProductsModal .modal-body,
+    #assignSupplierProductsModal .modal-footer,
+    #addProductModal .modal-header,
+    #editProductModal .modal-header,
+    #addProductModal .modal-footer,
+    #editProductModal .modal-footer {
+        padding-inline: 14px;
+    }
+
+    #assignSupplierProductsModal .assignment-progress {
+        gap: 5px;
+        padding-inline: 14px;
+    }
+
+    .assignment-progress-step {
+        justify-content: center;
+        padding: 8px 5px;
+        font-size: .66rem;
+        text-align: center;
+    }
+
+    .assignment-progress-step span {
+        display: none;
+    }
+
+    .assignment-mode-toggle,
+    .assignment-term-grid,
+    .assignment-review-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .assignment-mode-toggle .btn {
+        border-radius: 6px !important;
+    }
+
+    .product-variants-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

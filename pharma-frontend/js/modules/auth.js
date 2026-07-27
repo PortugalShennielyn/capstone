@@ -1,6 +1,6 @@
 import API_BASE_URL from '../config/config.js';
 import PharmaUtils from '../utils.js';
-import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=8';
+import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=20';
 
 let currentSessionUser = null;
 
@@ -427,16 +427,18 @@ function initLogoutLinks() {
 }
 
 async function verifySession() {
-    const hasTabSession = await ensurePageTabSession();
-    if (!hasTabSession) {
+    const sessionResult = await ensurePageTabSession();
+    if (!sessionResult) {
         return null;
     }
 
     try {
-        const user = await PharmaUtils.safeFetch(`${API_BASE_URL}/auth/check_session.php`, {
-            method: 'GET',
-            credentials: 'include'
-        });
+        const user = typeof sessionResult === 'object'
+            ? sessionResult
+            : await PharmaUtils.safeFetch(`${API_BASE_URL}/auth/check_session.php`, {
+                method: 'GET',
+                credentials: 'include'
+            });
 
         mapSessionUser(user);
         initProfileIdentityEdit(user);
@@ -445,7 +447,9 @@ async function verifySession() {
         initLogoutLinks();
         return user;
     } catch (err) {
-        redirectToLogin();
+        if (err?.status === 401) {
+            redirectToLogin();
+        }
         return null;
     }
 }

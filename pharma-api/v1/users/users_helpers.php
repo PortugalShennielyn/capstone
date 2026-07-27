@@ -66,8 +66,13 @@ function normalizeUserRole(string $role): string
     $aliases = [
         'super admin' => 'super_admin',
         'owner/manager' => 'manager',
+        'manager/owner' => 'manager',
         'manager / owner' => 'manager',
+        'owner / manager' => 'manager',
+        'manager_owner' => 'manager',
+        'owner_manager' => 'manager',
         'manager' => 'manager',
+        'cashier' => 'cashier',
         'sales clerk' => 'salesclerk',
         'sales-clerk' => 'salesclerk',
         'sales_clerk' => 'salesclerk',
@@ -80,7 +85,7 @@ function roleLabel(string $role): string
     return [
         'super_admin' => 'Super Admin',
         'admin' => 'Admin',
-        'manager' => 'Manager / Owner',
+        'manager' => 'Manager',
         'cashier' => 'Cashier',
         'salesclerk' => 'Sales Clerk',
     ][$role] ?? $role;
@@ -98,8 +103,86 @@ function normalizeUserStatus(string $status): string
 
 function requireUserAdmin(PDO $pdo): void
 {
-    $allowedRoles = ['super_admin', 'admin', 'Admin', 'Super Admin', 'ro-admin', 'ro-super-admin'];
+    $allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'Super Admin', 'ro-admin', 'ro-super-admin', 'ro-manager'];
     require_once '../../config/require_auth.php';
+}
+
+function currentUserManagementRole(): string
+{
+    $roles = currentSessionRbacRoles();
+    if (in_array('super_admin', $roles, true) || in_array('ro_super_admin', $roles, true)) return 'super_admin';
+    if (in_array('admin', $roles, true) || in_array('ro_admin', $roles, true)) return 'admin';
+    if (in_array('manager', $roles, true) || in_array('ro_manager', $roles, true)) return 'manager';
+    return '';
+}
+
+function assignableUserRoles(): array
+{
+    return currentUserManagementRole() === 'manager'
+        ? ['cashier', 'salesclerk']
+        : validUserRoles();
+}
+
+function sendUserPermissionDenied(): void
+{
+    sendUserJson(
+        false,
+        'You do not have permission to manage this account or assign this role.',
+        null,
+        403
+    );
+}
+
+function assertAssignableUserRole(string $role): void
+{
+    if (!in_array($role, assignableUserRoles(), true)) {
+        sendUserPermissionDenied();
+    }
+}
+
+function managedUser(PDO $pdo, string $userId): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT user_id, full_name, username, role, status
+         FROM users
+         WHERE user_id = :user_id
+           AND COALESCE(is_deleted, 0) = 0
+         LIMIT 1'
+    );
+    $stmt->execute([':user_id' => $userId]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$user) {
+        sendUserJson(false, 'User record was not found.', null, 404);
+    }
+
+    return $user;
+}
+
+function assertCanManageUser(PDO $pdo, string $userId, ?string $submittedRole = null): array
+{
+    $target = managedUser($pdo, $userId);
+    if (currentUserManagementRole() !== 'manager') {
+        return $target;
+    }
+
+    $targetRole = normalizeUserRole((string) ($target['role'] ?? ''));
+    $actorId = cleanId($_SESSION['user_id'] ?? null);
+    if (
+        cleanId($userId) === $actorId
+        || !in_array($targetRole, ['cashier', 'salesclerk'], true)
+        || ($submittedRole !== null && !in_array($submittedRole, ['cashier', 'salesclerk'], true))
+    ) {
+        sendUserPermissionDenied();
+    }
+
+    return $target;
+}
+
+function userManagementActorLabel(): string
+{
+    $name = trim((string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User'));
+    return $name !== '' ? $name : 'User';
 }
 
 ?>

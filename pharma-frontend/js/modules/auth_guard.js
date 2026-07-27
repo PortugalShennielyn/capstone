@@ -1,4 +1,10 @@
 import API_BASE_URL from '../config/config.js';
+import {
+    ACCESS_DENIED_MESSAGE,
+    isPageAllowed,
+    primaryAccessRole,
+    sessionRoleSet
+} from './rbac.js?v=3';
 
 const TAB_TOKEN_KEY = 'pharma_tab_token';
 const TAB_CHANNEL = 'pharma_tab_session_channel';
@@ -6,6 +12,7 @@ const TAB_RUNTIME_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const OWNER_STALE_MS = 2400;
 const ADMIN_SETTINGS_KEY = 'drpAdminSettings';
 const DEFAULT_SESSION_TIMEOUT_MS = 1800000;
+const SESSION_CHECK_TIMEOUT_MS = 10000;
 
 let duplicateCheckPromise = null;
 let activeChannel = null;
@@ -14,6 +21,8 @@ let fetchPatched = false;
 let inactivityTimer = null;
 let inactivityLogoutStarted = false;
 let currentSession = null;
+let sessionInitPromise = null;
+let authRedirectInProgress = false;
 
 function tabToken() {
     try {
@@ -45,6 +54,10 @@ function clearTabToken() {
 }
 
 function redirectToLogin() {
+    if (authRedirectInProgress) {
+        return;
+    }
+    authRedirectInProgress = true;
     clearTabToken();
     if (!window.location.pathname.endsWith('/login.html')) {
         window.location.replace('login.html');
@@ -277,99 +290,111 @@ async function serverSessionIsActive() {
         return false;
     }
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), SESSION_CHECK_TIMEOUT_MS);
+
     try {
         const response = await fetch(`${API_BASE_URL}/auth/check_session.php`, {
             method: 'GET',
             credentials: 'include',
             cache: 'no-store',
+            signal: controller.signal,
             headers: {
                 'X-Tab-Token': token
             }
         });
 
-        if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
             currentSession = null;
             return false;
+        }
+
+        if (!response.ok) {
+            return null;
         }
 
         try {
             currentSession = await response.json();
         } catch (error) {
-            currentSession = null;
+            return null;
         }
 
         return true;
     } catch (error) {
-        return false;
+        return null;
+    } finally {
+        window.clearTimeout(timeoutId);
     }
 }
 
-function normalizeRole(role) {
-    return String(role || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[\s-]+/g, '_')
-        .replace('sales_clerk', 'salesclerk')
-        .replace('owner/manager', 'manager')
-        .replace('manager_/_owner', 'manager');
-}
-
 function sessionRoles() {
-    const roles = [
-        currentSession?.role,
-        ...(Array.isArray(currentSession?.roles) ? currentSession.roles : []),
-        ...(Array.isArray(currentSession?.role_identifiers) ? currentSession.role_identifiers : [])
-    ];
-
-    return roles.map(normalizeRole).filter(Boolean);
+    return Array.from(sessionRoleSet(currentSession));
 }
 
 function roleAllowedForPage() {
     const filename = window.location.pathname.split('/').pop() || '';
-    const allowed = {
-        'admin_settings.html': ['super_admin', 'admin', 'ro_admin', 'ro_super_admin'],
-        'dashboard.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'products.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'inventory.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'supplier.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'purchase_orders.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'pending_orders.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'arrived_orders.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'complete_delivery.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'return_damage.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'expiry_monitoring.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'pos.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'completed_sales.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier'],
-        'cancelled_sales.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier'],
-        'sales_history.html': ['super_admin', 'admin', 'manager', 'ro_admin', 'ro_super_admin', 'ro_manager'],
-        'clerk.html': ['super_admin', 'admin', 'manager', 'salesclerk', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_sales_clerk'],
-        'sales_clerk_pos.html': ['super_admin', 'admin', 'manager', 'salesclerk', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_sales_clerk'],
-        'sales_clerk_orders.html': ['super_admin', 'admin', 'manager', 'salesclerk', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_sales_clerk'],
-        'cashier.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier'],
-        'cashier_queue.html': ['super_admin', 'admin', 'manager', 'cashier', 'ro_admin', 'ro_super_admin', 'ro_manager', 'ro_cashier']
-    }[filename];
-
-    if (!allowed) {
-        return true;
-    }
-
-    return sessionRoles().some(role => allowed.includes(role));
+    return isPageAllowed(currentSession, filename);
 }
 
 function redirectUnauthorizedPage() {
+    try {
+        sessionStorage.setItem('drpAccessDeniedMessage', ACCESS_DENIED_MESSAGE);
+    } catch (error) {}
     const roles = sessionRoles();
     if (roles.includes('salesclerk') || roles.includes('ro_sales_clerk')) {
-        window.location.replace('clerk.html');
+        window.location.replace('sales_clerk_pos.html?access=denied');
         return;
     }
     if (roles.includes('cashier') || roles.includes('ro_cashier')) {
-        window.location.replace('cashier.html');
+        window.location.replace('cashier_pos.html?access=denied');
         return;
     }
-    window.location.replace('dashboard.html');
+    window.location.replace('dashboard.html?access=denied');
+}
+
+function revealAccessDeniedMessage() {
+    let message = '';
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('access') === 'denied') {
+        message = ACCESS_DENIED_MESSAGE;
+        url.searchParams.delete('access');
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+    try {
+        message = message || sessionStorage.getItem('drpAccessDeniedMessage') || '';
+        sessionStorage.removeItem('drpAccessDeniedMessage');
+    } catch (error) {}
+    if (!message) return;
+
+    window.setTimeout(() => {
+        if (window.toastr) {
+            window.toastr.error(message);
+            return;
+        }
+        const main = document.querySelector('main, #mainWrapper, .main-wrapper');
+        if (!main || document.getElementById('rbacAccessDeniedNotice')) return;
+        const notice = document.createElement('div');
+        notice.id = 'rbacAccessDeniedNotice';
+        notice.setAttribute('role', 'alert');
+        notice.style.cssText = 'margin:12px 18px;padding:12px 14px;border:1px solid #fecaca;border-radius:10px;color:#991b1b;background:#fef2f2;font-weight:750;';
+        notice.textContent = message;
+        main.prepend(notice);
+    }, 0);
 }
 
 async function ensurePageTabSession() {
+    if (sessionInitPromise) {
+        return sessionInitPromise;
+    }
+
+    sessionInitPromise = initializePageSession().finally(() => {
+        sessionInitPromise = null;
+    });
+
+    return sessionInitPromise;
+}
+
+async function initializePageSession() {
     installAuthenticatedFetch();
 
     if (!tabToken()) {
@@ -377,15 +402,15 @@ async function ensurePageTabSession() {
         return false;
     }
 
-    const isDuplicate = await duplicateTabCheck();
-    if (isDuplicate) {
+    await duplicateTabCheck();
+
+    const sessionState = await serverSessionIsActive();
+    if (sessionState === false) {
         redirectToLogin();
         return false;
     }
-
-    if (!await serverSessionIsActive()) {
-        redirectToLogin();
-        return false;
+    if (sessionState === null) {
+        return null;
     }
 
     if (!roleAllowedForPage()) {
@@ -393,9 +418,14 @@ async function ensurePageTabSession() {
         return false;
     }
 
+    const accessRole = primaryAccessRole(currentSession);
+    document.body.dataset.sessionRole = accessRole;
+    window.__drpSession = Object.freeze({ ...currentSession, access_role: accessRole });
+    window.dispatchEvent(new CustomEvent('pharma:session-ready', { detail: window.__drpSession }));
     startActiveTabResponder();
     startInactivityTimer();
-    return true;
+    revealAccessDeniedMessage();
+    return currentSession || true;
 }
 
 export {

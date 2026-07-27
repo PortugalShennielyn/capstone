@@ -2,6 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
+require_once 'purchase_order_payment_helpers.php';
 require_once '../products/product_category_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -128,7 +129,8 @@ try {
                 p.price AS selling_price,
                 COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
                 COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
-                COALESCE(returns.return_quantity, 0) AS returned_quantity
+                COALESCE(returns.returned_quantity, 0) AS returned_quantity,
+                COALESCE(batches.inventory_added, 0) AS inventory_added
              FROM purchase_order_items poi
              INNER JOIN product p ON p.product_id = poi.product_id
              LEFT JOIN product_categories pc ON pc.category_id = p.category_id
@@ -137,12 +139,24 @@ try {
              LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
              LEFT JOIN purchase_order_receiving_items pori ON pori.po_item_id = poi.po_item_id
              LEFT JOIN (
-                SELECT po_item_id, SUM(return_quantity) AS return_quantity
-                FROM purchase_order_returns
-                GROUP BY po_item_id
-             ) returns ON returns.po_item_id = poi.po_item_id
+                 SELECT po_item_id,
+                        SUM(CASE
+                            WHEN remarks LIKE '[RETURN_META_V1]%'
+                             AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) IN ('return_for_credit', 'return_for_replacement')
+                            THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.damaged_quantity')), return_quantity) AS SIGNED)
+                            WHEN remarks NOT LIKE '[RETURN_META_V1]%' THEN return_quantity
+                            ELSE 0
+                        END) AS returned_quantity
+                 FROM purchase_order_returns
+                 GROUP BY po_item_id
+              ) returns ON returns.po_item_id = poi.po_item_id
+              LEFT JOIN (
+                 SELECT po_item_id, SUM(received_qty) AS inventory_added
+                 FROM inventory_batches
+                 GROUP BY po_item_id
+              ) batches ON batches.po_item_id = poi.po_item_id
              WHERE poi.po_id IN ({$placeholders})
-             GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.return_quantity
+              GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.returned_quantity, batches.inventory_added
              ORDER BY poi.po_id, poi.po_item_id"
         );
         $itemsStatement->execute($poIds);
@@ -152,7 +166,7 @@ try {
             $quantity = (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
             $price = (float) $item['price'];
             $returnedQuantity = (int) $item['returned_quantity'];
-            $item['line_total'] = (float) ($item['stored_line_total'] ?: ($quantity * $price));
+            $item['line_total'] = round($quantity * $price, 2);
             $item['returned_amount'] = $returnedQuantity * $price;
             $itemsByPo[cleanId($item['po_id'])][] = $item;
         }
@@ -175,10 +189,19 @@ try {
             $order['returned_amount'] = $returnedAmount;
             $storedFinalPayment = (float) ($order['stored_final_payment'] ?? 0);
             $order['final_payment'] = $storedFinalPayment > 0 ? $storedFinalPayment : max(0, $totalAmount - $returnedAmount);
-            $order['payment_state'] = $order['payment_status'] ?: ($returnedAmount > 0 ? 'Adjusted' : 'Unpaid');
+            $paymentSummary = purchaseOrderPaymentSummary($pdo, cleanId($order['po_id']), (float) $order['final_payment']);
+            $order['total_paid'] = $paymentSummary['total_paid'];
+            $order['remaining_balance'] = $paymentSummary['remaining_balance'];
+            $order['payment_status'] = $paymentSummary['payment_status'];
+            $order['payment_state'] = $paymentSummary['payment_status'];
             $order['item_names'] = array_map(static fn($item) => $item['product_name'], $orderItems);
             $order['brand_names'] = array_map(static fn($item) => $item['brand_name'], $orderItems);
-            $order['quantities'] = array_map(static fn($item) => (int) ($item['inventory_qty_ordered'] ?: $item['quantity']), $orderItems);
+            $order['quantities'] = array_map(static fn($item) => (int) ($item['purchase_qty'] ?: 1), $orderItems);
+            $order['inspection_in_progress'] = str_starts_with((string) ($order['receiving_remarks'] ?? ''), "[INSPECTION_DRAFT_V1]\n");
+            if ($order['inspection_in_progress']) {
+                $order['received_date'] = null;
+                $order['receiving_remarks'] = '';
+            }
         }
         unset($order);
     }

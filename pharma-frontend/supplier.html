@@ -9,8 +9,10 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <link href="./css/suppliers.css?v=4" rel="stylesheet">
+    <link href="./css/product_workflows.css?v=1" rel="stylesheet">
+    <script src="./js/navbar.js?v=55" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
     <style>
         :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --sidebar-bg:#1f2530; --sidebar-bg-deep:#171c25; --sidebar-text:#c6ccd8; --sidebar-muted:#8790a1; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
         * { box-sizing:border-box; } body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter",sans-serif; } body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; } a { text-decoration:none; }
@@ -21,30 +23,14 @@
         .sidebar-profile-footer { position:absolute; inset:auto 0 0; display:flex; align-items:center; justify-content:space-between; padding:15px 20px; background:var(--sidebar-bg-deep); } .avatar-initials { width:35px; height:35px; display:flex; align-items:center; justify-content:center; border-radius:50%; color:#fff; background:var(--purple); font-weight:700; } .profile-name { color:#fff; } .signout-btn { color:var(--sidebar-muted); }
         .main-wrapper { min-height:100vh; margin-left:var(--sidebar-width); transition:var(--transition); } .main-wrapper.collapsed { margin-left:var(--sidebar-collapsed-width); } .topbar { position:sticky; top:0; z-index:1020; height:var(--topbar-height); display:flex; align-items:center; justify-content:space-between; padding:0 26px; background:#fff; border-bottom:1px solid var(--border-soft); } body.dark-mode .topbar,body.dark-mode .card { background:#182131; color:var(--text-main); } .topbar-left,.topbar-right { display:flex; align-items:center; gap:14px; } .icon-btn { width:42px; height:42px; border:0; border-radius:8px; color:#4b5563; background:#f4f6fb; } .page-title-mini { display:flex; flex-direction:column; } .page-title-mini span { color:#7b8494; font-size:12px; font-weight:600; } .page-body { padding:28px; } .card { border:1px solid var(--border-soft); border-radius:8px; box-shadow:0 10px 28px rgba(15,23,42,.05); } .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
         .supplier-table-scroll { max-height:clamp(280px,52vh,520px)!important; overflow:auto!important; position:relative; border-radius:10px; }
-        #table-suppliers,
-        #table-supplier-products { border-collapse:separate!important; border-spacing:0!important; margin-bottom:0!important; }
-        #table-suppliers thead th,
-        #table-supplier-products thead th { position:sticky!important; top:0!important; z-index:30!important; background:#f8f9fc!important; box-shadow:inset 0 -1px 0 #d8dee9!important; }
-        #table-supplier-products thead th:last-child { z-index:40!important; }
+        #table-suppliers { border-collapse:separate!important; border-spacing:0!important; margin-bottom:0!important; }
+        #table-suppliers thead th { position:sticky!important; top:0!important; z-index:30!important; background:#f8f9fc!important; box-shadow:inset 0 -1px 0 #d8dee9!important; }
         .supplier-product-actions { display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; }
         .supplier-product-actions .btn { width:32px; height:32px; min-width:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
         .supplier-product-toolbar { display:grid; grid-template-columns:minmax(240px,1.4fr) repeat(4,minmax(150px,1fr)); gap:10px; margin-bottom:14px; align-items:end; }
         .supplier-product-toolbar .form-label { margin-bottom:5px; color:#667085; font-size:11px; font-weight:850; text-transform:uppercase; }
         .supplier-product-toolbar .form-control,
         .supplier-product-toolbar .form-select { min-height:38px; font-size:13px; font-weight:700; }
-        .supplier-product-table { width:100%; min-width:1180px; table-layout:auto; border-collapse:separate; border-spacing:0; }
-        .supplier-product-table th { color:#596274; background:#f8f9fc; font-size:12px; font-weight:800; white-space:normal; text-align:left; vertical-align:middle; }
-        .supplier-product-table td { color:var(--text-main); font-size:12.5px; font-weight:700; vertical-align:middle; text-align:left; overflow-wrap:break-word; word-break:normal; white-space:normal; }
-        .supplier-product-table .col-supplier { min-width:170px; max-width:240px; text-align:left; }
-        .supplier-product-table .col-brand { min-width:150px; max-width:220px; text-align:left; }
-        .supplier-product-table .col-product { min-width:200px; max-width:300px; text-align:left; }
-        .supplier-product-table .col-variant { min-width:210px; max-width:320px; text-align:left; }
-        .supplier-product-table .col-price { min-width:115px; text-align:right; white-space:nowrap; }
-        .supplier-product-table .col-package { min-width:135px; max-width:180px; }
-        .supplier-product-table .col-contains { min-width:185px; max-width:240px; text-align:left; }
-        .supplier-product-table th:last-child,
-        .supplier-product-table td:last-child { position:sticky; right:0; z-index:5; min-width:96px; background:var(--bs-table-bg,#fff); border-left:1px solid #e5e9f1; box-shadow:-6px 0 10px rgba(15,23,42,.06); }
-        .supplier-product-table th:last-child { z-index:7; background:#f8f9fc; }
         .supplier-product-name { display:grid; gap:2px; line-height:1.25; }
         .supplier-product-name strong { font-size:.88rem; font-weight:850; }
         .supplier-product-edit-dialog,
@@ -58,6 +44,9 @@
         .supplier-product-dialog .modal-footer,
         .supplier-product-edit-dialog .modal-footer { position:sticky; bottom:0; z-index:3; background:#fff; border-top:1px solid var(--border-soft); }
         .supplier-product-modal-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr); gap:18px; align-items:start; }
+        .supplier-product-modal-grid.supplier-assignment-only { grid-template-columns:minmax(0,560px); justify-content:center; }
+        #editSupplierProductModal .supplier-product-edit-dialog { width:min(620px,calc(100vw - 32px)); max-width:min(620px,calc(100vw - 32px)); min-width:0; }
+        #editSupplierProductModal .modal-content { min-width:0; min-height:520px; resize:none; }
         .supplier-product-section-stack { display:grid; gap:14px; }
         .supplier-product-edit-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr); gap:18px; align-items:start; }
         .supplier-product-edit-section { padding:16px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
@@ -89,11 +78,9 @@
         #addSupplierModal .form-control { min-height:40px; font-size:.9rem; font-weight:650; }
         #addSupplierModal textarea.form-control { min-height:92px; resize:vertical; }
         #addSupplierModal .modal-footer { padding:14px 20px 18px; border-top:1px solid var(--border-soft); }
-        body.dark-mode .supplier-product-table th,
-        body.dark-mode .supplier-product-table th:last-child { background:#202b3d; color:#cbd5e1; }
+        body.dark-mode .supplier-product-table th { background:#202b3d; color:#cbd5e1; }
         body.dark-mode #table-suppliers thead th,
         body.dark-mode #table-supplier-products thead th { background:#202b3d!important; color:#cbd5e1!important; box-shadow:inset 0 -1px 0 #334155!important; }
-        body.dark-mode .supplier-product-table td:last-child { background:var(--bs-table-bg,#182131); border-left-color:#263244; }
         body.dark-mode .supplier-product-edit-section { background:#111827; border-color:#263244; }
         body.dark-mode .supplier-product-reference-price { background:#182131; border-color:#263244; color:#e5e7eb; }
         body.dark-mode .supplier-product-preview-card { border-color:#1d4ed8; background:#172554; }
@@ -114,24 +101,30 @@
 <body>
     <div id="navbar-container"></div>
     <main class="main-wrapper" id="mainWrapper">
-        <header class="topbar"><div class="topbar-left"><button class="icon-btn" id="sidebarToggle"><i class="fa-solid fa-bars"></i></button><div class="page-title-mini"><strong>Suppliers</strong><span>Supplier directory and management</span></div></div><div class="topbar-right"><button class="icon-btn"><i class="fa-regular fa-bell"></i></button><button class="icon-btn" id="themeToggle"><i class="fa-solid fa-moon"></i></button></div></header>
+        <header class="topbar"><div class="topbar-left"><button class="icon-btn" id="sidebarToggle" aria-label="Toggle sidebar"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><div class="page-title-mini"><strong>Suppliers</strong><span>Supplier directory and management</span></div></div><div class="topbar-right"><button class="icon-btn" aria-label="Notifications"><i class="fa-regular fa-bell" aria-hidden="true"></i></button><button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode"><i class="fa-solid fa-moon" aria-hidden="true"></i></button></div></header>
         <section class="page-body">
-            <div class="card p-3">
-                <div class="d-flex align-items-center justify-content-between gap-3 mb-3"><div><h5 class="fw-bold mb-1">Suppliers</h5><p class="text-muted mb-0">Manage suppliers available for purchase orders.</p></div><button class="btn btn-purple" id="btnOpenAddSupplier" data-bs-toggle="modal" data-bs-target="#addSupplierModal"><i class="fa-solid fa-plus me-2"></i>Add New Supplier</button></div>
-                <div class="table-responsive supplier-table-scroll"><table class="table table-hover align-middle" id="table-suppliers"><thead><tr><th>Supplier Name</th><th>Phone Number</th><th>Email Address</th><th>Address</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="text-center text-muted py-4">Loading suppliers...</td></tr></tbody></table></div>
+            <div class="supplier-summary-grid" aria-label="Supplier summary">
+                <article class="supplier-summary-card"><span>Total Suppliers</span><strong id="summaryTotalSuppliers">—</strong><i class="fa-solid fa-building" aria-hidden="true"></i></article>
+                <article class="supplier-summary-card"><span>Active Suppliers</span><strong id="summaryActiveSuppliers">—</strong><i class="fa-solid fa-circle-check" aria-hidden="true"></i></article>
+                <article class="supplier-summary-card"><span>Assigned Supplier Products</span><strong id="summaryAssignedProducts">—</strong><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i></article>
+                <article class="supplier-summary-card"><span>Products With Multiple Suppliers</span><strong id="summaryMultipleSuppliers">—</strong><i class="fa-solid fa-code-branch" aria-hidden="true"></i></article>
             </div>
-            <div class="card p-3 mt-3">
-                <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+            <div class="card supplier-section-card">
+                <div class="supplier-section-heading"><div><h5>Supplier Directory</h5><p>Manage supplier contacts and purchasing relationships.</p></div><div class="d-flex gap-2 align-items-end"><div><label class="form-label small mb-1" for="supplierStatusFilter">Status</label><select class="form-select form-select-sm" id="supplierStatusFilter"><option value="Active">Active</option><option value="Inactive">Inactive</option><option value="all">All statuses</option></select></div><button class="btn btn-purple" id="btnOpenAddSupplier" data-bs-toggle="modal" data-bs-target="#addSupplierModal"><i class="fa-solid fa-plus me-2" aria-hidden="true"></i>Add New Supplier</button></div></div>
+                <div class="table-responsive supplier-directory-scroll"><table class="table table-hover align-middle supplier-directory-table" id="table-suppliers"><thead><tr><th>Supplier Name</th><th>Phone Number</th><th>Email Address</th><th>Address</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="text-center text-muted py-4">Loading suppliers...</td></tr></tbody></table></div>
+            </div>
+            <div class="card supplier-section-card mt-3">
+                <div class="supplier-section-heading">
                     <div>
-                        <h5 class="fw-bold mb-1">Supplier Product Catalog</h5>
-                        <p class="text-muted mb-0">Products assigned to each supplier for purchase orders.</p>
+                        <div class="d-flex align-items-center gap-2 flex-wrap"><h5>Supplier Product Catalog</h5><span class="supplier-result-count" id="supplierProductResultCount" aria-live="polite">0 products</span></div>
+                        <p>Products assigned to each supplier for purchase orders.</p>
                     </div>
-                    <button class="btn btn-purple" data-bs-toggle="modal" data-bs-target="#addSupplierProductModal"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
+                    <button class="btn btn-purple" data-bs-toggle="modal" data-bs-target="#assignSupplierProductsModal"><i class="fa-solid fa-plus me-2" aria-hidden="true"></i>Assign Product</button>
                 </div>
                 <div class="supplier-product-toolbar">
                     <div>
                         <label class="form-label" for="supplierProductSearch">Search</label>
-                        <input class="form-control" id="supplierProductSearch" type="search" placeholder="Search supplier, product, category, package...">
+                        <input class="form-control" id="supplierProductSearch" type="search" placeholder="Search supplier or product...">
                     </div>
                     <div>
                         <label class="form-label" for="supplierProductFilterSupplier">Supplier</label>
@@ -147,37 +140,37 @@
                     </div>
                     <div>
                         <label class="form-label" for="supplierProductFilterPackage">Purchase Unit</label>
-                        <select class="form-select" id="supplierProductFilterPackage"><option value="">All packages</option></select>
+                        <select class="form-select" id="supplierProductFilterPackage"><option value="">All purchase units</option></select>
                     </div>
+                    <button class="btn btn-link supplier-clear-filters d-none" id="clearSupplierProductFilters" type="button"><i class="fa-solid fa-filter-circle-xmark me-1" aria-hidden="true"></i>Clear Filters</button>
                 </div>
-                <div class="table-responsive supplier-table-scroll">
-                    <table class="table table-hover align-middle supplier-product-table" id="table-supplier-products">
+                <div class="supplier-catalog-scroll" tabindex="0" aria-label="Supplier product catalog. Scroll horizontally to view all columns.">
+                    <table class="table table-hover align-middle supplier-product-table" id="table-supplier-products" data-table-enhance="false">
                         <thead>
                             <tr>
-                                <th>Supplier</th>
-                                <th>Brand</th>
-                                <th>Product</th>
-                                <th>Category</th>
-                                <th>Product Type</th>
-                                <th>Variant / Strength / Size</th>
-                                <th>Selling Price</th>
-                                <th>Supplier Cost</th>
-                                <th>Packaging</th>
-                                <th>Purchase Unit</th>
-                                <th>Units per Purchase Unit</th>
-                                <th>Actions</th>
+                                <th class="col-supplier">Supplier</th>
+                                <th class="col-product">Product</th>
+                                <th class="col-specification">Specification</th>
+                                <th class="col-type">Product Type</th>
+                                <th class="col-packaging">Packaging</th>
+                                <th class="col-purchase-unit">Purchase Unit</th>
+                                <th class="col-supplier-cost text-end">Supplier Cost</th>
+                                <th class="col-actions actions-column">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="12" class="text-center text-muted py-4">Loading supplier products...</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-4">Loading supplier products...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </section>
     </main>
-    <div class="modal fade" id="addSupplierModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="addSupplierModalLabel">Add Supplier</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addSupplierForm"><input id="sup_id" type="hidden"><div class="modal-body"><div class="mb-3"><label class="form-label" for="sup_name">Supplier Name</label><input class="form-control" id="sup_name" required></div><div class="mb-3"><label class="form-label" for="sup_phone">Phone Number</label><input class="form-control" id="sup_phone"></div><div class="mb-3"><label class="form-label" for="sup_email">Email Address</label><input class="form-control" id="sup_email" type="email"></div><div><label class="form-label" for="sup_address">Address</label><textarea class="form-control" id="sup_address"></textarea></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" id="btnSaveSupplier"><i class="fa-solid fa-floppy-disk me-2"></i><span>Save Supplier</span></button></div></form></div></div></div>
-    <div class="modal fade" id="addSupplierProductModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered supplier-product-dialog"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold">Add Supplier Product</h5><p class="text-muted small mb-0">Assign product details and supplier purchasing setup.</p></div><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addSupplierProductForm"><div class="modal-body"><div class="supplier-product-modal-grid">
+    <div class="modal fade" id="supplierDetailsModal" tabindex="-1" aria-labelledby="supplierDetailsTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="supplierDetailsTitle" tabindex="-1">Supplier Details</h5><p class="text-muted small mb-0">Contact and procurement activity</p></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close supplier details"></button></div><div class="modal-body" id="supplierDetailsBody"></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button><button class="btn btn-purple" type="button" id="viewSupplierAssignedProducts">View Assigned Products</button></div></div></div></div>
+    <div class="modal fade" id="supplierProductDetailsModal" tabindex="-1" aria-labelledby="supplierProductDetailsTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-xl"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="supplierProductDetailsTitle" tabindex="-1">Supplier Product Details</h5><p class="text-muted small mb-0">Product identity, packaging, pricing, and purchasing</p></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close supplier product details"></button></div><div class="modal-body" id="supplierProductDetailsBody"></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    <div class="modal fade" id="supplierConfirmModal" tabindex="-1" aria-labelledby="supplierConfirmTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="supplierConfirmTitle" tabindex="-1">Confirm action</h5><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close confirmation"></button></div><div class="modal-body"><p class="mb-2" id="supplierConfirmMessage"></p><div class="supplier-confirm-warning" id="supplierConfirmWarning"></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger" type="button" id="supplierConfirmAction">Confirm</button></div></div></div></div>
+    <div class="modal fade" id="addSupplierModal" tabindex="-1" aria-labelledby="addSupplierModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="addSupplierModalLabel" tabindex="-1">Add Supplier</h5><button class="btn-close" data-bs-dismiss="modal" aria-label="Close supplier form"></button></div><form id="addSupplierForm"><input id="sup_id" type="hidden"><div class="modal-body"><div class="mb-3"><label class="form-label" for="sup_name">Supplier Name</label><input class="form-control" id="sup_name" required></div><div class="mb-3"><label class="form-label" for="sup_phone">Phone Number</label><input class="form-control" id="sup_phone"></div><div class="mb-3"><label class="form-label" for="sup_email">Email Address</label><input class="form-control" id="sup_email" type="email"></div><div><label class="form-label" for="sup_address">Address</label><textarea class="form-control" id="sup_address"></textarea></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" id="btnSaveSupplier"><i class="fa-solid fa-floppy-disk me-2" aria-hidden="true"></i><span>Save Supplier</span></button></div></form></div></div></div>
+    <div class="modal fade" id="addSupplierProductModal" tabindex="-1" aria-labelledby="addSupplierProductModalTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered supplier-product-dialog"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="addSupplierProductModalTitle" tabindex="-1">Assign Product to Supplier</h5><p class="text-muted small mb-0">Assign product details and supplier purchasing setup.</p></div><button class="btn-close" data-bs-dismiss="modal" aria-label="Close assignment form"></button></div><form id="addSupplierProductForm"><div class="modal-body"><div class="supplier-product-modal-grid">
         <div class="supplier-product-section-stack">
             <section class="supplier-product-edit-section"><h6>Product Identity</h6><div class="supplier-product-form-grid">
                 <div><label class="form-label" for="supplierProductSupplier">Supplier <span class="text-danger">*</span></label><select class="form-select" id="supplierProductSupplier" required><option value="" disabled selected>Select supplier...</option></select></div>
@@ -217,7 +210,7 @@
             </section>
             <section class="supplier-product-edit-section"><h6>Pricing</h6><div class="supplier-product-form-grid">
                 <div><label class="form-label" for="supplierProductBasePrice">Selling Price</label><input class="form-control supplier-product-price" id="supplierProductBasePrice" type="number" min="0" step=".01" required></div>
-                <div><label class="form-label" for="supplierProductSupplierCost">Supplier Cost</label><input class="form-control" id="supplierProductSupplierCost" type="number" min="0" step=".01" required></div>
+                <div><label class="form-label" for="supplierProductSupplierCost">Supplier Cost per Inventory Unit</label><input class="form-control" id="supplierProductSupplierCost" type="number" min="0" step=".01" required></div>
                 <div><label class="form-label" for="supplierProductBarcode">Barcode</label><input class="form-control supplier-product-barcode" id="supplierProductBarcode" placeholder="Auto/manual"></div>
                 <div><label class="form-label" for="supplierProductSku">SKU <span class="text-muted">(optional)</span></label><input class="form-control supplier-product-sku" id="supplierProductSku" placeholder="Optional"></div>
                 <div class="span-2"><label class="form-label" for="supplierProductImageUrl">Image URL <span class="text-muted">(optional)</span></label><input class="form-control" id="supplierProductImageUrl" type="url" placeholder="Optional image link"></div>
@@ -229,10 +222,10 @@
                 <div class="col-12"><label class="form-label" for="supplierProductInventoryUnitPreview">Inventory Unit</label><input class="form-control" id="supplierProductInventoryUnitPreview" readonly value="pc"></div>
                 <div class="col-12"><label class="form-label" for="supplierProductUnitsPerPurchaseUnit">Units per Purchase Unit</label><input class="form-control" id="supplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" value="1" required placeholder="40"></div>
             </div></section>
-            <div class="supplier-product-preview-card" id="addSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="addPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="addPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="addPreviewMeaning">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
+            <div class="supplier-product-preview-card" id="addSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="addPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="addPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row"><span>Supplier Cost</span><strong id="addPreviewSupplierCost">₱0.00 per pc</strong></div><div class="supplier-product-preview-row"><span>Estimated Purchase Unit Cost</span><strong id="addPreviewPurchaseCost">₱0.00</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="addPreviewMeaning">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
         </div>
     </div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple"><i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product</button></div></form></div></div></div>
-    <div class="modal fade" id="editSupplierProductModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered supplier-product-edit-dialog"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold">Edit Supplier Product</h5><p class="text-muted small mb-0">Assign product details and supplier purchasing setup.</p></div><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="editSupplierProductForm"><input type="hidden" id="editSupplierProductLinkId"><input type="hidden" id="editSupplierProductId"><input type="hidden" id="editSupplierProductSupplierId"><input type="hidden" id="editSupplierProductCurrentPrice"><div class="modal-body"><div class="supplier-product-modal-grid">
+    <div class="modal fade" id="editSupplierProductModal" tabindex="-1" aria-labelledby="editSupplierProductModalTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered supplier-product-edit-dialog"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="editSupplierProductModalTitle" tabindex="-1">Edit Supplier Product</h5><p class="text-muted small mb-0">Assign product details and supplier purchasing setup.</p></div><button class="btn-close" data-bs-dismiss="modal" aria-label="Close edit supplier product form"></button></div><form id="editSupplierProductForm"><input type="hidden" id="editSupplierProductLinkId"><input type="hidden" id="editSupplierProductId"><input type="hidden" id="editSupplierProductSupplierId"><input type="hidden" id="editSupplierProductCurrentPrice"><div class="modal-body"><div class="supplier-product-modal-grid">
         <div class="supplier-product-section-stack">
             <section class="supplier-product-edit-section"><h6>Product Identity</h6><div class="supplier-product-form-grid">
                 <div><label class="form-label" for="editSupplierProductSupplierName">Supplier</label><input class="form-control" id="editSupplierProductSupplierName" readonly></div>
@@ -258,7 +251,7 @@
             </div></section>
             <section class="supplier-product-edit-section"><h6>Pricing</h6><div class="supplier-product-form-grid">
                 <div><label class="form-label">Selling Price</label><div class="supplier-product-reference-price" id="editSupplierProductSellingPriceText">-</div></div>
-                <div><label class="form-label" for="editSupplierProductSupplierCost">Supplier Cost</label><input class="form-control" id="editSupplierProductSupplierCost" type="number" min="0" step=".01" required></div>
+                <div><label class="form-label" for="editSupplierProductSupplierCost">Supplier Cost per Inventory Unit</label><input class="form-control" id="editSupplierProductSupplierCost" type="number" min="0" step=".01" required></div>
                 <div><label class="form-label" for="editSupplierProductBarcode">Barcode</label><input class="form-control" id="editSupplierProductBarcode" readonly></div>
                 <div><label class="form-label" for="editSupplierProductSku">SKU <span class="text-muted">(optional)</span></label><input class="form-control" id="editSupplierProductSku" readonly></div>
                 <div class="span-2"><label class="form-label" for="editSupplierProductImageUrl">Image URL <span class="text-muted">(optional)</span></label><input class="form-control" id="editSupplierProductImageUrl" readonly></div>
@@ -270,11 +263,11 @@
                 <div class="col-12"><label class="form-label" for="editSupplierProductInventoryUnitPreview">Inventory Unit</label><input class="form-control" id="editSupplierProductInventoryUnitPreview" readonly value="pc"></div>
                 <div class="col-12"><label class="form-label" for="editSupplierProductUnitsPerPurchaseUnit">Units per Purchase Unit</label><input class="form-control" id="editSupplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" required></div>
             </div></section>
-            <div class="supplier-product-preview-card" id="editSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="editPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="editPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="editPreviewInventoryReceived">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
+            <div class="supplier-product-preview-card" id="editSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="editPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="editPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row"><span>Supplier Cost</span><strong id="editPreviewSupplierCost">₱0.00 per pc</strong></div><div class="supplier-product-preview-row"><span>Estimated Purchase Unit Cost</span><strong id="editPreviewPurchaseCost">₱0.00</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="editPreviewInventoryReceived">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
         </div>
     </div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit"><i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product</button></div></form></div></div></div>
     <div class="modal fade" id="addProductTypeModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Add Product Type</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addProductTypeForm"><div class="modal-body"><div class="mb-3"><label class="form-label">Category <span class="text-danger">*</span></label><select class="form-select" id="newProductTypeCategory" required></select></div><div><label class="form-label">New Product Type Name <span class="text-danger">*</span></label><input class="form-control" id="newProductTypeName" required></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple">Save</button></div></form></div></div></div>
     <div class="modal fade" id="addMeasurementUnitModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Add Measurement Unit</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addMeasurementUnitForm"><div class="modal-body"><label class="form-label">New Measurement Unit Name <span class="text-danger">*</span></label><input class="form-control" id="newMeasurementUnitName" required></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple">Save</button></div></form></div></div></div>
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script><script type="module" src="./js/modules/suppliers.js?v=23"></script><script type="module">import verifySession from './js/modules/auth.js'; await verifySession();</script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script><script type="module" src="./js/modules/suppliers.js?v=29"></script><script type="module" src="./js/modules/supplier_product_assignment.js?v=3"></script><script type="module">import verifySession from './js/modules/auth.js?v=4'; await verifySession();</script>
 </body>
 </html>

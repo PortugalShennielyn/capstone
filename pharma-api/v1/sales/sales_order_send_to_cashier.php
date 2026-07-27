@@ -10,6 +10,9 @@ try {
         exit();
     }
 
+    ensureActivityLogSchema($pdo);
+    ensureSalesOrderCashSchema($pdo);
+
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);
     $items = salesNormalizeCartItems($payload['items'] ?? []);
@@ -35,9 +38,9 @@ try {
         $customerName = trim((string) ($payload['customer_name'] ?? ''));
         $insert = $pdo->prepare(
             "INSERT INTO sales_orders
-                (order_no, customer_name, sales_clerk_id, status, total_amount)
+                (order_no, customer_name, sales_clerk_id, status, subtotal, discount, vat, total_amount)
              VALUES
-                (:order_no, :customer_name, :sales_clerk_id, 'draft', 0)"
+                (:order_no, :customer_name, :sales_clerk_id, 'draft', 0, 0, 0, 0)"
         );
         $insert->execute([
             ':order_no' => salesGenerateOrderNo($pdo),
@@ -46,9 +49,27 @@ try {
         ]);
         $orderId = (int) $pdo->lastInsertId();
         $subtotal = salesWriteOrderItems($pdo, $orderId, $items, $products);
-        $total = salesOrderTotalFromPayload($payload, $subtotal);
-        $update = $pdo->prepare('UPDATE sales_orders SET total_amount = :total_amount WHERE order_id = :order_id');
-        $update->execute([':total_amount' => $total, ':order_id' => $orderId]);
+        $totals = salesOrderTotalsFromPayload($payload, $subtotal);
+        $cashTotals = salesCashTotalsFromPayload($payload, $totals['total_amount']);
+        $update = $pdo->prepare(
+            'UPDATE sales_orders
+             SET subtotal = :subtotal,
+                 discount = :discount,
+                 vat = :vat,
+                 total_amount = :total_amount,
+                 cash_received = :cash_received,
+                 change_amount = :change_amount
+             WHERE order_id = :order_id'
+        );
+        $update->execute([
+            ':subtotal' => $totals['subtotal'],
+            ':discount' => $totals['discount'],
+            ':vat' => $totals['vat'],
+            ':total_amount' => $totals['total_amount'],
+            ':cash_received' => $cashTotals['cash_received'],
+            ':change_amount' => $cashTotals['change_amount'],
+            ':order_id' => $orderId,
+        ]);
     }
 
     $orderStmt = $pdo->prepare(
@@ -78,17 +99,28 @@ try {
         }
 
         $subtotal = salesWriteOrderItems($pdo, $orderId, $items, $payloadProducts);
-        $total = salesOrderTotalFromPayload($payload, $subtotal);
+        $totals = salesOrderTotalsFromPayload($payload, $subtotal);
+        $cashTotals = salesCashTotalsFromPayload($payload, $totals['total_amount']);
         $customerName = trim((string) ($payload['customer_name'] ?? ''));
         $draftUpdate = $pdo->prepare(
             "UPDATE sales_orders
              SET customer_name = :customer_name,
-                 total_amount = :total_amount
+                 subtotal = :subtotal,
+                 discount = :discount,
+                 vat = :vat,
+                 total_amount = :total_amount,
+                 cash_received = :cash_received,
+                 change_amount = :change_amount
              WHERE order_id = :order_id"
         );
         $draftUpdate->execute([
             ':customer_name' => $customerName !== '' ? $customerName : null,
-            ':total_amount' => $total,
+            ':subtotal' => $totals['subtotal'],
+            ':discount' => $totals['discount'],
+            ':vat' => $totals['vat'],
+            ':total_amount' => $totals['total_amount'],
+            ':cash_received' => $cashTotals['cash_received'],
+            ':change_amount' => $cashTotals['change_amount'],
             ':order_id' => $orderId,
         ]);
     }
@@ -113,13 +145,15 @@ try {
         exit();
     }
 
-    $update = $pdo->prepare(
-        "UPDATE sales_orders
-         SET status = 'waiting_cashier',
-             sent_to_cashier_at = NOW()
-         WHERE order_id = :order_id"
-    );
-    $update->execute([':order_id' => $orderId]);
+    if ($order['status'] === 'draft') {
+        $update = $pdo->prepare(
+            "UPDATE sales_orders
+             SET status = 'waiting_cashier',
+                 sent_to_cashier_at = NOW()
+             WHERE order_id = :order_id"
+        );
+        $update->execute([':order_id' => $orderId]);
+    }
 
     $queue = $pdo->prepare(
         "INSERT INTO cashier_queue (order_id, queue_status, queued_at)
@@ -128,25 +162,72 @@ try {
     );
     $queue->execute([':order_id' => $orderId]);
 
-    $history = $pdo->prepare(
-        "INSERT INTO sales_order_status_history
-            (order_id, old_status, new_status, changed_by, remarks)
-         VALUES
-            (:order_id, :old_status, 'waiting_cashier', :changed_by, :remarks)"
-    );
-    $history->execute([
-        ':order_id' => $orderId,
-        ':old_status' => $order['status'],
-        ':changed_by' => salesCurrentUserId(),
-        ':remarks' => 'Order sent to cashier queue.',
-    ]);
+    salesRecordStatusChange($pdo, $orderId, $order['status'], 'waiting_cashier', salesCurrentUserId(), 'Order sent to cashier queue.');
 
     $pdo->commit();
+
+    $detailStmt = $pdo->prepare(
+        "SELECT
+            o.order_id,
+            o.order_no,
+            COALESCE(NULLIF(o.customer_name, ''), 'Walk-in Customer') AS customer_name,
+            COALESCE(NULLIF(sc.full_name, ''), sc.username, :sales_clerk_name) AS sales_clerk_name,
+            o.subtotal,
+            o.discount,
+            o.vat,
+            o.total_amount,
+            o.cash_received,
+            o.change_amount,
+            o.status,
+            COALESCE(o.sent_to_cashier_at, NOW()) AS sent_at
+         FROM sales_orders o
+         LEFT JOIN users sc ON sc.user_id = o.sales_clerk_id
+         WHERE o.order_id = :order_id
+         LIMIT 1"
+    );
+    $detailStmt->execute([
+        ':order_id' => $orderId,
+        ':sales_clerk_name' => salesCurrentUserName(),
+    ]);
+    $detail = $detailStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $summaryItemsStmt = $pdo->prepare(
+        "SELECT product_name, brand_name, specification, quantity, unit_price, line_total
+         FROM sales_order_items
+         WHERE order_id = :order_id
+         ORDER BY order_item_id ASC"
+    );
+    $summaryItemsStmt->execute([':order_id' => $orderId]);
+    $summaryItems = array_map(static function (array $item): array {
+        return [
+            'product_name' => $item['product_name'],
+            'brand_name' => $item['brand_name'],
+            'specification' => $item['specification'],
+            'quantity' => (int) $item['quantity'],
+            'unit_price' => round((float) $item['unit_price'], 2),
+            'line_total' => round((float) $item['line_total'], 2),
+        ];
+    }, $summaryItemsStmt->fetchAll(PDO::FETCH_ASSOC));
 
     echo json_encode([
         'status' => 'success',
         'data' => [
             'order_id' => $orderId,
+            'order_no' => $detail['order_no'] ?? '',
+            'customer_name' => $detail['customer_name'] ?? 'Walk-in Customer',
+            'sales_clerk_name' => $detail['sales_clerk_name'] ?? salesCurrentUserName(),
+            'status_code' => $detail['status'] ?? 'waiting_cashier',
+            'status' => salesStatusLabel((string) ($detail['status'] ?? 'waiting_cashier')),
+            'sent_at' => $detail['sent_at'] ?? date('Y-m-d H:i:s'),
+            'items' => $summaryItems,
+            'total_items' => count($summaryItems),
+            'total_quantity' => array_sum(array_map(static fn($item) => (int) $item['quantity'], $summaryItems)),
+            'subtotal' => round((float) ($detail['subtotal'] ?? 0), 2),
+            'discount' => round((float) ($detail['discount'] ?? 0), 2),
+            'vat' => round((float) ($detail['vat'] ?? 0), 2),
+            'total_amount' => round((float) ($detail['total_amount'] ?? 0), 2),
+            'cash_received' => round((float) ($detail['cash_received'] ?? 0), 2),
+            'change_amount' => round((float) ($detail['change_amount'] ?? 0), 2),
             'message' => 'Order sent to cashier.',
         ],
     ]);

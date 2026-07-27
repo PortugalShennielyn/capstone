@@ -4,6 +4,7 @@ import {
     getVariationRule,
     optionList as ruleOptionList
 } from './variation_rules.js';
+import { formatProductSpecification } from './product_specification.js';
 
 const API_BASE_URL = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -11,6 +12,8 @@ const API_BASE_URL = window.location.port
 
 const endpoint = (path) => `${API_BASE_URL}/${path}`;
 let supplierProductRows = [];
+let supplierRows = [];
+let pendingConfirmation = null;
 let productTypeLoadToken = 0;
 let editProductTypeLoadToken = 0;
 
@@ -42,13 +45,27 @@ function displayOrNotSet(value) {
     return displayText(value) || 'Not set';
 }
 
+function displayUnit(value) {
+    const unit = cleanText(value);
+    const normalized = {
+        ml: 'mL',
+        l: 'L',
+        mg: 'mg',
+        mcg: 'mcg',
+        kg: 'kg',
+        g: 'g',
+        iu: 'IU'
+    };
+    return normalized[unit.toLowerCase()] || unit;
+}
+
 function sameText(left, right) {
     return cleanText(left).toLowerCase() === cleanText(right).toLowerCase();
 }
 
 function compactMeasure(value, unit = '') {
     const cleanValue = cleanText(value);
-    const cleanUnit = cleanText(unit);
+    const cleanUnit = displayUnit(unit);
     if (!cleanValue) return '';
     return cleanUnit ? `${cleanValue}${cleanUnit}` : cleanValue;
 }
@@ -61,21 +78,21 @@ function attributeNumber(value) {
 
 function groceryNetWeightDisplay(product) {
     const weight = attributeNumber(product.weight_volume_value || product.net_weight);
-    const unit = cleanText(product.weight_volume_unit || product.grocery_unit || product.unit);
+    const unit = displayUnit(product.weight_volume_unit || product.grocery_unit || product.unit);
     if (!weight || !unit) return 'Not set';
     return `${weight} ${unit}`;
 }
 
 function medicineStrengthDisplay(product) {
     const value = attributeNumber(product.strength_value);
-    const unit = cleanText(product.strength_unit);
+    const unit = displayUnit(product.strength_unit);
     if (value && unit) return `${value} ${unit}`;
     return cleanText(product.strength_size_display || product.strength_size_value || product.strength) || 'Not set';
 }
 
 function medicineNetContentDisplay(product) {
     const value = attributeNumber(product.net_content_value || product.volume_value);
-    const unit = cleanText(product.net_content_unit || product.volume_unit);
+    const unit = displayUnit(product.net_content_unit || product.volume_unit);
     if (!value || !unit) return 'Not set';
     return `${value} ${unit}`;
 }
@@ -94,6 +111,22 @@ function peso(value) {
         style: 'currency',
         currency: 'PHP'
     }).format(Number(value || 0));
+}
+
+function formatDate(value) {
+    const text = cleanText(value);
+    if (!text) return 'Not available';
+    const parsed = new Date(text.replace(' ', 'T'));
+    if (Number.isNaN(parsed.getTime())) return text;
+    return new Intl.DateTimeFormat('en-PH', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+    }).format(parsed);
+}
+
+function countLabel(value, singular, plural = `${singular}s`) {
+    const count = Number(value || 0);
+    return `${count} ${count === 1 ? singular : plural}`;
 }
 
 function pluralizeInventoryUnit(unit, quantity = 2) {
@@ -116,6 +149,7 @@ function pluralizeInventoryUnit(unit, quantity = 2) {
         blister: 'pcs'
     };
     const text = fixed[lower] || displayText(raw);
+    if (Number(quantity) === 1 && text.toLowerCase() === 'pcs') return 'pc';
     if (Number(quantity) === 1 && ['cans', 'bottles', 'packs', 'sachets'].includes(text.toLowerCase())) {
         return text.replace(/s$/i, '');
     }
@@ -189,7 +223,7 @@ function supplierConversionPreview(product) {
 function supplierPreviewDetails(product) {
     const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
     const purchaseUnit = displayText(product.purchase_unit || 'Box') || 'Box';
-    const inventoryUnit = supplierInventoryUnit(product, contains);
+    const inventoryUnit = supplierInventoryUnit(product, 1);
     const packaging = product.package_type || product.packaging;
     const isWarning = sameText(purchaseUnit, packaging) && contains > 1;
     const line = inventoryQuantityLabel(contains, inventoryUnit);
@@ -221,6 +255,8 @@ function productDisplayName(product) {
 }
 
 function variantStrengthSize(product) {
+    return formatProductSpecification(product, 'Not set');
+    /* Legacy branches retained below for compatibility documentation. */
     const category = cleanText(product.category_name).toLowerCase();
     if (category === 'medicine') {
         const netContent = medicineNetContentDisplay(product);
@@ -233,9 +269,13 @@ function variantStrengthSize(product) {
     }
 
     if (categoryGroup(product.category_name) === 'medical') {
+        const savedSize = cleanText(product.size_value || product.display_size);
+        const size = savedSize && /^\d+(?:\.\d+)?$/.test(savedSize)
+            ? `${savedSize} (unit not set)`
+            : savedSize;
         return [
             cleanText(product.variant_flavor || product.variant),
-            cleanText(product.size_value || product.display_size),
+            size,
             cleanText(product.material),
             cleanText(product.sterile_status)
         ].filter(Boolean).join(' • ') || 'Not set';
@@ -245,8 +285,7 @@ function variantStrengthSize(product) {
     return [
         cleanText(product.variant_flavor || product.variant),
         cleanText(product.size_value || product.display_size),
-        netWeight === 'Not set' ? '' : netWeight,
-        cleanText(product.package_type || product.packaging)
+        netWeight === 'Not set' ? '' : netWeight
     ].filter(Boolean).join(' • ') || 'Not set';
 }
 
@@ -371,7 +410,16 @@ function filteredSupplierProducts() {
 }
 
 function refreshSupplierProductTable() {
-    renderSupplierProducts(filteredSupplierProducts());
+    const rows = filteredSupplierProducts();
+    renderSupplierProducts(rows);
+    const hasFilters = [
+        'supplierProductSearch',
+        'supplierProductFilterSupplier',
+        'supplierProductFilterCategory',
+        'supplierProductFilterType',
+        'supplierProductFilterPackage'
+    ].some((id) => cleanText(document.getElementById(id)?.value));
+    document.getElementById('clearSupplierProductFilters')?.classList.toggle('d-none', !hasFilters);
 }
 
 function setSelectValue(selectId, value) {
@@ -443,6 +491,7 @@ function setTheme(theme) {
         button.innerHTML = isDark
             ? '<i class="fa-solid fa-sun"></i>'
             : '<i class="fa-solid fa-moon"></i>';
+        button.setAttribute('aria-label', isDark ? 'Use light mode' : 'Use dark mode');
     }
 
     localStorage.setItem('drpTheme', theme);
@@ -453,32 +502,44 @@ function renderSuppliers(rows) {
     if (!body) return;
 
     body.innerHTML = rows.length
-        ? rows.map((supplier) => `
-            <tr>
-                <td>${esc(supplier.supplier_name)}</td>
-                <td>${esc(supplier.phone)}</td>
-                <td>${esc(supplier.email)}</td>
-                <td>${esc(supplier.address)}</td>
+        ? rows.map((supplier) => {
+            const isActive = !supplier.archived_at;
+            return `
+            <tr class="supplier-directory-row" data-supplier-id="${esc(supplier.supplier_id)}">
+                <td><strong>${esc(displayOrNotSet(supplier.supplier_name))}</strong><div class="supplier-cell-meta">${isActive ? 'Active' : 'Inactive'}</div></td>
+                <td>${esc(cleanText(supplier.phone) || 'Not set')}</td>
+                <td>${esc(cleanText(supplier.email) || 'Not set')}</td>
+                <td>${esc(cleanText(supplier.address) || 'Not set')}</td>
                 <td>
-                    <div class="btn-group btn-group-sm">
+                    <div class="supplier-directory-actions d-inline-flex gap-1">
+                        <button class="btn btn-outline-secondary view-supplier-btn" type="button"
+                            data-id="${esc(supplier.supplier_id)}"
+                            title="View supplier details"
+                            aria-label="View supplier details">
+                            <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                        </button>
                         <button class="btn btn-outline-primary edit-supplier-btn"
+                            type="button"
                             data-id="${esc(supplier.supplier_id)}"
                             data-name="${esc(supplier.supplier_name)}"
                             data-phone="${esc(supplier.phone)}"
                             data-email="${esc(supplier.email)}"
                             data-address="${esc(supplier.address)}"
-                            title="Edit supplier">
-                            <i class="fa-solid fa-pen"></i>
+                            title="Edit supplier"
+                            aria-label="Edit supplier">
+                            <i class="fa-solid fa-pen" aria-hidden="true"></i>
                         </button>
-                        <button class="btn btn-outline-danger archive-supplier-btn"
+                        <button class="btn ${isActive ? 'btn-outline-danger archive-supplier-btn' : 'btn-outline-success activate-supplier-btn'}"
+                            type="button"
                             data-id="${esc(supplier.supplier_id)}"
-                            title="Archive supplier">
-                            <i class="fa-solid fa-box-archive"></i>
+                            title="${isActive ? 'Deactivate' : 'Activate'} supplier"
+                            aria-label="${isActive ? 'Deactivate' : 'Activate'} supplier">
+                            <i class="fa-solid ${isActive ? 'fa-box-archive' : 'fa-circle-check'}" aria-hidden="true"></i>
                         </button>
                     </div>
                 </td>
             </tr>
-        `).join('')
+        `}).join('')
         : '<tr><td colspan="5" class="text-center text-muted py-4">No suppliers found.</td></tr>';
 }
 
@@ -493,38 +554,40 @@ function renderSupplierProducts(rows) {
     const body = document.querySelector('#table-supplier-products tbody');
     if (!body) return;
     document.getElementById('table-supplier-products')?.classList.add('supplier-product-table');
+    const resultCount = document.getElementById('supplierProductResultCount');
+    if (resultCount) resultCount.textContent = countLabel(rows.length, 'product');
 
     body.innerHTML = rows.length
         ? rows.map((product) => `
-            <tr>
-                <td class="col-supplier">${esc(displayOrNotSet(product.supplier_name))}</td>
-                <td class="col-brand">${esc(displayOrNotSet(product.brand_name))}</td>
+            <tr class="supplier-product-row" tabindex="0" data-supplier-product-id="${esc(product.supplier_product_id)}" aria-label="View details for ${esc(productDisplayName(product))}">
+                <td class="col-supplier">
+                    <strong>${esc(displayOrNotSet(product.supplier_name))}</strong>
+                    ${Number(product.supplier_count || 0) > 1 ? `<span class="multi-supplier-badge">${esc(countLabel(product.supplier_count, 'supplier'))}</span>` : ''}
+                </td>
                 <td class="col-product">
                     <div class="supplier-product-name">
-                        <strong>${esc(displayOrNotSet(removeBrandPrefix(product.product_name, product.brand_name) || product.product_name))}</strong>
+                        <strong>${esc(displayOrNotSet(product.brand_name))}</strong>
+                        <small>${esc(displayOrNotSet(removeBrandPrefix(product.product_name, product.brand_name)))}</small>
                     </div>
                 </td>
-                <td>${esc(displayOrNotSet(product.category_name))}</td>
-                <td>${esc(displayOrNotSet(product.type_name))}</td>
-                <td class="col-variant">${esc(variantStrengthSize(product))}</td>
-                <td class="col-price">${peso(product.price)}</td>
-                <td class="col-price">${peso(product.supplier_cost_price)}</td>
-                <td class="col-package">${esc(supplierProductPackaging(product))}</td>
-                <td class="col-package">${esc(displayOrNotSet(product.purchase_unit))}</td>
-                <td class="col-contains">${esc(supplierContainsLabel(product))}</td>
-                <td>
+                <td class="col-specification">${esc(variantStrengthSize(product))}</td>
+                <td class="col-type">${esc(displayOrNotSet(product.type_name))}</td>
+                <td class="col-packaging">${esc(supplierProductPackaging(product))}</td>
+                <td class="col-purchase-unit"><div class="supplier-purchase-unit-display"><strong>${esc(displayOrNotSet(product.purchase_unit))}</strong><small>${esc(supplierContainsLabel(product))}</small></div></td>
+                <td class="col-supplier-cost text-end"><div class="supplier-cost-display"><strong>${peso(product.supplier_cost_price)}</strong><small>per ${esc(singularInventoryUnit(supplierInventoryUnit(product, 1)))}</small></div></td>
+                <td class="col-actions actions-column">
                     <div class="supplier-product-actions">
-                        <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" title="Edit supplier purchasing setup">
-                            <i class="fa-solid fa-pen"></i>
+                        <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" title="Edit supplier product" aria-label="Edit supplier product">
+                            <i class="fa-solid fa-pen" aria-hidden="true"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger delete-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" data-product-id="${esc(product.product_id)}" title="Remove product">
-                            <i class="fa-solid fa-trash-can"></i>
+                        <button class="btn btn-sm btn-outline-danger delete-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" data-product-id="${esc(product.product_id)}" title="Remove supplier product assignment" aria-label="Remove supplier product assignment">
+                            <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
                         </button>
                     </div>
                 </td>
             </tr>
         `).join('')
-        : '<tr><td colspan="12" class="text-center text-muted py-4">No supplier products found.</td></tr>';
+        : '<tr><td colspan="8" class="text-center text-muted py-4">No supplier products found.</td></tr>';
 }
 
 function updateSupplierProductConversionPreview() {
@@ -547,6 +610,9 @@ function updateSupplierProductConversionPreview() {
     document.getElementById('editPreviewPurchaseUnit').textContent = preview.purchaseUnit;
     document.getElementById('editPreviewContains').textContent = preview.containsLine;
     document.getElementById('editPreviewInventoryReceived').textContent = preview.meaning;
+    const supplierCost = Math.max(0, Number(document.getElementById('editSupplierProductSupplierCost')?.value || 0));
+    document.getElementById('editPreviewSupplierCost').textContent = `${peso(supplierCost)} per ${singularInventoryUnit(preview.inventoryUnit)}`;
+    document.getElementById('editPreviewPurchaseCost').textContent = peso(supplierCost * contains);
     document.getElementById('editSupplierProductInventoryUnitPreview').value = preview.inventoryUnit;
     document.getElementById('editSupplierProductConversionPreview')?.classList.toggle('is-warning', preview.isWarning);
 }
@@ -568,6 +634,7 @@ function selectedAddUnit() {
 }
 
 function updateAddSupplierProductConversionPreview() {
+    if (!document.getElementById('addSupplierProductModal')) return;
     const purchaseUnit = document.getElementById('supplierProductPurchaseUnit')?.value || 'Box';
     const contains = Math.max(1, Number(document.getElementById('supplierProductUnitsPerPurchaseUnit')?.value || 1));
     const packaging = selectedAddPackaging();
@@ -584,6 +651,9 @@ function updateAddSupplierProductConversionPreview() {
     document.getElementById('addPreviewPurchaseUnit').textContent = preview.purchaseUnit;
     document.getElementById('addPreviewContains').textContent = preview.containsLine;
     document.getElementById('addPreviewMeaning').textContent = preview.meaning;
+    const supplierCost = Math.max(0, Number(document.getElementById('supplierProductSupplierCost')?.value || 0));
+    document.getElementById('addPreviewSupplierCost').textContent = `${peso(supplierCost)} per ${singularInventoryUnit(preview.inventoryUnit)}`;
+    document.getElementById('addPreviewPurchaseCost').textContent = peso(supplierCost * contains);
     document.getElementById('supplierProductInventoryUnitPreview').value = preview.inventoryUnit;
     document.getElementById('addSupplierProductConversionPreview')?.classList.toggle('is-warning', preview.isWarning);
 }
@@ -606,10 +676,23 @@ async function loadSuppliers() {
     const supplierSelect = document.getElementById('supplierProductSupplier');
 
     try {
-        const data = await fetchJson(endpoint('suppliers/get_suppliers.php'));
+        const statusFilter = document.getElementById('supplierStatusFilter')?.value || 'Active';
+        const data = await fetchJson(endpoint(`suppliers/get_suppliers.php${statusFilter === 'Active' ? '' : '?include_inactive=1'}`));
         const suppliers = supplierRowsFromResponse(data);
+        supplierRows = statusFilter === 'all' ? suppliers : suppliers.filter(row => (row.archived_at ? 'Inactive' : 'Active') === statusFilter);
 
-        renderSuppliers(suppliers);
+        renderSuppliers(supplierRows);
+        const summary = data.summary || {};
+        const summaryValues = {
+            summaryTotalSuppliers: summary.total_suppliers,
+            summaryActiveSuppliers: summary.active_suppliers,
+            summaryAssignedProducts: summary.assigned_supplier_products,
+            summaryMultipleSuppliers: summary.products_with_multiple_suppliers
+        };
+        Object.entries(summaryValues).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = Number(value || 0).toLocaleString('en-PH');
+        });
 
         if (supplierSelect) {
             supplierSelect.innerHTML = '<option value="" disabled selected>Select supplier...</option>';
@@ -819,6 +902,119 @@ function configureEditSupplierProductFields() {
     updateSupplierProductConversionPreview();
 }
 
+function showConfirmation({ title, message, warning, actionLabel = 'Confirm' }) {
+    const modalElement = document.getElementById('supplierConfirmModal');
+    if (!modalElement) return Promise.resolve(false);
+    document.getElementById('supplierConfirmTitle').textContent = title;
+    document.getElementById('supplierConfirmMessage').textContent = message;
+    document.getElementById('supplierConfirmWarning').innerHTML = warning;
+    document.getElementById('supplierConfirmAction').textContent = actionLabel;
+    return new Promise((resolve) => {
+        pendingConfirmation?.(false);
+        pendingConfirmation = resolve;
+        bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    });
+}
+
+function openSupplierDetails(supplierId) {
+    const supplier = supplierRows.find((row) => String(row.supplier_id) === String(supplierId));
+    if (!supplier) return;
+    const assigned = supplierProductRows.filter((row) => String(row.supplier_id) === String(supplierId));
+    document.getElementById('supplierDetailsTitle').textContent = supplier.supplier_name || 'Supplier Details';
+    document.getElementById('supplierDetailsBody').innerHTML = `
+        <div class="supplier-details-grid">
+            <section class="supplier-detail-section">
+                <h6>Contact Information</h6>
+                <dl class="supplier-detail-list">
+                    <dt>Supplier Name</dt><dd>${esc(displayOrNotSet(supplier.supplier_name))}</dd>
+                    <dt>Phone</dt><dd>${esc(cleanText(supplier.phone) || 'Not set')}</dd>
+                    <dt>Email</dt><dd>${esc(cleanText(supplier.email) || 'Not set')}</dd>
+                    <dt>Address</dt><dd>${esc(cleanText(supplier.address) || 'Not set')}</dd>
+                </dl>
+            </section>
+            <section class="supplier-detail-section">
+                <h6>Procurement Activity</h6>
+                <dl class="supplier-detail-list">
+                    <dt>Assigned Products</dt><dd>${esc(countLabel(supplier.assigned_product_count, 'product'))}</dd>
+                    <dt>Active Purchase Orders</dt><dd>${esc(countLabel(supplier.active_purchase_order_count, 'order'))}</dd>
+                    <dt>Historical Orders</dt><dd>${esc(countLabel(supplier.historical_purchase_order_count, 'order'))}</dd>
+                    <dt>Most Recent PO</dt><dd>${esc(cleanText(supplier.latest_purchase_order_number) || 'None')}</dd>
+                    <dt>PO Status</dt><dd>${esc(cleanText(supplier.latest_purchase_order_status) || 'Not available')}</dd>
+                    <dt>PO Date</dt><dd>${esc(formatDate(supplier.latest_purchase_order_date))}</dd>
+                    <dt>Latest Delivery</dt><dd>${esc(formatDate(supplier.latest_delivery_date))}</dd>
+                </dl>
+            </section>
+            <section class="supplier-detail-section full-width">
+                <h6>Assigned Products</h6>
+                ${assigned.length ? `<div class="d-flex flex-wrap gap-2">${assigned.slice(0, 12).map((row) => `<span class="badge text-bg-light border">${esc(productDisplayName(row))}</span>`).join('')}${assigned.length > 12 ? `<span class="badge text-bg-light border">+${assigned.length - 12} more</span>` : ''}</div>` : '<p class="text-muted mb-0">No products are assigned to this supplier.</p>'}
+            </section>
+        </div>`;
+    const assignedButton = document.getElementById('viewSupplierAssignedProducts');
+    assignedButton.dataset.supplierName = displayText(supplier.supplier_name);
+    assignedButton.disabled = assigned.length === 0;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('supplierDetailsModal')).show();
+}
+
+function openSupplierProductDetails(supplierProductId) {
+    const product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(supplierProductId));
+    if (!product) return;
+    const comparisons = supplierProductRows.filter((row) => String(row.product_id) === String(product.product_id));
+    const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
+    const supplierCost = Math.max(0, Number(product.supplier_cost_price || 0));
+    const sellingPrice = Math.max(0, Number(product.price || 0));
+    const marginAmount = sellingPrice - supplierCost;
+    const marginPercent = sellingPrice > 0 ? (marginAmount / sellingPrice) * 100 : null;
+    const inventoryUnit = singularInventoryUnit(supplierInventoryUnit(product, 1));
+    document.getElementById('supplierProductDetailsTitle').textContent = productDisplayName(product);
+    document.getElementById('supplierProductDetailsBody').innerHTML = `
+        <div class="supplier-product-detail-grid">
+            <section class="supplier-detail-section">
+                <h6>Product Identity</h6>
+                <dl class="supplier-detail-list">
+                    <dt>Supplier</dt><dd>${esc(displayOrNotSet(product.supplier_name))}</dd>
+                    <dt>Brand</dt><dd>${esc(displayOrNotSet(product.brand_name))}</dd>
+                    <dt>Product Name</dt><dd>${esc(displayOrNotSet(removeBrandPrefix(product.product_name, product.brand_name) || product.product_name))}</dd>
+                    <dt>Category</dt><dd>${esc(displayOrNotSet(product.category_name))}</dd>
+                    <dt>Product Type</dt><dd>${esc(displayOrNotSet(product.type_name))}</dd>
+                    <dt>Specification</dt><dd>${esc(variantStrengthSize(product))}</dd>
+                </dl>
+            </section>
+            <section class="supplier-detail-section">
+                <h6>Inventory and Packaging</h6>
+                <dl class="supplier-detail-list">
+                    <dt>Inventory Unit</dt><dd>${esc(inventoryUnit)}</dd>
+                    <dt>Packaging</dt><dd>${esc(supplierProductPackaging(product))}</dd>
+                    <dt>Purchase Unit</dt><dd>${esc(displayOrNotSet(product.purchase_unit))}</dd>
+                    <dt>Units per Purchase Unit</dt><dd>${esc(supplierContainsLabel(product))}</dd>
+                </dl>
+            </section>
+            <section class="supplier-detail-section">
+                <h6>Pricing</h6>
+                <dl class="supplier-detail-list">
+                    <dt>Supplier Cost</dt><dd>${esc(peso(supplierCost))} per ${esc(inventoryUnit)}</dd>
+                    <dt>Purchase Unit Cost</dt><dd>${esc(peso(supplierCost * contains))}</dd>
+                    <dt>Selling Price</dt><dd>${esc(peso(sellingPrice))}</dd>
+                    <dt>Estimated Margin</dt><dd>${esc(peso(marginAmount))}${marginPercent === null ? '' : ` (${esc(marginPercent.toFixed(1))}%)`}</dd>
+                </dl>
+            </section>
+            <section class="supplier-detail-section">
+                <h6>Purchasing Information</h6>
+                <dl class="supplier-detail-list">
+                    <dt>Assignment Status</dt><dd>Active</dd>
+                    <dt>Active Purchase Orders</dt><dd>${esc(countLabel(product.active_purchase_order_count, 'order'))}</dd>
+                    <dt>Most Recent Purchase</dt><dd>${esc(cleanText(product.latest_purchase_order_number) || 'None')}</dd>
+                    <dt>Purchase Status</dt><dd>${esc(cleanText(product.latest_purchase_order_status) || 'Not available')}</dd>
+                    <dt>Purchase Date</dt><dd>${esc(formatDate(product.latest_purchase_date))}</dd>
+                </dl>
+            </section>
+            <section class="supplier-detail-section full-width">
+                <h6>Supplier Price Comparison</h6>
+                ${comparisons.length > 1 ? `<div class="table-responsive"><table class="table table-sm supplier-comparison-table"><thead><tr><th>Supplier</th><th>Supplier Cost</th><th>Purchase Unit</th><th>Units per Purchase Unit</th></tr></thead><tbody>${comparisons.map((row) => `<tr><td>${esc(displayOrNotSet(row.supplier_name))}</td><td>${esc(peso(row.supplier_cost_price))}</td><td>${esc(displayOrNotSet(row.purchase_unit))}</td><td>${esc(supplierContainsLabel(row))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-muted mb-0">No alternative supplier assignment is currently available for this exact product record.</p>'}
+            </section>
+        </div>`;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('supplierProductDetailsModal')).show();
+}
+
 function resetSupplier() {
     document.getElementById('addSupplierForm')?.reset();
     document.getElementById('addSupplierModalLabel').textContent = 'Add Supplier';
@@ -867,7 +1063,19 @@ async function submitSupplier(event) {
 }
 
 async function archiveSupplier(id) {
-    if (!confirm('Archive this supplier?')) return;
+    const supplier = supplierRows.find((row) => String(row.supplier_id) === String(id));
+    if (!supplier) return;
+    const confirmed = await showConfirmation({
+        title: 'Deactivate Supplier',
+        message: `Deactivate ${supplier.supplier_name}? The supplier will no longer appear in active purchasing lists.`,
+        warning: `
+            <strong>Existing history will be preserved.</strong><br>
+            ${esc(countLabel(supplier.assigned_product_count, 'assigned product'))}<br>
+            ${esc(countLabel(supplier.active_purchase_order_count, 'active purchase order'))}<br>
+            ${esc(countLabel(supplier.historical_purchase_order_count, 'historical purchase order'))}`,
+        actionLabel: 'Deactivate Supplier'
+    });
+    if (!confirmed) return;
 
     try {
         const data = await fetchJson(endpoint('suppliers/archive_supplier.php'), {
@@ -876,14 +1084,34 @@ async function archiveSupplier(id) {
             body: JSON.stringify({ supplier_id: id })
         });
 
-        await loadSuppliers();
+        await Promise.all([loadSuppliers(), loadSupplierProducts()]);
         PharmaUtils.toast.success(data.message);
     } catch (error) {
         PharmaUtils.toast.error(error.message);
     }
 }
 
+async function activateSupplier(id) {
+    const supplier = supplierRows.find(row => String(row.supplier_id) === String(id));
+    if (!supplier) return;
+    const confirmed = await showConfirmation({
+        title: 'Activate Supplier',
+        message: `Activate ${supplier.supplier_name} for purchasing and assignment lists?`,
+        warning: '<strong>Historical products and purchase orders are already preserved.</strong>',
+        actionLabel: 'Activate Supplier'
+    });
+    if (!confirmed) return;
+    try {
+        const data = await fetchJson(endpoint('suppliers/activate_supplier.php'), {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ supplier_id:id })
+        });
+        await Promise.all([loadSuppliers(), loadSupplierProducts()]);
+        PharmaUtils.toast.success(data.message);
+    } catch (error) { PharmaUtils.toast.error(error.message); }
+}
+
 function toggleFields() {
+    if (!document.getElementById('addSupplierProductModal')) return;
     const categorySelect = document.getElementById('supplierProductCategory');
     const categoryName = categorySelect?.selectedOptions?.[0]?.dataset.categoryName || '';
     const group = categoryGroup(categoryName);
@@ -1128,6 +1356,38 @@ async function submitProduct(event) {
         }];
     }
 
+    const supplierCost = Number(payload.supplier_cost_price);
+    const sellingPrice = Number(payload.price);
+    const unitsPerPurchaseUnit = Number(payload.units_per_purchase_unit);
+    if (!payload.purchase_unit || !Number.isFinite(unitsPerPurchaseUnit) || unitsPerPurchaseUnit <= 0) {
+        PharmaUtils.toast.error('Select a purchase unit and enter units per purchase unit greater than zero.');
+        return;
+    }
+    if (!Number.isFinite(supplierCost) || supplierCost < 0 || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
+        PharmaUtils.toast.error('Supplier cost and selling price must be non-negative numbers.');
+        return;
+    }
+
+    const identityCandidate = {
+        ...payload,
+        category_name: categoryName,
+        type_name: selectedAddTypeName(),
+        package_type: payload.packaging,
+        size_value: payload.size_value || payload.display_size
+    };
+    const duplicate = supplierProductRows.find((row) =>
+        String(row.supplier_id) === String(payload.supplier_id)
+        && sameText(row.brand_name, payload.brand_name)
+        && sameText(removeBrandPrefix(row.product_name, row.brand_name), removeBrandPrefix(payload.product_name, payload.brand_name))
+        && String(row.category_id) === String(payload.category_id)
+        && String(row.type_id) === String(payload.type_id)
+        && sameText(variantStrengthSize(row), variantStrengthSize(identityCandidate))
+    );
+    if (duplicate) {
+        PharmaUtils.toast.error('This exact product and specification is already assigned to the selected supplier. Edit the existing assignment instead.');
+        return;
+    }
+
     try {
         const data = await fetchJson(endpoint('products/add_product.php'), {
             method: 'POST',
@@ -1191,56 +1451,31 @@ async function openEditSupplierProduct(supplierProductId) {
     document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = Math.max(1, Number(product.units_per_purchase_unit || 1));
     configureEditSupplierProductFields();
     updateSupplierProductConversionPreview();
+    const editModal = document.getElementById('editSupplierProductModal');
+    editModal.querySelector('.supplier-product-modal-grid > .supplier-product-section-stack:first-child')?.classList.add('d-none');
+    editModal.querySelector('.supplier-product-modal-grid')?.classList.add('supplier-assignment-only');
+    const title = document.getElementById('editSupplierProductModalTitle');
+    if (title) title.textContent = 'Edit Supplier Purchasing Setup';
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editSupplierProductModal')).show();
 }
 
 async function submitEditSupplierProduct(event) {
     event.preventDefault();
-    const product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(document.getElementById('editSupplierProductLinkId').value)) || {};
-
     const payload = {
         supplier_product_id: document.getElementById('editSupplierProductLinkId').value,
-        supplier_id: document.getElementById('editSupplierProductSupplierId').value,
-        product_id: document.getElementById('editSupplierProductId').value,
-        brand_name: document.getElementById('editSupplierProductBrand').value.trim(),
-        product_name: document.getElementById('editSupplierProductName').value.trim(),
-        category_id: document.getElementById('editSupplierProductCategory').value,
-        type_id: document.getElementById('editSupplierProductType').value,
-        generic_name: document.getElementById('editSupplierProductGeneric').value.trim(),
-        variant_flavor: document.getElementById('editSupplierProductVariant').value.trim(),
-        strength_value: document.getElementById('editSupplierProductStrength').value.trim(),
-        strength_unit: document.getElementById('editSupplierProductStrengthUnit').value,
-        strength: [
-            document.getElementById('editSupplierProductStrength').value.trim(),
-            document.getElementById('editSupplierProductStrengthUnit').value
-        ].filter(Boolean).join(' '),
-        dosage_form: document.getElementById('editSupplierProductDosageForm').value.trim(),
-        net_content_value: document.getElementById('editSupplierProductNetContentValue').value.trim(),
-        net_content_unit: document.getElementById('editSupplierProductNetContentUnit').value,
-        volume_value: document.getElementById('editSupplierProductNetContentValue').value.trim(),
-        volume_unit: document.getElementById('editSupplierProductNetContentUnit').value,
-        size_value: document.getElementById('editSupplierProductSize').value.trim(),
-        net_weight: document.getElementById('editSupplierProductNetWeight').value.trim(),
-        material: document.getElementById('editSupplierProductMaterial').value.trim(),
-        sterile_status: document.getElementById('editSupplierProductSterileStatus').value,
-        unit: document.getElementById('editSupplierProductUnit').value,
-        packaging: document.getElementById('editSupplierProductPackaging').value,
-        pack_content: cleanText(product.pack_content),
-        pack_content_qty: cleanText(product.pack_content_qty),
-        pack_content_unit: cleanText(product.pack_content_unit),
         supplier_cost_price: document.getElementById('editSupplierProductSupplierCost').value,
         purchase_unit: document.getElementById('editSupplierProductPurchaseUnit').value,
         units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value
     };
 
-    if (!payload.supplier_id || !payload.product_id || !payload.category_id || !payload.type_id || !payload.brand_name || !payload.product_name || Number(payload.supplier_cost_price) < 0 || Number(payload.units_per_purchase_unit) <= 0) {
-        PharmaUtils.toast.error('Enter valid product details, supplier cost, purchase unit, and units per purchase unit.');
+    if (!payload.supplier_product_id || Number(payload.supplier_cost_price) < 0 || Number(payload.units_per_purchase_unit) <= 0) {
+        PharmaUtils.toast.error('Enter valid supplier cost, purchase unit, and units per purchase unit.');
         return;
     }
 
     try {
-        const data = await fetchJson(endpoint('suppliers/update_supplier_product.php'), {
+        const data = await fetchJson(endpoint('suppliers/update_supplier_assignment.php'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -1256,8 +1491,18 @@ async function submitEditSupplierProduct(event) {
 }
 
 async function deleteSupplierProduct(button) {
-    const product = supplierProductRows.find((row) => String(row.product_id) === String(button.dataset.productId));
-    const confirmed = confirm(`Remove ${product?.product_name || 'this product'} from this supplier?`);
+    const product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(button.dataset.supplierProductId));
+    if (!product) return;
+    const confirmed = await showConfirmation({
+        title: 'Remove Supplier Product Assignment',
+        message: `Remove ${productDisplayName(product)} from ${product.supplier_name}?`,
+        warning: `
+            <strong>Historical purchase-order snapshots will remain unchanged.</strong><br>
+            ${esc(countLabel(product.active_purchase_order_count, 'active purchase order'))}<br>
+            ${Number(product.historical_purchase_order_count || 0) > 0 ? `${esc(countLabel(product.historical_purchase_order_count, 'historical purchase order'))}<br>` : ''}
+            This removes only the supplier-product assignment.`,
+        actionLabel: 'Remove Assignment'
+    });
     if (!confirmed) return;
 
     try {
@@ -1331,6 +1576,9 @@ document.getElementById('themeToggle')?.addEventListener('click', () => {
     setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
 });
 document.getElementById('btnOpenAddSupplier')?.addEventListener('click', resetSupplier);
+// Product identity creation is owned by the shared Product Master form used by
+// supplier_product_assignment.js. Remove the obsolete duplicate modal at runtime.
+document.getElementById('addSupplierProductModal')?.remove();
 document.getElementById('addSupplierForm')?.addEventListener('submit', submitSupplier);
 document.getElementById('supplierProductSupplier')?.addEventListener('change', updateDependentProductSelectors);
 document.getElementById('supplierProductCategory')?.addEventListener('change', updateDependentProductSelectors);
@@ -1339,6 +1587,7 @@ document.getElementById('addSupplierProductForm')?.addEventListener('submit', su
 [
     'supplierProductPurchaseUnit',
     'supplierProductUnitsPerPurchaseUnit',
+    'supplierProductSupplierCost',
     'supplierProductDosageForm',
     'supplierProductStrengthUnit',
     'supplierProductNetContentValue',
@@ -1365,6 +1614,7 @@ document.getElementById('addMeasurementUnitForm')?.addEventListener('submit', su
 document.getElementById('editSupplierProductForm')?.addEventListener('submit', submitEditSupplierProduct);
 document.getElementById('editSupplierProductPurchaseUnit')?.addEventListener('change', updateSupplierProductConversionPreview);
 document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.addEventListener('input', updateSupplierProductConversionPreview);
+document.getElementById('editSupplierProductSupplierCost')?.addEventListener('input', updateSupplierProductConversionPreview);
 document.getElementById('editSupplierProductUnit')?.addEventListener('change', updateSupplierProductConversionPreview);
 document.getElementById('editSupplierProductPackaging')?.addEventListener('change', updateSupplierProductConversionPreview);
 document.getElementById('supplierProductSearch')?.addEventListener('input', refreshSupplierProductTable);
@@ -1372,6 +1622,51 @@ document.getElementById('supplierProductFilterSupplier')?.addEventListener('chan
 document.getElementById('supplierProductFilterCategory')?.addEventListener('change', refreshSupplierProductTable);
 document.getElementById('supplierProductFilterType')?.addEventListener('change', refreshSupplierProductTable);
 document.getElementById('supplierProductFilterPackage')?.addEventListener('change', refreshSupplierProductTable);
+document.getElementById('clearSupplierProductFilters')?.addEventListener('click', () => {
+    [
+        'supplierProductSearch',
+        'supplierProductFilterSupplier',
+        'supplierProductFilterCategory',
+        'supplierProductFilterType',
+        'supplierProductFilterPackage'
+    ].forEach((id) => {
+        const control = document.getElementById(id);
+        if (control) control.value = '';
+    });
+    refreshSupplierProductTable();
+    document.getElementById('supplierProductSearch')?.focus();
+});
+document.getElementById('supplierConfirmAction')?.addEventListener('click', () => {
+    const resolve = pendingConfirmation;
+    pendingConfirmation = null;
+    resolve?.(true);
+    bootstrap.Modal.getInstance(document.getElementById('supplierConfirmModal'))?.hide();
+});
+document.getElementById('supplierConfirmModal')?.addEventListener('hidden.bs.modal', () => {
+    const resolve = pendingConfirmation;
+    pendingConfirmation = null;
+    resolve?.(false);
+});
+[
+    ['supplierDetailsModal', 'supplierDetailsTitle'],
+    ['supplierProductDetailsModal', 'supplierProductDetailsTitle'],
+    ['supplierConfirmModal', 'supplierConfirmTitle'],
+    ['addSupplierModal', 'addSupplierModalLabel'],
+    ['addSupplierProductModal', 'addSupplierProductModalTitle'],
+    ['editSupplierProductModal', 'editSupplierProductModalTitle']
+].forEach(([modalId, titleId]) => {
+    document.getElementById(modalId)?.addEventListener('shown.bs.modal', () => {
+        document.getElementById(titleId)?.focus();
+    });
+});
+document.getElementById('viewSupplierAssignedProducts')?.addEventListener('click', (event) => {
+    const supplierName = event.currentTarget.dataset.supplierName || '';
+    bootstrap.Modal.getInstance(document.getElementById('supplierDetailsModal'))?.hide();
+    const filter = document.getElementById('supplierProductFilterSupplier');
+    if (filter) filter.value = supplierName;
+    refreshSupplierProductTable();
+    document.getElementById('supplierProductResultCount')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 document.getElementById('editSupplierProductCategory')?.addEventListener('change', async (event) => {
     await loadEditProductTypes(event.target.value, '');
     configureEditSupplierProductFields();
@@ -1391,18 +1686,32 @@ document.getElementById('addSupplierProductModal')?.addEventListener('hidden.bs.
     loadMeasurementUnits();
 });
 document.getElementById('table-suppliers')?.addEventListener('click', (event) => {
+    const viewButton = event.target.closest('.view-supplier-btn');
     const editButton = event.target.closest('.edit-supplier-btn');
     const archiveButton = event.target.closest('.archive-supplier-btn');
+    const activateButton = event.target.closest('.activate-supplier-btn');
 
+    if (viewButton) openSupplierDetails(viewButton.dataset.id);
     if (editButton) editSupplier(editButton);
     if (archiveButton) archiveSupplier(archiveButton.dataset.id);
+    if (activateButton) activateSupplier(activateButton.dataset.id);
 });
+document.getElementById('supplierStatusFilter')?.addEventListener('change', loadSuppliers);
 document.getElementById('table-supplier-products')?.addEventListener('click', (event) => {
     const editButton = event.target.closest('.edit-supplier-product-btn');
     const deleteButton = event.target.closest('.delete-supplier-product-btn');
+    const row = event.target.closest('.supplier-product-row');
 
     if (editButton) openEditSupplierProduct(editButton.dataset.supplierProductId);
-    if (deleteButton) deleteSupplierProduct(deleteButton);
+    else if (deleteButton) deleteSupplierProduct(deleteButton);
+    else if (row) openSupplierProductDetails(row.dataset.supplierProductId);
+});
+document.getElementById('table-supplier-products')?.addEventListener('keydown', (event) => {
+    if (!['Enter', ' '].includes(event.key) || event.target.closest('button')) return;
+    const row = event.target.closest('.supplier-product-row');
+    if (!row) return;
+    event.preventDefault();
+    openSupplierProductDetails(row.dataset.supplierProductId);
 });
 
 loadSuppliers();

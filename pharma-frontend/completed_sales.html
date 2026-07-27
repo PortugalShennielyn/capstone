@@ -1,80 +1,15 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dr. R Pharmacy | Completed Sales</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Cashier Transaction History</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
-    <style>
-        body { min-height: 100vh; margin: 0; color: #252b37; background: #f4f6fb; font-family: "Inter", sans-serif; letter-spacing: 0; }
-        .topbar { position: sticky; top: 0; z-index: 1020; min-height: 70px; display: flex; align-items: center; gap: 14px; padding: 14px 26px; background: #fff; border-bottom: 1px solid #e8ecf3; }
-        .icon-btn { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; color: #4b5563; background: #f4f6fb; }
-        .page-body { padding: 28px; }
-        .page-header { margin-bottom: 22px; }
-        .page-header h1 { margin: 0; font-size: 26px; font-weight: 800; }
-        .page-header p { margin: 6px 0 0; color: #667085; font-weight: 500; }
-        .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
-        .summary-card, .table-panel { border: 1px solid #e8ecf3; border-radius: 8px; background: #fff; box-shadow: 0 10px 28px rgba(15, 23, 42, .05); }
-        .summary-card { padding: 18px; border-top: 3px solid #d8dee9; }
-        .summary-card:nth-child(1) { border-top-color: #16a34a; }
-        .summary-card:nth-child(2) { border-top-color: #7c3aed; }
-        .summary-card:nth-child(3) { border-top-color: #2563eb; }
-        .summary-card:nth-child(4) { border-top-color: #d97706; }
-        .summary-card span { display: block; color: #667085; font-size: 13px; font-weight: 700; }
-        .summary-card strong { display: block; margin-top: 8px; font-size: 24px; font-weight: 800; }
-        .table-panel { overflow: hidden; }
-        .table-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 18px 20px; border-bottom: 1px solid #e8ecf3; }
-        .table-panel-header h2 { margin: 0; font-size: 18px; font-weight: 800; }
-        .sales-table-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: nowrap; margin-left: auto; }
-        .sales-search { width: clamp(320px, 28vw, 380px); flex: 0 0 auto; }
-        .sales-filter { width: 200px; flex: 0 0 200px; }
-        .sales-table { min-width: 1080px; margin: 0; table-layout: auto !important; }
-        .sales-table th, .sales-table td { text-align: left !important; vertical-align: middle; white-space: nowrap; }
-        .sales-table .empty-row td { padding: 28px 16px !important; color: #667085 !important; text-align: center !important; font-weight: 700; }
-        @media (max-width: 992px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page-body { padding: 22px; } }
-        @media (max-width: 720px) { .summary-grid { grid-template-columns: 1fr; } .sales-table-controls, .sales-search, .sales-filter { width: 100%; flex-basis: 100%; } .sales-table-controls { flex-wrap: wrap; } }
-    </style>
+    <link href="./css/navbar.css?v=15" rel="stylesheet"><link href="./css/cashier_workspace.css?v=3" rel="stylesheet">
+    <script src="./js/navbar.js?v=55" defer></script><script type="module" src="./js/modules/auth_guard.js?v=20"></script>
 </head>
-<body>
-    <div id="navbar-container"></div>
-    <main class="main-wrapper" id="mainWrapper">
-        <header class="topbar">
-            <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
-            <div><strong>Completed Sales</strong><div class="text-muted small">Sales & Transactions</div></div>
-        </header>
-        <section class="page-body">
-            <div class="page-header"><h1>Completed Sales</h1><p>Admin view of paid and completed transactions.</p></div>
-            <div class="summary-grid" aria-label="Completed sales summary">
-                <div class="summary-card"><span>Completed</span><strong>0</strong></div>
-                <div class="summary-card"><span>Total Amount</span><strong>PHP 0.00</strong></div>
-                <div class="summary-card"><span>Cash Payments</span><strong>0</strong></div>
-                <div class="summary-card"><span>Other Payments</span><strong>0</strong></div>
-            </div>
-            <section class="table-panel">
-                <div class="table-panel-header">
-                    <h2>Completed Transactions</h2>
-                    <div class="sales-table-controls" aria-label="Completed sales filters">
-                        <input class="form-control form-control-sm sales-search" type="search" placeholder="Search receipt no., customer, or cashier...">
-                        <select class="form-select form-select-sm sales-filter" aria-label="Filter by payment method">
-                            <option>All Payment Methods</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="table-responsive">
-                    <table class="table sales-table">
-                        <thead><tr><th>Receipt No.</th><th>Customer</th><th>Cashier</th><th>Sales Clerk</th><th>Total Amount</th><th>Payment Method</th><th>Completed At</th><th>Action</th></tr></thead>
-                        <tbody><tr class="empty-row"><td colspan="8">No records yet</td></tr></tbody>
-                    </table>
-                </div>
-            </section>
-        </section>
-    </main>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module">import verifySession from './js/modules/auth.js'; await verifySession();</script>
-</body>
-</html>
+<body data-cashier-page="completed"><div id="navbar-container"></div><main class="main-wrapper" id="mainWrapper">
+    <header class="cashier-topbar"><button class="icon-btn" id="sidebarToggle" type="button"><i class="fa-solid fa-bars"></i></button><span class="brand-tile"><i class="fa-solid fa-clock-rotate-left"></i></span><div class="title-wrap"><strong>Transaction History</strong><span>Your completed cashier receipts</span></div></header>
+    <section class="cashier-page"><section class="panel"><div class="panel-head"><div><h1>Transaction History</h1><p>View completed transactions and reprint saved receipts.</p></div></div><div class="search-row"><input id="cashierSearch" type="search" placeholder="Search receipt, order, customer, or sales clerk"></div><div class="table-wrap"><table class="cashier-table"><thead><tr><th>Receipt No</th><th>Order No</th><th>Customer</th><th>Sales Clerk</th><th>Total Amount</th><th>Cash Received</th><th>Change</th><th>Payment Method</th><th>Completed Date/Time</th><th>Action</th></tr></thead><tbody id="reportRows"><tr class="empty-row"><td colspan="10">Loading transactions...</td></tr></tbody></table></div></section></section>
+</main><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script type="module" src="./js/modules/cashier_workspace.js?v=4"></script></body></html>

@@ -31,8 +31,10 @@ try {
     validatePurchaseOrderItems($items);
 
     $pdo->beginTransaction();
+    validatePurchaseOrderSupplier($pdo, $supplierId);
     validateProductsForSupplier($pdo, $supplierId, $items);
     $items = applySupplierProductSetup($pdo, $supplierId, $items);
+    $validatedTotalAmount = validateSubmittedPurchaseOrderTotals($payload, $items);
 
     $poNumber = 'PO-' . date('Ymd-His') . '-' . strtoupper(bin2hex(random_bytes(2)));
     $poId = newUuid($pdo);
@@ -104,6 +106,10 @@ try {
         ], $quantityParams, purchaseOrderItemSnapshotParams($item)));
     }
 
+    if (purchaseOrderMoneyCents($totalAmount, 'Purchase-order total is invalid.') !== purchaseOrderMoneyCents($validatedTotalAmount, 'Purchase-order total is invalid.')) {
+        throw new InvalidArgumentException('Purchase-order total changed during validation. Please try again.');
+    }
+
     $totalStatement = $pdo->prepare('UPDATE purchase_orders SET total_amount = :total_amount WHERE po_id = :po_id');
     $totalStatement->execute([
         ':total_amount' => $totalAmount,
@@ -111,6 +117,8 @@ try {
     ]);
 
     $pdo->commit();
+
+    recordActivityLog($pdo, 'Purchase Order', 'Pending', 'PO ' . $poNumber . ' is Pending', $poId);
 
     http_response_code(201);
     echo json_encode([

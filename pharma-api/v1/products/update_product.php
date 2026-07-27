@@ -1,7 +1,9 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once '../activity_log_helpers.php';
 require_once 'product_category_schema.php';
+require_once 'product_status_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -41,8 +43,8 @@ function joinUpdateParts(?string ...$parts): ?string
 }
 
 try {
+    ensureProductStatusColumn($pdo);
     $productId = cleanId($payload['product_id'] ?? null);
-    $supplierId = cleanId($payload['supplier_id'] ?? null);
     $categoryId = cleanId($payload['category_id'] ?? null);
     $typeId = cleanId($payload['type_id'] ?? null);
     $brandName = requiredProductField($payload, 'brand_name');
@@ -51,9 +53,6 @@ try {
 
     if ($productId === '') {
         throw new InvalidArgumentException('A valid product is required.');
-    }
-    if ($supplierId === '') {
-        throw new InvalidArgumentException('A supplier is required.');
     }
     if ($categoryId === '') {
         throw new InvalidArgumentException('A valid product category is required.');
@@ -74,6 +73,16 @@ try {
         throw new InvalidArgumentException('Price must be a valid non-negative number.');
     }
     $barcode = cleanUpdateField($variation, 'barcode') ?? cleanUpdateField($payload, 'barcode') ?? ('AUTO-' . strtoupper(bin2hex(random_bytes(6))));
+    $barcodeCheck = $pdo->prepare(
+        'SELECT product_id FROM product
+         WHERE LOWER(TRIM(barcode)) = LOWER(TRIM(:barcode))
+           AND product_id <> :product_id
+         LIMIT 1'
+    );
+    $barcodeCheck->execute([':barcode' => $barcode, ':product_id' => $productId]);
+    if ($barcodeCheck->fetchColumn()) {
+        throw new InvalidArgumentException('This barcode already belongs to another product variant.');
+    }
 
     $pdo->beginTransaction();
 
@@ -96,11 +105,6 @@ try {
         ':price' => (float) $price,
         ':product_id' => $productId
     ]);
-
-    $pdo->prepare('DELETE FROM supplier_products WHERE product_id = :product_id')
-        ->execute([':product_id' => $productId]);
-    $pdo->prepare('INSERT IGNORE INTO supplier_products (supplier_id, product_id) VALUES (:supplier_id, :product_id)')
-        ->execute([':supplier_id' => $supplierId, ':product_id' => $productId]);
 
     if ($categoryName === 'Medicine') {
         $genericName = cleanUpdateField($payload, 'generic_name') ?? cleanUpdateField($variation, 'generic_name');
@@ -130,6 +134,7 @@ try {
         $detail->bindValue(':package_type', $packageType);
         $detail->execute();
         $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+        $pdo->prepare('DELETE FROM medical_supply_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
     } elseif ($categoryName === 'Grocery') {
         $netWeight = cleanUpdateNumber($variation, 'net_weight') ?? cleanUpdateNumber($variation, 'weight_value') ?? cleanUpdateNumber($variation, 'weight_volume_value');
         $detailValues = [
@@ -151,9 +156,33 @@ try {
         }
         $detail->execute($detailValues);
         $pdo->prepare('DELETE FROM medicine_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+        $pdo->prepare('DELETE FROM medical_supply_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+    } elseif (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
+        $detailValues = [
+            ':product_id' => $productId,
+            ':variant' => cleanUpdateField($variation, 'variant_name') ?? cleanUpdateField($variation, 'variant_flavor'),
+            ':size' => cleanUpdateField($variation, 'size_value') ?? cleanUpdateField($variation, 'display_size'),
+            ':material' => cleanUpdateField($variation, 'material'),
+            ':sterile_status' => cleanUpdateField($variation, 'sterile_status'),
+            ':package_type' => cleanUpdateField($variation, 'package_type') ?? cleanUpdateField($variation, 'packaging'),
+            ':pack_content' => cleanUpdateField($variation, 'pack_content') ?? joinUpdateParts(cleanUpdateNumber($variation, 'pack_content_qty'), cleanUpdateField($variation, 'pack_content_unit'))
+        ];
+        $exists = $pdo->prepare('SELECT medical_supply_detail_id FROM medical_supply_details WHERE product_id = :product_id LIMIT 1');
+        $exists->execute([':product_id' => $productId]);
+        if (cleanId($exists->fetchColumn()) !== '') {
+            $detail = $pdo->prepare('UPDATE medical_supply_details SET variant = :variant, size = :size, material = :material, sterile_status = :sterile_status, package_type = :package_type, pack_content = :pack_content WHERE product_id = :product_id');
+        } else {
+            $detail = $pdo->prepare('INSERT INTO medical_supply_details (medical_supply_detail_id, product_id, variant, size, material, sterile_status, package_type, pack_content) VALUES (:detail_id, :product_id, :variant, :size, :material, :sterile_status, :package_type, :pack_content)');
+            $detailValues[':detail_id'] = newUuid($pdo);
+        }
+        $detail->execute($detailValues);
+        $pdo->prepare('DELETE FROM medicine_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+        $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
     }
 
     $pdo->commit();
+
+    recordActivityLog($pdo, 'Products', 'Updated', 'Product updated: ' . $productName, $productId);
 
     echo json_encode([
         'status' => 'success',

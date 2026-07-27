@@ -12,8 +12,9 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <link href="./css/purchase_receiving.css?v=3" rel="stylesheet">
+    <script src="./js/navbar.js?v=55" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
 
     <style>
         :root {
@@ -102,10 +103,10 @@
         .po-list-table tbody.po-table-body-updating { opacity: .72; }
         .po-list-table .col-date { width: 130px; min-width: 130px; }
         .po-list-table .col-po-number { width: 210px; min-width: 210px; }
-        .po-list-table .col-supplier { width: 16%; min-width: 170px; }
-        .po-list-table .col-brand { width: 14%; min-width: 150px; }
-        .po-list-table .col-items { width: 18%; min-width: 200px; }
-        .po-list-table .col-specification { width: 22%; min-width: 240px; }
+        .po-list-table .col-supplier { width: 15%; min-width: 150px; }
+        .po-list-table .col-brand { width: 13%; min-width: 135px; }
+        .po-list-table .col-items { width: 17%; min-width: 180px; }
+        .po-list-table .col-specification { width: 21%; min-width: 220px; }
         .po-list-table .col-type { width: 130px; }
         .po-list-table .col-qty { width: 105px; min-width: 105px; }
         .po-list-table .col-purchase-unit { width: 135px; min-width: 120px; }
@@ -113,9 +114,12 @@
         .po-list-table .col-inventory-qty { width: 150px; min-width: 135px; }
         .po-list-table .col-terms { width: 112px; }
         .po-list-table .col-delivery { width: 130px; min-width: 130px; }
-        .po-list-table .col-money { width: 140px; min-width: 140px; }
+        .po-list-table .col-money { width: 128px; min-width: 120px; }
         .po-list-table .col-status { width: 150px; min-width: 150px; }
         .po-list-table .col-actions { width: 130px; min-width: 130px; }
+        .po-list-table[data-po-view="delivered"] .col-actions,
+        .po-list-table[data-po-view="delivered"] td.po-actions-cell { width: 132px; min-width: 132px; }
+        .po-list-table[data-po-view="delivered"] .col-specification { width: 300px; min-width: 300px; }
         .po-list-table .col-received { width: 110px; }
         .po-list-table .col-payment-status { width: 125px; }
         .po-list-table .col-reason { width: 190px; min-width: 190px; }
@@ -126,9 +130,9 @@
         .po-list-table td.po-product-cell,
         .po-list-table td.po-brand-cell,
         .po-list-table td.po-spec-cell { white-space: normal !important; text-align: left; }
-        .po-list-table td.po-product-cell { min-width: 200px; }
-        .po-list-table td.po-brand-cell { min-width: 150px; }
-        .po-list-table td.po-spec-cell { min-width: 240px; }
+        .po-list-table td.po-product-cell { min-width: 180px; }
+        .po-list-table td.po-brand-cell { min-width: 135px; }
+        .po-list-table td.po-spec-cell { min-width: 220px; }
         .po-list-table th.col-supplier,
         .po-list-table th.col-brand,
         .po-list-table th.col-items,
@@ -147,6 +151,8 @@
         #table-purchase-orders.po-list-table td {
             text-align: left !important;
         }
+        #table-purchase-orders.po-list-table th.col-actions,
+        #table-purchase-orders.po-list-table td.po-actions-cell { text-align: center !important; }
         .po-line-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; text-align: left; }
         .po-line-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 5px; align-items: start; min-height: 18px; }
         .po-line-list .line-index { color: #7b8494; font-size: 12px; font-weight: 800; text-align: right; line-height: 1.3; }
@@ -185,26 +191,22 @@
             box-shadow: none !important;
         }
         .po-actions { display: inline-flex; flex-wrap: nowrap; justify-content: center; align-items: center; gap: 8px; white-space: nowrap; min-width: max-content; }
-        #table-purchase-orders .po-actions { justify-content: flex-start; }
+        #table-purchase-orders .po-actions { justify-content: center; }
         .po-actions .btn { width: 32px; height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
         .status-badge { white-space: nowrap; line-height: 1.2; font-size: 11px; padding: 6px 8px; }
         .po-empty { padding: 42px 16px !important; color: #8790a1 !important; text-align: center; }
-        #table-purchase-orders td.po-brand-cell { width: 150px !important; min-width: 150px !important; }
-        #table-purchase-orders td.po-product-cell { width: 200px !important; min-width: 200px !important; }
-        #table-purchase-orders td.po-spec-cell { width: 260px !important; min-width: 240px !important; }
+        #table-purchase-orders td.po-brand-cell { width: 135px !important; min-width: 135px !important; }
+        #table-purchase-orders td.po-product-cell { width: 180px !important; min-width: 180px !important; }
+        #table-purchase-orders td.po-spec-cell { width: 235px !important; min-width: 220px !important; }
         .po-product-select-wrap { min-width: 0; }
         .po-product-select-wrap .form-select { min-width: 0; width: 100%; max-width: 100%; text-overflow: ellipsis; }
         #createPurchaseOrderModal {
-            --po-modal-width: min(1180px, calc(100vw - 48px));
+            --po-modal-width: min(1240px, calc(94vw - 24px));
             --po-modal-height: min(760px, calc(100vh - 48px));
-            --po-create-lower-height: 420px;
-            --po-form-primary-height: 80px;
-            --po-form-primary-opacity: 1;
-            --po-form-primary-gap: 10px;
         }
         #createPurchaseOrderModal .modal-dialog {
             width: var(--po-modal-width);
-            max-width: min(1320px, calc(100vw - 32px));
+            max-width: min(1280px, calc(100vw - 32px));
             height: var(--po-modal-height);
             max-height: calc(100vh - 24px);
         }
@@ -233,6 +235,7 @@
             background: #fff;
             cursor: move;
             user-select: none;
+            flex: 0 0 auto;
         }
         #createPurchaseOrderModal .modal-header .btn-close {
             cursor: pointer;
@@ -240,53 +243,32 @@
         #createPurchaseOrderModal .modal-body {
             flex: 1 1 auto;
             min-height: 0;
-            display: flex;
-            flex-direction: column;
-            padding-top: 0;
+            display: block;
+            padding: 0 16px 18px;
             background: #fff;
-            overflow: hidden !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            scrollbar-gutter: stable;
             container-type: inline-size;
         }
+        #createPurchaseOrderModal .modal-footer { flex: 0 0 auto; z-index: 30; gap: 8px; padding: 12px 16px; border-top: 1px solid #e5e9f1; background: #fff; }
         #createPurchaseOrderModal .po-create-form {
-            position: sticky;
-            top: 0;
-            z-index: 25;
-            isolation: isolate;
-            margin: 0 -16px 16px;
-            padding: 10px 16px 12px;
+            position: relative;
+            margin: 0 -16px 18px;
+            padding: 14px 16px 16px;
             border-bottom: 1px solid #e5e9f1;
             background: #fff;
-            box-shadow: 0 8px 16px rgba(15, 23, 42, .08);
-            overflow: hidden;
-            gap: 0;
-        }
-        #createPurchaseOrderModal .po-create-form::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            z-index: -1;
-            background: inherit;
+            box-shadow: none;
+            overflow: visible;
+            gap: 16px;
         }
         .po-create-form-row { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 12px 14px; align-items: end; }
-        .po-create-form-row.po-create-items-row { grid-template-columns: minmax(320px, 2.3fr) minmax(92px, .55fr) minmax(140px, .8fr) minmax(190px, 1fr) minmax(118px, .65fr); }
+        .po-create-form-row.po-create-items-row { grid-template-columns: minmax(360px, 1fr) 118px 170px 205px 138px; }
         .po-create-form-row > div { min-width: 0; }
-        .po-form-primary-row {
-            height: var(--po-form-primary-height);
-            opacity: var(--po-form-primary-opacity);
-            margin-bottom: var(--po-form-primary-gap);
-            overflow: hidden;
-            transition: height .16s ease, opacity .12s ease, margin .16s ease;
-            will-change: height, opacity;
-        }
-        .po-form-item-row {
-            position: relative;
-            z-index: 1;
-        }
-        #createPurchaseOrderModal.po-form-collapsed .po-form-primary-row {
-            pointer-events: none;
-        }
+        .po-create-section { min-width: 0; }
+        .po-create-section-title { margin: 0 0 9px; color: #344054; font-size: .76rem; font-weight: 900; letter-spacing: .025em; text-transform: uppercase; }
         .po-create-form .form-label { margin-bottom: 6px; }
-        .po-create-items-row .form-label { min-height: 32px; display: flex; align-items: flex-end; line-height: 1.18; }
+        .po-create-items-row .form-label { min-height: 0; display: block; line-height: 1.18; white-space: nowrap; }
         .po-create-form .form-select, .po-create-form .form-control, .po-create-form .btn { min-height: 40px; }
         #btnAddPoItem {
             --bs-btn-color: #fff;
@@ -325,12 +307,10 @@
             background: #f97316;
         }
         .po-create-lower {
-            flex: 1 1 auto;
-            min-height: 220px;
-            height: var(--po-create-lower-height);
-            overflow: auto;
-            padding-top: 4px;
-            scrollbar-gutter: stable;
+            min-height: 0;
+            height: auto;
+            overflow: visible;
+            padding-top: 0;
         }
         .po-create-lower > .table-responsive {
             max-height: none !important;
@@ -402,8 +382,8 @@
             z-index: 25;
         }
         #editPurchaseOrderModal {
-            --po-edit-modal-width: min(1180px, calc(100vw - 48px));
-            --po-edit-modal-height: min(760px, calc(100vh - 48px));
+            --po-edit-modal-width: min(1380px, 96vw);
+            --po-edit-modal-height: min(820px, calc(100vh - 24px));
             --po-edit-lower-height: 420px;
             --po-edit-form-primary-height: 80px;
             --po-edit-form-primary-opacity: 1;
@@ -411,7 +391,7 @@
         }
         #editPurchaseOrderModal .modal-dialog {
             width: var(--po-edit-modal-width);
-            max-width: min(1320px, calc(100vw - 32px));
+            max-width: min(1380px, 96vw);
             height: var(--po-edit-modal-height);
             max-height: calc(100vh - 24px);
         }
@@ -462,9 +442,10 @@
             position: sticky;
             top: 0;
             z-index: 25;
+            flex: 0 0 auto;
             isolation: isolate;
             display: grid;
-            gap: 0;
+            gap: 10px;
             margin: 0 -16px 16px;
             padding: 10px 16px 12px;
             border-bottom: 1px solid #e5e9f1;
@@ -479,18 +460,23 @@
         }
         .po-edit-primary-row {
             grid-template-columns: minmax(240px, 1.25fr) minmax(180px, .85fr) minmax(190px, .9fr);
-            height: var(--po-edit-form-primary-height);
-            opacity: var(--po-edit-form-primary-opacity);
-            margin-bottom: var(--po-edit-form-primary-gap);
-            overflow: hidden;
-            transition: height .16s ease, opacity .12s ease, margin .16s ease;
-            will-change: height, opacity;
         }
         .po-edit-item-row {
-            grid-template-columns: minmax(320px, 2.35fr) minmax(92px, .55fr) minmax(140px, .8fr) minmax(190px, 1fr) minmax(118px, .65fr);
+            grid-template-columns: minmax(260px, 1.8fr) minmax(86px, .55fr) minmax(125px, .75fr) minmax(145px, .85fr) minmax(120px, .7fr) minmax(145px, .85fr);
             position: relative;
             z-index: 1;
         }
+        .po-edit-section { min-width: 0; }
+        .po-edit-section + .po-edit-section { padding-top: 9px; border-top: 1px solid #edf0f4; }
+        .po-edit-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+        .po-edit-section-title { margin: 0 0 8px; color: #475467; font-size: .76rem; font-weight: 900; letter-spacing: .025em; text-transform: uppercase; }
+        .po-edit-section-heading .po-edit-section-title { margin-bottom: 0; }
+        .po-edit-mode-badge { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 9px; border-radius: 999px; background: #ecfdf3; color: #027a48; font-size: .72rem; font-weight: 850; }
+        .po-edit-mode-badge.is-editing { background: #fff7ed; color: #c2410c; }
+        .po-edit-lock-notice { margin-bottom: 9px; padding: 8px 10px; border: 1px solid #fde68a; border-radius: 7px; background: #fffbeb; color: #92400e; font-size: .78rem; font-weight: 700; }
+        .po-edit-item-actions { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 2px; }
+        #btnCancelEditPoItem { min-height: 26px; padding-block: 1px; color: #667085; font-weight: 750; text-decoration: none; }
+        #btnCancelEditPoItem:hover { color: #b42318; text-decoration: underline; }
         .po-edit-form-row > div { min-width: 0; }
         .po-edit-form .form-label { margin-bottom: 6px; }
         .po-edit-item-row .form-label { min-height: 32px; display: flex; align-items: flex-end; line-height: 1.18; }
@@ -506,10 +492,7 @@
             scrollbar-gutter: stable;
         }
         .po-edit-layout {
-            display: grid;
-            grid-template-columns: minmax(330px, .9fr) minmax(390px, 1.1fr);
-            gap: 14px;
-            align-items: start;
+            display: block;
         }
         .po-edit-card {
             min-width: 0;
@@ -542,11 +525,13 @@
         }
         .po-edit-items-wrap {
             max-height: none !important;
-            overflow: auto;
+            overflow-x: auto;
+            overflow-y: visible;
         }
-        #table-edit-po-items tbody tr[data-index] {
+        #table-edit-po-items tbody tr[data-item-key] {
             cursor: pointer;
         }
+        #table-edit-po-items tbody tr[data-item-key]:hover td { background-color: #f8fafc; }
         #table-edit-po-items tbody tr.is-selected td {
             background: #fff7ed;
             box-shadow: inset 0 1px 0 rgba(249, 115, 22, .18), inset 0 -1px 0 rgba(249, 115, 22, .18);
@@ -571,14 +556,56 @@
         #btnEditAddPoItem {
             font-weight: 850;
         }
+        #table-edit-po-items.po-edit-items-table { min-width: 1240px !important; font-variant-numeric: tabular-nums; }
+        #table-edit-po-items.po-edit-items-table th,
+        #table-edit-po-items.po-edit-items-table td { padding: 9px 8px; }
+        #table-edit-po-items.po-edit-items-table thead tr:first-child th { vertical-align: middle; }
+        #table-edit-po-items.po-edit-items-table thead tr:nth-child(2) th { border-top: 1px solid #e5e9f1; font-size: .75rem; }
+        #table-edit-po-items.po-edit-items-table th:nth-child(1),
+        #table-edit-po-items.po-edit-items-table td:nth-child(1) { position: sticky; left: 0; z-index: 2; width: 245px; min-width: 245px; max-width: 245px; background: var(--bs-table-bg, #fff); text-align: left; white-space: normal !important; }
+        #table-edit-po-items.po-edit-items-table th:nth-child(1) { z-index: 4; background: #f8f9fc; }
+        #table-edit-po-items.po-edit-items-table th:nth-child(2),
+        #table-edit-po-items.po-edit-items-table td:nth-child(2) { width: 115px; min-width: 115px; text-align: left; white-space: normal !important; }
+        #table-edit-po-items.po-edit-items-table th:nth-child(n+3):nth-child(-n+6),
+        #table-edit-po-items.po-edit-items-table td:nth-child(n+3):nth-child(-n+6),
+        #table-edit-po-items.po-edit-items-table th:nth-child(8),
+        #table-edit-po-items.po-edit-items-table td:nth-child(8),
+        #table-edit-po-items.po-edit-items-table th:nth-child(9),
+        #table-edit-po-items.po-edit-items-table td:nth-child(9),
+        #table-edit-po-items.po-edit-items-table th:nth-child(10),
+        #table-edit-po-items.po-edit-items-table td:nth-child(10),
+        #table-edit-po-items.po-edit-items-table th:nth-child(11),
+        #table-edit-po-items.po-edit-items-table td:nth-child(11) { text-align: right; white-space: nowrap; }
+        #table-edit-po-items.po-edit-items-table th:last-child,
+        #table-edit-po-items.po-edit-items-table td:last-child { position: sticky; right: 0; z-index: 3; width: 72px; min-width: 72px; background: var(--bs-table-bg, #fff); border-left: 1px solid #e5e9f1; text-align: center; }
+        #table-edit-po-items.po-edit-items-table th:last-child { z-index: 5; background: #f8f9fc; }
+        #table-edit-po-items.po-edit-items-table tbody tr:hover td:first-child,
+        #table-edit-po-items.po-edit-items-table tbody tr:hover td:last-child { background: var(--bs-table-hover-bg, #f8fafc); }
+        #table-edit-po-items.po-edit-items-table tbody tr.is-selected td:first-child,
+        #table-edit-po-items.po-edit-items-table tbody tr.is-selected td:last-child { background: #fff7ed; }
+        .po-edit-product-brand { display: block; color: #344054; font-size: .78rem; font-weight: 900; }
+        .po-edit-product-name { display: -webkit-box; margin-top: 1px; overflow: hidden; color: #111827; font-weight: 850; line-height: 1.25; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+        .po-edit-product-spec { display: block; margin-top: 3px; color: #667085; font-size: .75rem; line-height: 1.3; white-space: normal; }
+        .po-edit-stock-on-hand { color: #344054; font-weight: 900; }
+        .po-edit-line-total { font-weight: 900; }
         .po-edit-hidden-fields {
             display: none !important;
         }
-        .po-selected-product-panel { display: none; margin: -2px 0 18px; }
-        .po-selected-product-panel.is-visible { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 14px; align-items: stretch; }
-        .po-selected-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--border-soft); border-radius: 8px; background: #f8f9fc; }
-        .po-selected-card h4 { margin: 0 0 12px; color: #344054; font-size: .82rem; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
-        .po-selected-product-grid { display: grid; grid-template-columns: repeat(3, minmax(125px, 1fr)); gap: 10px 14px; }
+        .po-selected-product-panel { display: none; margin: 0; }
+        .po-selected-product-panel.is-visible { display: block; }
+        .po-current-stock-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: -5px 0 16px; padding: 9px 12px; border: 1px solid #e1e6ee; border-radius: 8px; background: #f8fafc; color: #667085; font-size: .79rem; line-height: 1.25; }
+        .po-current-stock-strip > strong { color: #475467; font-size: .72rem; font-weight: 900; letter-spacing: .025em; text-transform: uppercase; }
+        .po-current-stock-values { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+        .po-current-stock-values span { white-space: nowrap; }
+        .po-current-stock-values span + span::before { content: "\2022"; margin-right: 12px; color: #98a2b3; }
+        .po-current-stock-values b { color: var(--text-main); font-weight: 900; }
+        .po-create-workspace { display: grid; grid-template-columns: minmax(0, 3fr) minmax(260px, 1fr); gap: 16px; align-items: start; }
+        .po-workspace-card { min-width: 0; padding: 14px 16px 16px; border: 1px solid var(--border-soft); border-radius: 9px; background: #fff; }
+        .po-workspace-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
+        .po-workspace-card-header h4 { margin: 0; color: #344054; font-size: .8rem; font-weight: 900; letter-spacing: .025em; text-transform: uppercase; }
+        .po-line-count { display: inline-flex; align-items: center; justify-content: center; min-width: 25px; min-height: 23px; padding: 2px 7px; border-radius: 999px; background: #f1edff; color: var(--purple); font-size: .72rem; font-weight: 900; }
+        .po-order-summary-card { position: sticky; top: 14px; }
+        .po-summary-tax-note { margin-top: 10px; color: #667085; font-size: .7rem; font-weight: 700; line-height: 1.35; }
         .po-receipt-summary { display: grid; gap: 0; padding-top: 2px; }
         .po-receipt-row { display: grid; grid-template-columns: minmax(112px, .82fr) minmax(0, 1.18fr); gap: 14px; align-items: baseline; padding: 8px 0; border-bottom: 1px dashed #d8dee9; }
         .po-receipt-row span { color: #667085; font-size: .78rem; font-weight: 800; line-height: 1.25; }
@@ -593,20 +620,38 @@
         .po-summary-section + .po-summary-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e5e9f1; }
         .po-summary-section-title { margin: 0 0 10px; color: #4b5563; font-size: .75rem; font-weight: 950; text-transform: uppercase; }
         .po-summary-items { display: grid; gap: 10px; }
-        .po-summary-item { padding: 10px 0 11px; border-bottom: 1px solid #e5e9f1; }
-        .po-summary-item[role="button"] { cursor: pointer; border-radius: 8px; padding: 10px 9px 11px; transition: background .14s ease, box-shadow .14s ease, border-color .14s ease; }
-        .po-summary-item[role="button"]:hover { background: #fff7ed; }
-        .po-summary-item.is-selected { background: #fff7ed; box-shadow: inset 3px 0 0 #f97316; }
-        .po-summary-item:last-child { border-bottom: 0; }
-        .po-summary-item-main { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; align-items: start; }
-        .po-summary-check { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: var(--purple); font-size: .7rem; }
-        .po-summary-item-main strong { display: block; color: var(--text-main); font-size: .9rem; font-weight: 900; line-height: 1.25; overflow-wrap: normal; word-break: normal; }
-        .po-summary-item-main span:not(.po-summary-check) { display: block; margin-top: 3px; color: #667085; font-size: .82rem; font-weight: 750; }
-        .po-summary-item-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 9px 0 0 33px; }
-        .po-summary-item-actions .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 9px; font-size: .76rem; font-weight: 800; }
-        .po-summary-empty { padding: 12px; border: 1px dashed #d8dee9; border-radius: 8px; color: #667085; font-size: .86rem; font-weight: 750; text-align: center; }
-        .po-summary-edit-form { display: grid; gap: 12px; text-align: left; }
-        .po-summary-edit-form label { display: grid; gap: 5px; color: #475467; font-size: .82rem; font-weight: 850; }
+        .po-summary-item { min-width: 0; padding: 13px 14px; border: 1px solid #e5e9f1; border-radius: 9px; background: #fff; }
+        .po-summary-item-header { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; gap: 9px; }
+        .po-summary-line-number { color: #667085; font-size: .78rem; font-weight: 900; line-height: 1.35; text-align: left; }
+        .po-summary-product { min-width: 0; color: var(--text-main); font-size: .91rem; font-weight: 900; line-height: 1.35; overflow-wrap: anywhere; }
+        .po-summary-product-name { display: block; }
+        .po-summary-product-spec { display: block; margin-top: 1px; color: #667085; font-size: .79rem; font-weight: 750; }
+        .po-summary-remove-item { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 8px; font-size: .74rem; font-weight: 850; }
+        .po-summary-facts { display: grid; grid-template-columns: minmax(105px, .8fr) minmax(150px, 1fr) minmax(145px, 1fr); gap: 12px; margin: 10px 0 0 33px; }
+        .po-summary-fact { min-width: 0; }
+        .po-summary-fact > span { display: block; margin-bottom: 5px; color: #667085; font-size: .68rem; font-weight: 850; line-height: 1.2; text-transform: uppercase; }
+        .po-summary-fact > strong { display: block; color: var(--text-main); font-size: .88rem; font-weight: 900; overflow-wrap: anywhere; }
+        .po-summary-fact > .po-quantity-unit-label { margin-top: 4px; color: #667085; font-size: .73rem; font-weight: 800; }
+        .po-quantity-stepper { display: grid; grid-template-columns: 36px 60px 36px; width: max-content; max-width: 100%; }
+        .po-quantity-stepper button,
+        .po-quantity-stepper input { height: 36px; border: 1px solid #cbd2dc; background: #fff; color: var(--text-main); font-weight: 900; }
+        .po-quantity-stepper button { display: inline-flex; align-items: center; justify-content: center; font-size: 1rem; line-height: 1; }
+        .po-quantity-stepper button:first-child { border-radius: 7px 0 0 7px; }
+        .po-quantity-stepper button:last-child { border-radius: 0 7px 7px 0; }
+        .po-quantity-stepper input { min-width: 0; border-inline: 0; border-radius: 0; text-align: center; appearance: textfield; -moz-appearance: textfield; }
+        .po-quantity-stepper input::-webkit-inner-spin-button,
+        .po-quantity-stepper input::-webkit-outer-spin-button { margin: 0; appearance: none; }
+        .po-quantity-stepper button:hover:not(:disabled) { border-color: var(--purple); color: var(--purple); background: #f5f3ff; }
+        .po-quantity-stepper button:disabled { cursor: not-allowed; color: #98a2b3; background: #eef1f5; border-color: #d8dee8; opacity: 1; }
+        .po-quantity-stepper button:focus-visible,
+        .po-quantity-stepper input:focus-visible { position: relative; z-index: 1; outline: 3px solid rgba(124, 58, 237, .28); outline-offset: 1px; }
+        .po-quantity-validation { min-height: 16px; margin-top: 3px; color: #b42318; font-size: .7rem; font-weight: 750; line-height: 1.25; }
+        .po-summary-line-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; margin: 9px 0 0 33px; padding-top: 9px; border-top: 1px solid #edf0f4; }
+        .po-line-total { min-width: 0; }
+        .po-line-total span { display: block; margin-bottom: 3px; color: #667085; font-size: .67rem; font-weight: 850; line-height: 1.2; text-transform: uppercase; }
+        .po-line-total strong { display: block; color: var(--text-main); font-size: .84rem; font-weight: 900; overflow-wrap: anywhere; }
+        .po-summary-empty { padding: 16px; border: 1px dashed #d8dee9; border-radius: 8px; color: #667085; font-size: .83rem; font-weight: 750; text-align: center; }
+        .po-summary-empty strong { display: block; margin-bottom: 3px; color: #475467; font-size: .86rem; }
         .po-preview-empty { display: flex; align-items: center; min-height: 124px; color: #667085; font-size: .9rem; font-weight: 750; }
         .po-package-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 240px); gap: 12px; align-items: stretch; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e9f1; }
         .po-package-row .po-selected-product-grid { margin: 0; padding: 0; border-top: 0; grid-template-columns: repeat(4, minmax(110px, 1fr)); }
@@ -787,8 +832,18 @@
         body.dark-mode .po-conversion-badge { border-color: #9a3412; border-left-color: #fb923c; background: #431407; color: #fed7aa; }
         body.dark-mode .po-conversion-badge span { color: #fdba74; }
         body.dark-mode .po-conversion-badge strong { color: #ffedd5; }
-        body.dark-mode .po-selected-card { border-color: #263244; }
-        body.dark-mode .po-selected-card h4 { color: #cbd5e1; }
+        body.dark-mode .po-workspace-card,
+        body.dark-mode .po-summary-item,
+        body.dark-mode .po-quantity-stepper button,
+        body.dark-mode .po-quantity-stepper input { border-color: #334155; background: #111827; }
+        body.dark-mode .po-current-stock-strip { border-color: #334155; background: #182131; color: #94a3b8; }
+        body.dark-mode .po-current-stock-strip > strong,
+        body.dark-mode .po-current-stock-values b,
+        body.dark-mode .po-workspace-card-header h4 { color: #e5e7eb; }
+        body.dark-mode .po-summary-product-spec,
+        body.dark-mode .po-summary-fact > span,
+        body.dark-mode .po-line-total span { color: #94a3b8; }
+        body.dark-mode .po-quantity-stepper button:disabled { color: #64748b; background: #1e293b; }
         body.dark-mode .po-product-secondary { color: #94a3b8; }
         body.dark-mode .po-receipt-row { border-bottom-color: #334155; }
         body.dark-mode .po-receipt-row span { color: #94a3b8; }
@@ -800,12 +855,9 @@
         body.dark-mode .po-receipt-row-highlight span { color: #fdba74; }
         body.dark-mode .po-receipt-row-highlight strong { color: #fed7aa; }
         body.dark-mode .po-summary-section + .po-summary-section,
-        body.dark-mode .po-summary-item { border-color: #263244; }
-        body.dark-mode .po-summary-section-title,
-        body.dark-mode .po-summary-item-main span:not(.po-summary-check) { color: #94a3b8; }
+        body.dark-mode .po-summary-line-totals { border-color: #263244; }
+        body.dark-mode .po-summary-section-title { color: #94a3b8; }
         body.dark-mode .po-summary-empty { border-color: #334155; color: #94a3b8; }
-        body.dark-mode .po-summary-item[role="button"]:hover,
-        body.dark-mode .po-summary-item.is-selected { background: #431407; }
         body.dark-mode .po-preview-empty { color: #94a3b8; }
         body.dark-mode .po-calc-card-blue { border-color: #1d4ed8; background: #172554; color: #bfdbfe; }
         body.dark-mode .po-calc-card-green { border-color: #15803d; background: #052e16; color: #bbf7d0; }
@@ -819,14 +871,15 @@
             .status-summary-grid { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
             .po-list-table { min-width: 1120px; }
             .po-create-form-row { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
-            .po-create-form-row.po-create-items-row { grid-template-columns: minmax(260px, 2fr) minmax(90px, .7fr) minmax(130px, 1fr) minmax(180px, 1fr) minmax(112px, .75fr); }
+            .po-create-form-row.po-create-items-row { grid-template-columns: minmax(320px, 1fr) 110px 155px 190px 130px; }
             .po-edit-primary-row { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
-            .po-edit-item-row { grid-template-columns: minmax(260px, 2fr) minmax(90px, .7fr) minmax(130px, 1fr) minmax(180px, 1fr) minmax(112px, .75fr); }
+            .po-edit-item-row { grid-template-columns: minmax(240px, 1.7fr) repeat(2, minmax(105px, .7fr)) repeat(2, minmax(125px, .8fr)) minmax(135px, .8fr); }
+        }
+        @container (max-width: 1080px) {
+            .po-create-form-row.po-create-items-row { grid-template-columns: 110px minmax(145px, 1fr) minmax(185px, 1.2fr) 132px; }
+            .po-create-form-row.po-create-items-row .po-product-select-wrap { grid-column: 1 / -1; }
         }
         @container (max-width: 980px) {
-            .po-create-form-row.po-create-items-row {
-                grid-template-columns: minmax(280px, 1.7fr) minmax(90px, .55fr) minmax(130px, .8fr);
-            }
             .po-edit-item-row {
                 grid-template-columns: minmax(280px, 1.7fr) minmax(90px, .55fr) minmax(130px, .8fr);
             }
@@ -852,6 +905,10 @@
             .po-edit-summary {
                 grid-template-columns: 1fr;
             }
+            .po-summary-facts { grid-template-columns: 1fr; }
+            .po-create-workspace { grid-template-columns: 1fr; }
+            .po-order-summary-card { position: static; }
+            .po-summary-line-totals { grid-template-columns: 1fr; }
         }
         @media (max-width: 991.98px) {
             .page-body { padding: 20px 14px; }
@@ -865,12 +922,12 @@
                 --po-edit-modal-width: calc(100vw - 20px);
                 --po-edit-modal-height: calc(100vh - 20px);
             }
-            .po-selected-product-panel.is-visible { grid-template-columns: 1fr; }
-            .po-create-form-row,
-            .po-create-form-row.po-create-items-row,
+            #editPurchaseOrderModal .modal-content { min-width: 0; min-height: 0; }
+            #editPurchaseOrderModal .modal-body { display: block; overflow-y: auto !important; overflow-x: hidden !important; }
+            .po-edit-form { position: static; margin-bottom: 14px; box-shadow: none; }
+            .po-edit-lower { height: auto !important; min-height: 0; overflow: visible; }
             .po-edit-primary-row,
             .po-edit-item-row { grid-template-columns: 1fr; }
-            .po-create-items-row .form-label,
             .po-edit-item-row .form-label { min-height: 0; }
             .po-edit-layout,
             .po-edit-summary { grid-template-columns: 1fr; }
@@ -883,6 +940,322 @@
             .po-selected-product-grid,
             .po-order-cards,
             .po-create-summary { grid-template-columns: 1fr; }
+            .po-current-stock-values { align-items: flex-start; flex-direction: column; gap: 4px; }
+            .po-current-stock-values span + span::before { display: none; }
+            .po-summary-item-header { grid-template-columns: 22px minmax(0, 1fr); }
+            .po-summary-remove-item { grid-column: 2; justify-self: start; }
+            .po-summary-facts,
+            .po-summary-line-totals { margin-left: 31px; }
+        }
+        #editPurchaseOrderModal .invalid-feedback:not(:empty) { display: block; }
+        #editPurchaseOrderModal .modal-body { display: block; overflow-y: auto !important; overflow-x: hidden !important; }
+        #editPurchaseOrderModal .modal-footer { padding: 12px 16px; border-top: 1px solid #e5e9f1; box-shadow: 0 -4px 12px rgba(15, 23, 42, .04); }
+        #editPurchaseOrderModal .po-edit-form { position: static; margin-bottom: 14px; box-shadow: none; }
+        #editPurchaseOrderModal .po-edit-lower { height: auto !important; min-height: 0; overflow: visible; }
+        .po-table-scroll { isolation: isolate; }
+        #table-purchase-orders.po-list-table th.col-actions,
+        #table-purchase-orders.po-list-table td.po-actions-cell {
+            position: sticky !important;
+            right: 0 !important;
+            width: 150px !important;
+            min-width: 150px !important;
+            max-width: 150px !important;
+            z-index: 3;
+            padding-inline: 10px;
+            border-left: 1px solid #dfe4ec !important;
+            background: #fff !important;
+            box-shadow: -7px 0 12px rgba(15, 23, 42, .08) !important;
+            text-align: center !important;
+        }
+        #table-purchase-orders.po-list-table thead th.col-actions {
+            z-index: 6;
+            background: #f8f9fc !important;
+        }
+        #table-purchase-orders.po-list-table th.col-delivery,
+        #table-purchase-orders.po-list-table td.po-delivery-cell {
+            width: 140px;
+            min-width: 140px;
+        }
+        #table-purchase-orders.po-list-table tbody tr:hover > td { background: #f3f4f6 !important; }
+        #table-purchase-orders.po-list-table tbody tr:hover > td.po-actions-cell { background: #f3f4f6 !important; }
+        #table-purchase-orders.po-list-table th.col-money,
+        #table-purchase-orders.po-list-table td.po-price-cell { text-align: right !important; }
+        #table-purchase-orders.po-list-table .po-actions { width: 100%; min-width: 0; }
+        body.dark-mode #table-purchase-orders.po-list-table td.po-actions-cell { background: #182131 !important; border-left-color: #334155 !important; }
+        body.dark-mode #table-purchase-orders.po-list-table thead th.col-actions { background: #202b3d !important; }
+        body.dark-mode #table-purchase-orders.po-list-table tbody tr:hover > td,
+        body.dark-mode #table-purchase-orders.po-list-table tbody tr:hover > td.po-actions-cell { background: #263244 !important; }
+        #editPurchaseOrderModal .po-edit-items-wrap {
+            max-height: clamp(165px, calc(100vh - 596px), 340px) !important;
+            overflow-x: auto;
+            overflow-y: auto;
+            scrollbar-gutter: stable;
+            isolation: isolate;
+        }
+        #table-edit-po-items.po-items-table.po-edit-items-table {
+            width: 1418px !important;
+            min-width: 1418px !important;
+            table-layout: fixed !important;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        #table-edit-po-items .po-edit-col-product { width: 300px; }
+        #table-edit-po-items .po-edit-col-order-qty { width: 100px; }
+        #table-edit-po-items .po-edit-col-purchase-unit { width: 125px; }
+        #table-edit-po-items .po-edit-col-units { width: 150px; }
+        #table-edit-po-items .po-edit-col-stock-receive { width: 135px; }
+        #table-edit-po-items .po-edit-col-unit-cost,
+        #table-edit-po-items .po-edit-col-line-total { width: 120px; }
+        #table-edit-po-items .po-edit-col-inventory { width: 280px; }
+        #table-edit-po-items .po-edit-col-actions { width: 88px; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th,
+        #table-edit-po-items.po-items-table.po-edit-items-table td {
+            padding: 10px 16px;
+            border-inline: 0;
+            border-bottom: 1px solid #e9edf3;
+            vertical-align: middle;
+        }
+        #table-edit-po-items.po-items-table.po-edit-items-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            height: 46px;
+            color: #525c6c;
+            background: #f7f8fb;
+            font-size: .78rem;
+            line-height: 1.2;
+            white-space: normal !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+        }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(1),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(1) {
+            position: sticky;
+            left: 0;
+            width: 300px !important;
+            min-width: 300px !important;
+            max-width: 300px !important;
+            z-index: 3;
+            border-right: 1px solid #e2e7ee;
+            background: #fff;
+            box-shadow: 3px 0 7px rgba(15, 23, 42, .045);
+            text-align: left !important;
+            white-space: normal !important;
+        }
+        #table-edit-po-items.po-items-table.po-edit-items-table thead th:nth-child(1) { z-index: 7; background: #f7f8fb; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(2),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(2) { width: 100px !important; min-width: 100px !important; max-width: 100px !important; text-align: left !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(3),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(3) { width: 125px !important; min-width: 125px !important; max-width: 125px !important; text-align: left !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(4),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(4) { width: 150px !important; min-width: 150px !important; max-width: 150px !important; text-align: left !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(5),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(5) { width: 135px !important; min-width: 135px !important; max-width: 135px !important; text-align: left !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(6),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(6),
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(7),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(7) { width: 120px !important; min-width: 120px !important; max-width: 120px !important; text-align: right !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(8),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(8) { width: 280px !important; min-width: 280px !important; max-width: 280px !important; text-align: left !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(9),
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(9) {
+            position: sticky !important;
+            right: 0 !important;
+            width: 88px !important;
+            min-width: 88px !important;
+            max-width: 88px !important;
+            z-index: 3;
+            border-left: 1px solid #dfe4ec !important;
+            background: #fff !important;
+            box-shadow: -7px 0 12px rgba(15, 23, 42, .08) !important;
+            text-align: center !important;
+        }
+        #table-edit-po-items.po-items-table.po-edit-items-table thead th:nth-child(9) { z-index: 7; background: #f7f8fb !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(n+2):nth-child(-n+7) { white-space: nowrap !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table tbody tr:hover > td,
+        #table-edit-po-items.po-items-table.po-edit-items-table tbody tr:hover > td:nth-child(1),
+        #table-edit-po-items.po-items-table.po-edit-items-table tbody tr:hover > td:nth-child(9) { background: #f3f4f6 !important; }
+        #table-edit-po-items.po-items-table.po-edit-items-table tbody tr.is-selected > td,
+        #table-edit-po-items.po-items-table.po-edit-items-table tbody tr.is-selected > td:nth-child(1),
+        #table-edit-po-items.po-items-table.po-edit-items-table tbody tr.is-selected > td:nth-child(9) { background: #fff7ed !important; }
+        .po-edit-product-name { display: -webkit-box; overflow: hidden; font-size: .86rem; font-weight: 900; line-height: 1.3; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+        .po-edit-product-spec { display: block; margin-top: 3px; color: #667085; font-size: .75rem; line-height: 1.3; white-space: normal; }
+        .po-edit-product-type { display: block; margin-top: 2px; color: #8a94a4; font-size: .7rem; font-weight: 750; line-height: 1.25; }
+        .po-edit-inventory-stock { display: flex; align-items: center; gap: 6px; min-width: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .po-edit-inventory-stock .po-stock-chip { display: inline-flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 76px; padding: 5px 7px; border: 1px solid #e3e8ef; border-radius: 7px; background: #f8fafc; }
+        .po-edit-inventory-stock .po-stock-chip-on-hand { border-color: #d8ccfb; background: #f3efff; }
+        .po-edit-inventory-stock small { color: #667085; font-size: .64rem; font-weight: 800; }
+        .po-edit-inventory-stock b { color: #344054; font-size: .79rem; font-weight: 900; }
+        #table-edit-po-items.po-edit-items-table td.po-actions-cell .btn { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+        body.dark-mode #table-edit-po-items.po-edit-items-table tbody td:nth-child(1),
+        body.dark-mode #table-edit-po-items.po-edit-items-table tbody td:nth-child(9) { background: #182131 !important; border-color: #334155 !important; }
+        body.dark-mode #table-edit-po-items.po-edit-items-table thead th:nth-child(1),
+        body.dark-mode #table-edit-po-items.po-edit-items-table thead th:nth-child(9) { background: #202b3d !important; }
+        body.dark-mode #table-edit-po-items.po-edit-items-table tbody tr:hover > td { background: #263244 !important; }
+        body.dark-mode #table-edit-po-items.po-edit-items-table tbody tr.is-selected > td { background: #431407 !important; }
+        body.dark-mode .po-edit-inventory-stock .po-stock-chip { border-color: #334155; background: #202b3d; }
+        body.dark-mode .po-edit-inventory-stock .po-stock-chip-on-hand { border-color: #6d5bb8; background: #312e52; }
+        body.dark-mode .po-edit-inventory-stock small { color: #a8b3c4; }
+        body.dark-mode .po-edit-inventory-stock b { color: #e5e7eb; }
+        #edit-po-summary.po-edit-summary { margin-top: 12px; margin-bottom: 8px; }
+        #table-edit-po-items tbody tr[data-item-key]:focus-visible { outline: 3px solid rgba(124, 58, 237, .3); outline-offset: -3px; }
+        @media (max-width: 575.98px) {
+            #editPurchaseOrderModal,
+            #editPurchaseOrderModal.po-modal-positioned { --po-edit-modal-width: 100vw; --po-edit-modal-height: 100vh; }
+            #editPurchaseOrderModal .modal-dialog,
+            #editPurchaseOrderModal.po-modal-positioned .modal-dialog { position: fixed; inset: 0; width: 100vw; max-width: none; height: 100vh; max-height: none; margin: 0; }
+            #editPurchaseOrderModal .modal-content { min-width: 0; min-height: 0; border: 0; border-radius: 0; }
+            #table-edit-po-items.po-items-table.po-edit-items-table th:nth-child(1),
+            #table-edit-po-items.po-items-table.po-edit-items-table td:nth-child(1) { width: 240px !important; min-width: 240px !important; max-width: 240px !important; }
+            #table-edit-po-items .po-edit-col-product { width: 240px; }
+            #table-edit-po-items.po-items-table.po-edit-items-table { width: 1358px !important; min-width: 1358px !important; }
+        }
+        body.modal-open { overflow: hidden !important; }
+        .receive-workspace-dialog { width: 92vw !important; max-width: 1360px !important; height: 90vh; margin: 5vh auto; }
+        .receive-workspace { height: 90vh; overflow: hidden; border: 0; border-radius: 16px; }
+        .receive-workspace-header, .receive-workspace-footer { flex: 0 0 auto; background: var(--bs-body-bg, #fff); z-index: 3; }
+        .receive-workspace-header { align-items: flex-start; padding: 16px 20px; border-bottom: 1px solid var(--border-soft); }
+        .receive-workspace-body { overflow-y: auto; overflow-x: hidden; padding: 14px 20px 18px; }
+        .receive-workspace-footer { gap: 8px; flex-wrap: wrap; padding: 12px 20px; border-top: 1px solid var(--border-soft); box-shadow: 0 -8px 20px rgba(15,23,42,.05); }
+        .receive-header-facts { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 10px; width: min(1060px,calc(92vw - 90px)); margin-top: 8px; }
+        .receive-header-fact { min-width: 0; padding-right: 10px; border-right: 1px solid var(--border-soft); }
+        .receive-header-fact:last-child { border-right: 0; }
+        .receive-header-fact b { display: block; color: #64748b; font-size: .66rem; letter-spacing: .035em; text-transform: uppercase; }
+        .receive-header-fact span { display: block; margin-top: 2px; overflow: hidden; color: var(--text-main); font-size: .79rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+        .receive-progress-panel, .receive-checklist { min-width: 0; margin-bottom: 10px; padding: 11px 13px; border: 1px solid var(--border-soft); border-radius: 11px; background: var(--bs-body-bg,#fff); }
+        .receive-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+        .receive-progress-head strong { color: var(--text-main); font-size: .82rem; }
+        .receive-progress-head span { color: #64748b; font-size: .75rem; font-weight: 700; text-align: right; }
+        .receive-progress-panel .progress { height: 8px; background: #e2e8f0; }
+        .receive-progress-panel .progress-bar { background: #6d28d9; }
+        .receive-checklist h3 { margin: 0 0 5px; color: var(--text-main); font-size: .82rem; font-weight: 800; }
+        .receive-checklist-list { display: flex; align-items: flex-start; gap: 0; margin: 0; padding: 2px 2px 6px; overflow-x: auto; overflow-y: hidden; list-style: none; scrollbar-width: thin; }
+        .receive-checklist-list li { position: relative; flex: 1 0 105px; min-width: 105px; color: #92400e; }
+        .receive-checklist-list li:not(:last-child)::after { content: ""; position: absolute; z-index: 0; top: 15px; left: calc(50% + 17px); right: calc(-50% + 17px); height: 2px; background: #dbe2ea; }
+        .receive-checklist-list li.check-complete:not(:last-child)::after { background: #86efac; }
+        .receive-check-step { position: relative; z-index: 1; display: grid; justify-items: center; gap: 5px; width: 100%; min-width: 0; padding: 0 6px; border: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+        .receive-check-step:focus-visible { outline: 2px solid #7c3aed; outline-offset: 3px; border-radius: 8px; }
+        .receive-check-node { display: grid; place-items: center; width: 30px; height: 30px; border: 2px solid #fbbf24; border-radius: 50%; color: #b45309; background: #fffbeb; font-size: .68rem; }
+        .receive-check-label { max-width: 100%; color: #b45309; font-size: .69rem; font-weight: 800; line-height: 1.15; text-align: center; white-space: normal; overflow-wrap: anywhere; }
+        .receive-checklist-list li.check-complete .receive-check-node { border-color: #22c55e; color: #fff; background: #22c55e; }
+        .receive-checklist-list li.check-complete .receive-check-label { color: #166534; }
+        .receive-checklist-list li.check-current .receive-check-node { border-color: #7c3aed; color: #fff; background: #7c3aed; box-shadow: 0 0 0 4px #ede9fe; }
+        .receive-checklist-list li.check-current .receive-check-label { color: #6d28d9; }
+        .receive-checklist-list li.check-na .receive-check-node { border-color: #cbd5e1; color: #64748b; background: #f1f5f9; }
+        .receive-checklist-list li.check-na .receive-check-label { color: #64748b; }
+        .receive-summary-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 8px; margin-bottom: 12px; }
+        .receive-summary-card { min-width: 0; padding: 8px 11px; border: 1px solid var(--border-soft); border-radius: 9px; background: #f8fafc; }
+        .receive-summary-card span, .receive-payment-grid span { display: block; color: #64748b; font-size: .67rem; font-weight: 700; text-transform: uppercase; letter-spacing: .025em; }
+        .receive-summary-card strong { display: block; margin-top: 1px; color: var(--text-main); font-size: 1rem; }
+        .receive-validation { margin-bottom: 10px; padding: 9px 12px; border: 1px solid #fecaca; border-radius: 9px; color: #991b1b; background: #fff7f7; font-size: .79rem; }
+        .receive-validation ul { margin: 6px 0 0; padding-left: 18px; }
+        .receive-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+        .receive-section-heading h3 { margin: 0; color: var(--text-main); font-size: .96rem; font-weight: 800; }
+        .receive-section-heading p { margin: 2px 0 0; color: #64748b; font-size: .78rem; }
+        .receive-card-stack { display: grid; gap: 10px; }
+        .receive-item-card { border: 1px solid var(--border-soft); border-radius: 13px; background: var(--bs-body-bg,#fff); overflow: hidden; transition: border-color .16s ease, box-shadow .16s ease; }
+        .receive-item-card.has-error { border-color: #fca5a5; }
+        .receive-card-toggle { display: grid; grid-template-columns: auto minmax(190px,1.6fr) minmax(300px,1fr) auto; align-items: center; gap: 11px; width: 100%; padding: 10px 13px; border: 0; color: inherit; background: transparent; text-align: left; }
+        .receive-item-card.state-waiting .receive-card-toggle { background: #f8fafc; }
+        .receive-item-card.state-active .receive-card-toggle { background: #eff6ff; }
+        .receive-item-card.state-complete { border-color: #bbf7d0; }
+        .receive-item-card.state-complete .receive-card-toggle { background: #f0fdf4; }
+        .receive-item-card.state-issue { border-color: #fecaca; }
+        .receive-item-card.state-issue .receive-card-toggle { background: #fff7f7; }
+        .receive-item-card.is-locked .receive-card-body { background: rgba(248,250,252,.65); }
+        .receive-item-index { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; background: #7c3aed; font-size: .78rem; font-weight: 800; }
+        .receive-card-title { min-width: 0; }
+        .receive-card-title strong { display: block; overflow-wrap: anywhere; color: var(--text-main); font-size: .9rem; }
+        .receive-card-title small { display: block; margin-top: 2px; color: #64748b; overflow-wrap: anywhere; }
+        .receive-item-result { display: grid; grid-template-columns: repeat(4,minmax(58px,1fr)); gap: 8px; color: #475569; font-size: .7rem; }
+        .receive-item-result span { min-width: 0; text-align: right; }
+        .receive-item-result b { display: block; overflow-wrap: anywhere; color: var(--text-main); font-size: .78rem; }
+        .receive-status-stack { display: grid; justify-items: end; gap: 3px; }
+        .receive-inspection-badge { display: inline-flex; align-items: center; min-width: 112px; justify-content: center; padding: 4px 8px; border-radius: 999px; color: #475569; background: #e2e8f0; font-size: .68rem; font-weight: 800; text-align: center; }
+        .receive-inspection-badge.ready, .receive-inspection-badge.inspecting { color: #1e40af; background: #dbeafe; }
+        .receive-inspection-badge.complete { color: #166534; background: #dcfce7; }
+        .receive-inspection-badge.issue { color: #991b1b; background: #fee2e2; }
+        .receive-issue-flag { color: #991b1b; font-size: .65rem; font-weight: 800; }
+        .receive-card-body { padding: 0 14px 14px; border-top: 1px solid var(--border-soft); }
+        .receive-product-facts { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 7px; padding: 10px 0; }
+        .receive-product-facts div { min-width: 0; padding: 8px 9px; border: 1px solid transparent; border-radius: 8px; background: #f8fafc; }
+        .receive-product-facts .receive-financial-fact { border-color: #ddd6fe; background: #f5f3ff; }
+        .receive-product-facts span { display: block; color: #64748b; font-size: .67rem; font-weight: 700; text-transform: uppercase; }
+        .receive-product-facts strong { display: block; margin-top: 2px; overflow-wrap: anywhere; font-size: .78rem; }
+        .receive-form-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
+        .receive-field { min-width: 0; }
+        .receive-field label { display: block; margin-bottom: 4px; color: #475569; font-size: .73rem; font-weight: 700; }
+        .receive-field .form-control, .receive-field .form-select { min-height: 36px; font-size: .8rem; }
+        .receive-calculated { min-height: 36px; padding: 7px 9px; border: 1px solid var(--border-soft); border-radius: 6px; background: #f8fafc; font-size: .82rem; font-weight: 800; }
+        .receive-inspection-action { grid-column: span 2; width: min(100%,620px); }
+        .receive-inspection-control { display: inline-flex; align-items: center; gap: 9px; max-width: 100%; min-height: 38px; }
+        .receive-readiness-text { display: inline-flex; align-items: center; min-width: 0; max-width: 340px; min-height: 32px; padding: 5px 10px; border: 1px solid #dbe2ea; border-radius: 999px; color: #64748b; background: #f8fafc; font-size: .7rem; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+        .receive-complete-inspection, .receive-reopen-inspection { flex: 0 0 auto; min-height: 38px; padding-inline: 13px; white-space: nowrap; }
+        .receive-complete-inspection:disabled { border-color: #cbd5e1; color: #64748b; background: #e2e8f0; opacity: 1; }
+        .receive-completed-action { display: inline-flex; align-items: center; min-height: 32px; padding: 5px 10px; border: 1px solid #bbf7d0; border-radius: 999px; color: #166534; background: #f0fdf4; font-size: .72rem; font-weight: 800; }
+        .receive-issue-panel { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(220px,280px) minmax(280px,380px) minmax(260px,420px); justify-content: start; gap: 10px; padding: 11px; border: 1px solid #fed7aa; border-radius: 10px; background: #fffaf4; }
+        .receive-issue-panel.d-none { display: none !important; }
+        .receive-batches { grid-column: 1 / -1; margin-top: 2px; padding: 11px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+        .receive-batches-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+        .receive-batches-head strong { font-size: .8rem; }
+        .receive-allocation-state { color: #64748b; font-size: .73rem; }
+        .receive-batch-list { display: grid; gap: 7px; }
+        .receive-batch-row { display: grid; grid-template-columns: minmax(130px,1fr) minmax(100px,.6fr) minmax(150px,.8fr) auto; gap: 8px; align-items: end; }
+        .receive-no-expiry { display: flex; align-items: center; gap: 5px; min-height: 32px; font-size: .72rem; }
+        .receive-inspection-scroll { max-height: 40vh; overflow-y: auto; overflow-x: hidden; padding-right: 4px; scrollbar-gutter: stable; }
+        .receive-scroll-target { scroll-margin-block: 18px; }
+        .receive-target-pulse { animation: receiveTargetPulse 1.35s ease-out; }
+        @keyframes receiveTargetPulse {
+            0%, 100% { outline: 0 solid transparent; background-color: inherit; }
+            18% { outline: 3px solid rgba(124,58,237,.22); background-color: #f5f3ff; }
+        }
+        .receive-payment-panel, .receive-overall-remarks { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border-soft); border-radius: 11px; background: var(--bs-body-bg,#fff); }
+        .receive-payment-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 10px; align-items: stretch; }
+        .receive-payment-grid > div { min-width: 0; padding: 10px 11px; border-radius: 9px; background: #f8fafc; }
+        .receive-payment-grid strong { display: block; margin-top: 5px; overflow-wrap: anywhere; font-size: .95rem; }
+        .receive-discount-field label { display: block; color: #64748b; font-size: .74rem; font-weight: 700; text-transform: uppercase; }
+        .receive-discount-field small { display: block; margin-top: 3px; color: #64748b; font-size: .66rem; }
+        .receive-payment-total { color: #fff; background: #6d28d9 !important; }
+        .receive-payment-total span { color: #ede9fe; }
+        .receive-payment-total strong { font-size: 1.08rem; }
+        .dark-mode .receive-product-facts div, .dark-mode .receive-calculated, .dark-mode .receive-payment-grid > div, .dark-mode .receive-summary-card, .dark-mode .receive-batches { background: #172033; }
+        .dark-mode .receive-readiness-text { border-color: #334155; background: #172033; }
+        .dark-mode .receive-product-facts .receive-financial-fact { border-color: #5b21b6; background: #24194a; }
+        .dark-mode .receive-item-card.state-waiting .receive-card-toggle { background: #172033; }
+        .dark-mode .receive-item-card.state-active .receive-card-toggle { background: #172554; }
+        .dark-mode .receive-item-card.state-complete .receive-card-toggle { background: #052e16; }
+        .dark-mode .receive-item-card.state-issue .receive-card-toggle { background: #2b1719; }
+        .dark-mode .receive-issue-panel { border-color: #78350f; background: #241b12; }
+        .dark-mode .receive-validation { border-color: #7f1d1d; color: #fecaca; background: #2b1719; }
+        @media (max-width: 1100px) {
+            .receive-header-facts { grid-template-columns: repeat(3,minmax(0,1fr)); }
+            .receive-summary-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+            .receive-product-facts { grid-template-columns: repeat(4,minmax(0,1fr)); }
+            .receive-card-toggle { grid-template-columns: auto minmax(180px,1fr) auto; }
+            .receive-item-result { grid-column: 2 / -1; }
+            .receive-form-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+            .receive-issue-panel { grid-template-columns: minmax(190px,.8fr) minmax(240px,1.15fr) minmax(220px,1fr); }
+            .receive-payment-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+            .receive-payment-total { grid-column: span 2; }
+        }
+        @media (max-width: 700px) {
+            .receive-workspace-dialog { width: 96vw; height: 94vh; margin: 3vh auto; }
+            .receive-workspace { height: 94vh; }
+            .receive-header-facts, .receive-summary-grid, .receive-product-facts, .receive-form-grid, .receive-issue-panel, .receive-payment-grid { grid-template-columns: 1fr; }
+            .receive-inspection-action { grid-column: auto; width: 100%; }
+            .receive-inspection-control { align-items: flex-start; flex-direction: column; }
+            .receive-readiness-text { max-width: min(100%,340px); }
+            .receive-header-facts { width: calc(96vw - 80px); }
+            .receive-header-fact { padding: 0 0 5px; border-right: 0; border-bottom: 1px solid var(--border-soft); }
+            .receive-header-fact span { white-space: normal; }
+            .receive-payment-total { grid-column: auto; }
+            .receive-card-toggle { grid-template-columns: auto minmax(0,1fr); }
+            .receive-item-result { grid-column: 1 / -1; }
+            .receive-item-result span { text-align: left; }
+            .receive-status-stack { grid-column: 2; grid-row: 1; justify-self: end; }
+            .receive-batch-row { grid-template-columns: 1fr 1fr; }
+            .receive-workspace-footer > * { flex: 1 1 auto; }
+            #receiveFooterStatus { flex-basis: 100%; }
         }
     </style>
 </head>
@@ -944,9 +1317,10 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="table-responsive po-table-scroll">
-                                <table id="table-purchase-orders" class="table table-hover align-middle po-list-table">
-                                    <thead id="purchase-orders-head">
+                             <div class="table-responsive po-table-scroll">
+                                 <table id="table-purchase-orders" class="table table-hover align-middle po-list-table">
+                                    <colgroup id="purchase-orders-colgroup"></colgroup>
+                                     <thead id="purchase-orders-head">
                                         <tr>
                                             <th class="col-supplier">Supplier</th>
                                             <th class="col-brand">Brand</th>
@@ -955,6 +1329,7 @@
                                             <th class="col-qty">Order Qty</th>
                                             <th class="col-purchase-unit">Purchase Unit</th>
                                             <th class="col-inventory-qty">Stock to Receive</th>
+                                            <th class="col-money">PO Total</th>
                                             <th class="col-terms">Payment</th>
                                             <th class="col-delivery">ETA</th>
                                             <th class="col-status">Status</th>
@@ -983,95 +1358,78 @@
                 </div>
                 <div class="modal-body">
                     <div class="po-create-form">
-                        <div class="po-create-form-row po-form-primary-row">
-                        <div>
-                            <label class="form-label fw-semibold" for="po-supplier-select">Supplier</label>
-                            <select id="po-supplier-select" class="form-select">
-                                <option value="" disabled selected>Loading suppliers...</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="form-label fw-semibold" for="po-payment-terms">Payment Terms</label>
-                            <select id="po-payment-terms" class="form-select">
-                                <option value="" disabled selected>Select payment terms...</option>
-                                <option value="Cash">Cash</option>
-                                <option value="GCash">GCash</option>
-                                <option value="Bank Transfer">Bank Transfer</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="form-label fw-semibold" for="po-expected-delivery">ETA</label>
-                            <input id="po-expected-delivery" type="date" class="form-control">
-                        </div>
-                        </div>
-                        <div class="po-create-form-row po-create-items-row po-form-item-row">
-                        <div class="po-product-select-wrap">
-                            <label class="form-label fw-semibold" for="po-product-select">Product</label>
-                            <select id="po-product-select" class="form-select" disabled>
-                                <option value="" disabled selected>Select product...</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="form-label fw-semibold" for="po-quantity">Order Qty</label>
-                            <input id="po-quantity" type="number" class="form-control" min="1" value="1">
-                        </div>
-                        <div>
-                            <label class="form-label fw-semibold" for="po-purchase-unit">Purchase Unit</label>
-                            <select id="po-purchase-unit" class="form-select" disabled>
-                                <option value="Box">Box</option>
-                                <option value="Case">Case</option>
-                                <option value="Carton">Carton</option>
-                                <option value="Bundle">Bundle</option>
-                                <option value="Pallet">Pallet</option>
-                                <option value="Pack">Pack</option>
-                                <option value="Bottle">Bottle</option>
-                                <option value="Can">Can</option>
-                                <option value="Blister Pack">Blister Pack</option>
-                                <option value="Sachet">Sachet</option>
-                                <option value="Piece">Piece</option>
-                                <option value="pcs">pcs</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="form-label fw-semibold" for="po-units-per-purchase-unit">Units per Purchase Unit</label>
-                            <input id="po-units-per-purchase-unit" type="number" class="form-control" min="1" value="1" readonly>
-                        </div>
-                        <div class="d-grid">
-                            <button id="btnAddPoItem" class="btn btn-purple" type="button">Add Item</button>
-                        </div>
-                        </div>
+                        <section class="po-create-section" aria-labelledby="po-information-heading">
+                            <h3 id="po-information-heading" class="po-create-section-title">Purchase Order Information</h3>
+                            <div class="po-create-form-row po-form-primary-row">
+                                <div>
+                                    <label class="form-label fw-semibold" for="po-supplier-select">Supplier</label>
+                                    <select id="po-supplier-select" class="form-select">
+                                        <option value="" disabled selected>Loading suppliers...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="form-label fw-semibold" for="po-payment-terms">Payment Terms</label>
+                                    <select id="po-payment-terms" class="form-select">
+                                        <option value="" disabled selected>Select payment terms...</option>
+                                        <option value="Cash">Cash</option>
+                                        <option value="GCash">GCash</option>
+                                        <option value="Bank Transfer">Bank Transfer</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="form-label fw-semibold" for="po-expected-delivery">ETA</label>
+                                    <input id="po-expected-delivery" type="date" class="form-control">
+                                </div>
+                            </div>
+                        </section>
+                        <section class="po-create-section" aria-labelledby="po-add-item-heading">
+                            <h3 id="po-add-item-heading" class="po-create-section-title">Add Purchase Item</h3>
+                            <div class="po-create-form-row po-create-items-row po-form-item-row">
+                                <div class="po-product-select-wrap">
+                                    <label class="form-label fw-semibold" for="po-product-select">Product</label>
+                                    <select id="po-product-select" class="form-select" disabled>
+                                        <option value="" disabled selected>Select product...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="form-label fw-semibold" for="po-quantity">Order Qty</label>
+                                    <input id="po-quantity" type="number" class="form-control" min="1" step="1" value="1">
+                                </div>
+                                <div>
+                                    <label class="form-label fw-semibold" for="po-purchase-unit">Purchase Unit</label>
+                                    <select id="po-purchase-unit" class="form-select" disabled>
+                                        <option value="Box">Box</option>
+                                        <option value="Case">Case</option>
+                                        <option value="Carton">Carton</option>
+                                        <option value="Bundle">Bundle</option>
+                                        <option value="Pallet">Pallet</option>
+                                        <option value="Pack">Pack</option>
+                                        <option value="Bottle">Bottle</option>
+                                        <option value="Can">Can</option>
+                                        <option value="Blister Pack">Blister Pack</option>
+                                        <option value="Sachet">Sachet</option>
+                                        <option value="Piece">Piece</option>
+                                        <option value="pcs">pcs</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="form-label fw-semibold" for="po-units-per-purchase-unit">Units per Purchase Unit</label>
+                                    <input id="po-units-per-purchase-unit" type="number" class="form-control" min="1" value="1" readonly>
+                                </div>
+                                <div class="d-grid">
+                                    <button id="btnAddPoItem" class="btn btn-purple" type="button">Add Item</button>
+                                </div>
+                            </div>
+                        </section>
                     </div>
-
-                    <div id="po-create-resize-divider" class="po-create-resize-divider" role="separator" aria-orientation="horizontal" aria-label="Collapse or expand purchase order fields"></div>
 
                     <div id="po-create-lower" class="po-create-lower">
                         <div id="po-selected-product-panel" class="po-selected-product-panel" aria-live="polite"></div>
-
-                        <div class="table-responsive border rounded">
-                            <table id="table-po-items" class="table table-hover align-middle mb-0 po-items-table">
-                                <thead>
-                                    <tr>
-                                        <th>Brand</th>
-                                        <th>Product</th>
-                                        <th>Product Type</th>
-                                        <th>Net Weight</th>
-                                        <th>Packaging</th>
-                                        <th>Purchase Unit</th>
-                                        <th>Stock to Receive</th>
-                                        <th>Supplier Cost</th>
-                                        <th>Estimated Cost</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                        <div id="po-create-summary" class="po-create-summary" aria-live="polite"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                    <button id="btnSubmitPo" class="btn btn-purple" type="button">Submit Purchase Order</button>
+                    <button id="btnSubmitPo" class="btn btn-purple" type="button" disabled aria-disabled="true" title="Complete the purchase order information and add at least one item.">Submit Purchase Order</button>
                 </div>
                 <div id="po-modal-corner-resize" class="po-modal-corner-resize" aria-hidden="true"></div>
             </div>
@@ -1097,7 +1455,7 @@
                                     <th>Brand</th>
                                     <th>Product</th>
                                     <th>Specification</th>
-                                    <th>Supplier Cost</th>
+                                    <th>Supplier Cost / Base Unit</th>
                                     <th>Purchase Unit</th>
                                     <th>Purchase Conversion</th>
                                     <th>Stock to Receive</th>
@@ -1119,7 +1477,7 @@
         </div>
     </div>
 
-    <div class="modal fade" id="editPurchaseOrderModal" tabindex="-1" aria-labelledby="editPurchaseOrderModalLabel" aria-hidden="true">
+    <div class="modal fade" id="editPurchaseOrderModal" tabindex="-1" aria-labelledby="editPurchaseOrderModalLabel" aria-hidden="true" data-bs-backdrop="static">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
@@ -1132,6 +1490,8 @@
                 <div class="modal-body">
                     <input type="hidden" id="edit-po-id">
                     <div class="po-edit-form">
+                        <section class="po-edit-section" aria-labelledby="edit-po-details-heading">
+                        <h3 class="po-edit-section-title" id="edit-po-details-heading">Purchase Order Details</h3>
                         <div class="po-edit-form-row po-edit-primary-row">
                         <div>
                             <label class="form-label fw-semibold" for="edit-po-supplier-select">Supplier</label>
@@ -1150,16 +1510,25 @@
                             <input id="edit-po-expected-delivery" type="date" class="form-control">
                         </div>
                         </div>
+                        </section>
+                        <section class="po-edit-section" aria-labelledby="edit-po-add-item-heading">
+                        <div class="po-edit-section-heading">
+                            <h3 class="po-edit-section-title" id="edit-po-add-item-heading">Add Item to Purchase Order</h3>
+                            <span id="edit-po-mode-label" class="po-edit-mode-badge">Add mode</span>
+                        </div>
+                        <div id="edit-po-lock-notice" class="po-edit-lock-notice d-none" role="status"></div>
                         <div class="po-edit-form-row po-edit-item-row">
                         <div class="po-product-select-wrap">
                             <label class="form-label fw-semibold" for="edit-po-product-select">Product</label>
                             <select id="edit-po-product-select" class="form-select" disabled>
                                 <option value="" disabled selected>Select product...</option>
                             </select>
+                            <div id="edit-po-product-error" class="invalid-feedback"></div>
                         </div>
                         <div>
                             <label class="form-label fw-semibold" for="edit-po-quantity">Order Qty</label>
-                            <input id="edit-po-quantity" type="number" class="form-control" min="1" value="1">
+                            <input id="edit-po-quantity" type="number" class="form-control" min="1" step="1" value="1" inputmode="numeric">
+                            <div id="edit-po-quantity-error" class="invalid-feedback"></div>
                         </div>
                         <div>
                             <label class="form-label fw-semibold" for="edit-po-editor-purchase-unit">Purchase Unit</label>
@@ -1177,47 +1546,60 @@
                                 <option value="Piece">Piece</option>
                                 <option value="pcs">pcs</option>
                             </select>
+                            <div id="edit-po-purchase-unit-error" class="invalid-feedback"></div>
                         </div>
                         <div>
                             <label class="form-label fw-semibold" for="edit-po-editor-contains">Units per Purchase Unit</label>
-                            <input id="edit-po-editor-contains" class="form-control" type="number" min="1" value="1" readonly>
+                            <input id="edit-po-editor-contains" class="form-control" type="number" min="1" step="1" value="1" readonly inputmode="numeric">
+                            <div id="edit-po-contains-error" class="invalid-feedback"></div>
                         </div>
-                        <div class="d-grid">
-                            <button id="btnEditAddPoItem" class="btn btn-purple" type="button">Update Item</button>
+                        <div>
+                            <label class="form-label fw-semibold" for="edit-po-editor-price">Supplier Cost / Base Unit</label>
+                            <div class="input-group">
+                                <span class="input-group-text">&#8369;</span>
+                                <input id="edit-po-editor-price" class="form-control" type="number" min="0" step="0.01" readonly>
+                            </div>
+                            <div id="edit-po-price-error" class="invalid-feedback"></div>
+                        </div>
+                        <div class="po-edit-item-actions">
+                            <button id="btnEditAddPoItem" class="btn btn-purple" type="button">Add Item</button>
+                            <button id="btnCancelEditPoItem" class="btn btn-link btn-sm d-none" type="button">Cancel Editing</button>
                         </div>
                         </div>
+                        </section>
                     </div>
-
-                    <div id="edit-po-resize-divider" class="po-create-resize-divider" role="separator" aria-orientation="horizontal" aria-label="Collapse or expand edit purchase order fields"></div>
 
                     <div id="edit-po-lower" class="po-edit-lower">
                         <div class="po-edit-layout">
-                            <section class="po-edit-card">
+                            <section class="po-edit-card po-edit-items-card" aria-labelledby="edit-po-items-heading">
                                 <div class="po-edit-card-header">
-                                    <h4>Selected Product Details</h4>
-                                </div>
-                                <div id="edit-po-product-details-grid" class="po-edit-details-grid" aria-live="polite">
-                                    <div class="po-preview-empty">Select or click a PO item to view product details.</div>
-                                </div>
-                            </section>
-                            <section class="po-edit-card">
-                                <div class="po-edit-card-header">
-                                    <h4>PO Items</h4>
+                                    <h4 id="edit-po-items-heading">PO Items</h4>
+                                    <span id="edit-po-item-count" class="po-line-count">0</span>
                                 </div>
                                 <div class="table-responsive po-edit-items-wrap">
-                                    <table id="table-edit-po-items" class="table table-hover align-middle mb-0 po-items-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Brand</th>
-                                                <th>Product</th>
-                                                <th>Product Type</th>
-                                                <th>Net Weight</th>
-                                                <th>Packaging</th>
-                                                <th>Purchase Unit</th>
-                                                <th>Stock to Receive</th>
-                                                <th>Supplier Cost</th>
-                                                <th>Estimated Cost</th>
-                                                <th>Actions</th>
+                                     <table id="table-edit-po-items" class="table table-hover align-middle mb-0 po-items-table po-edit-items-table">
+                                        <colgroup>
+                                            <col class="po-edit-col-product">
+                                            <col class="po-edit-col-order-qty">
+                                            <col class="po-edit-col-purchase-unit">
+                                            <col class="po-edit-col-units">
+                                            <col class="po-edit-col-stock-receive">
+                                            <col class="po-edit-col-unit-cost">
+                                            <col class="po-edit-col-line-total">
+                                            <col class="po-edit-col-inventory">
+                                            <col class="po-edit-col-actions">
+                                        </colgroup>
+                                         <thead>
+                                             <tr>
+                                                 <th scope="col">Product</th>
+                                                <th scope="col">Order Qty</th>
+                                                 <th scope="col">Purchase Unit</th>
+                                                <th scope="col">Units per Purchase Unit</th>
+                                                <th scope="col">Stock to Receive</th>
+                                                <th scope="col" class="text-end">Supplier Cost / Base Unit</th>
+                                                <th scope="col" class="text-end">Line Total</th>
+                                                <th scope="col">Inventory Stock</th>
+                                                <th scope="col" class="text-center">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -1229,7 +1611,6 @@
                     </div>
 
                     <div id="edit-po-product-editor" class="po-edit-hidden-fields d-none">
-                        <p class="po-item-editor-title" id="edit-po-product-editor-title">Selected Product Details</p>
                         <input type="hidden" id="edit-po-editor-index">
                         <input type="hidden" id="edit-po-editor-product-id">
                         <input type="hidden" id="edit-po-editor-product-name">
@@ -1240,7 +1621,6 @@
                         <input type="hidden" id="edit-po-editor-strength-size">
                         <input type="hidden" id="edit-po-editor-unit">
                         <input type="hidden" id="edit-po-editor-packaging">
-                        <input type="hidden" id="edit-po-editor-price">
                         <input type="hidden" id="edit-po-editor-quantity">
                         <input type="hidden" id="edit-po-editor-conversion">
                         <input type="hidden" id="edit-po-editor-stock-receive">
@@ -1260,93 +1640,13 @@
         </div>
     </div>
 
-    <div class="modal fade" id="receivePurchaseOrderModal" tabindex="-1" aria-labelledby="receivePurchaseOrderModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div>
-                        <h2 class="modal-title fs-5 fw-bold" id="receivePurchaseOrderModalLabel">Inspect Delivery & Receive</h2>
-                        <p class="text-muted small mb-0 mt-1">PO <span id="receivePoNumber">-</span> Ã‚Â· <span id="receiveSupplierName">-</span></p>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="table-responsive border rounded mb-3">
-                        <table id="table-receive-items" class="table table-hover align-middle mb-0 po-items-table">
-                            <thead>
-                                <tr>
-                                    <th>Brand</th>
-                                    <th>Product</th>
-                                    <th>Specification</th>
-                                    <th>Stock to Receive</th>
-                                    <th>Received Qty</th>
-                                    <th>Damaged Qty</th>
-                                    <th>Damage Action</th>
-                                    <th>Expiry Date</th>
-                                    <th>Remarks</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                    <div class="row g-3 align-items-start mb-3">
-                        <div class="col-lg-5 ms-auto">
-                            <div class="payment-summary-card">
-                                <h3>Payment Summary</h3>
-                                <div class="payment-summary-line">
-                                    <span>Original PO Total</span>
-                                    <strong id="receiveOriginalTotal">Ã¢â€šÂ±0.00</strong>
-                                </div>
-                                <div class="payment-summary-line">
-                                    <span>Rejected Qty</span>
-                                    <strong id="receiveRejectedQty">0 items</strong>
-                                </div>
-                                <div class="payment-summary-line payment-summary-credit">
-                                    <span>Supplier Credit</span>
-                                    <strong id="receiveDamageDeduction">-Ã¢â€šÂ±0.00</strong>
-                                </div>
-                                <div class="mb-2 mt-2">
-                                    <label class="form-label small fw-bold mb-1" for="receiveAdditionalAmount">Supplier Discount</label>
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text">Ã¢â€šÂ±</span>
-                                        <input id="receiveAdditionalAmount" class="form-control" type="number" min="0" step="0.01" value="0" inputmode="decimal">
-                                    </div>
-                                </div>
-                                <div class="payment-summary-line payment-summary-total">
-                                    <span>Final Payment</span>
-                                    <strong id="receiveFinalAmount">Ã¢â€šÂ±0.00</strong>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row g-3 mb-3 d-none">
-                        <div class="col-md-4 ms-auto">
-                            <label class="form-label fw-semibold" for="receivePoAmountPaid">Amount Paid</label>
-                            <div class="input-group">
-                                <span class="input-group-text">Ã¢â€šÂ±</span>
-                                <input id="receivePoAmountPaid" class="form-control" type="number" min="0" step="0.01" placeholder="0.00">
-                            </div>
-                            <div class="form-text">Cannot exceed the purchase order total.</div>
-                        </div>
-                    </div>
-                    <label class="form-label fw-semibold" for="receivePoRemarks">Receiving Remarks</label>
-                    <textarea id="receivePoRemarks" class="form-control" rows="3" placeholder="Optional receiving notes..."></textarea>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                    <button id="btnConfirmReceivePo" class="btn btn-purple" type="button">Confirm Receiving</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <div class="modal fade" id="returnDamageModal" tabindex="-1" aria-labelledby="returnDamageModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
                         <h2 class="modal-title fs-5 fw-bold" id="returnDamageModalLabel">Return/Damage</h2>
-                        <p class="text-muted small mb-0 mt-1">PO <span id="returnPoNumber">-</span> Ã‚Â· <span id="returnSupplierName">-</span></p>
+                        <p class="text-muted small mb-0 mt-1">PO <span id="returnPoNumber">-</span> · <span id="returnSupplierName">-</span></p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -1384,9 +1684,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-    <script type="module" src="./js/modules/purchase_orders.js?v=60"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=72"></script>
     <script type="module">
-        import verifySession from './js/modules/auth.js';
+        import verifySession from './js/modules/auth.js?v=4';
 
         await verifySession();
     </script>

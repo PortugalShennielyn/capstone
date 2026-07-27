@@ -1,7 +1,9 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
+require_once 'purchase_order_payment_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -18,6 +20,7 @@ if (!is_array($payload)) {
 
 try {
     ensurePurchaseOrderSchema($pdo);
+    ensureActivityLogSchema($pdo);
 
     $poId = cleanId($payload['po_id'] ?? null);
     $records = is_array($payload['returns'] ?? null) ? $payload['returns'] : [];
@@ -99,10 +102,16 @@ try {
     }
 
     updatePurchaseOrderStatus($pdo, $poId, 'Delivered with Return/Damage');
-    $paymentStatement = $pdo->prepare("UPDATE purchase_orders SET payment_status = 'Adjusted' WHERE po_id = :po_id");
-    $paymentStatement->execute([':po_id' => $poId]);
+    $payableStatement = $pdo->prepare('SELECT final_payment FROM purchase_orders WHERE po_id = :po_id LIMIT 1');
+    $payableStatement->execute([':po_id' => $poId]);
+    synchronizePurchaseOrderPaymentStatus($pdo, $poId, (float) $payableStatement->fetchColumn());
 
     $pdo->commit();
+
+    $poNumberStmt = $pdo->prepare('SELECT po_number FROM purchase_orders WHERE po_id = :po_id LIMIT 1');
+    $poNumberStmt->execute([':po_id' => $poId]);
+    $poNumber = trim((string) $poNumberStmt->fetchColumn()) ?: $poId;
+    recordActivityLog($pdo, 'Purchase Order', 'Returned/Damaged', 'PO ' . $poNumber . ' has return/damage items', $poId);
 
     echo json_encode([
         'status' => 'success',

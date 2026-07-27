@@ -10,6 +10,9 @@ try {
         exit();
     }
 
+    ensureActivityLogSchema($pdo);
+    ensureSalesOrderCashSchema($pdo);
+
     $payload = salesReadJsonBody();
     $items = salesNormalizeCartItems($payload['items'] ?? []);
     if (!$items) {
@@ -50,17 +53,28 @@ try {
         }
 
         $subtotal = salesWriteOrderItems($pdo, $orderId, $items, $products);
-        $total = salesOrderTotalFromPayload($payload, $subtotal);
+        $totals = salesOrderTotalsFromPayload($payload, $subtotal);
+        $cashTotals = salesCashTotalsFromPayload($payload, $totals['total_amount']);
         $update = $pdo->prepare(
             "UPDATE sales_orders
              SET customer_name = :customer_name,
+                 subtotal = :subtotal,
+                 discount = :discount,
+                 vat = :vat,
                  total_amount = :total_amount,
+                 cash_received = :cash_received,
+                 change_amount = :change_amount,
                  status = 'draft'
              WHERE order_id = :order_id"
         );
         $update->execute([
             ':customer_name' => $customerName !== '' ? $customerName : null,
-            ':total_amount' => $total,
+            ':subtotal' => $totals['subtotal'],
+            ':discount' => $totals['discount'],
+            ':vat' => $totals['vat'],
+            ':total_amount' => $totals['total_amount'],
+            ':cash_received' => $cashTotals['cash_received'],
+            ':change_amount' => $cashTotals['change_amount'],
             ':order_id' => $orderId,
         ]);
     } else {
@@ -78,21 +92,29 @@ try {
         ]);
         $orderId = (int) $pdo->lastInsertId();
         $subtotal = salesWriteOrderItems($pdo, $orderId, $items, $products);
-        $total = salesOrderTotalFromPayload($payload, $subtotal);
-        $update = $pdo->prepare('UPDATE sales_orders SET total_amount = :total_amount WHERE order_id = :order_id');
-        $update->execute([':total_amount' => $total, ':order_id' => $orderId]);
-
-        $history = $pdo->prepare(
-            "INSERT INTO sales_order_status_history
-                (order_id, old_status, new_status, changed_by, remarks)
-             VALUES
-                (:order_id, NULL, 'draft', :changed_by, :remarks)"
+        $totals = salesOrderTotalsFromPayload($payload, $subtotal);
+        $cashTotals = salesCashTotalsFromPayload($payload, $totals['total_amount']);
+        $update = $pdo->prepare(
+            'UPDATE sales_orders
+             SET subtotal = :subtotal,
+                 discount = :discount,
+                 vat = :vat,
+                 total_amount = :total_amount,
+                 cash_received = :cash_received,
+                 change_amount = :change_amount
+             WHERE order_id = :order_id'
         );
-        $history->execute([
+        $update->execute([
+            ':subtotal' => $totals['subtotal'],
+            ':discount' => $totals['discount'],
+            ':vat' => $totals['vat'],
+            ':total_amount' => $totals['total_amount'],
+            ':cash_received' => $cashTotals['cash_received'],
+            ':change_amount' => $cashTotals['change_amount'],
             ':order_id' => $orderId,
-            ':changed_by' => $userId,
-            ':remarks' => 'Draft saved by sales clerk.',
         ]);
+
+        salesRecordStatusChange($pdo, $orderId, null, 'draft', $userId, 'Draft saved by sales clerk.');
     }
 
     $pdo->commit();

@@ -1,4 +1,5 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
@@ -103,7 +104,7 @@ try {
             poi.quantity
          ORDER BY por.created_at DESC, por.return_id DESC"
     );
-    $returns = $statement->fetchAll(PDO::FETCH_ASSOC);
+    $returns = array_map('decoratePurchaseOrderReturnRecord', $statement->fetchAll(PDO::FETCH_ASSOC));
 
     $summary = [
         'Total Return/Damage' => count($returns),

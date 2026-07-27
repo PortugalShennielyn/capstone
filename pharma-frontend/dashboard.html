@@ -12,8 +12,8 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <script src="./js/navbar.js?v=55" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
 
     <style>
         :root {
@@ -634,6 +634,8 @@
         }
 
         .quick-action {
+            --action-color: #4f46e5;
+            --action-soft: #eef2ff;
             min-height: 54px;
             display: flex;
             align-items: center;
@@ -646,12 +648,27 @@
             font-weight: 800;
             transition: var(--transition);
             text-align: left;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, .03);
         }
 
         .quick-action:hover {
-            color: var(--purple);
-            border-color: rgba(124, 58, 237, 0.28);
-            background: var(--purple-soft);
+            color: var(--text-main);
+            border-color: color-mix(in srgb, var(--action-color) 38%, var(--border-soft));
+            background: #fff;
+            box-shadow: 0 5px 14px rgba(15, 23, 42, .08);
+            transform: translateY(-2px);
+        }
+
+        .quick-action:focus-visible {
+            outline: 3px solid color-mix(in srgb, var(--action-color) 24%, transparent);
+            outline-offset: 2px;
+            border-color: var(--action-color);
+        }
+
+        .quick-action:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(15, 23, 42, .08);
         }
 
         .quick-action i {
@@ -662,15 +679,31 @@
             align-items: center;
             justify-content: center;
             border-radius: 8px;
-            color: #fff;
-            background: var(--purple);
+            color: var(--action-color);
+            background: var(--action-soft);
         }
+
+        .quick-action.action-indigo { --action-color: #4f46e5; --action-soft: #e0e7ff; }
+        .quick-action.action-blue { --action-color: #2563eb; --action-soft: #dbeafe; }
+        .quick-action.action-teal { --action-color: #0f766e; --action-soft: #ccfbf1; }
+        .quick-action.action-violet { --action-color: #7c3aed; --action-soft: #ede9fe; }
+        .quick-action.action-cyan { --action-color: #0e7490; --action-soft: #cffafe; }
+        .quick-action.action-amber { --action-color: #b45309; --action-soft: #fef3c7; }
+        .quick-action.action-slate { --action-color: #475569; --action-soft: #e2e8f0; }
+        .quick-action.action-green { --action-color: #15803d; --action-soft: #dcfce7; }
 
         .quick-action.is-disabled {
             color: #9aa3b2;
             background: #f8fafc;
             cursor: not-allowed;
             pointer-events: none;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .quick-action.is-disabled i {
+            color: #64748b;
+            background: #e2e8f0;
         }
 
         .chart-wrap {
@@ -685,38 +718,22 @@
         }
 
         .sales-chart {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(0, 1fr));
-            gap: 10px;
+            position: relative;
+            height: 250px;
             min-height: 220px;
-            align-items: end;
         }
 
-        .chart-bar {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: end;
-            gap: 8px;
-            min-width: 0;
+        .sales-chart canvas {
+            width: 100% !important;
+            height: 100% !important;
         }
 
-        .chart-bar-fill {
-            width: 100%;
-            min-height: 8px;
-            border-radius: 8px 8px 4px 4px;
-            background: linear-gradient(180deg, var(--purple), #a78bfa);
-        }
-
-        .chart-bar span {
-            width: 100%;
+        .chart-accessible-summary {
+            margin: 9px 0 0;
             color: #7b8494;
             font-size: 11px;
-            font-weight: 800;
-            text-align: center;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            font-weight: 700;
+            line-height: 1.45;
         }
 
         .po-summary {
@@ -861,6 +878,8 @@
         }
 
         .activity-item {
+            --activity-color: #64748b;
+            --activity-soft: #f1f5f9;
             grid-template-columns: 4px 34px minmax(0, 1fr) auto;
             border-left: 0;
         }
@@ -869,13 +888,23 @@
             width: 4px;
             align-self: stretch;
             border-radius: 999px;
-            background: var(--purple);
+            background: var(--activity-color);
         }
 
         .activity-icon {
-            color: var(--purple);
-            background: var(--purple-soft);
+            color: var(--activity-color);
+            background: var(--activity-soft);
         }
+
+        .activity-tone-blue { --activity-color: #2563eb; --activity-soft: #dbeafe; }
+        .activity-tone-indigo { --activity-color: #4f46e5; --activity-soft: #e0e7ff; }
+        .activity-tone-teal { --activity-color: #0f766e; --activity-soft: #ccfbf1; }
+        .activity-tone-cyan { --activity-color: #0e7490; --activity-soft: #cffafe; }
+        .activity-tone-green { --activity-color: #15803d; --activity-soft: #dcfce7; }
+        .activity-tone-amber { --activity-color: #b45309; --activity-soft: #fef3c7; }
+        .activity-tone-orange { --activity-color: #c2410c; --activity-soft: #ffedd5; }
+        .activity-tone-red { --activity-color: #b91c1c; --activity-soft: #fee2e2; }
+        .activity-tone-slate { --activity-color: #475569; --activity-soft: #e2e8f0; }
 
         .ranked-product {
             grid-template-columns: 42px minmax(0, 1fr) auto;
@@ -966,6 +995,36 @@
         .status-pill.warning {
             color: #b45309;
             background: #fef3c7;
+        }
+
+        .status-pill.danger {
+            color: #b91c1c;
+            background: #fee2e2;
+        }
+
+        .status-pill.info {
+            color: #0369a1;
+            background: #e0f2fe;
+        }
+
+        .status-pill.blue {
+            color: #1d4ed8;
+            background: #dbeafe;
+        }
+
+        .status-pill.teal {
+            color: #0f766e;
+            background: #ccfbf1;
+        }
+
+        .status-pill.orange {
+            color: #c2410c;
+            background: #ffedd5;
+        }
+
+        .status-pill.neutral {
+            color: #475569;
+            background: #e2e8f0;
         }
 
         .content-view {
@@ -1810,35 +1869,35 @@
                             </div>
                             <div class="panel-body">
                                 <div class="quick-actions">
-                                    <a href="purchase_orders.html?tab=active" class="quick-action">
+                                    <a href="purchase_orders.html?tab=active" class="quick-action action-indigo" aria-label="Open active purchase orders">
                                         <i class="fa-solid fa-folder-open"></i>
                                         <span>Open POs</span>
                                     </a>
-                                    <a href="products.html" class="quick-action">
+                                    <a href="products.html" class="quick-action action-blue" aria-label="Open product masterfile">
                                         <i class="fa-solid fa-boxes-stacked"></i>
                                         <span>Products</span>
                                     </a>
-                                    <a href="inventory.html" class="quick-action">
+                                    <a href="inventory.html" class="quick-action action-teal" aria-label="Open inventory">
                                         <i class="fa-solid fa-warehouse"></i>
                                         <span>Inventory</span>
                                     </a>
-                                    <a href="purchase_orders.html" class="quick-action">
+                                    <a href="purchase_orders.html?tab=active&amp;action=create" class="quick-action action-violet" aria-label="Create a purchase order">
                                         <i class="fa-solid fa-file-circle-plus"></i>
                                         <span>Create Purchase Order</span>
                                     </a>
-                                    <a href="purchase_orders.html?tab=arrived" class="quick-action">
+                                    <a href="inspect_deliveries.html" class="quick-action action-cyan" aria-label="Inspect and receive arrived deliveries">
                                         <i class="fa-solid fa-truck-ramp-box"></i>
                                         <span>Receive Delivery</span>
                                     </a>
-                                    <a href="expiry_monitoring.html" class="quick-action">
+                                    <a href="expiry_monitoring.html" class="quick-action action-amber" aria-label="Open expiry monitoring">
                                         <i class="fa-solid fa-calendar-check"></i>
                                         <span>Expiry Monitoring</span>
                                     </a>
-                                    <a href="#" class="quick-action is-disabled" aria-disabled="true">
+                                    <a href="reports.html?category=overview" class="quick-action action-slate" aria-label="Open reports overview">
                                         <i class="fa-solid fa-chart-pie"></i>
                                         <span>Reports</span>
                                     </a>
-                                    <a href="#" class="quick-action is-disabled" aria-disabled="true">
+                                    <a href="admin_settings.html?section=users&amp;action=add" class="quick-action action-green" id="quickActionAddUser" aria-label="Add a user">
                                         <i class="fa-solid fa-user-plus"></i>
                                         <span>Add User</span>
                                     </a>
@@ -2199,7 +2258,7 @@
         })();
     </script>
     <script type="module">
-        import verifySession from './js/modules/auth.js?v=2';
+        import verifySession from './js/modules/auth.js?v=4';
         import { loadInventoryTable } from './js/modules/products.js?v=9';
         import API_BASE_URL from './js/config/config.js';
 
@@ -2331,36 +2390,83 @@
             setText('dashboardPendingPoChip', `Pending POs: ${wholeNumber.format(Number(data.pending_po || 0))}`);
         }
 
+        let dashboardSalesChart = null;
+
         function renderSalesTrend(rows = []) {
             const target = document.getElementById('salesTrendChart');
             if (!target) return;
+            dashboardSalesChart?.destroy();
+            dashboardSalesChart = null;
 
-            if (!rows.length) {
+            const normalizedRows = rows.slice(-7).map(row => ({
+                ...row,
+                total_sales: Number(row.total_sales || 0),
+                transaction_count: Number(row.transaction_count || 0)
+            }));
+            const positiveRows = normalizedRows.filter(row => row.total_sales > 0);
+            if (!normalizedRows.length || !positiveRows.length) {
                 target.classList.add('is-empty');
-                target.innerHTML = '<p class="empty-state">No completed sales yet. Sales trend will appear after cashier transactions.</p>';
+                target.innerHTML = '<p class="empty-state">No completed sales were recorded in the last 7 days.</p>';
                 return;
             }
 
             target.classList.remove('is-empty');
-            const maxTotal = Math.max(...rows.map(row => Number(row.total_sales || 0)), 1);
-            target.innerHTML = `
-                <div class="sales-chart">
-                    ${rows.map(row => {
-                        const total = Number(row.total_sales || 0);
-                        const height = Math.max(8, Math.round((total / maxTotal) * 190));
-                        const labelDate = new Date(`${row.sale_date}T00:00:00`);
-                        const label = Number.isNaN(labelDate.getTime())
-                            ? row.sale_date
-                            : labelDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-                        return `
-                            <div class="chart-bar" title="${escapeHtml(`${label}: ${peso.format(total)}`)}">
-                                <div class="chart-bar-fill" style="height:${height}px"></div>
-                                <span>${escapeHtml(label)}</span>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
+            const highest = Math.max(...normalizedRows.map(row => row.total_sales));
+            const labels = normalizedRows.map(row => {
+                const date = new Date(`${row.sale_date}T00:00:00`);
+                return Number.isNaN(date.getTime()) ? row.sale_date : date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+            });
+            const colors = normalizedRows.map(row => row.total_sales === 0 ? '#e2e8f0' : row.total_sales === highest ? '#0f766e' : '#5b8def');
+            const borders = normalizedRows.map(row => row.total_sales === 0 ? '#94a3b8' : row.total_sales === highest ? '#115e59' : '#3b6fc4');
+            const highestRow = normalizedRows.find(row => row.total_sales === highest);
+            const highestDate = new Date(`${highestRow.sale_date}T00:00:00`);
+            target.innerHTML = '<div class="sales-chart"><canvas id="dashboardSalesTrendCanvas" role="img" aria-label="Completed sales for the last seven days"></canvas></div><p class="chart-accessible-summary" id="salesTrendSummary"></p>';
+            const canvas = document.getElementById('dashboardSalesTrendCanvas');
+            dashboardSalesChart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Completed sales',
+                        data: normalizedRows.map(row => row.total_sales),
+                        backgroundColor: colors,
+                        borderColor: borders,
+                        borderWidth: 1,
+                        borderRadius: 7,
+                        borderSkipped: false,
+                        maxBarThickness: 48,
+                        minBarLength: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 180 },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: items => {
+                                    const row = normalizedRows[items[0].dataIndex];
+                                    const date = new Date(`${row.sale_date}T00:00:00`);
+                                    return Number.isNaN(date.getTime()) ? row.sale_date : date.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
+                                },
+                                label: context => {
+                                    const row = normalizedRows[context.dataIndex];
+                                    return row.total_sales > 0 ? `Sales: ${peso.format(row.total_sales)}` : 'No completed sales.';
+                                },
+                                afterLabel: context => `Transactions: ${wholeNumber.format(normalizedRows[context.dataIndex].transaction_count)}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11, weight: '700' } } },
+                        y: { beginAtZero: true, grid: { color: '#e8edf4' }, border: { display: false }, ticks: { color: '#64748b', callback: value => peso.format(value) } }
+                    }
+                }
+            });
+            const fullHighestDate = Number.isNaN(highestDate.getTime()) ? highestRow.sale_date : highestDate.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
+            setText('salesTrendSummary', `Highest completed sales were ${peso.format(highest)} on ${fullHighestDate}. Zero-sales days use a neutral baseline marker.`);
         }
 
         function renderPoSummary(rows = []) {
@@ -2484,7 +2590,7 @@
             if (returned) alerts.push(['critical', 'fa-rotate-left', `${wholeNumber.format(returned)} delivered orders have return/damage`, 'Review', 'return_damage.html']);
 
             const settings = readAdminSettings();
-            if (settings.nextBusinessException?.date) {
+            if (settings.nextBusinessException?.date && !isManagerDashboard(sessionUser)) {
                 alerts.push(['info', 'fa-calendar-day', `Upcoming special schedule on ${new Date(`${settings.nextBusinessException.date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`, 'View', 'admin_settings.html']);
             }
 
@@ -2503,7 +2609,41 @@
         }
 
         function activityIcon(type = '') {
-            return /inventory/i.test(type) ? 'fa-boxes-stacked' : /purchase/i.test(type) ? 'fa-file-invoice-dollar' : 'fa-clock-rotate-left';
+            if (/expir/i.test(type)) return 'fa-hourglass-half';
+            if (/inventory|stock/i.test(type)) return 'fa-boxes-stacked';
+            if (/purchase|delivery|receiv|return|damage/i.test(type)) return 'fa-file-invoice-dollar';
+            if (/sales|order/i.test(type)) return 'fa-cash-register';
+            if (/cashier|payment/i.test(type)) return 'fa-receipt';
+            if (/product/i.test(type)) return 'fa-box';
+            if (/user|admin/i.test(type)) return 'fa-user-gear';
+            return 'fa-clock-rotate-left';
+        }
+
+        function activityTone(row = {}) {
+            const text = `${row.type || ''} ${row.status || ''} ${row.message || ''}`.toLowerCase();
+            if (/cancel|expired|failed|deactiv|damaged/.test(text)) return 'red';
+            if (/replacement arrival|replacement accepted/.test(text)) return 'teal';
+            if (/return|damage/.test(text)) return 'orange';
+            if (/expiring|pending|waiting|partial/.test(text)) return 'amber';
+            if (/arrived|received|receiv|storage/.test(text)) return 'teal';
+            if (/moved to shelf|shelf/.test(text)) return 'cyan';
+            if (/completed|delivered|fully paid|activated|user added/.test(text)) return 'green';
+            if (/in transit/.test(text)) return 'blue';
+            if (/sent to cashier|purchase order|po created/.test(text)) return 'indigo';
+            if (/sales|cashier|accepted order|accepted/.test(text)) return 'blue';
+            return 'slate';
+        }
+
+        function activityBadgeClass(status = '') {
+            const clean = String(status || '').toLowerCase();
+            if (/cancel|expired|fail|reject/.test(clean)) return 'danger';
+            if (/return|damage/.test(clean)) return 'orange';
+            if (/replacement arrival|replacement accepted|arrived/.test(clean)) return 'teal';
+            if (/accept|sent to cashier|in transit/.test(clean)) return 'blue';
+            if (/pending|waiting|processing|draft/.test(clean)) return 'warning';
+            if (/received/.test(clean)) return 'success';
+            if (/complete|deliver|paid|added|created|updated|activate/.test(clean)) return 'success';
+            return 'neutral';
         }
 
         function renderRecentActivities(rows = []) {
@@ -2516,16 +2656,56 @@
             }
 
             target.innerHTML = rows.slice(0, 5).map(row => `
-                <div class="activity-item">
+                <div class="activity-item activity-tone-${activityTone(row)}">
                     <span class="activity-stripe"></span>
-                    <span class="activity-icon"><i class="fa-solid ${activityIcon(row.type)}"></i></span>
+                    <span class="activity-icon"><i class="fa-solid ${activityIcon(`${row.type || ''} ${row.status || ''} ${row.message || ''}`)}"></i></span>
                     <div>
                         <p class="item-title">${escapeHtml(row.message || row.type || 'Activity')}</p>
                         <p class="item-meta">${escapeHtml(row.type || 'System')} - ${escapeHtml(relativeWhen(row.created_at))}</p>
                     </div>
-                    <span class="status-pill success">${escapeHtml(row.status || 'Recorded')}</span>
+                    <span class="status-pill ${activityBadgeClass(row.status)}">${escapeHtml(row.status || 'Recorded')}</span>
                 </div>
             `).join('');
+        }
+
+        function normalizeDashboardRole(role = '') {
+            return String(role).trim().toLowerCase().replace(/[\s-]+/g, '_')
+                .replace(/^(manager[/_]owner|owner[/_]manager|manager_\/_owner)$/, 'manager');
+        }
+
+        function dashboardRoles(user = {}) {
+            return [user.role, ...(Array.isArray(user.roles) ? user.roles : []), ...(Array.isArray(user.role_identifiers) ? user.role_identifiers : [])]
+                .map(normalizeDashboardRole);
+        }
+
+        function isManagerDashboard(user = {}) {
+            const roles = dashboardRoles(user);
+            return roles.includes('manager') || roles.includes('ro_manager');
+        }
+
+        function configureDashboardIdentity(user = {}) {
+            if (!isManagerDashboard(user)) return;
+            document.title = 'Dr. R Pharmacy | Manager Dashboard';
+            const heading = document.querySelector('.page-title-mini strong');
+            const subtitle = document.querySelector('.page-title-mini span');
+            if (heading) heading.textContent = 'Manager Dashboard';
+            if (subtitle) subtitle.textContent = 'Pharmacy operations overview';
+            document.querySelectorAll('.stat-card[href="pos.html"]').forEach(link => {
+                link.href = 'sales_history.html';
+            });
+        }
+
+        function configureQuickActions(user = {}) {
+            const roles = dashboardRoles(user);
+            const canManageUsers = roles.some(role => ['admin', 'manager', 'super_admin', 'ro_admin', 'ro_manager', 'ro_super_admin'].includes(role));
+            const addUser = document.getElementById('quickActionAddUser');
+            if (addUser && !canManageUsers) {
+                addUser.removeAttribute('href');
+                addUser.classList.add('is-disabled');
+                addUser.setAttribute('aria-disabled', 'true');
+                addUser.setAttribute('tabindex', '-1');
+                addUser.setAttribute('title', 'You do not have permission to add users.');
+            }
         }
 
         async function loadDashboardSummary() {
@@ -2557,9 +2737,12 @@
         }
 
         updateDashboardWelcome(sessionUser);
+        configureDashboardIdentity(sessionUser);
+        configureQuickActions(sessionUser);
         updateDashboardClock();
         setInterval(updateDashboardClock, 1000);
         await loadDashboardSummary();
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </body>
 </html>

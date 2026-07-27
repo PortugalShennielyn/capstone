@@ -1,5 +1,6 @@
 <?php
 require_once '../../config/db_connection.php';
+require_once '../activity_log_helpers.php';
 require_once 'users_helpers.php';
 
 requireUserAdmin($pdo);
@@ -24,11 +25,19 @@ if ($username === '') sendUserJson(false, 'Username is required.', null, 422);
 if ($password === '') sendUserJson(false, 'Temporary Password is required.', null, 422);
 if ($password !== $confirmPassword) sendUserJson(false, 'Password and Confirm Password must match.', null, 422);
 if (!in_array($role, validUserRoles(), true)) sendUserJson(false, 'Role is required.', null, 422);
+assertAssignableUserRole($role);
 
 $exists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username');
 $exists->execute([':username' => $username]);
 if ((int) $exists->fetchColumn() > 0) {
     sendUserJson(false, 'Username is already taken.', null, 409);
+}
+if ($email !== '') {
+    $emailExists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE LOWER(email) = LOWER(:email)');
+    $emailExists->execute([':email' => $email]);
+    if ((int) $emailExists->fetchColumn() > 0) {
+        sendUserJson(false, 'Email address is already in use.', null, 409);
+    }
 }
 
 $hash = password_hash($password, PASSWORD_DEFAULT);
@@ -38,8 +47,9 @@ $stmt = $pdo->prepare(
      VALUES
         (:user_id, :full_name, :username, :password, :password_hash, :role, :status, :email, :contact_number, NOW(), NOW())'
 );
+$userId = newUuid($pdo);
 $stmt->execute([
-    ':user_id' => newUuid($pdo),
+    ':user_id' => $userId,
     ':full_name' => $fullName,
     ':username' => $username,
     ':password' => $hash,
@@ -49,6 +59,8 @@ $stmt->execute([
     ':email' => $email !== '' ? $email : null,
     ':contact_number' => $contactNumber !== '' ? $contactNumber : null,
 ]);
+
+recordActivityLog($pdo, 'User Management', 'Added', userManagementActorLabel() . ' added user ' . $fullName, $userId);
 
 sendUserJson(true, 'User created successfully.');
 ?>

@@ -1,7 +1,9 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once '../activity_log_helpers.php';
 require_once '../products/product_category_schema.php';
+require_once '../products/product_status_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -25,6 +27,7 @@ if (!is_array($payload)) {
 
 try {
     ensureProductCategorySchema($pdo);
+    ensureProductStatusColumn($pdo);
 
     $productId = cleanId($payload['product_id'] ?? null);
     $batchNumber = isset($payload['batch_number']) ? trim((string) $payload['batch_number']) : '';
@@ -38,6 +41,11 @@ try {
             'message' => 'Product, batch number, quantity, and expiration date are required.'
         ]);
         exit();
+    }
+    $activeProduct = $pdo->prepare("SELECT 1 FROM product WHERE product_id = :product_id AND status = 'Active'");
+    $activeProduct->execute([':product_id' => $productId]);
+    if (!$activeProduct->fetchColumn()) {
+        throw new InvalidArgumentException('Inactive products cannot receive new inventory.');
     }
 
     $statement = $pdo->prepare(
@@ -57,12 +65,20 @@ try {
         ':expiration_date' => $expirationDate
     ]);
 
+    $productNameStmt = $pdo->prepare('SELECT product_name FROM product WHERE product_id = :product_id LIMIT 1');
+    $productNameStmt->execute([':product_id' => $productId]);
+    $productName = trim((string) $productNameStmt->fetchColumn()) ?: 'product';
+    recordActivityLog($pdo, 'Inventory', 'Added', $quantityStocked . ' added to selling stock: ' . $productName, $sellingStockId);
+
     http_response_code(201);
     echo json_encode([
         'status' => 'success',
         'message' => 'Stock successfully added to Products selling stock.',
         'inventory_id' => $sellingStockId
     ]);
+} catch (InvalidArgumentException $e) {
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode([

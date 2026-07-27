@@ -12,8 +12,8 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <script src="./js/navbar.js?v=55" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
 
     <style>
         :root {
@@ -795,6 +795,15 @@
             display: grid;
             grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
             gap: 18px;
+        }
+
+        body.manager-user-management-only .settings-shell {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        body.manager-user-management-only .settings-profile-card,
+        body.manager-user-management-only #editTenantIdentityBtn {
+            display: none !important;
         }
 
         .settings-profile-card {
@@ -3361,7 +3370,7 @@
                                                     <option value="">All Roles</option>
                                                     <option value="super_admin">Super Admin</option>
                                                     <option value="admin">Admin</option>
-                                                    <option value="manager">Manager / Owner</option>
+                                                    <option value="manager">Manager</option>
                                                     <option value="cashier">Cashier</option>
                                                     <option value="salesclerk">Sales Clerk</option>
                                                 </select>
@@ -3426,7 +3435,7 @@
                                                 <label class="admin-switch" aria-label="Admin Backup"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="permission-row">
-                                                <span class="permission-cell role">Owner/Manager</span>
+                                                <span class="permission-cell role">Manager</span>
                                                 <label class="admin-switch" aria-label="Owner Manager Products"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                                 <label class="admin-switch" aria-label="Owner Manager Inventory"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                                 <label class="admin-switch" aria-label="Owner Manager PO"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
@@ -3905,7 +3914,7 @@
                                     <option value="">Select role</option>
                                     <option value="super_admin">Super Admin</option>
                                     <option value="admin">Admin</option>
-                                    <option value="manager">Manager / Owner</option>
+                                    <option value="manager">Manager</option>
                                     <option value="cashier">Cashier</option>
                                     <option value="salesclerk">Sales Clerk</option>
                                 </select>
@@ -4023,7 +4032,14 @@
             positionClass: "toast-bottom-right",
             timeOut: "2600"
         };
-        (function setupOperationalSettings() {
+        (async function setupOperationalSettings() {
+            const authenticatedSession = window.__drpSession || await new Promise(resolve => {
+                window.addEventListener('pharma:session-ready', event => resolve(event.detail), { once: true });
+            });
+            if (authenticatedSession?.access_role === 'manager') {
+                return;
+            }
+
             const storageKey = 'drpAdminSettings';
             const apiBaseUrl = window.location.port
                 ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
@@ -4901,11 +4917,11 @@
             const apiBaseUrl = window.location.port
                 ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
                 : "../pharma-api/v1";
-            const state = { users: [], editingUser: null };
+            const state = { users: [], editingUser: null, actorRole: '', assignableRoles: [] };
             const roleLabels = {
                 super_admin: 'Super Admin',
                 admin: 'Admin',
-                manager: 'Manager / Owner',
+                manager: 'Manager',
                 cashier: 'Cashier',
                 salesclerk: 'Sales Clerk'
             };
@@ -4965,6 +4981,47 @@
                 if (!target) return;
                 target.textContent = message;
                 target.classList.toggle('is-visible', Boolean(message));
+            }
+
+            function configureRoleOptions(permissions = {}) {
+                state.actorRole = permissions.actor_role || '';
+                state.assignableRoles = Array.isArray(permissions.assignable_roles)
+                    ? permissions.assignable_roles
+                    : Object.keys(roleLabels);
+
+                const roleOptions = ['<option value="">Select role</option>']
+                    .concat(state.assignableRoles.map(role => `<option value="${escapeHtml(role)}">${escapeHtml(roleLabels[role] || role)}</option>`));
+                if (els.roleInput) els.roleInput.innerHTML = roleOptions.join('');
+
+                if (state.actorRole !== 'manager') return;
+
+                document.body.classList.add('manager-user-management-only');
+                document.title = 'Dr. R Pharmacy | User Management';
+                const topbarTitle = document.querySelector('.page-title-mini strong');
+                const topbarSubtitle = document.querySelector('.page-title-mini span');
+                if (topbarTitle) topbarTitle.textContent = 'User Management';
+                if (topbarSubtitle) topbarSubtitle.textContent = 'Manage Cashier and Sales Clerk accounts';
+                const introTitle = document.querySelector('.admin-settings-intro h2');
+                const introText = document.querySelector('.admin-settings-intro p');
+                if (introTitle) introTitle.textContent = 'User Management';
+                if (introText) introText.textContent = 'Create and maintain Cashier and Sales Clerk accounts.';
+
+                document.querySelectorAll('[data-admin-section]').forEach(button => {
+                    button.classList.toggle('d-none', button.dataset.adminSection !== 'users');
+                });
+                document.querySelectorAll('.admin-settings-grid > .admin-setting-card').forEach(card => {
+                    const title = card.querySelector('h3')?.textContent?.trim();
+                    card.classList.toggle('d-none', title !== 'Users & Roles');
+                });
+                document.querySelector('[data-admin-section="users"]')?.click();
+
+                if (els.role) {
+                    els.role.innerHTML = [
+                        '<option value="">All Roles</option>',
+                        '<option value="cashier">Cashier</option>',
+                        '<option value="salesclerk">Sales Clerk</option>'
+                    ].join('');
+                }
             }
 
             async function userRequest(path, options = {}) {
@@ -5032,6 +5089,7 @@
                 try {
                     const data = await userRequest('fetch_users.php');
                     state.users = data.data?.users || [];
+                    configureRoleOptions(data.data?.permissions || {});
                     const summary = data.data?.summary || {};
                     if (els.total) els.total.textContent = summary.total_users ?? state.users.length;
                     if (els.active) els.active.textContent = summary.active_users ?? state.users.filter(user => user.status === 'Active').length;
@@ -5167,7 +5225,22 @@
                 }
             });
 
-            loadUsers();
+            function handleUserManagementUrlAction() {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('section') !== 'users') return;
+
+                document.querySelector('[data-admin-section="users"]')?.click();
+                document.querySelector('.user-management-card')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+
+                if (params.get('action') === 'add') {
+                    window.setTimeout(() => openUserForm(), 250);
+                }
+            }
+
+            loadUsers().then(handleUserManagementUrlAction);
         })();
         (function setupAdminSettingsSections() {
             const buttons = Array.from(document.querySelectorAll('[data-admin-section]'));
@@ -5216,7 +5289,8 @@
                 button.addEventListener('click', () => activate(button.dataset.adminSection));
             });
 
-            activate('general');
+            const params = new URLSearchParams(window.location.search);
+            activate(params.get('section') === 'users' ? 'users' : 'general');
         })();
         (function setupAdminSettingsActionModals() {
             const actionModalEl = document.getElementById('settingsActionModal');

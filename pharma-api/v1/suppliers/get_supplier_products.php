@@ -2,6 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
+require_once '../products/product_status_schema.php';
 
 $supplierId = cleanId($_GET['supplier_id'] ?? null);
 
@@ -12,6 +13,7 @@ if ($supplierId === '') {
 }
 
 try {
+    ensureProductStatusColumn($pdo);
 
     $statement = $pdo->prepare(
         "SELECT
@@ -23,13 +25,14 @@ try {
             p.product_name,
             p.brand_name,
             COALESCE(sp.supplier_cost_price, 0) AS price,
+            'base_unit' AS supplier_price_basis,
             p.price AS selling_price,
             p.barcode AS variation_barcode,
             p.barcode,
             NULL AS sku,
             COALESCE(inv.storage_stock, 0) AS storage_stock,
-            COALESCE(shelf.shelf_stock, 0) AS shelf_stock,
-            COALESCE(inv.storage_stock, 0) + COALESCE(shelf.shelf_stock, 0) AS stock,
+            COALESCE(inv.shelf_stock, 0) AS shelf_stock,
+            COALESCE(inv.storage_stock, 0) + COALESCE(inv.shelf_stock, 0) AS stock,
             p.category_id,
             p.type_id,
             pc.category_name,
@@ -67,16 +70,16 @@ try {
          LEFT JOIN grocery_details gd ON p.product_id = gd.product_id
          LEFT JOIN medical_supply_details msd ON p.product_id = msd.product_id
          LEFT JOIN (
-            SELECT product_id, SUM(quantity_remaining) AS storage_stock
-            FROM product_inventory
+            SELECT
+                product_id,
+                SUM(storage_qty) AS storage_stock,
+                SUM(shelf_qty) AS shelf_stock
+            FROM inventory_batches
+            WHERE batch_status IN ('active', 'expired', 'damaged', 'returned')
             GROUP BY product_id
          ) inv ON p.product_id = inv.product_id
-         LEFT JOIN (
-            SELECT product_id, SUM(quantity_remaining) AS shelf_stock
-            FROM product_selling_stock
-            GROUP BY product_id
-         ) shelf ON p.product_id = shelf.product_id
          WHERE sp.supplier_id = :supplier_id
+           AND p.status = 'Active'
          GROUP BY
             sp.supplier_product_id,
             sp.supplier_cost_price,
@@ -112,7 +115,7 @@ try {
             msd.sterile_status,
             msd.pack_content,
             inv.storage_stock,
-            shelf.shelf_stock
+            inv.shelf_stock
          ORDER BY p.product_name ASC, sp.supplier_product_id ASC"
     );
     $statement->execute([':supplier_id' => $supplierId]);

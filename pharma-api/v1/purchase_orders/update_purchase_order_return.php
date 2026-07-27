@@ -1,4 +1,5 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
@@ -40,6 +41,7 @@ try {
             por.po_id,
             por.po_item_id,
             por.return_quantity,
+            por.remarks AS stored_remarks,
             poi.quantity AS ordered_quantity,
             COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
             COUNT(pori.receiving_item_id) AS receiving_item_count
@@ -47,7 +49,7 @@ try {
          INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
          LEFT JOIN purchase_order_receiving_items pori ON pori.po_item_id = poi.po_item_id
          WHERE por.return_id = :return_id
-         GROUP BY por.return_id, por.po_id, por.po_item_id, por.return_quantity, poi.quantity
+         GROUP BY por.return_id, por.po_id, por.po_item_id, por.return_quantity, por.remarks, poi.quantity
          LIMIT 1"
     );
     $recordStatement->execute([':return_id' => $returnId]);
@@ -72,6 +74,8 @@ try {
     $returnQuantity = (int) ($payload['return_quantity'] ?? 0);
     $damageReason = trim((string) ($payload['damage_reason'] ?? ''));
     $remarks = trim((string) ($payload['remarks'] ?? ''));
+    $parsedRemarks = parsePurchaseOrderReturnRemarks($record['stored_remarks'] ?? '');
+    $storedRemarks = empty($parsedRemarks['metadata']) ? $remarks : buildPurchaseOrderReturnRemarks($parsedRemarks['metadata'], $remarks);
     $maxReturnQuantity = (int) $record['receiving_item_count'] > 0
         ? (int) $record['damaged_quantity']
         : (int) $record['ordered_quantity'];
@@ -94,7 +98,7 @@ try {
     $statement->execute([
         ':return_quantity' => $returnQuantity,
         ':damage_reason' => $damageReason,
-        ':remarks' => $remarks,
+        ':remarks' => $storedRemarks,
         ':return_id' => $returnId
     ]);
 

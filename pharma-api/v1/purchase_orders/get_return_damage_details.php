@@ -1,4 +1,5 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
@@ -126,7 +127,7 @@ try {
         exit();
     }
 
-    echo json_encode(['status' => 'success', 'return_damage' => $record]);
+    echo json_encode(['status' => 'success', 'return_damage' => decoratePurchaseOrderReturnRecord($record)]);
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to load return/damage details.']);

@@ -35,12 +35,14 @@ try {
     }
 
     validatePurchaseOrderItems($items);
+    $pdo->beginTransaction();
 
     $currentOrderStatement = $pdo->prepare(
         'SELECT po_id, supplier_id, approval_status, status
          FROM purchase_orders
          WHERE po_id = :po_id
-         LIMIT 1'
+         LIMIT 1
+         FOR UPDATE'
     );
     $currentOrderStatement->execute([':po_id' => $poId]);
     $currentOrder = $currentOrderStatement->fetch(PDO::FETCH_ASSOC);
@@ -55,9 +57,11 @@ try {
         throw new InvalidArgumentException('This purchase order is locked and can no longer be edited.');
     }
 
-    $pdo->beginTransaction();
-    validateProductsForSupplier($pdo, $supplierId, $items);
+    validatePurchaseOrderSupplier($pdo, $supplierId);
+    validateProductsForSupplier($pdo, $supplierId, $items, $poId);
     $items = applySupplierProductSetup($pdo, $supplierId, $items);
+    validatePurchaseOrderItems($items);
+    $validatedTotalAmount = validateSubmittedPurchaseOrderTotals($payload, $items);
 
     $existingCompareStatement = $pdo->prepare(
         'SELECT
@@ -128,6 +132,7 @@ try {
     $existingItemsStatement->execute([':po_id' => $poId]);
     $existingItemIds = array_map('cleanId', $existingItemsStatement->fetchAll(PDO::FETCH_COLUMN));
     $keptItemIds = [];
+    $submittedExistingItemIds = [];
 
     $insertItemStatement = $pdo->prepare(
         'INSERT INTO purchase_order_items (
@@ -214,6 +219,10 @@ try {
             if (!in_array($poItemId, $existingItemIds, true)) {
                 throw new InvalidArgumentException('A purchase-order item does not belong to this order.');
             }
+            if (isset($submittedExistingItemIds[$poItemId])) {
+                throw new InvalidArgumentException('A purchase-order item was submitted more than once.');
+            }
+            $submittedExistingItemIds[$poItemId] = true;
 
             $updateItemStatement->execute(array_merge($params, [':po_item_id' => $poItemId]));
             $keptItemIds[] = $poItemId;
@@ -244,6 +253,10 @@ try {
 
         $deleteStatement = $pdo->prepare("DELETE FROM purchase_order_items WHERE po_id = ? AND po_item_id IN ({$placeholders})");
         $deleteStatement->execute(array_merge([$poId], $deleteItemIds));
+    }
+
+    if (purchaseOrderMoneyCents($totalAmount, 'Purchase-order total is invalid.') !== purchaseOrderMoneyCents($validatedTotalAmount, 'Purchase-order total is invalid.')) {
+        throw new InvalidArgumentException('Purchase-order total changed during validation. Please try again.');
     }
 
     $totalStatement = $pdo->prepare('UPDATE purchase_orders SET total_amount = :total_amount WHERE po_id = :po_id');

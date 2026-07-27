@@ -8,8 +8,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <script src="./js/navbar.js?v=55" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
     <style>
         :root { --purple: #6d28d9; --ink: #101936; --muted: #667085; --line: #e6eaf2; --soft: #f6f8fc; --shadow: 0 14px 34px rgba(16, 25, 54, .07); }
         * { box-sizing: border-box; }
@@ -59,14 +59,14 @@
             <section class="quick-panel">
                 <h2>Sales &amp; Transactions</h2>
                 <div class="quick-actions">
-                    <a class="btn btn-primary" href="sales_clerk_pos.html"><i class="fa-solid fa-cash-register me-2"></i>Sales Clerk Transaction / POS</a>
-                    <a class="btn btn-light" href="sales_clerk_orders.html"><i class="fa-solid fa-clipboard-list me-2"></i>Transaction History</a>
+                    <a class="btn btn-primary" href="sales_clerk_pos.html"><i class="fa-solid fa-cash-register me-2"></i>Sales Clerk POS</a>
+                    <a class="btn btn-light" href="sales_clerk_orders.html"><i class="fa-solid fa-clipboard-list me-2"></i>My Orders</a>
                 </div>
             </section>
         </section>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module">import verifySession from './js/modules/auth.js'; await verifySession();</script>
+    <script type="module">import verifySession from './js/modules/auth.js?v=4'; await verifySession();</script>
     <script>
         const apiBaseUrl = window.location.port ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1" : "../pharma-api/v1";
         async function loadSalesClerkDashboard() {
