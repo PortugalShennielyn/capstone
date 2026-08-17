@@ -3,6 +3,8 @@ $allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', '
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
+require_once '../products/product_pricing_schema.php';
+require_once '../suppliers/purchasing_conversion.php';
 
 const RECEIVING_DRAFT_PREFIX = "[INSPECTION_DRAFT_V1]\n";
 const RECEIVING_META_PREFIX = "[RECEIVING_META_V1]\n";
@@ -84,13 +86,11 @@ if (!is_array($payload)) {
 }
 
 try {
+    ensureProductPricingSchema($pdo);
     $poId = cleanId($payload['po_id'] ?? null);
     $mode = strtolower(trim((string) ($payload['mode'] ?? 'confirm')));
     $isDraft = $mode === 'draft';
     $remarks = cleanTransactionalText($payload['remarks'] ?? '') ?? '';
-    $supplierDiscount = receiveMoney($payload['supplier_discount'] ?? ($payload['additional_amount'] ?? 0), 'Supplier discount');
-    $paymentStatus = 'Unpaid';
-    $amountPaidInput = 0.0;
     $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
 
     if ($poId === '') throw new InvalidArgumentException('Purchase order is required.');
@@ -99,7 +99,7 @@ try {
     $pdo->beginTransaction();
 
     $orderStatement = $pdo->prepare(
-        'SELECT po_id, supplier_id, status, po_number
+        'SELECT po_id, pr_id, supplier_id, status, po_number
          FROM purchase_orders
          WHERE po_id = :po_id
          LIMIT 1
@@ -125,13 +125,17 @@ try {
     }
 
     if ($isDraft) {
+        $draftHasIssues = false;
+        $draftAllInspected = count($items) > 0;
+        foreach ($items as $draftItem) {
+            $draftHasIssues = $draftHasIssues || (float) ($draftItem['affected_quantity'] ?? ($draftItem['damaged_quantity'] ?? 0)) > 0 || (float) ($draftItem['missing_quantity'] ?? 0) > 0;
+            $draftAllInspected = $draftAllInspected && !empty($draftItem['inspection_complete']);
+        }
+        $draftInspectionStatus = $draftHasIssues ? 'With Issues' : ($draftAllInspected ? 'Ready to Confirm' : 'In Progress');
         $draftPayload = [
             'version' => 1,
             'po_id' => $poId,
             'items' => $items,
-            'supplier_discount' => $supplierDiscount,
-            'payment_status' => $paymentStatus,
-            'amount_paid' => $amountPaidInput,
             'remarks' => $remarks,
             'updated_by' => $_SESSION['user_id'] ?? null,
             'updated_by_name' => $_SESSION['full_name'] ?? ($_SESSION['username'] ?? null),
@@ -139,31 +143,34 @@ try {
         ];
         $draftRemarks = RECEIVING_DRAFT_PREFIX . json_encode($draftPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($receivingHeader) {
-            $statement = $pdo->prepare('UPDATE purchase_order_receiving SET remarks = :remarks, received_date = CURRENT_TIMESTAMP WHERE receiving_id = :receiving_id');
-            $statement->execute([':remarks' => $draftRemarks, ':receiving_id' => $receivingHeader['receiving_id']]);
+            $statement = $pdo->prepare('UPDATE purchase_order_receiving SET remarks = :remarks, received_date = CURRENT_TIMESTAMP, inspection_status = :inspection_status, inspected_by = :inspected_by WHERE receiving_id = :receiving_id');
+            $statement->execute([':remarks' => $draftRemarks, ':inspection_status' => $draftInspectionStatus, ':inspected_by' => $_SESSION['user_id'] ?? null, ':receiving_id' => $receivingHeader['receiving_id']]);
             $receivingId = $receivingHeader['receiving_id'];
         } else {
             $receivingId = newUuid($pdo);
-            $statement = $pdo->prepare('INSERT INTO purchase_order_receiving (receiving_id, po_id, received_date, remarks) VALUES (:receiving_id, :po_id, CURRENT_TIMESTAMP, :remarks)');
-            $statement->execute([':receiving_id' => $receivingId, ':po_id' => $poId, ':remarks' => $draftRemarks]);
+            $statement = $pdo->prepare('INSERT INTO purchase_order_receiving (receiving_id, po_id, received_date, remarks, inspection_status, inspected_by) VALUES (:receiving_id, :po_id, CURRENT_TIMESTAMP, :remarks, :inspection_status, :inspected_by)');
+            $statement->execute([':receiving_id' => $receivingId, ':po_id' => $poId, ':remarks' => $draftRemarks, ':inspection_status' => $draftInspectionStatus, ':inspected_by' => $_SESSION['user_id'] ?? null]);
         }
         $pdo->commit();
         recordActivityLog($pdo, 'Purchase Order', 'Inspection Draft Saved', 'Inspection draft saved for PO ' . $order['po_number'], $poId);
-        receiveResponse(true, 'Inspection draft saved. Inventory and payment were not changed.', '', [
+        receiveResponse(true, 'Inspection draft saved. Inventory was not changed.', '', [
             'receiving_id' => $receivingId,
             'inspection_in_progress' => true
         ]);
     }
 
     $poItemStatement = $pdo->prepare(
-        "SELECT poi.po_item_id, poi.product_id, poi.quantity,
+        "SELECT poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot,
+                COALESCE(NULLIF(poi.unit_snapshot,''),pmu.unit_name) AS inventory_unit,
                 COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
-                COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, 0) AS line_total,
+                COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, 0)) AS line_total,
                 COALESCE(poi.unit_price_snapshot, 0) AS unit_price,
+                COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
                 COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name) AS product_name,
                 CASE WHEN md.product_id IS NOT NULL OR LOWER(COALESCE(pc.category_name, '')) LIKE '%medicine%' THEN 1 ELSE 0 END AS requires_expiry
          FROM purchase_order_items poi
          INNER JOIN product p ON p.product_id = poi.product_id
+         INNER JOIN product_measurement_units pmu ON pmu.measurement_unit_id=p.inventory_unit_id
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          WHERE poi.po_id = :po_id"
@@ -173,17 +180,12 @@ try {
     foreach ($poItemStatement->fetchAll(PDO::FETCH_ASSOC) as $row) $poItems[cleanId($row['po_item_id'])] = $row;
     if (!$poItems) throw new InvalidArgumentException('This purchase order has no items to receive.');
 
-    $allowedIssues = ['Expired', 'Broken package', 'Wrong item delivered', 'Incorrect quantity', 'Damaged during delivery', 'Other'];
-    $allowedResolutions = ['none', 'return_for_credit', 'return_for_replacement', 'keep_with_discount', 'keep_damaged', 'reject_without_replacement'];
+    $allowedIssues = ['Damaged Product', 'Broken Package', 'Expired', 'Wrong Item', 'Short Quantity', 'Other'];
+    $allowedDispositions = ['return_to_supplier', 'hold_quarantine', 'dispose', 'not_applicable'];
+    $allowedResolutions = ['none', 'replacement', 'supplier_credit', 'next_po_credit', 'no_compensation'];
     $validatedItems = [];
     $seenItems = [];
-    $totalAmount = 0.0;
-    $supplierCredit = 0.0;
-    $replacementPending = 0.0;
-    $itemDiscounts = 0.0;
     $hasIssues = false;
-
-    foreach ($poItems as $poItem) $totalAmount += (float) $poItem['line_total'];
 
     foreach ($items as $index => $item) {
         $poItemId = cleanId($item['po_item_id'] ?? null);
@@ -192,21 +194,85 @@ try {
         $seenItems[$poItemId] = true;
 
         $ordered = (int) $poItems[$poItemId]['inventory_qty_ordered'];
-        $delivered = receiveIntQuantity($item['delivered_quantity'] ?? ($item['received_quantity'] ?? 0), 'Delivered quantity');
-        $damaged = receiveIntQuantity($item['damaged_quantity'] ?? 0, 'Damaged quantity');
+        $deliveredPurchaseQuantity = array_key_exists('delivered_purchase_quantity', $item)
+            ? receiveIntQuantity($item['delivered_purchase_quantity'], 'Delivered Purchase Unit quantity')
+            : null;
+        $delivered = $deliveredPurchaseQuantity !== null
+            ? inventoryQuantityForPurchaseQuantity($deliveredPurchaseQuantity, (int) $poItems[$poItemId]['units_per_purchase_unit'])
+            : receiveIntQuantity($item['delivered_quantity'] ?? ($item['received_quantity'] ?? 0), 'Delivered quantity');
+        if ($deliveredPurchaseQuantity !== null && $deliveredPurchaseQuantity > (int) $poItems[$poItemId]['purchase_qty']) {
+            throw new InvalidArgumentException('Delivered Purchase Unit quantity cannot exceed the PO quantity.');
+        }
+        $hasSeparatedQuantities = array_key_exists('damaged_unit_conversion_id', $item) || array_key_exists('action_quantity', $item);
+        $legacyClaimQuantity = receiveIntQuantity($item['affected_quantity'] ?? ($item['damaged_quantity'] ?? 0), 'Affected package quantity');
+        $legacyConversionId = cleanId($item['unit_conversion_id'] ?? null);
+        if ($legacyClaimQuantity > 0 && $legacyConversionId === '') $legacyConversionId = supplierClaimDefaultConversion($pdo, $poItemId);
+        $legacyBaseQuantity = $legacyConversionId !== '' ? supplierClaimBaseQuantity($pdo, $poItemId, $legacyConversionId) : 1;
+
+        $damagedQuantity = $hasSeparatedQuantities
+            ? receiveIntQuantity($item['damaged_quantity'] ?? 0, 'Damaged quantity')
+            : $legacyClaimQuantity;
+        $damagedUnitConversionId = $hasSeparatedQuantities
+            ? cleanId($item['damaged_unit_conversion_id'] ?? null)
+            : $legacyConversionId;
+        if ($damagedUnitConversionId === '') $damagedUnitConversionId = supplierClaimDefaultConversion($pdo, $poItemId);
+        $damagedBaseQuantity = supplierClaimBaseQuantity($pdo, $poItemId, $damagedUnitConversionId);
+        $damaged = $damagedQuantity * $damagedBaseQuantity;
+
+        $actionQuantity = $hasSeparatedQuantities
+            ? receiveIntQuantity($item['action_quantity'] ?? 0, 'Action quantity')
+            : $legacyClaimQuantity;
+        $actionUnitConversionId = $hasSeparatedQuantities
+            ? cleanId($item['action_unit_conversion_id'] ?? null)
+            : $legacyConversionId;
+        if ($actionUnitConversionId === '') $actionUnitConversionId = supplierClaimDefaultConversion($pdo, $poItemId);
+        $actionUnitBaseQuantity = supplierClaimBaseQuantity($pdo, $poItemId, $actionUnitConversionId);
+        $action = $actionQuantity * $actionUnitBaseQuantity;
+        $validatedDamageLines = [];
+        $damageLines = is_array($item['damage_lines'] ?? null) ? $item['damage_lines'] : [];
+        if ($damageLines) {
+            $damaged = 0;
+            $affectedPackageCapacity = 0;
+            foreach ($damageLines as $lineIndex => $damageLine) {
+                $affectedUnitConversionId = cleanId($damageLine['affected_unit_conversion_id'] ?? null);
+                $lineDamagedUnitConversionId = cleanId($damageLine['damaged_unit_conversion_id'] ?? null);
+                if ($affectedUnitConversionId === '' || $lineDamagedUnitConversionId === '') throw new InvalidArgumentException('Every damage row requires valid supplier unit conversions.');
+                $affectedUnitCapacity = supplierClaimBaseQuantity($pdo, $poItemId, $affectedUnitConversionId);
+                $lineDamagedUnitBase = supplierClaimBaseQuantity($pdo, $poItemId, $lineDamagedUnitConversionId);
+                $lineDamagedQuantity = receiveIntQuantity($damageLine['damaged_quantity'] ?? 0, 'Damage row quantity');
+                if ($lineDamagedQuantity <= 0) throw new InvalidArgumentException('Every damage row requires a positive damaged quantity.');
+                $lineDamagedBase = $lineDamagedQuantity * $lineDamagedUnitBase;
+                if ($lineDamagedBase > $affectedUnitCapacity) {
+                    throw new InvalidArgumentException("Damage cannot exceed {$affectedUnitCapacity} {$poItems[$poItemId]['inventory_unit']} in one affected package.");
+                }
+                $damaged += $lineDamagedBase;
+                $affectedPackageCapacity += $affectedUnitCapacity;
+                $validatedDamageLines[] = [
+                    'sequence_no' => $lineIndex + 1,
+                    'affected_unit_conversion_id' => $affectedUnitConversionId,
+                    'damaged_quantity' => $lineDamagedQuantity,
+                    'damaged_unit_conversion_id' => $lineDamagedUnitConversionId,
+                ];
+            }
+            if ($affectedPackageCapacity > $delivered) throw new InvalidArgumentException('Affected package rows exceed the quantity physically received.');
+            $damagedUnitConversionId = supplierClaimDefaultConversion($pdo, $poItemId);
+            $damagedBaseQuantity = supplierClaimBaseQuantity($pdo, $poItemId, $damagedUnitConversionId);
+            $damagedQuantity = intdiv($damaged, $damagedBaseQuantity);
+        }
         $returned = receiveIntQuantity($item['returned_quantity'] ?? 0, 'Returned quantity');
         $disposed = receiveIntQuantity($item['disposed_quantity'] ?? 0, 'Disposed quantity');
-        if ($delivered < 0 || $damaged < 0 || $returned < 0 || $disposed < 0) throw new InvalidArgumentException('Inspection quantities cannot be negative.');
+        if ($delivered < 0 || $damaged < 0 || $action < 0 || $returned < 0 || $disposed < 0) throw new InvalidArgumentException('Inspection quantities cannot be negative.');
         if ($delivered > $ordered) throw new InvalidArgumentException('Delivered quantity cannot exceed ordered quantity. Resolve excess stock with the supplier before confirming.');
-        if ($damaged > $delivered) throw new InvalidArgumentException('Damaged quantity cannot exceed delivered quantity.');
+        if ($damaged > $delivered) throw new InvalidArgumentException("Cannot exceed the received quantity of {$delivered} {$poItems[$poItemId]['inventory_unit']}.");
+        if ($action > $delivered) throw new InvalidArgumentException('Action quantity cannot exceed delivered quantity.');
 
         $missing = $ordered - $delivered;
-        $affected = $damaged + $missing;
+        $affected = max($action, $damaged) + $missing;
         $issueType = trim((string) ($item['issue_type'] ?? ''));
-        $resolution = strtolower(trim((string) ($item['resolution'] ?? ($item['damage_action'] ?? 'none'))));
-        $resolution = match ($resolution) { 'return' => 'return_for_credit', 'keep' => 'keep_damaged', default => $resolution };
+        $issueDetail = cleanTransactionalText($item['issue_detail'] ?? '') ?? '';
+        $disposition = strtolower(trim((string) ($item['disposition'] ?? '')));
+        $resolution = strtolower(trim((string) ($item['resolution'] ?? 'none')));
         $itemRemarks = cleanTransactionalText($item['remarks'] ?? '') ?? '';
-        $itemDiscount = receiveMoney($item['supplier_adjustment'] ?? 0, 'Item supplier adjustment');
         $productLabel = trim((string) ($poItems[$poItemId]['product_name'] ?? 'Purchase order item'));
 
         if (empty($item['inspection_complete'])) throw new InvalidArgumentException("Complete the inspection for {$productLabel} before confirming receiving.");
@@ -215,20 +281,24 @@ try {
         if ($affected > 0) {
             $hasIssues = true;
             if (!in_array($issueType, $allowedIssues, true)) throw new InvalidArgumentException('Select a valid issue type for every affected item.');
+            if ($issueType === 'Other' && $issueDetail === '') throw new InvalidArgumentException('Specify the issue when Other is selected.');
+            if (!in_array($disposition, $allowedDispositions, true)) throw new InvalidArgumentException('Select a valid disposition for every affected item.');
             if ($resolution === 'none') throw new InvalidArgumentException('Select a resolution for every affected item.');
-            if ($itemRemarks === '') throw new InvalidArgumentException('Remarks are required for every affected item.');
-        } elseif ($resolution !== 'none' || $issueType !== '' || $returned > 0 || $itemDiscount > 0) {
+        } elseif ($resolution !== 'none' || $issueType !== '' || $disposition !== '' || $returned > 0 || $disposed > 0) {
             throw new InvalidArgumentException('Issue details must be empty when there is no affected quantity.');
         }
 
-        $expectedReturned = in_array($resolution, ['return_for_credit', 'return_for_replacement'], true) ? $damaged : 0;
-        $expectedDisposed = $resolution === 'reject_without_replacement' ? $damaged : 0;
+        $physicalAction = in_array($disposition, ['return_to_supplier', 'hold_quarantine', 'dispose'], true);
+        if ($physicalAction && $action <= 0) throw new InvalidArgumentException('Action quantity is required for the selected affected goods action.');
+        if ($physicalAction && $action < $damaged) throw new InvalidArgumentException('Action quantity cannot be less than the physically damaged quantity.');
+        if ($damaged > 0 && $disposition === 'not_applicable') throw new InvalidArgumentException('A physical action is required for damaged goods that were received.');
+        if ($disposition === 'not_applicable' && $action !== 0) throw new InvalidArgumentException('Action quantity must be zero when the action is Not Applicable.');
+        if ($missing > 0 && $damaged === 0 && $action === 0 && $disposition !== 'not_applicable') throw new InvalidArgumentException('Short deliveries without goods to remove must use the not-applicable action.');
+        $expectedReturned = $disposition === 'return_to_supplier' ? $action : 0;
+        $expectedDisposed = $disposition === 'dispose' ? $action : 0;
         if ($returned !== $expectedReturned) throw new InvalidArgumentException('Returned quantity does not match the selected resolution.');
         if ($disposed !== $expectedDisposed) throw new InvalidArgumentException('Disposed quantity does not match the selected resolution.');
-        $accepted = $delivered - $returned - $disposed;
-        if ($resolution === 'keep_with_discount' && $itemDiscount <= 0) throw new InvalidArgumentException('A supplier adjustment is required when keeping an affected item with a discount.');
-        if ($resolution !== 'keep_with_discount' && $itemDiscount > 0) throw new InvalidArgumentException('Item supplier adjustment is only allowed for Keep with supplier discount.');
-        if ($missing > 0 && in_array($resolution, ['keep_with_discount', 'keep_damaged'], true)) throw new InvalidArgumentException('Keep is not valid while units are missing. Select a supplier return, replacement, or rejection resolution.');
+        $accepted = $delivered - $action;
 
         $batches = is_array($item['batches'] ?? null) ? $item['batches'] : [];
         $validatedBatches = [];
@@ -249,114 +319,127 @@ try {
         if ($allocated > $accepted) throw new InvalidArgumentException("Allocated inventory for {$productLabel} exceeds accepted inventory by " . ($allocated - $accepted) . ' units.');
         if ($allocated < $accepted) throw new InvalidArgumentException(($accepted - $allocated) . " accepted units for {$productLabel} remain to be allocated to inventory batches.");
 
+        // PO item unit_price_snapshot is the approved cost per base inventory unit.
         $unitPrice = (float) $poItems[$poItemId]['unit_price'];
-        if (in_array($resolution, ['return_for_credit', 'reject_without_replacement'], true)) $supplierCredit += $affected * $unitPrice;
-        if ($resolution === 'return_for_replacement') $replacementPending += $affected * $unitPrice;
-        $itemDiscounts += $itemDiscount;
-
-        $validatedItems[] = compact('poItemId', 'ordered', 'delivered', 'damaged', 'missing', 'affected', 'accepted', 'returned', 'disposed', 'issueType', 'resolution', 'itemRemarks', 'itemDiscount', 'validatedBatches', 'unitPrice') + ['po_item' => $poItems[$poItemId]];
+        $claimUnitConversionId = $action > 0 ? $actionUnitConversionId : $damagedUnitConversionId;
+        $storedClaimQuantity = $action > 0 ? $actionQuantity : $damagedQuantity;
+        if ($missing > 0) {
+            $claimUnitConversionId = supplierClaimDefaultConversion($pdo, $poItemId);
+            $storedClaimQuantity = $action + $missing;
+        }
+        $claimIssueType = $issueType === 'Other' ? substr('Other: ' . $issueDetail, 0, 80) : $issueType;
+        $validatedItems[] = compact('poItemId', 'ordered', 'delivered', 'damagedQuantity', 'damagedUnitConversionId', 'damaged', 'validatedDamageLines', 'actionQuantity', 'actionUnitConversionId', 'action', 'missing', 'affected', 'accepted', 'returned', 'disposed', 'issueType', 'issueDetail', 'claimIssueType', 'disposition', 'resolution', 'itemRemarks', 'validatedBatches', 'unitPrice', 'claimUnitConversionId', 'storedClaimQuantity') + ['po_item' => $poItems[$poItemId]];
     }
     if (count($seenItems) !== count($poItems)) throw new InvalidArgumentException('Every purchase order item must be inspected before confirmation.');
 
-    $totalDiscount = round($supplierDiscount + $itemDiscounts, 2);
-    $finalPayment = round($totalAmount - $supplierCredit - $replacementPending - $totalDiscount, 2);
-    if ($finalPayment < 0) throw new InvalidArgumentException('Final payable amount cannot be negative.');
-    $amountPaid = 0.0;
-    $remainingBalance = round(max(0, $finalPayment - $amountPaid), 2);
     $receivingMeta = [
         'version' => 1,
-        'payment_status' => $paymentStatus,
-        'amount_paid' => $amountPaid,
-        'remaining_balance' => $remainingBalance,
-        'supplier_credit' => round($supplierCredit, 2),
-        'supplier_discount' => $totalDiscount,
-        'final_amount_payable' => $finalPayment
+        'workflow' => 'physical_receiving'
     ];
     $storedReceivingRemarks = RECEIVING_META_PREFIX . json_encode($receivingMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n" . $remarks;
 
     $receivingId = $receivingHeader ? cleanId($receivingHeader['receiving_id']) : newUuid($pdo);
     if ($receivingHeader) {
-        $statement = $pdo->prepare('UPDATE purchase_order_receiving SET received_date = CURRENT_TIMESTAMP, remarks = :remarks WHERE receiving_id = :receiving_id');
-        $statement->execute([':remarks' => $storedReceivingRemarks, ':receiving_id' => $receivingId]);
+        $statement = $pdo->prepare("UPDATE purchase_order_receiving SET received_date = CURRENT_TIMESTAMP, remarks = :remarks, inspection_status = 'Confirmed', inspected_by = :inspected_by WHERE receiving_id = :receiving_id");
+        $statement->execute([':remarks' => $storedReceivingRemarks, ':inspected_by' => $_SESSION['user_id'] ?? null, ':receiving_id' => $receivingId]);
     } else {
-        $statement = $pdo->prepare('INSERT INTO purchase_order_receiving (receiving_id, po_id, received_date, remarks) VALUES (:receiving_id, :po_id, CURRENT_TIMESTAMP, :remarks)');
-        $statement->execute([':receiving_id' => $receivingId, ':po_id' => $poId, ':remarks' => $storedReceivingRemarks]);
+        $statement = $pdo->prepare("INSERT INTO purchase_order_receiving (receiving_id, po_id, received_date, remarks, inspection_status, inspected_by) VALUES (:receiving_id, :po_id, CURRENT_TIMESTAMP, :remarks, 'Confirmed', :inspected_by)");
+        $statement->execute([':receiving_id' => $receivingId, ':po_id' => $poId, ':remarks' => $storedReceivingRemarks, ':inspected_by' => $_SESSION['user_id'] ?? null]);
     }
 
-    $receiveItemStatement = $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, received_quantity, damaged_quantity) VALUES (:id, :receiving_id, :po_item_id, :received, :damaged)');
+    $receiveItemStatement = $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, received_quantity) VALUES (:id, :receiving_id, :po_item_id, :received)');
     $inventoryStatement = $pdo->prepare("INSERT INTO product_inventory (inventory_id, receiving_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, expiry_date, status) VALUES (:id, :receiving_id, :product_id, :batch_number, :quantity, :remaining, :expiry, :expiry_copy, :status)");
     $batchStatement = $pdo->prepare("INSERT INTO inventory_batches (batch_id, legacy_inventory_id, po_id, po_item_id, product_id, supplier_id, received_date, expiry_date, received_qty, storage_qty, shelf_qty, damaged_qty, returned_qty, unit_cost, batch_status) VALUES (:batch_id, :inventory_id, :po_id, :po_item_id, :product_id, :supplier_id, CURRENT_TIMESTAMP, :expiry, :received, :storage, 0, :damaged, :returned, :unit_cost, :status)");
-    $returnStatement = $pdo->prepare('INSERT INTO purchase_order_returns (return_id, po_id, po_item_id, return_quantity, damage_reason, remarks, return_status) VALUES (:id, :po_id, :po_item_id, :quantity, :reason, :remarks, :status)');
+    $claimStatement = $pdo->prepare('INSERT INTO supplier_claims (claim_id, po_item_id, damaged_quantity, damaged_unit_conversion_id, action_quantity, action_unit_conversion_id, affected_quantity, unit_conversion_id, damage_reason, disposition, resolution_type, claim_status, reported_by, remarks) VALUES (:id, :po_item_id, :damaged_quantity, :damaged_conversion_id, :action_quantity, :action_conversion_id, :quantity, :conversion_id, :reason, :disposition, :resolution, :status, :reported_by, :remarks)');
+    $damageLineStatement = $pdo->prepare('INSERT INTO supplier_claim_damage_lines (damage_line_id, claim_id, sequence_no, affected_unit_conversion_id, damaged_quantity, damaged_unit_conversion_id) VALUES (:id, :claim_id, :sequence_no, :affected_conversion_id, :damaged_quantity, :damaged_conversion_id)');
     $activityRows = [];
+    $acceptedPricingRows = [];
 
     foreach ($validatedItems as $validated) {
         $receiveItemStatement->execute([
             ':id' => newUuid($pdo), ':receiving_id' => $receivingId, ':po_item_id' => $validated['poItemId'],
-            ':received' => $validated['delivered'], ':damaged' => $validated['damaged']
+            ':received' => $validated['delivered']
         ]);
 
-        $damagedToQuarantine = in_array($validated['resolution'], ['keep_damaged', 'keep_with_discount'], true) ? $validated['damaged'] : 0;
         foreach ($validated['validatedBatches'] as $batchIndex => $batch) {
-            $quarantinedQuantity = min($batch['quantity'], $damagedToQuarantine);
-            $storageQuantity = $batch['quantity'] - $quarantinedQuantity;
-            $damagedToQuarantine -= $quarantinedQuantity;
+            $storageQuantity = $batch['quantity'];
             $inventoryId = newUuid($pdo);
             $inventoryStatement->execute([
                 ':id' => $inventoryId, ':receiving_id' => $receivingId, ':product_id' => cleanId($validated['po_item']['product_id']),
                 ':batch_number' => $batch['batch_number'], ':quantity' => $storageQuantity, ':remaining' => $storageQuantity,
                 ':expiry' => $batch['expiry_date'], ':expiry_copy' => $batch['expiry_date'], ':status' => $storageQuantity > 0 ? 'Available' : 'Out of Stock'
             ]);
+            $pricingBatchId = newUuid($pdo);
             $batchStatement->execute([
-                ':batch_id' => newUuid($pdo), ':inventory_id' => $inventoryId,
+                ':batch_id' => $pricingBatchId, ':inventory_id' => $inventoryId,
                 ':po_id' => $batchIndex === 0 ? $poId : null, ':po_item_id' => $validated['poItemId'],
                 ':product_id' => cleanId($validated['po_item']['product_id']), ':supplier_id' => cleanId($order['supplier_id']),
                 ':expiry' => $batch['expiry_date'], ':received' => $batch['quantity'], ':storage' => $storageQuantity,
-                ':damaged' => $quarantinedQuantity,
-                ':returned' => $batchIndex === 0 ? $validated['returned'] : 0,
+                ':damaged' => 0,
+                ':returned' => 0,
                 ':unit_cost' => $validated['unitPrice'], ':status' => 'active'
             ]);
-            if ($storageQuantity > 0) $activityRows[] = ['inventory_id' => $inventoryId, 'quantity' => $storageQuantity, 'product_name' => $validated['po_item']['product_name']];
-        }
-
-        if (!$validated['validatedBatches'] && $validated['affected'] > 0) {
-            $batchStatement->execute([
-                ':batch_id' => newUuid($pdo), ':inventory_id' => null, ':po_id' => $poId, ':po_item_id' => $validated['poItemId'],
-                ':product_id' => cleanId($validated['po_item']['product_id']), ':supplier_id' => cleanId($order['supplier_id']),
-                ':expiry' => null, ':received' => $validated['delivered'], ':storage' => 0,
-                ':damaged' => in_array($validated['resolution'], ['keep_damaged', 'keep_with_discount', 'reject_without_replacement'], true) ? $validated['damaged'] : 0,
-                ':returned' => $validated['returned'], ':unit_cost' => $validated['unitPrice'], ':status' => $validated['returned'] > 0 ? 'returned' : 'damaged'
-            ]);
+            if ($storageQuantity > 0) {
+                $productId = cleanId($validated['po_item']['product_id']);
+                $activityRows[] = ['inventory_id' => $inventoryId, 'quantity' => $storageQuantity, 'product_name' => $validated['po_item']['product_name']];
+                $acceptedPricingRows[$productId] = [
+                    'batch_id' => $pricingBatchId,
+                    'po_id' => $poId,
+                    'po_item_id' => $validated['poItemId'],
+                    'supplier_id' => cleanId($order['supplier_id']),
+                    'unit_cost' => $validated['unitPrice'],
+                    'received_date' => date('Y-m-d H:i:s'),
+                    'inventory_unit' => $validated['po_item']['inventory_unit'],
+                ];
+            }
         }
 
         if ($validated['affected'] > 0) {
             $metadata = [
                 'version' => 1, 'resolution' => $validated['resolution'], 'delivered_quantity' => $validated['delivered'],
                 'damaged_quantity' => $validated['damaged'], 'missing_quantity' => $validated['missing'],
-                'supplier_adjustment' => $validated['itemDiscount'], 'replacement_expected_qty' => $validated['resolution'] === 'return_for_replacement' ? $validated['affected'] : 0,
+                'replacement_expected_qty' => $validated['resolution'] === 'replacement' ? $validated['affected'] : 0,
                 'replacement_received_qty' => 0, 'parent_return_id' => null
             ];
-            $returnStatement->execute([
-                ':id' => newUuid($pdo), ':po_id' => $poId, ':po_item_id' => $validated['poItemId'], ':quantity' => $validated['affected'],
-                ':reason' => $validated['issueType'], ':remarks' => receiveReturnRemarks($metadata, $validated['itemRemarks']),
-                ':status' => receiveStatusForResolution($validated['resolution'])
+            $claimId = newUuid($pdo);
+            $resolutionType = supplierClaimResolutionFromLegacy($validated['resolution']);
+            $claimStatement->execute([
+                ':id' => $claimId, ':po_item_id' => $validated['poItemId'], ':quantity' => $validated['storedClaimQuantity'],
+                ':damaged_quantity' => $validated['damagedQuantity'], ':damaged_conversion_id' => $validated['damagedUnitConversionId'],
+                ':action_quantity' => $validated['actionQuantity'], ':action_conversion_id' => $validated['actionUnitConversionId'],
+                ':conversion_id' => $validated['claimUnitConversionId'], ':reason' => $validated['claimIssueType'],
+                ':disposition' => supplierClaimDispositionFromLegacy($validated['disposition']), ':resolution' => $resolutionType,
+                ':status' => supplierClaimStatus($resolutionType), ':reported_by' => $_SESSION['user_id'] ?? null,
+                ':remarks' => receiveReturnRemarks($metadata, $validated['itemRemarks'])
             ]);
+            foreach ($validated['validatedDamageLines'] as $damageLine) {
+                $damageLineStatement->execute([
+                    ':id' => newUuid($pdo), ':claim_id' => $claimId,
+                    ':sequence_no' => $damageLine['sequence_no'],
+                    ':affected_conversion_id' => $damageLine['affected_unit_conversion_id'],
+                    ':damaged_quantity' => $damageLine['damaged_quantity'],
+                    ':damaged_conversion_id' => $damageLine['damaged_unit_conversion_id'],
+                ]);
+            }
         }
     }
 
-    $newStatus = $hasIssues ? 'Delivered with Return/Damage' : 'Delivered';
-    $hasPaymentChange = $supplierCredit > 0 || $replacementPending > 0 || $totalDiscount > 0;
-    $updateOrder = $pdo->prepare('UPDATE purchase_orders SET status = :status, payment_status = :payment_status, total_amount = :total, final_payment = :final WHERE po_id = :po_id');
-    $updateOrder->execute([':status' => $newStatus, ':payment_status' => $paymentStatus, ':total' => $totalAmount, ':final' => $finalPayment, ':po_id' => $poId]);
+        $newStatus = 'Delivered';
+    $updateOrder = $pdo->prepare('UPDATE purchase_orders SET status = :status WHERE po_id = :po_id');
+    $updateOrder->execute([':status' => $newStatus, ':po_id' => $poId]);
+    $pricingResults = [];
+    foreach ($acceptedPricingRows as $productId => $costBasis) {
+        $latestBasis = latestAcceptedCostBasis($pdo, $productId) ?? $costBasis;
+        $pricingResults[$productId] = applyAcceptedDeliveryPricing($pdo, $productId, $latestBasis);
+    }
     $pdo->commit();
 
     recordActivityLog($pdo, 'Purchase Order', $newStatus, 'PO ' . $order['po_number'] . ' is ' . $newStatus, $poId);
     foreach ($activityRows as $activity) recordActivityLog($pdo, 'Inventory', 'Received', $activity['quantity'] . ' received into storage: ' . $activity['product_name'], $activity['inventory_id']);
 
     receiveResponse(true, 'Purchase order received successfully.', '', [
-        'po_status' => $newStatus, 'has_adjustment' => $hasPaymentChange, 'total_amount' => $totalAmount,
-        'final_payment' => $finalPayment, 'supplier_credit' => $supplierCredit,
-        'supplier_discount' => $totalDiscount, 'replacement_value_pending' => $replacementPending,
-        'payment_status' => $paymentStatus, 'amount_paid' => $amountPaid, 'remaining_balance' => $remainingBalance
+        'po_status' => $newStatus,
+        'pricing_results' => $pricingResults
     ]);
 } catch (InvalidArgumentException $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();

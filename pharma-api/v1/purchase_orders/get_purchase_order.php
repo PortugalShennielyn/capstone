@@ -4,6 +4,7 @@ require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 require_once 'purchase_order_payment_helpers.php';
 require_once '../products/product_category_schema.php';
+require_once '../purchase_requests/purchase_request_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
@@ -20,11 +21,15 @@ if ($poId === '') {
 }
 
 try {
+    ensurePurchaseRequestSchema($pdo);
+    ensurePurchaseOrderSchema($pdo);
 
     $orderStatement = $pdo->prepare(
         "SELECT
             po.po_id,
+            po.pr_id,
             po.po_number,
+            pr.pr_number,
             po.supplier_id,
             po.created_at AS order_date,
             po.payment_terms,
@@ -37,6 +42,8 @@ try {
             s.address AS supplier_address,
             s.phone AS supplier_phone,
             s.email AS supplier_email,
+            requester.full_name AS prepared_by_name,
+            approver.full_name AS approved_by_name,
             audit.action AS approval_action,
             audit.reason AS approval_reason,
             audit.created_at AS approval_reason_at,
@@ -45,6 +52,9 @@ try {
             por.remarks AS receiving_remarks
          FROM purchase_orders po
          INNER JOIN suppliers s ON s.supplier_id = po.supplier_id
+         LEFT JOIN purchase_requests pr ON pr.pr_id = po.pr_id
+         LEFT JOIN users requester ON requester.user_id = pr.requested_by
+         LEFT JOIN users approver ON approver.user_id = pr.supervisor_user_id
          LEFT JOIN (
             SELECT a.po_id, a.action, a.reason, a.created_at, a.user_name
             FROM purchase_order_approval_audit a
@@ -156,7 +166,7 @@ try {
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
-         LEFT JOIN purchase_order_receiving_items pori ON pori.po_item_id = poi.po_item_id
+         LEFT JOIN purchase_order_receiving_item_summary pori ON pori.po_item_id = poi.po_item_id
          LEFT JOIN (
             SELECT
                 po_item_id,
@@ -180,7 +190,7 @@ try {
                 END) AS replacement_pending_quantity,
                 GROUP_CONCAT(damage_reason ORDER BY return_id SEPARATOR ', ') AS return_reasons,
             GROUP_CONCAT(NULLIF(remarks, '') ORDER BY return_id SEPARATOR '; ') AS return_remarks
-            FROM purchase_order_returns
+            FROM supplier_claim_legacy_projection
             GROUP BY po_item_id
          ) returns ON returns.po_item_id = poi.po_item_id
          LEFT JOIN inventory_batches ib ON ib.po_item_id = poi.po_item_id
@@ -201,6 +211,22 @@ try {
     $itemsStatement->execute([':po_id' => $poId]);
 
     $items = $itemsStatement->fetchAll(PDO::FETCH_ASSOC);
+
+    $conversionStatement = $pdo->prepare(
+        'SELECT poi.po_item_id,c.conversion_id,c.unit_name,c.base_quantity,c.level_order
+         FROM purchase_order_items poi
+         INNER JOIN purchase_orders po ON po.po_id=poi.po_id
+         INNER JOIN supplier_products sp ON sp.product_id=poi.product_id AND sp.supplier_id=po.supplier_id
+         INNER JOIN supplier_product_unit_conversions c ON c.supplier_product_id=sp.supplier_product_id
+         WHERE poi.po_id=:po_id
+         ORDER BY poi.po_item_id,c.level_order DESC,c.base_quantity DESC'
+    );
+    $conversionStatement->execute([':po_id'=>$poId]);
+    $conversionsByItem=[];
+    foreach($conversionStatement->fetchAll(PDO::FETCH_ASSOC) as $conversion){
+        $conversion['base_quantity']=(int)$conversion['base_quantity'];
+        $conversionsByItem[cleanId($conversion['po_item_id'])][]=$conversion;
+    }
 
     $batchStatement = $pdo->prepare(
         "SELECT ib.po_item_id,
@@ -224,13 +250,16 @@ try {
     $replacementPendingAmount = 0;
 
     foreach ($items as &$item) {
+        $item['package_conversions']=$conversionsByItem[cleanId($item['po_item_id'])]??[];
         $inventoryQuantity = (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
         $price = (float) $item['price'];
         $returnedQuantity = (int) $item['supplier_credit_quantity'];
-        $item['line_total'] = round($inventoryQuantity * $price, 2);
-        $item['returned_amount'] = $returnedQuantity * $price;
+        $item['line_total'] = round((float) $item['stored_line_total'], 2);
+        $item['cost_basis'] = 'base_unit';
+        $baseUnitCost = $price;
+        $item['returned_amount'] = round($returnedQuantity * $baseUnitCost, 2);
         $item['supplier_credit_amount'] = $item['returned_amount'];
-        $item['replacement_pending_amount'] = (int) ($item['replacement_pending_quantity'] ?? 0) * $price;
+        $item['replacement_pending_amount'] = round((int) ($item['replacement_pending_quantity'] ?? 0) * $baseUnitCost, 2);
         $item['accepted_batches'] = $batchesByItem[cleanId($item['po_item_id'])] ?? [];
         $totalAmount += (float) $item['line_total'];
         $returnedAmount += (float) $item['returned_amount'];
@@ -246,6 +275,7 @@ try {
     $order['final_payment'] = $storedFinalPayment > 0 ? $storedFinalPayment : max(0, $totalAmount - $returnedAmount);
     $paymentSummary = purchaseOrderPaymentSummary($pdo, $poId, (float) $order['final_payment']);
     $order['total_paid'] = $paymentSummary['total_paid'];
+    $order['supplier_credit_applied'] = $paymentSummary['supplier_credit_applied'];
     $order['remaining_balance'] = $paymentSummary['remaining_balance'];
     $order['payment_status'] = $paymentSummary['payment_status'];
     $order['payment_state'] = $paymentSummary['payment_status'];

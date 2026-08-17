@@ -131,6 +131,7 @@ try {
         'super_admin' => 'dashboard.html',
         'admin' => 'dashboard.html',
         'manager' => 'dashboard.html',
+        'supervisor' => 'supervisor_dashboard.html',
         'cashier' => 'cashier_dashboard.html',
         'salesclerk' => 'sales_clerk_pos.html'
     ];
@@ -141,6 +142,7 @@ try {
 
     $accountContext = loadPrimaryAccountContext($pdo, $user['user_id'], $user['role']);
 
+    authDiagnosticLog('Session regeneration', ['function' => 'login']);
     session_regenerate_id(true);
 
     $_SESSION['user_id'] = $user['user_id'];
@@ -161,6 +163,10 @@ try {
     $_SESSION['tenant_slug'] = $accountContext['tenant_slug'];
     $_SESSION['primary_domain'] = $accountContext['primary_domain'];
     $tabToken = createAuthSession($pdo, $user['user_id'], $accountContext['account_id'], $accountContext['tenant_id']);
+    authDiagnosticLog('Session verified', [
+        'function' => 'login',
+        'auth_session' => maskedAuthIdentifier((string) ($_SESSION['auth_session_id'] ?? '')),
+    ]);
     recordLoginAttempt($pdo, $username, $user['user_id'], true, null);
     resetLoginAttempts($pdo, $username);
     $lastLoginStmt = $pdo->prepare('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE user_id = :user_id');

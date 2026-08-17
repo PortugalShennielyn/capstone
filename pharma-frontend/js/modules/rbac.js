@@ -5,8 +5,12 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'dashboard.html',
         'products.html',
         'inventory.html',
+        'shelf_inventory.html',
         'supplier.html',
         'purchase_orders.html',
+        'purchase_requests.html',
+        'purchase_order_print.html',
+        'purchase_request_print.html',
         'inspect_deliveries.html',
         'arrived_orders.html',
         'return_damage.html',
@@ -15,6 +19,21 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'admin_settings.html',
         'sales_history.html',
         'cashier_shift_summary.html'
+    ]),
+    supervisor: new Set([
+        'supervisor_dashboard.html',
+        'products.html',
+        'inventory.html',
+        'shelf_inventory.html',
+        'supplier.html',
+        'purchase_orders.html',
+        'purchase_requests.html',
+        'purchase_order_print.html',
+        'purchase_request_print.html',
+        'return_damage.html',
+        'expiry_monitoring.html',
+        'reports.html',
+        'supervisor_approval.html'
     ]),
     cashier: new Set([
         'cashier_dashboard.html',
@@ -42,8 +61,10 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'dashboard',
         'products',
         'inventory',
+        'shelf-inventory',
         'supplier',
         'purchase-orders',
+        'purchase-requests',
         'inspect-deliveries',
         'return-damage',
         'expiry-monitoring',
@@ -51,6 +72,17 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'settings',
         'sales-history',
         'cashier-shift',
+        'user-settings'
+    ]),
+    supervisor: new Set([
+        'dashboard',
+        'products',
+        'inventory',
+        'shelf-inventory',
+        'supplier',
+        'purchase-orders',
+        'reports',
+        'supervisor-approval',
         'user-settings'
     ]),
     cashier: new Set([
@@ -92,6 +124,7 @@ function primaryAccessRole(session) {
     if (roles.has('super_admin') || roles.has('ro_super_admin')) return 'super_admin';
     if (roles.has('admin') || roles.has('ro_admin')) return 'admin';
     if (roles.has('manager') || roles.has('ro_manager')) return 'manager';
+    if (roles.has('supervisor') || roles.has('ro_supervisor')) return 'supervisor';
     if (roles.has('cashier') || roles.has('ro_cashier')) return 'cashier';
     if (roles.has('salesclerk') || roles.has('ro_sales_clerk')) return 'salesclerk';
     return '';
@@ -102,6 +135,7 @@ function roleLabel(session) {
         super_admin: 'Super Admin',
         admin: 'Admin',
         manager: 'Manager',
+        supervisor: 'CEO',
         cashier: 'Cashier',
         salesclerk: 'Sales Clerk'
     }[primaryAccessRole(session)] || 'Account';
@@ -109,6 +143,8 @@ function roleLabel(session) {
 
 function isPageAllowed(session, filename) {
     const role = primaryAccessRole(session);
+    if (filename === 'purchase_request_print.html' || filename === 'purchase_order_print.html') return Boolean(role);
+    if (filename === 'supervisor_approval.html') return role === 'supervisor';
     if (role === 'super_admin' || role === 'admin') return true;
     return ROLE_PAGE_ACCESS[role]?.has(filename) || false;
 }

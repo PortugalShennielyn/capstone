@@ -5,10 +5,6 @@ require_once '../../config/require_auth.php';
 require_once 'cashier_helpers.php';
 
 try {
-    ensureSalesOrderCashSchema($pdo);
-    ensureCashierPaymentDiscountSchema($pdo);
-    ensureActivityLogSchema($pdo);
-
     $userId = cashierCurrentUserId();
     $isAdmin = cashierIsAdminSession();
     $completedScope = $isAdmin ? '' : ' AND o.assigned_cashier_id = :completed_cashier_id';

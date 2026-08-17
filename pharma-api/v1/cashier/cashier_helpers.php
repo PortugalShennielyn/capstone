@@ -49,33 +49,32 @@ function ensureCashierPaymentDiscountSchema(PDO $pdo): void
 
 function cashierDiscountAmount(string $discountType, float $customAmount, float $subtotal): float
 {
-    $discountType = strtolower(trim($discountType));
-    if ($discountType === 'senior' || $discountType === 'pwd') {
-        return cashierMoney($subtotal * 0.2);
-    }
-    if ($discountType === 'promo') {
-        return cashierMoney($subtotal * 0.1);
-    }
-    if ($discountType === 'custom') {
-        return cashierMoney(min(max($customAmount, 0), $subtotal));
-    }
-
-    return 0.0;
+    return salesTransactionDiscount($discountType, $customAmount, $subtotal);
 }
 
-function cashierPaymentTotals(float $subtotal, string $discountType, float $customAmount): array
+function cashierPaymentTotals(
+    float $subtotal,
+    string $discountType,
+    float $customAmount,
+    float $salesClerkDiscount = 0
+): array
 {
-    $subtotal = cashierMoney(max(0, $subtotal));
     $discountType = in_array($discountType, ['none', 'senior', 'pwd', 'promo', 'custom'], true) ? $discountType : 'none';
-    $discount = cashierDiscountAmount($discountType, $customAmount, $subtotal);
-    $taxable = max($subtotal - $discount, 0);
-    $vat = cashierMoney($taxable * 0.12);
+    $totals = salesVatInclusivePaymentTotals(
+        $subtotal,
+        $salesClerkDiscount,
+        $discountType,
+        $customAmount
+    );
 
     return [
         'discount_type' => $discountType,
-        'discount_amount' => $discount,
-        'vat' => $vat,
-        'final_amount' => cashierMoney($taxable + $vat),
+        'discount_amount' => $totals['cashier_discount_amount'],
+        'sales_clerk_discount' => $totals['sales_clerk_discount'],
+        'total_discount' => $totals['discount_amount'],
+        'vatable_sales' => $totals['vatable_sales'],
+        'vat' => $totals['vat'],
+        'final_amount' => $totals['total_amount'],
     ];
 }
 
@@ -105,6 +104,8 @@ function cashierStatusGroup(string $status): string
 function cashierOrderRow(array $row): array
 {
     $status = (string) ($row['status'] ?? '');
+    $finalAmount = cashierMoney($row['final_amount'] ?? $row['total_amount'] ?? 0);
+    $vat = cashierMoney($row['vat'] ?? 0);
 
     return [
         'order_id' => (int) ($row['order_id'] ?? 0),
@@ -121,8 +122,9 @@ function cashierOrderRow(array $row): array
         'sales_clerk_discount' => cashierMoney($row['sales_clerk_discount'] ?? $row['discount'] ?? 0),
         'cashier_discount_type' => cashierDisplay($row['cashier_discount_type'] ?? 'none', 'none'),
         'cashier_discount_amount' => cashierMoney($row['cashier_discount_amount'] ?? 0),
-        'final_amount' => cashierMoney($row['final_amount'] ?? $row['total_amount'] ?? 0),
-        'vat' => cashierMoney($row['vat'] ?? 0),
+        'final_amount' => $finalAmount,
+        'vatable_sales' => cashierMoney(max(0, $finalAmount - $vat)),
+        'vat' => $vat,
         'total_amount' => cashierMoney($row['total_amount'] ?? 0),
         'cash_received' => cashierMoney($row['cash_received'] ?? 0),
         'amount_paid' => cashierMoney($row['amount_paid'] ?? 0),
@@ -191,6 +193,9 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             i.product_name,
             i.specification,
             i.quantity,
+            i.selected_quantity,
+            i.selected_unit,
+            i.unit_base_quantity,
             i.unit_price,
             i.line_total,
             p.status AS product_status,
@@ -214,7 +219,10 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             'generic_name' => cashierDisplay($item['generic_name'] ?? ''),
             'strength' => cashierDisplay($item['medicine_strength'] ?? ''),
             'net_weight' => cashierDisplay($item['grocery_net_weight'] ?? ''),
-            'quantity' => (int) ($item['quantity'] ?? 0),
+            'quantity' => (int) (($item['selected_quantity'] ?? 0) ?: ($item['quantity'] ?? 0)),
+            'selected_unit' => cashierDisplay($item['selected_unit'] ?? ''),
+            'base_quantity' => (int) ($item['quantity'] ?? 0),
+            'unit_base_quantity' => max(1, (int) ($item['unit_base_quantity'] ?? 1)),
             'unit_price' => cashierMoney($item['unit_price'] ?? 0),
             'line_total' => cashierMoney($item['line_total'] ?? 0),
             'product_status' => cashierDisplay($item['product_status'] ?? 'Active', 'Active'),

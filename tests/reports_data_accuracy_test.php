@@ -70,7 +70,7 @@ $tests[] = result('Negative stock fixture', $negativeBatches > 0, "{$negativeBat
 $tests[] = result('Expired batch fixture', $expiredBatches > 0, "{$expiredBatches} batches");
 $tests[] = result('Fully depleted batch fixture', $depletedBatches > 0, "{$depletedBatches} batches");
 
-foreach (['Pending', 'In transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled'] as $status) {
+foreach (['Pending', 'In transit', 'Arrived', 'Delivered', 'Cancelled'] as $status) {
     $count = (int) $pdo->query('SELECT COUNT(*) FROM purchase_orders WHERE status=' . $pdo->quote($status))->fetchColumn();
     $tests[] = result("PO status: {$status}", $count > 0, "{$count} purchase orders");
 }

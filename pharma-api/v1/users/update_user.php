@@ -25,6 +25,7 @@ if ($username === '') sendUserJson(false, 'Username is required.', null, 422);
 if (!in_array($role, validUserRoles(), true)) sendUserJson(false, 'Role is required.', null, 422);
 assertAssignableUserRole($role);
 $target = assertCanManageUser($pdo, $userId, $role);
+assertSingleActiveSupervisor($pdo, $role, $status, $userId);
 
 $exists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username AND user_id <> :user_id');
 $exists->execute([':username' => $username, ':user_id' => $userId]);

@@ -3,6 +3,8 @@ require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
 require_once '../products/product_status_schema.php';
+require_once '../products/product_pricing_schema.php';
+require_once 'supplier_schema.php';
 
 $supplierId = cleanId($_GET['supplier_id'] ?? null);
 
@@ -14,12 +16,19 @@ if ($supplierId === '') {
 
 try {
     ensureProductStatusColumn($pdo);
-
+    ensureSupplierProductInventoryUnitColumn($pdo);
+    ensureSupplierPurchasingConversionSchema($pdo);
     $statement = $pdo->prepare(
         "SELECT
             sp.supplier_product_id,
             sp.supplier_cost_price,
+            sp.supplier_cost_input,
+            sp.supplier_cost_basis,
             sp.purchase_unit,
+            sp.purchase_unit_contains,
+            sp.inner_unit,
+            sp.units_per_inner_unit,
+            sp.inventory_unit,
             COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit,
             p.product_id,
             p.product_name,
@@ -83,7 +92,13 @@ try {
          GROUP BY
             sp.supplier_product_id,
             sp.supplier_cost_price,
+            sp.supplier_cost_input,
+            sp.supplier_cost_basis,
             sp.purchase_unit,
+            sp.purchase_unit_contains,
+            sp.inner_unit,
+            sp.units_per_inner_unit,
+            sp.inventory_unit,
             sp.units_per_purchase_unit,
             p.product_id,
             p.product_name,
@@ -120,9 +135,32 @@ try {
     );
     $statement->execute([':supplier_id' => $supplierId]);
 
+    $products = $statement->fetchAll(PDO::FETCH_ASSOC);
+    $canViewSupplierCost = currentSessionHasRbacRole('super_admin')
+        || currentSessionHasRbacRole('ro_super_admin')
+        || currentSessionHasRbacRole('admin')
+        || currentSessionHasRbacRole('ro_admin')
+        || currentSessionHasRbacRole('supervisor')
+        || currentSessionHasRbacRole('ro_supervisor');
+    foreach ($products as &$product) {
+        $normalizedHierarchy = supplierProductPurchasingHierarchy($pdo, (string) $product['supplier_product_id']);
+        if (!empty($normalizedHierarchy['hierarchy_levels'])) $product['hierarchy_levels'] = $normalizedHierarchy['hierarchy_levels'];
+        $product = enrichSupplierPurchasingSetup($product);
+        $product['pricing'] = productPricingSnapshot($pdo, $product['product_id']);
+        $product['category_markup_percentage'] = $product['pricing']['category_markup_percentage'];
+        $product['pricing_behavior'] = $product['pricing']['pricing_behavior'];
+        if ($canViewSupplierCost) {
+            $product['supplier_cost_per_base_unit'] = round((float) ($product['supplier_cost_price'] ?? 0), 4);
+            $product['calculated_selling_price'] = calculatedSellingPrice($product['supplier_cost_per_base_unit'], (float) $product['pricing']['applied_markup_percentage']);
+            $product['price_difference'] = round($product['calculated_selling_price'] - (float) $product['selling_price'], 2);
+        } else {
+            unset($product['supplier_cost_price'], $product['supplier_cost_input'], $product['supplier_cost_basis'], $product['supplier_cost_per_inventory_unit'], $product['estimated_purchase_unit_cost'], $product['price'], $product['supplier_price_basis']);
+        }
+    }
+    unset($product);
     echo json_encode([
         'status' => 'success',
-        'products' => $statement->fetchAll(PDO::FETCH_ASSOC)
+        'products' => $products
     ]);
 } catch (Throwable $e) {
     http_response_code(500);

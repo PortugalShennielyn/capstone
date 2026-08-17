@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+<script src="./js/navbar_bootstrap.js?v=9"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Purchase Orders</title>
@@ -11,10 +13,10 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <link href="./css/purchase_receiving.css?v=3" rel="stylesheet">
-    <script src="./js/navbar.js?v=55" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
+    <link href="./css/navbar.css?v=20" rel="stylesheet">
+    <link href="./css/purchase_receiving.css?v=6" rel="stylesheet">
+<script src="./js/navbar.js?v=74" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 
     <style>
         :root {
@@ -78,7 +80,7 @@
         .po-workspace { width: 100%; max-width: 1600px; margin: 0 auto; padding-inline: clamp(4px, .8vw, 14px); transition: max-width .3s ease, padding .3s ease; }
         body.navbar-sidebar-collapsed .po-workspace { max-width: 1700px; padding-inline: clamp(8px, 1.2vw, 22px); }
         .section-title { color: var(--text-main); font-size: 1.05rem; font-weight: 800; }
-        .status-summary-grid { display: grid; grid-template-columns: repeat(7, minmax(138px, 1fr)); grid-auto-rows: 1fr; align-items: stretch; gap: clamp(12px, 1.2vw, 18px); margin-bottom: clamp(18px, 1.8vw, 26px); }
+        .status-summary-grid { display: grid; grid-template-columns: repeat(6, minmax(138px, 1fr)); grid-auto-rows: 1fr; align-items: stretch; gap: clamp(12px, 1.2vw, 18px); margin-bottom: clamp(18px, 1.8vw, 26px); }
         .status-card { min-height: 112px; height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 20px 18px; border: 1px solid var(--border-soft); border-left: 5px solid var(--status-color, var(--purple)); border-radius: 12px; background: #fff; box-shadow: 0 10px 24px rgba(15,23,42,.05); }
         .status-card strong { display: block; color: var(--text-main); font-size: clamp(1.35rem, 1.7vw, 1.75rem); font-weight: 800; line-height: 1; }
         .status-card p { margin: 10px 0 0; color: #596274; font-size: .9rem; font-weight: 800; line-height: 1.25; }
@@ -194,6 +196,8 @@
         #table-purchase-orders .po-actions { justify-content: center; }
         .po-actions .btn { width: 32px; height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
         .status-badge { white-space: nowrap; line-height: 1.2; font-size: 11px; padding: 6px 8px; }
+        .po-status-stack { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+        .po-claim-badge { display: inline-flex; align-items: center; justify-content: center; padding: 3px 7px; border-radius: 999px; color: #9a3412; background: #ffedd5; font-size: 9.5px; font-weight: 800; line-height: 1.15; white-space: nowrap; }
         .po-empty { padding: 42px 16px !important; color: #8790a1 !important; text-align: center; }
         #table-purchase-orders td.po-brand-cell { width: 135px !important; min-width: 135px !important; }
         #table-purchase-orders td.po-product-cell { width: 180px !important; min-width: 180px !important; }
@@ -1257,9 +1261,51 @@
             .receive-workspace-footer > * { flex: 1 1 auto; }
             #receiveFooterStatus { flex-basis: 100%; }
         }
+
+        /* Compact PO summary list and document-first generated PO viewer. */
+        .purchase-orders-table { width:100%;table-layout:fixed; }
+        .purchase-orders-table th,.purchase-orders-table td { box-sizing:border-box; }
+        #table-purchase-orders[data-po-view="active"] { width:100%!important;min-width:0!important;table-layout:fixed!important; }
+        #table-purchase-orders[data-po-view="active"] th { padding:7px!important;font-size:11.5px!important; }
+        #table-purchase-orders[data-po-view="active"] td { padding:8px 7px!important;font-size:12px!important;line-height:1.25; }
+        #table-purchase-orders[data-po-view="active"] col:nth-child(1),#table-purchase-orders[data-po-view="active"] th:nth-child(1),#table-purchase-orders[data-po-view="active"] td:nth-child(1){width:12%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(2),#table-purchase-orders[data-po-view="active"] th:nth-child(2),#table-purchase-orders[data-po-view="active"] td:nth-child(2){width:13%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(3),#table-purchase-orders[data-po-view="active"] th:nth-child(3),#table-purchase-orders[data-po-view="active"] td:nth-child(3){width:14%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(4),#table-purchase-orders[data-po-view="active"] th:nth-child(4),#table-purchase-orders[data-po-view="active"] td:nth-child(4){width:13%!important;min-width:0!important;max-width:13%!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(5),#table-purchase-orders[data-po-view="active"] th:nth-child(5),#table-purchase-orders[data-po-view="active"] td:nth-child(5){width:9%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(6),#table-purchase-orders[data-po-view="active"] th:nth-child(6),#table-purchase-orders[data-po-view="active"] td:nth-child(6){width:8%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(7),#table-purchase-orders[data-po-view="active"] th:nth-child(7),#table-purchase-orders[data-po-view="active"] td:nth-child(7){width:9%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(8),#table-purchase-orders[data-po-view="active"] th:nth-child(8),#table-purchase-orders[data-po-view="active"] td:nth-child(8){width:12%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] col:nth-child(9),#table-purchase-orders[data-po-view="active"] th:nth-child(9),#table-purchase-orders[data-po-view="active"] td:nth-child(9){width:10%!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] th.col-actions,#table-purchase-orders[data-po-view="active"] td.po-actions-cell { position:static!important;right:auto!important;width:10%!important;min-width:0!important;max-width:none!important;padding-inline:4px!important;border-left:0!important;box-shadow:none!important; }
+        #table-purchase-orders[data-po-view="active"] .po-actions{gap:4px!important;min-width:0!important}
+        #table-purchase-orders[data-po-view="active"] .po-actions .btn{width:30px!important;height:30px!important;min-width:30px!important;padding:0!important;font-size:11px}
+        #table-purchase-orders[data-po-view="active"] th:nth-child(4),#table-purchase-orders[data-po-view="active"] td:nth-child(4){text-align:left!important}
+        #table-purchase-orders[data-po-view="active"] .po-items-summary{width:100%;max-width:100%;margin-left:0;text-align:left}
+        #table-purchase-orders[data-po-view="active"] th:nth-child(5),#table-purchase-orders[data-po-view="active"] td:nth-child(5){text-align:right!important}
+        #table-purchase-orders[data-po-view="active"] th:nth-child(5),#table-purchase-orders[data-po-view="active"] td:nth-child(5){padding-right:7px!important}
+        #table-purchase-orders[data-po-view="active"] th:nth-child(6),#table-purchase-orders[data-po-view="active"] td:nth-child(6){padding-left:7px!important}
+        #table-purchase-orders[data-po-view="active"] .status-badge{display:inline-flex;align-items:center;justify-content:center;max-width:100%;min-height:24px;padding:4px 8px!important;white-space:nowrap!important;text-align:center;font-size:11px;line-height:1.1}
+        @media(min-width:901px){.po-table-scroll.po-active-fit{overflow-x:hidden!important;scrollbar-gutter:auto}}
+        .po-reference-cell strong,.po-reference-cell span,.po-items-summary strong,.po-items-summary span{display:block}
+        .po-reference-cell strong,.po-items-summary strong{font-size:12px}
+        .po-reference-cell span,.po-items-summary span{margin-top:2px;color:#667085;font-size:10.5px;font-weight:600;line-height:1.25}
+        #table-purchase-orders[data-po-view="active"] .po-number-cell,#table-purchase-orders[data-po-view="active"] .po-reference-cell{white-space:normal!important;overflow-wrap:anywhere!important;word-break:break-word!important;font-size:11px!important}
+        .po-items-summary span{display:-webkit-box!important;max-height:2.5em;overflow:hidden;white-space:normal!important;line-height:1.25;-webkit-box-orient:vertical;-webkit-line-clamp:2!important;line-clamp:2;overflow-wrap:anywhere}
+        #viewPurchaseOrderModal{--po-view-modal-width:96vw;--po-view-modal-height:94vh}
+        #viewPurchaseOrderModal .modal-dialog,#viewPurchaseOrderModal.po-modal-positioned .modal-dialog{width:96vw;max-width:none;height:94vh;max-height:94vh;margin:3vh auto}
+        #viewPurchaseOrderModal.po-modal-positioned .modal-dialog{position:fixed;left:2vw;top:3vh}
+        #viewPurchaseOrderModal .modal-content{height:100%;max-height:100%;overflow:hidden;border-radius:12px}
+        #viewPurchaseOrderModal .modal-header{flex:0 0 auto;min-height:56px;padding:9px 14px}
+        #viewPurchaseOrderModal .modal-body{flex:1 1 auto;min-height:0;padding:0;overflow-y:auto;overflow-x:hidden;background:#e8ebef}
+        .po-document-modal-header{align-items:center}.po-document-header-actions{display:flex;align-items:center;gap:12px}
+        .generated-po-document{min-height:100%;padding:12px;text-align:center}
+        .generated-po-document iframe{display:block;width:794px;max-width:100%;height:1123px;margin:0 auto;border:0;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.16)}
+        #viewPurchaseOrderModal .po-modal-corner-resize{display:none}
+        @media(max-width:900px){#table-purchase-orders[data-po-view="active"]{min-width:920px!important}.generated-po-document{padding:6px}#viewPurchaseOrderModal .modal-dialog,#viewPurchaseOrderModal.po-modal-positioned .modal-dialog{width:98vw;left:1vw}}
     </style>
 </head>
-<body>
+<body data-page="purchase-orders">
     <div id="navbar-container"></div>
 
     <main class="main-wrapper" id="mainWrapper">
@@ -1293,47 +1339,45 @@
                             <div class="mb-3">
                                 <div class="po-card-heading">
                                     <h1 class="section-title mb-1">Purchase Orders</h1>
-                                    <p class="text-muted small mb-0">Review supplier orders and create new procurement requests.</p>
+                                    <p class="text-muted small mb-0">Generated purchase orders and supplier deliveries.</p>
                                 </div>
                                 <div class="po-toolbar">
-                                    <div class="po-toolbar-tabs">
-                                        <div class="po-view-switch" role="group" aria-label="Purchase order table views">
-                                            <button class="po-view-btn active" type="button" data-po-view="active">Active Orders</button>
-                                            <button class="po-view-btn" type="button" data-po-view="arrived">Arrived Orders</button>
-                                            <button class="po-view-btn" type="button" data-po-view="delivered">Delivered Orders</button>
-                                            <button class="po-view-btn" type="button" data-po-view="archived">Archived Orders</button>
-                                        </div>
-                                    </div>
                                     <div class="po-toolbar-actions">
                                         <select id="po-status-filter" class="form-select form-select-sm po-status-filter">
-                                            <option value="">Pending and In Transit</option>
+                                            <option value="">All Statuses</option>
                                             <option value="Pending">Pending</option>
-                                            <option value="In transit">In transit</option>
+                                            <option value="In transit">In Transit</option>
+                                            <option value="Arrived">Arrived</option>
+                                            <option value="Delivered">Delivered</option>
                                             <option value="Cancelled">Cancelled</option>
                                         </select>
-                                        <button class="btn btn-purple" type="button" data-bs-toggle="modal" data-bs-target="#createPurchaseOrderModal">
-                                            <i class="fa-solid fa-plus me-2"></i>Create Purchase Order
-                                        </button>
                                     </div>
                                 </div>
                             </div>
                              <div class="table-responsive po-table-scroll">
-                                 <table id="table-purchase-orders" class="table table-hover align-middle po-list-table">
-                                    <colgroup id="purchase-orders-colgroup"></colgroup>
+                                 <table id="table-purchase-orders" class="table table-hover align-middle po-list-table purchase-orders-table">
+                                    <colgroup id="purchase-orders-colgroup">
+                                        <col class="col-po-number" style="width:13%">
+                                        <col class="col-pr-number" style="width:15%">
+                                        <col class="col-supplier" style="width:14%">
+                                        <col class="col-items-summary" style="width:14%">
+                                        <col class="col-money" style="width:9%">
+                                        <col class="col-delivery" style="width:10%">
+                                        <col class="col-terms" style="width:10%">
+                                        <col class="col-status" style="width:7%">
+                                        <col class="col-actions" style="width:8%">
+                                    </colgroup>
                                      <thead id="purchase-orders-head">
                                         <tr>
+                                            <th class="col-po-number">PO Number</th>
+                                            <th class="col-pr-number">PR Reference</th>
                                             <th class="col-supplier">Supplier</th>
-                                            <th class="col-brand">Brand</th>
-                                            <th class="col-items">Product</th>
-                                            <th class="col-specification">Specification</th>
-                                            <th class="col-qty">Order Qty</th>
-                                            <th class="col-purchase-unit">Purchase Unit</th>
-                                            <th class="col-inventory-qty">Stock to Receive</th>
+                                            <th class="col-items-summary">Items</th>
                                             <th class="col-money">PO Total</th>
-                                            <th class="col-terms">Payment</th>
                                             <th class="col-delivery">ETA</th>
+                                            <th class="col-terms">Payment Mode</th>
                                             <th class="col-status">Status</th>
-                                            <th class="col-actions">Actions</th>
+                                            <th class="col-actions">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -1346,7 +1390,7 @@
         </section>
     </main>
 
-    <div class="modal fade" id="createPurchaseOrderModal" tabindex="-1" aria-labelledby="createPurchaseOrderModalLabel" aria-hidden="true">
+    <div class="modal fade" id="createPurchaseOrderModal" tabindex="-1" aria-labelledby="createPurchaseOrderModalLabel" aria-hidden="true" data-drp-draggable="true" data-drp-managed-size="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
@@ -1358,6 +1402,10 @@
                 </div>
                 <div class="modal-body">
                     <div class="po-create-form">
+                        <div id="po-conversion-source" class="po-conversion-badge d-none" role="status">
+                            <i class="fas fa-file-circle-check" aria-hidden="true"></i>
+                            <div><span>Approved Purchase Request</span><strong>-</strong></div>
+                        </div>
                         <section class="po-create-section" aria-labelledby="po-information-heading">
                             <h3 id="po-information-heading" class="po-create-section-title">Purchase Order Information</h3>
                             <div class="po-create-form-row po-form-primary-row">
@@ -1368,12 +1416,12 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="form-label fw-semibold" for="po-payment-terms">Payment Terms</label>
-                                    <select id="po-payment-terms" class="form-select">
-                                        <option value="" disabled selected>Select payment terms...</option>
+                                    <label class="form-label fw-semibold" for="po-payment-terms">Mode Payment</label>
+                                    <select id="po-payment-terms" name="payment_terms" class="form-select">
+                                        <option value="" disabled selected>Select Mode Payment...</option>
                                         <option value="Cash">Cash</option>
                                         <option value="GCash">GCash</option>
-                                        <option value="Bank Transfer">Bank Transfer</option>
+
                                     </select>
                                 </div>
                                 <div>
@@ -1439,38 +1487,15 @@
     <div class="modal fade" id="viewPurchaseOrderModal" tabindex="-1" aria-labelledby="viewPurchaseOrderModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header">
+                <div class="modal-header po-document-modal-header">
                     <div>
-                        <h2 class="modal-title fs-5 fw-bold" id="viewPurchaseOrderModalLabel">Purchase Order Details</h2>
-                        <p class="text-muted small mb-0 mt-1" id="viewPoNumber">Review complete order information.</p>
+                        <h2 class="modal-title fs-5 fw-bold" id="viewPurchaseOrderModalLabel">Purchase Order</h2>
+                        <p class="text-muted small mb-0 mt-1" id="viewPoNumber"></p>
                     </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <div class="po-document-header-actions"><button class="btn btn-sm btn-outline-dark" id="printPurchaseOrderButton" type="button"><i class="fa-solid fa-print me-2"></i>Print PO</button><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 </div>
                 <div class="modal-body">
-                    <div id="viewPoDetails" class="po-detail-grid mb-4"></div>
-                    <div class="table-responsive border rounded">
-                        <table class="table table-hover align-middle mb-0 po-items-table po-detail-items-table">
-                            <thead>
-                                <tr>
-                                    <th>Brand</th>
-                                    <th>Product</th>
-                                    <th>Specification</th>
-                                    <th>Supplier Cost / Base Unit</th>
-                                    <th>Purchase Unit</th>
-                                    <th>Purchase Conversion</th>
-                                    <th>Stock to Receive</th>
-                                    <th>Received Qty</th>
-                                    <th>Damaged Qty</th>
-                                    <th>Returned Amount</th>
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody id="viewPoItems"></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
+                    <div id="generatedPoDocument" class="generated-po-document" hidden><iframe id="generatedPoFrame" title="A4 purchase order preview" scrolling="no"></iframe></div>
                 </div>
                 <div id="view-po-modal-corner-resize" class="po-modal-corner-resize" aria-hidden="true"></div>
             </div>
@@ -1684,9 +1709,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-    <script type="module" src="./js/modules/purchase_orders.js?v=72"></script>
+<script type="module" src="./js/modules/purchase_orders.js?v=97"></script>
     <script type="module">
-        import verifySession from './js/modules/auth.js?v=4';
+        import verifySession from './js/modules/auth.js?v=8';
 
         await verifySession();
     </script>

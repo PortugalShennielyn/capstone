@@ -1,5 +1,5 @@
 <?php
-$allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager'];
+$allowedRoles = ['super_admin', 'admin', 'manager', 'supervisor', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager', 'ro-supervisor'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
@@ -12,15 +12,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
-    ensurePurchaseOrderSchema($pdo);
-    ensureProductCategorySchema($pdo);
 
     $statement = $pdo->query(
         "SELECT
             por.return_id,
             por.created_at AS return_date,
             por.return_quantity,
+            por.affected_quantity,
+            por.affected_base_quantity,
+            por.affected_unit_name,
+            por.unit_conversion_id,
+            por.inventory_batch_id,
             por.damage_reason,
+            por.disposition,
+            por.resolution_type,
             por.remarks,
             por.return_status,
             po.po_id,
@@ -46,14 +51,9 @@ try {
             COALESCE(NULLIF(poi.unit_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS unit,
             COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS packaging,
             poi.quantity AS ordered_quantity,
-            CASE
-                WHEN COALESCE(SUM(pori.received_quantity), 0) >= poi.quantity THEN
-                    GREATEST(poi.quantity - COALESCE(SUM(pori.damaged_quantity), 0), 0)
-                ELSE
-                    COALESCE(SUM(pori.received_quantity), 0)
-            END AS received_quantity,
+            COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
             COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity
-         FROM purchase_order_returns por
+         FROM supplier_claim_legacy_projection por
          INNER JOIN purchase_orders po ON po.po_id = por.po_id
          INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
          INNER JOIN product p ON p.product_id = poi.product_id
@@ -62,12 +62,19 @@ try {
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
-         LEFT JOIN purchase_order_receiving_items pori ON pori.po_item_id = poi.po_item_id
+         LEFT JOIN purchase_order_receiving_item_summary pori ON pori.po_item_id = poi.po_item_id
          GROUP BY
             por.return_id,
             por.created_at,
             por.return_quantity,
+            por.affected_quantity,
+            por.affected_base_quantity,
+            por.affected_unit_name,
+            por.unit_conversion_id,
+            por.inventory_batch_id,
             por.damage_reason,
+            por.disposition,
+            por.resolution_type,
             por.remarks,
             por.return_status,
             po.po_id,

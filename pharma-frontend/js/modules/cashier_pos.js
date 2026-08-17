@@ -1,4 +1,9 @@
 import API_BASE_URL from '../config/config.js';
+import {
+    transactionDiscount,
+    vatInclusivePaymentTotals,
+    savedTransactionTotals,
+} from './sales_financials.js?v=1';
 
 const state = {
     tab: 'waiting',
@@ -35,8 +40,8 @@ const plainMoney = (value) => Number(value || 0).toLocaleString('en-PH', {
 
 const discountOptions = [
     { value: 'none', label: 'No discount' },
-    { value: 'senior', label: 'Senior Citizen (20%)' },
-    { value: 'pwd', label: 'PWD (20%)' },
+    { value: 'senior', label: 'Senior Citizen (requires eligible-item setup)', disabled: true },
+    { value: 'pwd', label: 'PWD (requires eligible-item setup)', disabled: true },
     { value: 'promo', label: 'Promo (10%)' },
     { value: 'custom', label: 'Custom amount' },
 ];
@@ -135,20 +140,18 @@ function normalizeWorkingTab(tab) {
 }
 
 function discountAmount(type, customAmount, subtotal) {
-    const base = Math.max(0, Number(subtotal || 0));
-    if (type === 'senior' || type === 'pwd') return Math.min(base, base * 0.2);
-    if (type === 'promo') return Math.min(base, base * 0.1);
-    if (type === 'custom') return Math.min(base, Math.max(0, Number(customAmount || 0)));
-    return 0;
+    return transactionDiscount(type, customAmount, subtotal);
 }
 
 function paymentTotals(order, type, customAmount) {
-    const subtotal = Math.max(0, Number(order.subtotal || 0));
-    const discount = discountAmount(type, customAmount, subtotal);
-    const taxable = Math.max(0, subtotal - discount);
-    const vat = taxable * 0.12;
-    const finalAmount = taxable + vat;
-    return { discount, vat, finalAmount };
+    const totals = vatInclusivePaymentTotals(order, type, customAmount);
+    return {
+        discount: totals.discount,
+        cashierDiscount: totals.cashierDiscount,
+        vatableSales: totals.vatableSales,
+        vat: totals.vat,
+        finalAmount: totals.totalAmount,
+    };
 }
 
 function receiptSpec(item) {
@@ -168,24 +171,7 @@ function receiptProductLine(item) {
 }
 
 function completedReceiptTotals(order) {
-    const discountType = order.cashier_discount_type || 'none';
-    const cashierDiscount = Number(order.cashier_discount_amount || 0);
-    const calculated = paymentTotals(order, discountType, cashierDiscount);
-    const finalAmount = Number(order.final_amount || order.total_amount || calculated.finalAmount || 0);
-    const subtotal = Number(order.subtotal || 0);
-    const discount = Number(cashierDiscount || calculated.discount || 0);
-    const vat = Number(calculated.vat || order.vat || Math.max(0, finalAmount - Math.max(0, subtotal - discount)));
-    const cashReceived = Number(order.amount_paid || order.cash_received || 0);
-    const change = Number(order.change_amount || Math.max(0, cashReceived - finalAmount));
-
-    return {
-        subtotal,
-        vat,
-        discount,
-        finalAmount,
-        cashReceived,
-        change,
-    };
+    return savedTransactionTotals(order);
 }
 
 function receiptItemRows(order) {
@@ -246,8 +232,9 @@ function renderReceiptPrintArea(order) {
             <div class="receipt-divider-print"></div>
 
             <div class="receipt-total-print"><span>Subtotal:</span><span>${escapeHtml(plainMoney(totals.subtotal))}</span></div>
-            <div class="receipt-total-print"><span>VAT (12%):</span><span>${escapeHtml(plainMoney(totals.vat))}</span></div>
             <div class="receipt-total-print"><span>Discount:</span><span>${escapeHtml(plainMoney(totals.discount))}</span></div>
+            <div class="receipt-total-print"><span>VATable Sales:</span><span>${escapeHtml(plainMoney(totals.vatableSales))}</span></div>
+            <div class="receipt-total-print"><span>VAT (12%):</span><span>${escapeHtml(plainMoney(totals.vat))}</span></div>
             <div class="receipt-total-print is-grand"><span>TOTAL:</span><span>${escapeHtml(plainMoney(totals.finalAmount))}</span></div>
 
             <div class="receipt-payment-print receipt-payment-spaced"><span>Cash Received:</span><span>${escapeHtml(plainMoney(totals.cashReceived))}</span></div>
@@ -404,7 +391,7 @@ function renderDetail(order) {
     const displayFinalAmount = isCompleted ? paidFinalAmount : totals.finalAmount;
     const displayChange = isCompleted ? Number(order.change_amount || 0) : Math.max(0, cashValue - displayFinalAmount);
     const discountSelect = discountOptions.map((option) => `
-        <option value="${option.value}" ${option.value === selectedDiscountType ? 'selected' : ''}>${option.label}</option>
+        <option value="${option.value}" ${option.value === selectedDiscountType ? 'selected' : ''} ${option.disabled ? 'disabled' : ''}>${option.label}</option>
     `).join('');
 
     nodes.detail.innerHTML = `
@@ -426,7 +413,7 @@ function renderDetail(order) {
         <section class="payment-hero" aria-label="Payment summary">
             <div class="payment-hero-block">
                 <span>TOTAL</span>
-                <strong>${money(order.total_amount)}</strong>
+                <strong id="paymentHeroTotal">${money(displayFinalAmount)}</strong>
             </div>
             <label class="payment-hero-block" for="cashAmountInput">
                 <span>CASH RECEIVED</span>
@@ -464,7 +451,10 @@ function renderDetail(order) {
                         <input class="discount-input ${selectedDiscountType === 'custom' ? '' : 'is-hidden'}" id="cashierDiscountAmount" type="number" min="0" step="0.01" value="${selectedDiscountAmount.toFixed(2)}" ${canPay ? '' : 'disabled'} inputmode="decimal" autocomplete="off" aria-label="Custom cashier discount amount">
                     </span>
                 </label>
-                <div class="total-line after-discount"><span>Total (After Discount)</span><strong id="finalAmount">${money(displayFinalAmount)}</strong></div>
+                <div class="total-line"><span>Total Discount</span><strong id="totalDiscount">${money(isCompleted ? completedReceiptTotals(order).discount : totals.discount)}</strong></div>
+                <div class="total-line"><span>VATable Sales</span><strong id="vatableSales">${money(isCompleted ? completedReceiptTotals(order).vatableSales : totals.vatableSales)}</strong></div>
+                <div class="total-line"><span>VAT (12%)</span><strong id="vatAmount">${money(isCompleted ? completedReceiptTotals(order).vat : totals.vat)}</strong></div>
+                <div class="total-line after-discount"><span>Total Amount</span><strong id="finalAmount">${money(displayFinalAmount)}</strong></div>
             </div>
             ${isCompleted ? `
                 <div class="receipt-box">
@@ -506,6 +496,10 @@ function bindDetailEvents(order) {
     const completeBtn = document.getElementById('completePaymentBtn');
     const changeNode = document.getElementById('changeAmount');
     const finalNode = document.getElementById('finalAmount');
+    const heroTotalNode = document.getElementById('paymentHeroTotal');
+    const totalDiscountNode = document.getElementById('totalDiscount');
+    const vatableNode = document.getElementById('vatableSales');
+    const vatNode = document.getElementById('vatAmount');
     const discountType = document.getElementById('cashierDiscountType');
     const discountInput = document.getElementById('cashierDiscountAmount');
 
@@ -519,6 +513,10 @@ function bindDetailEvents(order) {
             const cash = Number(cashInput.value || 0);
             const change = Math.max(0, cash - totals.finalAmount);
             finalNode.textContent = money(totals.finalAmount);
+            if (heroTotalNode) heroTotalNode.textContent = money(totals.finalAmount);
+            if (totalDiscountNode) totalDiscountNode.textContent = money(totals.discount);
+            if (vatableNode) vatableNode.textContent = money(totals.vatableSales);
+            if (vatNode) vatNode.textContent = money(totals.vat);
             changeNode.textContent = money(change);
             completeBtn.disabled = !cashInput.value || cash < totals.finalAmount;
         };

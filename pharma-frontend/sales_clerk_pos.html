@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=5"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -11,9 +13,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=55" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
+    <link href="./css/navbar.css?v=20" rel="stylesheet">
+    <script src="./js/navbar.js?v=69" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root {
             --purple: #6d28d9;
@@ -26,8 +28,9 @@
             --danger: #dc2626;
             --shadow: 0 14px 34px rgba(16, 25, 54, .07);
         }
-        * { box-sizing: border-box; }
-        body { min-height: 100vh; margin: 0; color: var(--ink); background: var(--soft); font-family: "Inter", system-ui, sans-serif; letter-spacing: 0; }
+        html, body { width: 100%; height: 100%; margin: 0; }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { min-height: 100%; color: var(--ink); background: var(--soft); font-family: "Inter", system-ui, sans-serif; letter-spacing: 0; }
         .topbar { position: sticky; top: 0; z-index: 1020; min-height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 26px; background: rgba(255,255,255,.94); border-bottom: 1px solid var(--line); backdrop-filter: blur(10px); }
         .topbar-left, .topbar-right { display: flex; align-items: center; gap: 14px; min-width: 0; }
         .icon-btn, .brand-tile { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 42px; border: 0; border-radius: 8px; }
@@ -39,12 +42,13 @@
         .page-body { padding: clamp(18px, 1.8vw, 28px); }
         .pos-shell { display: block; }
         .catalog-panel, .summary-panel { border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: var(--shadow); overflow: hidden; }
-        .summary-panel { position: fixed; top: 0; right: 0; z-index: 1040; width: min(620px, 100vw); height: 100dvh; max-height: 100dvh; display: none; flex-direction: column; border-radius: 0; }
+        .summary-panel { position: fixed; inset: 0 0 0 auto; z-index: 1040; width: min(620px, 100vw); height: 100vh; height: 100dvh; max-height: 100dvh; display: none; flex-direction: column; overflow: hidden; border-radius: 0; box-sizing: border-box; }
         .summary-panel.is-open { display: flex; }
         .order-summary-backdrop { position: fixed; inset: 0; z-index: 1035; visibility: hidden; background: rgba(15,23,42,.46); opacity: 0; transition: opacity .22s ease, visibility .22s ease; }
         .order-summary-backdrop.is-open { visibility: visible; opacity: 1; }
-        .current-order-fab { position: fixed; top: 50%; right: 22px; z-index: 1030; min-height: 52px; display: inline-flex; align-items: center; gap: 10px; padding: 0 18px; border: 0; border-radius: 999px; color: #fff; background: var(--purple); box-shadow: 0 18px 34px rgba(109,40,217,.28); font-size: 14px; font-weight: 900; transform: translateY(-50%); }
+        .current-order-fab { position: fixed; top: 50%; right: 22px; z-index: 1030; min-height: 52px; display: inline-flex; align-items: center; gap: 10px; padding: 0 18px; border: 0; border-radius: 999px; color: #fff; background: var(--purple); box-shadow: 0 18px 34px rgba(109,40,217,.28); font-size: 14px; font-weight: 900; opacity: 1; visibility: visible; transform: translateY(-50%); transition: opacity .16s ease, transform .16s ease; }
         .current-order-fab:hover { background: var(--purple-dark); }
+        .current-order-fab.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; transform: translate(18px, -50%); }
         .current-order-count { min-width: 25px; height: 25px; display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; border-radius: 999px; color: var(--purple); background: #fff; font-size: 12px; font-weight: 900; }
         .catalog-head { display: grid; grid-template-columns: minmax(260px, 1fr); gap: 12px; padding: 18px; border-bottom: 1px solid var(--line); }
         .search-control { position: relative; min-width: 0; }
@@ -86,42 +90,56 @@
         .item-added-toast strong { color: #0f5132; font-size: 13px; font-weight: 900; }
         .item-added-toast span { margin-top: 3px; color: #1f6b43; font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
         .empty-state { grid-column: 1 / -1; padding: 34px 18px; color: var(--muted); font-size: 13px; font-weight: 800; text-align: center; }
+        .filter-skeleton { display: flex; gap: 8px; padding-bottom: 2px; }
+        .filter-skeleton span { width: 92px; height: 32px; display: block; border-radius: 8px; background: #edf0f6; animation: pos-skeleton-pulse 1.1s ease-in-out infinite alternate; }
+        .filter-skeleton span:nth-child(2) { width: 112px; }
+        .filter-skeleton span:nth-child(3) { width: 128px; }
+        .product-card-skeleton { pointer-events: none; }
+        .pos-skeleton-block { display: block; border-radius: 8px; background: #edf0f6; animation: pos-skeleton-pulse 1.1s ease-in-out infinite alternate; }
+        .pos-skeleton-image { width: 100%; height: 110px; }
+        .pos-skeleton-brand { width: 42%; height: 14px; margin-top: 14px; }
+        .pos-skeleton-name { width: 76%; height: 20px; margin-top: 10px; }
+        .pos-skeleton-spec { width: 92%; height: 34px; margin-top: 8px; }
+        .pos-skeleton-price { width: 42%; height: 18px; margin-top: auto; }
+        .pos-skeleton-stock { width: 30%; height: 13px; margin-top: 8px; }
+        @keyframes pos-skeleton-pulse { from { opacity: .64; } to { opacity: 1; } }
+        body.dark-mode .filter-skeleton span, body.dark-mode .pos-skeleton-block { background: #263244; }
         .summary-head { flex: 0 0 auto; min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line); }
         .summary-head h2 { margin: 0; font-size: 20px; font-weight: 900; letter-spacing: 0; }
         .summary-head-actions { display: inline-flex; align-items: center; gap: 8px; }
         .summary-close-btn { width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; color: #475467; background: #f3f6fb; }
         .clear-btn { min-height: 38px; display: inline-flex; align-items: center; gap: 8px; padding: 0 15px; border: 1px solid #ef4444; border-radius: 8px; color: var(--danger); background: #fff; font-size: 13px; font-weight: 900; white-space: nowrap; }
-        .payment-summary { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .9fr); gap: 12px; padding: 14px 22px; border-bottom: 1px solid var(--line); background: #fff; }
-        .payment-card { min-width: 0; min-height: 74px; display: grid; gap: 7px; align-content: center; padding: 12px 14px; border: 1px solid #e9ddff; border-radius: 8px; background: #f7f1ff; }
-        .payment-card span, .payment-card label { color: #51607a; font-size: 12px; font-weight: 900; line-height: 1; }
-        .payment-card strong { color: var(--purple); font-size: 24px; font-weight: 900; line-height: 1.08; white-space: normal; overflow-wrap: anywhere; }
-        .payment-card input { width: 100%; min-height: 38px; border: 1px solid #d8c7ff; border-radius: 8px; color: #253050; background: #fff; font-size: 15px; font-weight: 900; padding: 0 12px; text-align: right; outline: 0; }
-        .payment-card input::placeholder { color: #98a2b3; font-weight: 800; }
-        .order-items-section { flex: 1 1 auto; min-height: 132px; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--line); }
-        .order-table-head { flex: 0 0 auto; display: grid; grid-template-columns: 76px minmax(0, 1fr) 98px 98px; gap: 10px; padding: 13px 22px; border-bottom: 1px solid var(--line); color: #667085; background: #fbfcff; font-size: 11px; font-weight: 900; text-transform: uppercase; }
+        .order-total-summary { min-height: 64px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 22px; border-bottom: 1px solid var(--line); background: #f7f1ff; }
+        .order-total-summary span { color: #51607a; font-size: 13px; font-weight: 900; line-height: 1.2; }
+        .order-total-summary strong { color: var(--purple); font-size: 24px; font-weight: 900; line-height: 1.08; text-align: right; white-space: nowrap; }
+        .order-items-section { flex: 1 1 auto; min-height: 180px; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--line); }
+        .order-table-head { flex: 0 0 auto; display: grid; grid-template-columns: 94px minmax(0, 1fr) 38px 88px 94px; column-gap: 10px; padding: 13px 22px; border-bottom: 1px solid var(--line); color: #667085; background: #fbfcff; font-size: 11px; font-weight: 900; text-transform: uppercase; }
         .order-table-head span:nth-child(1) { text-align: center; }
-        .order-table-head span:nth-child(3),
-        .order-table-head span:nth-child(4) { text-align: right; }
+        .order-table-head span:nth-child(2) { grid-column: 2 / 4; }
+        .order-table-head span:nth-child(3) { grid-column: 4; }
+        .order-table-head span:nth-child(4) { grid-column: 5; }
+        .order-table-head span:nth-child(3), .order-table-head span:nth-child(4) { text-align: right; }
         .order-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
-        .order-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) 98px 98px; gap: 10px; align-items: center; padding: 13px 22px; border-bottom: 1px solid #eef1f6; }
+        .order-list > .empty-state { min-height: 100%; display: grid; place-items: center; }
+        .order-row { min-height: 68px; display: grid; grid-template-columns: 94px minmax(0, 1fr) 38px 88px 94px; column-gap: 10px; align-items: center; padding: 9px 22px; border-bottom: 1px solid #eef1f6; }
         .order-product { min-width: 0; }
-        .order-product-main { display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 8px; align-items: start; }
-        .order-product strong { display: block; color: var(--ink); font-size: 14px; font-weight: 900; line-height: 1.22; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
-        .order-product span { display: block; margin-top: 3px; color: #51607a; font-size: 12px; font-weight: 700; line-height: 1.25; overflow-wrap: break-word; }
+        .order-product strong { display: block; color: var(--ink); font-size: 14px; font-weight: 900; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
+        .order-product span { display: block; margin-top: 4px; color: #51607a; font-size: 12px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
         .order-product .order-spec { margin-top: 4px; color: #53627d; }
-        .qty-stepper { display: inline-flex; align-items: center; justify-self: center; height: 36px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+        .qty-stepper { min-width: 92px; display: inline-grid; grid-template-columns: 30px 30px 30px; align-items: center; justify-self: center; height: 36px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
         .qty-stepper button { width: 30px; height: 34px; border: 0; background: #fff; color: #4f5f7c; font-size: 15px; font-weight: 900; }
         .qty-stepper span { min-width: 30px; color: var(--ink); text-align: center; font-size: 14px; font-weight: 900; }
         .money-cell { color: #253050; font-size: 13px; font-weight: 800; white-space: nowrap; text-align: right; }
         .line-total-cell { color: var(--ink); font-weight: 900; }
+        .order-action { display: flex; align-items: center; justify-content: center; }
         .remove-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; color: var(--danger); background: #fff5f5; font-size: 14px; line-height: 1; }
-        .totals { flex: 0 0 auto; display: grid; gap: 0; padding: 8px 22px 10px; background: #fff; }
-        .total-line { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; font-weight: 900; }
-        .discount-line { min-height: 48px; display: grid; grid-template-columns: minmax(86px, 1fr) minmax(128px, 150px) 82px 86px; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; font-weight: 900; }
+        .order-summary-footer { flex: 0 0 auto; min-height: 0; background: #fff; }
+        .totals { display: grid; gap: 0; padding: 5px 22px 7px; background: #fff; }
+        .total-line { min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; font-weight: 900; }
+        .discount-line { min-height: 44px; display: grid; grid-template-columns: minmax(86px, 1fr) minmax(128px, 150px) 82px 86px; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; font-weight: 900; }
         .discount-line select, .discount-line input { min-height: 42px; width: 100%; border: 1px solid var(--line); border-radius: 8px; color: #253050; background: #fff; font-size: 13px; font-weight: 700; }
         .discount-line input { text-align: right; padding: 0 12px; }
-        .cash-warning { min-height: 20px; display: none; align-items: center; gap: 7px; color: var(--danger); font-size: 12px; font-weight: 900; }
-        .cash-warning.is-visible { display: flex; }
+        .drawer-grand-total span, .drawer-grand-total strong { color: var(--purple); font-weight: 900; }
         .summary-footer { flex: 0 0 auto; position: sticky; bottom: 0; z-index: 2; padding: 12px 22px 10px; border-top: 1px solid var(--line); background: #fff; box-shadow: 0 -10px 24px rgba(16,25,54,.06); }
         .send-btn { min-height: 54px; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 8px; color: #fff; background: var(--purple); font-size: 17px; font-weight: 900; box-shadow: 0 16px 26px rgba(109,40,217,.22); }
         .send-btn:hover, .cart-btn:hover { background: var(--purple-dark); }
@@ -178,8 +196,36 @@
         .barcode-label { color: #53627d; font-size: 12px; font-weight: 800; text-align: center; }
         @media (max-width: 1280px) { .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (min-width: 1361px) { .product-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-        @media (max-height: 700px) { .order-receipt-paper { max-height: 95vh; } .receipt-body { max-height: none; } .order-success-head { padding-top: 12px; padding-bottom: 9px; } }
-        @media (max-width: 720px) { .order-success-modal { padding: 12px; } .topbar { align-items: flex-start; flex-direction: column; padding: 14px 18px; } .catalog-head { grid-template-columns: 1fr; } .type-filter { align-items: stretch; flex-direction: column; } .type-select-wrap { justify-content: space-between; } .type-select-wrap select { min-width: 0; width: 100%; } .product-grid { grid-template-columns: 1fr; } .summary-head { min-height: 62px; padding: 12px 14px; gap: 8px; } .summary-head h2 { font-size: 18px; } .summary-head-actions { gap: 6px; } .clear-btn { min-height: 38px; padding: 0 10px; font-size: 12px; } .summary-close-btn { width: 38px; height: 38px; } .payment-summary { grid-template-columns: 1fr; gap: 8px; padding: 10px 14px; } .payment-card { min-height: 62px; padding: 10px 12px; } .payment-card strong { font-size: 20px; } .order-items-section { min-height: 140px; } .order-table-head { grid-template-columns: 62px minmax(0, 1fr) 74px 78px; gap: 7px; padding: 10px 14px; font-size: 10px; } .order-row { grid-template-columns: 62px minmax(0, 1fr) 74px 78px; gap: 7px; padding: 12px 14px; } .qty-stepper { height: 32px; } .qty-stepper button { width: 24px; height: 30px; } .qty-stepper span { min-width: 24px; font-size: 12px; } .money-cell { font-size: 11px; } .order-product strong { font-size: 13px; } .order-product span { font-size: 11px; } .totals { padding: 6px 14px 8px; } .total-line { min-height: 32px; font-size: 12px; } .discount-line { grid-template-columns: 1fr; gap: 7px; padding: 8px 0; } .summary-footer { padding: 10px 14px 8px; } .send-btn { min-height: 52px; font-size: 16px; } .hint { font-size: 12px; } .receipt-meta-row { grid-template-columns: 1fr; gap: 2px; } .receipt-table-head, .receipt-item { grid-template-columns: 32px minmax(0, 1fr) 70px 74px; gap: 6px; } .success-actions { grid-template-columns: 1fr; } }
+        @media (prefers-reduced-motion: reduce) { .filter-skeleton span, .pos-skeleton-block { animation: none; } }
+        @media (max-height: 700px) {
+            .summary-head { min-height: 56px; padding: 9px 16px; }
+            .order-total-summary { min-height: 54px; padding: 8px 16px; }
+            .order-total-summary strong { font-size: 21px; }
+            .order-table-head { padding-top: 9px; padding-bottom: 9px; }
+            .order-row { min-height: 64px; padding-top: 7px; padding-bottom: 7px; }
+            .totals { padding-top: 3px; padding-bottom: 4px; }
+            .total-line { min-height: 28px; }
+            .discount-line { min-height: 40px; }
+            .discount-line select, .discount-line input { min-height: 34px; }
+            .summary-footer { padding-top: 8px; padding-bottom: 7px; }
+            .send-btn { min-height: 48px; }
+            .hint { margin-top: 5px; }
+            .order-receipt-paper { max-height: 95vh; }
+            .receipt-body { max-height: none; }
+            .order-success-head { padding-top: 12px; padding-bottom: 9px; }
+        }
+        @media (max-width: 720px) { .order-success-modal { padding: 12px; } .topbar { align-items: flex-start; flex-direction: column; padding: 14px 18px; } .catalog-head { grid-template-columns: 1fr; } .type-filter { align-items: stretch; flex-direction: column; } .type-select-wrap { justify-content: space-between; } .type-select-wrap select { min-width: 0; width: 100%; } .product-grid { grid-template-columns: 1fr; } .summary-panel { width: 100vw; } .summary-head { min-height: 62px; padding: 12px 14px; gap: 8px; } .summary-head h2 { font-size: 18px; } .summary-head-actions { gap: 6px; } .clear-btn { min-height: 38px; padding: 0 10px; font-size: 12px; } .summary-close-btn { width: 38px; height: 38px; } .order-total-summary { min-height: 56px; padding: 8px 14px; } .order-total-summary strong { font-size: 21px; } .order-table-head, .order-row { grid-template-columns: 74px minmax(0, 1fr) 32px 72px 78px; column-gap: 6px; padding-inline: 14px; } .qty-stepper { min-width: 72px; grid-template-columns: 24px 24px 24px; height: 32px; } .qty-stepper button { width: 24px; height: 30px; } .qty-stepper span { min-width: 24px; font-size: 12px; } .money-cell { font-size: 11px; } .order-product strong { font-size: 13px; } .order-product span { font-size: 11px; } .totals { padding: 5px 14px 6px; } .total-line { min-height: 30px; font-size: 12px; } .discount-line { grid-template-columns: minmax(78px, .8fr) minmax(0, 1.2fr); gap: 7px; padding: 6px 0; } .discount-line input, .discount-line strong { grid-row: 2; } .summary-footer { padding: 8px 14px 7px; } .send-btn { min-height: 50px; font-size: 16px; } .hint { font-size: 12px; } .receipt-meta-row { grid-template-columns: 1fr; gap: 2px; } .receipt-table-head, .receipt-item { grid-template-columns: 32px minmax(0, 1fr) 70px 74px; gap: 6px; } .success-actions { grid-template-columns: 1fr; } }
+        @media (max-width: 480px) {
+            .summary-head h2 { font-size: 16px; }
+            .clear-btn { padding-inline: 8px; }
+            .order-table-head { display: none; }
+            .order-row { grid-template-columns: 74px minmax(0, 1fr) 78px; grid-template-areas: "qty item action" "qty price amount"; gap: 5px 8px; padding-block: 11px; }
+            .order-row .qty-stepper { grid-area: qty; }
+            .order-row .order-product { grid-area: item; }
+            .order-row .order-action { grid-area: action; justify-content: flex-end; }
+            .order-row > .money-cell:not(.line-total-cell) { grid-area: price; text-align: left; }
+            .order-row > .line-total-cell { grid-area: amount; }
+        }
         @media print {
             @page { size: 80mm auto; margin: 4mm; }
             body * { visibility: hidden !important; }
@@ -219,8 +265,13 @@
                             <i class="fa-solid fa-barcode"></i>
                         </div>
                     </div>
-                    <div class="type-filter" id="typeFilter" aria-label="Product type filters"></div>
-                    <div class="product-grid" id="productsGrid"><div class="empty-state">Loading products...</div></div>
+                    <div class="type-filter" id="typeFilter" aria-label="Product type filters"><div class="filter-skeleton" aria-hidden="true"><span></span><span></span><span></span></div></div>
+                    <div class="product-grid" id="productsGrid">
+                        <article class="product-card product-card-skeleton" aria-hidden="true"><span class="pos-skeleton-block pos-skeleton-image"></span><span class="pos-skeleton-block pos-skeleton-brand"></span><span class="pos-skeleton-block pos-skeleton-name"></span><span class="pos-skeleton-block pos-skeleton-spec"></span><span class="pos-skeleton-block pos-skeleton-price"></span><span class="pos-skeleton-block pos-skeleton-stock"></span></article>
+                        <article class="product-card product-card-skeleton" aria-hidden="true"><span class="pos-skeleton-block pos-skeleton-image"></span><span class="pos-skeleton-block pos-skeleton-brand"></span><span class="pos-skeleton-block pos-skeleton-name"></span><span class="pos-skeleton-block pos-skeleton-spec"></span><span class="pos-skeleton-block pos-skeleton-price"></span><span class="pos-skeleton-block pos-skeleton-stock"></span></article>
+                        <article class="product-card product-card-skeleton" aria-hidden="true"><span class="pos-skeleton-block pos-skeleton-image"></span><span class="pos-skeleton-block pos-skeleton-brand"></span><span class="pos-skeleton-block pos-skeleton-name"></span><span class="pos-skeleton-block pos-skeleton-spec"></span><span class="pos-skeleton-block pos-skeleton-price"></span><span class="pos-skeleton-block pos-skeleton-stock"></span></article>
+                        <article class="product-card product-card-skeleton" aria-hidden="true"><span class="pos-skeleton-block pos-skeleton-image"></span><span class="pos-skeleton-block pos-skeleton-brand"></span><span class="pos-skeleton-block pos-skeleton-name"></span><span class="pos-skeleton-block pos-skeleton-spec"></span><span class="pos-skeleton-block pos-skeleton-price"></span><span class="pos-skeleton-block pos-skeleton-stock"></span></article>
+                    </div>
                 </section>
 
                 <div class="order-summary-backdrop" id="orderSummaryBackdrop" aria-hidden="true"></div>
@@ -232,15 +283,9 @@
                             <button class="summary-close-btn" type="button" id="closeOrderSummaryBtn" aria-label="Close order summary"><i class="fa-solid fa-xmark"></i></button>
                         </div>
                     </div>
-                    <div class="payment-summary" aria-label="Payment summary">
-                        <div class="payment-card">
-                            <span>Total Amount</span>
-                            <strong id="summaryTotal">PHP 0.00</strong>
-                        </div>
-                        <div class="payment-card">
-                            <label for="cashReceivedInput">Cash</label>
-                            <input id="cashReceivedInput" type="number" min="0" step="0.01" placeholder="Enter cash amount" aria-label="Cash">
-                        </div>
+                    <div class="order-total-summary" aria-label="Order total">
+                        <span>Total Amount</span>
+                        <strong id="summaryTotal">PHP 0.00</strong>
                     </div>
                     <div class="order-items-section">
                         <div class="order-table-head" aria-hidden="true">
@@ -251,29 +296,30 @@
                         </div>
                         <div class="order-list" id="orderList"><div class="empty-state">Order summary is empty.</div></div>
                     </div>
-                    <div class="totals">
-                        <div class="total-line"><span>Total Items</span><strong id="summaryItems">0</strong></div>
-                        <div class="total-line"><span>Total Quantity</span><strong id="summaryQuantity">0</strong></div>
-                        <div class="total-line"><span>Subtotal</span><strong id="summarySubtotal">PHP 0.00</strong></div>
-                        <div class="discount-line">
-                            <span>Discount</span>
-                            <select id="discountType" aria-label="Discount option">
-                                <option value="none">Select discount</option>
-                                <option value="senior">Senior Citizen (20%)</option>
-                                <option value="pwd">PWD (20%)</option>
-                                <option value="promo">Promo (10%)</option>
-                                <option value="custom">Custom Amount</option>
-                            </select>
-                            <input id="discountInput" type="number" min="0" step="0.01" value="0.00" aria-label="Discount amount">
-                            <strong class="money-cell" id="summaryDiscount">PHP 0.00</strong>
+                    <div class="order-summary-footer">
+                        <div class="totals">
+                            <div class="total-line"><span>Total Items</span><strong id="summaryItems">0</strong></div>
+                            <div class="total-line"><span>Total Quantity</span><strong id="summaryQuantity">0</strong></div>
+                            <div class="total-line"><span>Subtotal</span><strong id="summarySubtotal">PHP 0.00</strong></div>
+                            <div class="discount-line">
+                                <span>Discount</span>
+                                <select id="discountType" aria-label="Discount option">
+                                    <option value="none">Select discount</option>
+                                    <option value="senior" disabled>Senior Citizen (requires eligible-item setup)</option>
+                                    <option value="pwd" disabled>PWD (requires eligible-item setup)</option>
+                                    <option value="promo">Promo (10%)</option>
+                                    <option value="custom">Custom Amount</option>
+                                </select>
+                                <input id="discountInput" type="number" min="0" step="0.01" value="0.00" aria-label="Discount amount">
+                                <strong class="money-cell" id="summaryDiscount">PHP 0.00</strong>
+                            </div>
+                            <div class="total-line"><span>Includes VAT (12%)</span><strong id="summaryVat">PHP 0.00</strong></div>
+                            <div class="total-line drawer-grand-total"><span>TOTAL AMOUNT</span><strong id="summaryTotalDue">PHP 0.00</strong></div>
                         </div>
-                        <div class="total-line"><span>VAT (12%)</span><strong id="summaryVat">PHP 0.00</strong></div>
-                        <div class="total-line"><span>Change</span><strong id="summaryChange">PHP 0.00</strong></div>
-                        <div class="cash-warning" id="cashWarning"><i class="fa-solid fa-circle-exclamation"></i>Cash received is not enough.</div>
-                    </div>
-                    <div class="summary-footer">
-                        <button class="send-btn" type="button" id="sendCashierBtn"><i class="fa-solid fa-paper-plane"></i>Send to Cashier</button>
-                        <p class="hint"><i class="fa-solid fa-shield-halved"></i>This order will be sent to the selected cashier queue.</p>
+                        <div class="summary-footer">
+                            <button class="send-btn" type="button" id="sendCashierBtn"><i class="fa-solid fa-paper-plane"></i>Send to Cashier</button>
+                            <p class="hint"><i class="fa-solid fa-shield-halved"></i>This order will be sent to the selected cashier queue.</p>
+                        </div>
                     </div>
                 </aside>
             </div>
@@ -351,7 +397,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script type="module">
         import API_BASE_URL from './js/config/config.js';
-        import verifySession from './js/modules/auth.js?v=4';
+        import verifySession from './js/modules/auth.js?v=8';
+        import { transactionDiscount, vatInclusiveBreakdown, savedTransactionTotals } from './js/modules/sales_financials.js?v=1';
 
         const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
         const countFormat = new Intl.NumberFormat('en-PH');
@@ -372,17 +419,31 @@
         const discountType = document.getElementById('discountType');
         const discountInput = document.getElementById('discountInput');
         const sendCashierBtn = document.getElementById('sendCashierBtn');
-        const cashReceivedInput = document.getElementById('cashReceivedInput');
-        const cashWarning = document.getElementById('cashWarning');
         const sendConfirmSummary = document.getElementById('sendConfirmSummary');
         const proceedSendConfirmBtn = document.getElementById('proceedSendConfirmBtn');
         const currentOrderCount = document.getElementById('currentOrderCount');
+        const currentOrderButton = document.getElementById('currentOrderBtn');
         const orderSummaryDrawer = document.getElementById('orderSummaryDrawer');
         const orderSummaryBackdrop = document.getElementById('orderSummaryBackdrop');
+        // Keep viewport-fixed overlays outside the animated main wrapper. The
+        // wrapper's entry transform otherwise becomes their containing block.
+        document.body.append(orderSummaryBackdrop, orderSummaryDrawer);
         let latestSentOrder = null;
 
         function escapeHtml(value) {
             return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        function productLoadingSkeletons(count = 8) {
+            return Array.from({ length: count }, () => `
+                <article class="product-card product-card-skeleton" aria-hidden="true">
+                    <span class="pos-skeleton-block pos-skeleton-image"></span>
+                    <span class="pos-skeleton-block pos-skeleton-brand"></span>
+                    <span class="pos-skeleton-block pos-skeleton-name"></span>
+                    <span class="pos-skeleton-block pos-skeleton-spec"></span>
+                    <span class="pos-skeleton-block pos-skeleton-price"></span>
+                    <span class="pos-skeleton-block pos-skeleton-stock"></span>
+                </article>`).join('');
         }
 
         function showItemAddedToast(productName) {
@@ -693,20 +754,14 @@
             const subtotal = items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.price || 0), 0);
             const totalItems = items.length;
             const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-            let discount = 0;
-            if (discountType.value === 'senior' || discountType.value === 'pwd') discount = subtotal * 0.2;
-            if (discountType.value === 'promo') discount = subtotal * 0.1;
-            if (discountType.value === 'custom') discount = Number(discountInput.value || 0);
-            discount = Math.min(Math.max(discount, 0), subtotal);
+            const discount = transactionDiscount(discountType.value, Number(discountInput.value || 0), subtotal);
             discountInput.disabled = discountType.value !== 'custom';
             if (discountType.value !== 'custom') discountInput.value = discount.toFixed(2);
-            const taxable = Math.max(subtotal - discount, 0);
-            const vat = taxable * 0.12;
-            const total = taxable + vat;
-            const cashReceived = Math.max(Number(cashReceivedInput.value || 0), 0);
-            const change = Math.max(cashReceived - total, 0);
-            const cashEnough = total <= 0 || cashReceived >= total;
-            return { totalItems, totalQuantity, subtotal, discount, vat, total, cashReceived, change, cashEnough };
+            const breakdown = vatInclusiveBreakdown(subtotal, discount);
+            const vat = breakdown.vat;
+            const vatableSales = breakdown.vatableSales;
+            const total = breakdown.totalAmount;
+            return { totalItems, totalQuantity, subtotal, discount, vatableSales, vat, total };
         }
 
         function numericMoney(value) {
@@ -750,8 +805,6 @@
                 <div class="confirm-row"><span>Total items</span><strong>${countFormat.format(totals.totalItems)}</strong></div>
                 <div class="confirm-row"><span>Total quantity</span><strong>${countFormat.format(totals.totalQuantity)}</strong></div>
                 <div class="confirm-row"><span>Total amount</span><strong>${peso.format(totals.total)}</strong></div>
-                <div class="confirm-row"><span>Cash</span><strong>${peso.format(totals.cashReceived)}</strong></div>
-                <div class="confirm-row"><span>Change</span><strong>${peso.format(totals.change)}</strong></div>
                 <div class="confirm-row"><span>Status after sending</span><strong>Waiting for Cashier</strong></div>
             `;
         }
@@ -761,10 +814,6 @@
                 toastr.warning('Add at least one product to the order summary.');
                 return;
             }
-            if (!orderTotals().cashEnough) {
-                toastr.warning('Cash received is not enough.');
-                return;
-            }
             renderSendConfirmSummary();
             bootstrap.Modal.getOrCreateInstance(document.getElementById('sendConfirmModal')).show();
         }
@@ -772,6 +821,7 @@
         function openOrderSummary() {
             orderSummaryDrawer.classList.add('is-open');
             orderSummaryBackdrop.classList.add('is-open');
+            currentOrderButton.classList.add('is-hidden');
             orderSummaryDrawer.setAttribute('aria-hidden', 'false');
             orderSummaryBackdrop.setAttribute('aria-hidden', 'false');
             document.body.style.overflow = 'hidden';
@@ -780,6 +830,7 @@
         function closeOrderSummary() {
             orderSummaryDrawer.classList.remove('is-open');
             orderSummaryBackdrop.classList.remove('is-open');
+            currentOrderButton.classList.remove('is-hidden');
             orderSummaryDrawer.setAttribute('aria-hidden', 'true');
             orderSummaryBackdrop.setAttribute('aria-hidden', 'true');
             document.body.style.overflow = '';
@@ -792,6 +843,7 @@
             } else {
                 orderList.innerHTML = items.map(item => {
                     const amount = Number(item.quantity) * Number(item.price || 0);
+                    const sellingUnits = Array.isArray(item.selling_units) ? item.selling_units : [];
                     return `
                         <div class="order-row">
                             <div class="qty-stepper" aria-label="Quantity controls">
@@ -800,13 +852,12 @@
                                 <button type="button" data-inc-product="${escapeHtml(item.product_id)}">+</button>
                             </div>
                             <div class="order-product">
-                                <div class="order-product-main">
-                                    <div>
-                                        <strong>${escapeHtml(receiptProductName(item))}</strong>
-                                        ${orderShortSpecification(item) ? `<span class="order-spec">${escapeHtml(orderShortSpecification(item))}</span>` : ''}
-                                    </div>
-                                    <button class="remove-btn" type="button" data-remove-product="${escapeHtml(item.product_id)}" aria-label="Remove item"><i class="fa-solid fa-xmark"></i></button>
-                                </div>
+                                <strong>${escapeHtml(receiptProductName(item))}</strong>
+                                ${orderShortSpecification(item) ? `<span class="order-spec">${escapeHtml(orderShortSpecification(item))}</span>` : ''}
+                                <select class="form-select form-select-sm mt-1" data-selling-unit-product="${escapeHtml(item.product_id)}" aria-label="Selling unit">${sellingUnits.map(unit => `<option value="${escapeHtml(unit.unit)}" data-factor="${Number(unit.base_quantity || 1)}" data-price="${Number(unit.selling_price || 0)}" ${String(unit.unit) === String(item.selected_unit) ? 'selected' : ''}>${escapeHtml(unit.unit)} (${Number(unit.base_quantity || 1)} base)</option>`).join('')}</select>
+                            </div>
+                            <div class="order-action">
+                                <button class="remove-btn" type="button" data-remove-product="${escapeHtml(item.product_id)}" aria-label="Remove item"><i class="fa-solid fa-xmark"></i></button>
                             </div>
                             <div class="money-cell">${peso.format(Number(item.price || 0))}</div>
                             <div class="money-cell line-total-cell">${peso.format(amount)}</div>
@@ -820,11 +871,10 @@
             document.getElementById('summarySubtotal').textContent = peso.format(totals.subtotal);
             document.getElementById('summaryDiscount').textContent = peso.format(totals.discount);
             document.getElementById('summaryVat').textContent = peso.format(totals.vat);
-            document.getElementById('summaryChange').textContent = peso.format(totals.change);
+            document.getElementById('summaryTotalDue').textContent = peso.format(totals.total);
             document.getElementById('summaryTotal').textContent = peso.format(totals.total);
             currentOrderCount.textContent = countFormat.format(totals.totalQuantity);
-            cashWarning.classList.toggle('is-visible', Boolean(state.cart.size) && !totals.cashEnough);
-            sendCashierBtn.disabled = !state.cart.size || !totals.cashEnough;
+            sendCashierBtn.disabled = !state.cart.size;
         }
 
         function barcodeSvg(barcode) {
@@ -869,7 +919,7 @@
             else if (categoryName && categoryName !== 'All Items') params.set('category_name', categoryName);
             if (typeId) params.set('type_id', typeId);
             else if (typeName && typeName !== 'All Product Types') params.set('type_name', typeName);
-            productsGrid.innerHTML = '<div class="empty-state">Loading products...</div>';
+            productsGrid.innerHTML = productLoadingSkeletons();
             try {
                 state.products = await apiFetch(`sales/sales_products_search.php?${params.toString()}`);
                 renderProducts();
@@ -898,12 +948,18 @@
             const product = state.products.find(item => item.product_id === productId);
             if (!product) return;
             const existing = state.cart.get(productId);
+            const defaultUnit = existing || (Array.isArray(product.selling_units) ? product.selling_units.find(unit => Number(unit.is_default) === 1) || product.selling_units[0] : null);
+            if (!defaultUnit) {
+                toastr.warning('This product has no active POS Selling Option.');
+                return;
+            }
+            const factor = Number(existing?.unit_base_quantity || defaultUnit.base_quantity || 1);
             const nextQty = Number(existing?.quantity || 0) + 1;
-            if (nextQty > Number(product.available_stock || 0)) {
+            if (nextQty * factor > Number(product.available_stock || 0)) {
                 toastr.warning('Requested quantity is greater than available shelf stock.');
                 return;
             }
-            state.cart.set(productId, { ...product, quantity: nextQty });
+            state.cart.set(productId, { ...product, quantity: nextQty, selected_unit: existing?.selected_unit || defaultUnit.unit, unit_base_quantity: factor, price: Number(existing?.price ?? defaultUnit.selling_price ?? product.price ?? 0) });
             showItemAddedToast(product.product_name || product.brand_name || 'Selected product');
             renderOrder();
         }
@@ -914,7 +970,7 @@
             const requested = Number(item.quantity || 1) + delta;
             if (requested <= 0) {
                 state.cart.delete(productId);
-            } else if (requested > Number(item.available_stock || 0)) {
+            } else if (requested * Number(item.unit_base_quantity || 1) > Number(item.available_stock || 0)) {
                 toastr.warning('Quantity was limited to available shelf stock.');
             } else {
                 item.quantity = requested;
@@ -931,9 +987,9 @@
                 discount: totals.discount,
                 vat: totals.vat,
                 total_amount: totals.total,
-                cash_received: totals.cashReceived,
-                change_amount: totals.change,
-                items: Array.from(state.cart.values()).map(item => ({ product_id: item.product_id, quantity: Number(item.quantity || 0) }))
+                cash_received: 0,
+                change_amount: 0,
+                items: Array.from(state.cart.values()).map(item => ({ product_id: item.product_id, quantity: Number(item.quantity || 0), unit: item.selected_unit }))
             };
         }
 
@@ -956,8 +1012,7 @@
 
         function renderOrderSentSummary(order) {
             const items = Array.isArray(order.items) ? order.items : [];
-            const cashReceived = numericMoney(order.cash_received ?? order.cashReceived);
-            const changeAmount = numericMoney(order.change_amount ?? order.changeAmount);
+            const totals = savedTransactionTotals(order);
             const itemRows = items.map(item => `
                 <div class="receipt-item">
                     <span>${countFormat.format(Number(item.quantity || 0))}</span>
@@ -984,12 +1039,11 @@
                 <div class="receipt-totals">
                     <div class="receipt-total-row"><span>Total Items:</span><strong>${countFormat.format(Number(order.total_items || items.length))}</strong></div>
                     <div class="receipt-total-row"><span>Total Quantity:</span><strong>${countFormat.format(Number(order.total_quantity || 0))}</strong></div>
-                    <div class="receipt-total-row"><span>Subtotal:</span><strong>${peso.format(numericMoney(order.subtotal))}</strong></div>
-                    <div class="receipt-total-row"><span>Discount:</span><strong>${peso.format(numericMoney(order.discount))}</strong></div>
-                    <div class="receipt-total-row"><span>VAT (12%):</span><strong>${peso.format(numericMoney(order.vat))}</strong></div>
-                    <div class="receipt-total-row"><span>Cash:</span><strong>${peso.format(cashReceived)}</strong></div>
-                    <div class="receipt-total-row"><span>Change:</span><strong>${peso.format(changeAmount)}</strong></div>
-                    <div class="receipt-total-row grand"><span>TOTAL AMOUNT:</span><strong>${peso.format(numericMoney(order.total_amount))}</strong></div>
+                    <div class="receipt-total-row"><span>Subtotal:</span><strong>${peso.format(totals.subtotal)}</strong></div>
+                    <div class="receipt-total-row"><span>Discount:</span><strong>${peso.format(totals.discount)}</strong></div>
+                    <div class="receipt-total-row"><span>VATable Sales:</span><strong>${peso.format(totals.vatableSales)}</strong></div>
+                    <div class="receipt-total-row"><span>VAT (12%):</span><strong>${peso.format(totals.vat)}</strong></div>
+                    <div class="receipt-total-row grand"><span>TOTAL AMOUNT:</span><strong>${peso.format(totals.finalAmount)}</strong></div>
                 </div>
                 <div class="receipt-footer">
                     <strong>This is not a payment receipt.</strong>
@@ -1007,40 +1061,16 @@
             }).replace(' at ', ' ');
         }
 
-        function cacheOrderSummaryCash(order) {
-            if (!order?.order_id) return;
-            try {
-                const cache = JSON.parse(sessionStorage.getItem('sales_clerk_order_summary_cash') || '{}');
-                cache[String(order.order_id)] = {
-                    cash_received: numericMoney(order.cash_received),
-                    change_amount: numericMoney(order.change_amount)
-                };
-                sessionStorage.setItem('sales_clerk_order_summary_cash', JSON.stringify(cache));
-            } catch (error) {
-                // Non-critical: receipt can still be viewed without persisted cash/change.
-            }
-        }
-
         async function sendToCashier() {
             if (!state.cart.size) {
                 toastr.warning('Add at least one product to the order summary.');
                 return;
             }
-            if (!orderTotals().cashEnough) {
-                toastr.warning('Cash received is not enough.');
-                return;
-            }
-            const totals = orderTotals();
             setProceedButtonLoading(true);
             try {
                 if (!state.orderId) await saveDraft();
                 const data = await apiFetch('sales/sales_order_send_to_cashier.php', { method: 'POST', body: JSON.stringify(cartPayload()) });
-                latestSentOrder = {
-                    ...data,
-                    cash_received: totals.cashReceived,
-                    change_amount: totals.change
-                };
-                cacheOrderSummaryCash(latestSentOrder);
+                latestSentOrder = data;
                 renderOrderSentSummary(latestSentOrder);
                 bootstrap.Modal.getOrCreateInstance(document.getElementById('sendConfirmModal')).hide();
                 closeOrderSummary();
@@ -1055,7 +1085,6 @@
             state.orderId = null;
             discountType.value = 'none';
             discountInput.value = '0.00';
-            cashReceivedInput.value = '';
             renderOrder();
         }
 
@@ -1140,9 +1169,23 @@
                 renderOrder();
             }
         });
+        orderList.addEventListener('change', event => {
+            const select = event.target.closest('[data-selling-unit-product]');
+            if (!select) return;
+            const item = state.cart.get(select.dataset.sellingUnitProduct);
+            if (!item) return;
+            const factor = Number(select.selectedOptions[0]?.dataset.factor || 1);
+            if (Number(item.quantity || 1) * factor > Number(item.available_stock || 0)) {
+                item.quantity = Math.max(1, Math.floor(Number(item.available_stock || 0) / factor));
+                toastr.info('Quantity adjusted to current shelf availability for the selected unit.');
+            }
+            item.selected_unit = select.value;
+            item.unit_base_quantity = factor;
+            item.price = Number(select.selectedOptions[0]?.dataset.price || 0);
+            renderOrder();
+        });
         discountType.addEventListener('change', renderOrder);
         discountInput.addEventListener('input', renderOrder);
-        cashReceivedInput.addEventListener('input', renderOrder);
         document.getElementById('clearOrderBtn').addEventListener('click', clearOrder);
         document.getElementById('currentOrderBtn').addEventListener('click', openOrderSummary);
         document.getElementById('closeOrderSummaryBtn').addEventListener('click', closeOrderSummary);

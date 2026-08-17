@@ -1,6 +1,6 @@
 import API_BASE_URL from '../config/config.js';
 import PharmaUtils from '../utils.js';
-import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=20';
+import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=27';
 
 let currentSessionUser = null;
 
@@ -29,8 +29,7 @@ function mapSessionUser(user) {
     const profileTargets = [
         document.getElementById('dashboardProfileName'),
         document.getElementById('profileName'),
-        document.querySelector('.dashboard-profile-name'),
-        document.querySelector('.profile-name')
+        document.querySelector('.dashboard-profile-name')
     ];
 
     profileTargets.forEach((target) => {
@@ -38,6 +37,7 @@ function mapSessionUser(user) {
             target.textContent = displayName;
         }
     });
+    window.__drpNavbarProfileDisplay?.render(document.getElementById('navbar-container'), user, { cache: true });
 
     setText('userSettingsInitials', initials);
     setDbText('userSettingsName', displayName, hasDbValue(user.full_name) || hasDbValue(user.username));

@@ -4,12 +4,13 @@ import {
     formatProductSpecification,
     productSearchText
 } from './product_specification.js';
+import { primaryAccessRole } from './rbac.js?v=6';
+import { loadMeasurementUnits, measurementUnitsForContext } from './measurement_units.js?v=2';
 
 const API = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
     : '../pharma-api/v1';
 
-const PURCHASE_UNITS = ['Box', 'Pack', 'Bottle', 'Carton', 'Case', 'Can', 'Pouch', 'Bag'];
 const esc = (value) => String(value ?? '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -21,27 +22,39 @@ const money = (value) => `\u20b1${Number(value || 0).toLocaleString('en-PH', {
     maximumFractionDigits: 2
 })}`;
 
+const canManageSupplierCatalog = () => ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
+
 const state = {
     step: 1,
     mode: 'existing',
     products: [],
     suppliers: [],
+    units: [],
     selectedIds: new Set(),
     terms: new Map(),
     sharedFormReady: false,
     createdProductIds: new Set()
 };
 
+function unitKey(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function unitOptions(context, selected = '') {
+    const selectedKey = unitKey(selected);
+    return measurementUnitsForContext(state.units, { context })
+        .filter(unit => context !== 'purchase' || ['box', 'carton'].includes(unitKey(unit.unit_name)))
+        .map(unit => {
+            const value = String(unit.unit_name || '').trim();
+            const symbol = String(unit.unit_symbol || '').trim();
+            const label = symbol && unitKey(symbol) !== unitKey(value) ? `${value} (${symbol})` : value;
+            const isSelected = [value, symbol].some(item => unitKey(item) === selectedKey);
+            return `<option value="${esc(value)}" ${isSelected ? 'selected' : ''}>${esc(label)}</option>`;
+        }).join('');
+}
+
 function inventoryUnit(product) {
-    return product.net_content_unit
-        || product.grocery_unit
-        || product.weight_volume_unit
-        || product.unit
-        || product.medical_pack_content
-        || product.pack_content_unit
-        || product.package_type
-        || product.packaging
-        || 'pc';
+    return String(product.inventory_unit_name || product.inventory_unit_symbol || product.inventory_unit || '').trim();
 }
 
 function markup() {
@@ -113,10 +126,6 @@ function renderStep1() {
     const step = document.getElementById('assignmentStep1');
     step.innerHTML = `
         <div class="assignment-section-card">
-            <div class="assignment-step-heading">
-                <h6>Product Information</h6>
-                <p>Select a supplier and choose existing Product Master records, or create products with the shared Product Master form.</p>
-            </div>
             <div class="row g-3 align-items-end">
                 <div class="col-lg-5">
                     <label class="form-label" for="assignmentSupplier">Supplier <span class="text-danger">*</span></label>
@@ -268,7 +277,7 @@ async function ensureSharedProductForm() {
     if (!host) return;
     host.replaceChildren(wrapper);
 
-    const module = await import('./products.js?v=34-shared');
+    const module = await import('./products.js?v=35-shared');
     module.initAddProductForm();
     wrapper.dispatchEvent(new Event('show.bs.modal'));
     const saveText = wrapper.querySelector('.modal-footer .btn-purple');
@@ -280,6 +289,7 @@ function rememberTerms() {
     document.querySelectorAll('.assignment-term-card').forEach((card) => {
         state.terms.set(String(card.dataset.productId), {
             purchaseUnit: card.querySelector('.term-unit')?.value || 'Box',
+            inventoryUnit: card.querySelector('.term-inventory-unit')?.value || '',
             quantity: card.querySelector('.term-quantity')?.value || '',
             cost: card.querySelector('.term-cost')?.value || ''
         });
@@ -289,6 +299,7 @@ function rememberTerms() {
 function defaultTerms(product) {
     return state.terms.get(String(product.product_id)) || {
         purchaseUnit: 'Box',
+        inventoryUnit: inventoryUnit(product),
         quantity: '1',
         cost: ''
     };
@@ -306,7 +317,7 @@ function renderStep2() {
         <div class="assignment-term-list">
             ${products.map((product) => {
                 const saved = defaultTerms(product);
-                const unit = inventoryUnit(product);
+                const unit = saved.inventoryUnit || inventoryUnit(product);
                 return `
                     <article class="assignment-term-card" data-product-id="${esc(product.product_id)}">
                         <div class="assignment-term-header">
@@ -320,13 +331,14 @@ function renderStep2() {
                             <div>
                                 <label class="form-label">Purchase Unit <span class="text-danger">*</span></label>
                                 <select class="form-select term-unit">
-                                    ${PURCHASE_UNITS.map((option) => `<option ${option === saved.purchaseUnit ? 'selected' : ''}>${option}</option>`).join('')}
+                                    <option value="">Select Purchase Unit...</option>${unitOptions('purchase', saved.purchaseUnit)}
                                 </select>
                                 <div class="assignment-field-error"></div>
                             </div>
                             <div>
-                                <label class="form-label">Inventory Unit</label>
-                                <input class="form-control term-inventory-unit" readonly value="${esc(unit)}">
+                                <label class="form-label">Product Base Unit</label>
+                                <input class="form-control term-inventory-unit" value="${esc(unit)}" readonly>
+                                <div class="form-text">Defined in Product Master.</div>
                                 <div class="assignment-field-error"></div>
                             </div>
                             <div>
@@ -336,7 +348,7 @@ function renderStep2() {
                                 <div class="assignment-field-error"></div>
                             </div>
                             <div>
-                                <label class="form-label">Supplier Cost per Inventory Unit <span class="text-danger">*</span></label>
+                                <label class="form-label">Supplier Cost per Purchase Unit <span class="text-danger">*</span></label>
                                 <div class="input-group"><span class="input-group-text">\u20b1</span><input class="form-control term-cost" type="number" min="0" step=".01" inputmode="decimal" value="${esc(saved.cost)}"></div>
                                 <div class="assignment-field-error"></div>
                             </div>
@@ -350,7 +362,7 @@ function renderStep2() {
 
 function updateTermCard(card) {
     const purchaseUnit = card.querySelector('.term-unit')?.value || 'Box';
-    const inventory = card.querySelector('.term-inventory-unit')?.value || 'pc';
+    const inventory = card.querySelector('.term-inventory-unit')?.value || 'unit';
     const quantity = Number(card.querySelector('.term-quantity')?.value || 0);
     const cost = Number(card.querySelector('.term-cost')?.value || 0);
     const complete = quantity >= 1 && Number.isInteger(quantity)
@@ -393,13 +405,19 @@ function validateStep2() {
         const product = state.products.find((item) => String(item.product_id) === String(card.dataset.productId));
         const identity = formatProductIdentity(product || {});
         const purchaseUnit = card.querySelector('.term-unit');
+        const inventoryUnit = card.querySelector('.term-inventory-unit');
         const quantity = card.querySelector('.term-quantity');
         const cost = card.querySelector('.term-cost');
 
-        if (!purchaseUnit.value) {
-            setFieldError(purchaseUnit, 'Purchase Unit is required.');
-            errors.push(`${identity}: Purchase Unit is required.`);
+        if (!['box', 'carton'].includes(unitKey(purchaseUnit.value))) {
+            setFieldError(purchaseUnit, 'Purchase Unit must be Box or Carton.');
+            errors.push(`${identity}: Purchase Unit must be Box or Carton.`);
             firstInvalid ||= purchaseUnit;
+        }
+        if (!inventoryUnit.value) {
+            setFieldError(inventoryUnit, 'Configure the Product Base Unit in Product Master first.');
+            errors.push(`${identity}: Product Base Unit must be configured in Product Master.`);
+            firstInvalid ||= inventoryUnit;
         }
         if (quantity.value === '' || Number(quantity.value) < 1 || !Number.isInteger(Number(quantity.value))) {
             setFieldError(quantity, 'Units per Purchase Unit must be a whole number greater than 0.');
@@ -444,14 +462,14 @@ function renderStep3() {
         <div class="assignment-review-list">
             ${selectedProducts().map((product) => {
                 const saved = defaultTerms(product);
-                const unit = inventoryUnit(product);
+                const unit = saved.inventoryUnit || inventoryUnit(product);
                 return `
                     <article class="assignment-review-card">
                         <div class="assignment-selected-identity mb-1">${esc(formatProductIdentity(product))}</div>
                         <div class="assignment-selected-meta mb-3">${esc(formatProductSpecification(product))}</div>
                         <div class="assignment-review-grid">
                             <div><span>Purchase Unit</span><strong>${esc(saved.purchaseUnit)}</strong></div>
-                            <div><span>Inventory Unit</span><strong>${esc(unit)}</strong></div>
+                            <div><span>Product Base Unit</span><strong>${esc(unit)}</strong></div>
                             <div><span>Units per Purchase Unit</span><strong>${esc(saved.quantity)}</strong></div>
                             <div><span>Supplier Cost</span><strong>${money(saved.cost)} per ${esc(unit)}</strong></div>
                             <div><span>Estimated Purchase Unit Cost</span><strong>${money(Number(saved.cost) * Number(saved.quantity))}</strong></div>
@@ -543,12 +561,14 @@ async function switchMode(mode) {
 }
 
 async function loadData() {
-    const [productResponse, supplierResponse] = await Promise.all([
+    const [productResponse, supplierResponse, measurementResponse] = await Promise.all([
         PharmaUtils.safeFetch(`${API}/products/get_products.php`, { credentials: 'include' }),
-        PharmaUtils.safeFetch(`${API}/suppliers/get_suppliers.php`, { credentials: 'include' })
+        PharmaUtils.safeFetch(`${API}/suppliers/get_suppliers.php`, { credentials: 'include' }),
+        loadMeasurementUnits()
     ]);
     state.products = productResponse.data || [];
     state.suppliers = supplierResponse.suppliers || supplierResponse.data || [];
+    state.units = measurementResponse.units || [];
 }
 
 async function initializeWorkflow() {
@@ -569,6 +589,10 @@ async function initializeWorkflow() {
 }
 
 async function saveAssignments() {
+    if (!canManageSupplierCatalog()) {
+        PharmaUtils.toast.error('Supplier product assignment is read only for this account.');
+        return;
+    }
     rememberTerms();
     const supplierId = selectedSupplierId();
     const products = selectedProducts();
@@ -592,6 +616,7 @@ async function saveAssignments() {
                     product_id: product.product_id,
                     supplier_cost_price: saved.cost,
                     purchase_unit: saved.purchaseUnit,
+                    inventory_unit: saved.inventoryUnit,
                     units_per_purchase_unit: saved.quantity
                 })
             });
@@ -625,7 +650,11 @@ async function saveAssignments() {
 document.body.insertAdjacentHTML('beforeend', markup());
 const modal = document.getElementById('assignSupplierProductsModal');
 
-modal.addEventListener('show.bs.modal', () => {
+modal.addEventListener('show.bs.modal', (event) => {
+    if (!canManageSupplierCatalog()) {
+        event.preventDefault();
+        return;
+    }
     initializeWorkflow().catch((error) => PharmaUtils.modal.error('Unable to load assignment workflow', error.message));
 });
 
@@ -641,7 +670,7 @@ modal.addEventListener('hidden.bs.modal', () => {
 
 modal.addEventListener('input', (event) => {
     if (event.target.matches('#assignmentProductSearch')) renderProducts();
-    if (event.target.matches('.term-unit,.term-quantity,.term-cost')) {
+    if (event.target.matches('.term-unit,.term-inventory-unit,.term-quantity,.term-cost')) {
         updateTermCard(event.target.closest('.assignment-term-card'));
         rememberTerms();
     }

@@ -51,10 +51,6 @@ try {
         throw new InvalidArgumentException('Invalid purchase order status transition.');
     }
 
-    if ($status !== 'Cancelled' && $approvalStatus !== 'Approved') {
-        throw new InvalidArgumentException('Owner approval is required before this purchase order can move forward.');
-    }
-
     if ($status === 'Cancelled') {
         $reason = trim((string) ($payload['reason'] ?? ''));
         if ($reason === '') {

@@ -1,9 +1,14 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../activity_log_helpers.php';
 require_once 'product_category_schema.php';
+require_once 'product_customization_schema.php';
 require_once 'product_status_schema.php';
+require_once 'product_pricing_schema.php';
+require_once '../suppliers/purchasing_conversion.php';
+require_once 'product_selling_options.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -43,13 +48,27 @@ function joinUpdateParts(?string ...$parts): ?string
 }
 
 try {
+    ensureProductCustomizationSchema($pdo);
     ensureProductStatusColumn($pdo);
+    ensureProductPricingSchema($pdo);
+    ensureSupplierPurchasingConversionSchema($pdo);
     $productId = cleanId($payload['product_id'] ?? null);
     $categoryId = cleanId($payload['category_id'] ?? null);
     $typeId = cleanId($payload['type_id'] ?? null);
     $brandName = requiredProductField($payload, 'brand_name');
     $productName = requiredProductField($payload, 'product_name');
+    $productStatus = normalizeProductStatus($payload['status'] ?? 'Active');
     $variation = (isset($payload['variations'][0]) && is_array($payload['variations'][0])) ? $payload['variations'][0] : $payload;
+    $inventoryUnit = requiredProductInventoryUnit($pdo, $variation['inventory_unit_id'] ?? null);
+    $detailSchema = strtolower(trim((string) ($variation['detail_schema'] ?? '')));
+    $pricingMethod = normalizePricingMethod($payload['pricing_method'] ?? 'manual');
+    $customMarkup = normalizeMarkupPercentage($payload['custom_markup_percentage'] ?? null, true);
+    if ($pricingMethod === 'custom_markup' && $customMarkup === null) {
+        throw new InvalidArgumentException('Custom markup percentage is required for Custom markup pricing.');
+    }
+    if ($pricingMethod !== 'custom_markup') {
+        $customMarkup = null;
+    }
 
     if ($productId === '') {
         throw new InvalidArgumentException('A valid product is required.');
@@ -67,12 +86,37 @@ try {
     if ($categoryName === '') {
         throw new InvalidArgumentException('A valid product category is required.');
     }
+    $hasDynamicConfiguration = count(getTypeSpecificationConfiguration($pdo, $typeId)) > 0;
 
-    $price = $variation['price'] ?? $payload['price'] ?? 0;
-    if (!is_numeric($price) || (float) $price < 0) {
-        throw new InvalidArgumentException('Price must be a valid non-negative number.');
+    $existingStatement = $pdo->prepare('SELECT price, pricing_method, custom_markup_percentage FROM product WHERE product_id = :product_id LIMIT 1');
+    $existingStatement->execute([':product_id' => $productId]);
+    $existingPricing = $existingStatement->fetch(PDO::FETCH_ASSOC);
+    if (!$existingPricing) {
+        throw new InvalidArgumentException('Product not found.');
+    }
+    $price = round((float) $existingPricing['price'], 2);
+    $applyCalculatedPrice = !empty($payload['apply_calculated_price']) && $pricingMethod !== 'manual';
+    if ($pricingMethod === 'manual') {
+        $manualPrice = $payload['manual_selling_price'] ?? $variation['price'] ?? $payload['price'] ?? null;
+        if (!is_numeric($manualPrice) || !is_finite((float) $manualPrice) || (float) $manualPrice < 0) {
+            throw new InvalidArgumentException('Manual Selling Price must be a valid number greater than or equal to zero.');
+        }
+        $price = round((float) $manualPrice, 2);
+    } elseif ($applyCalculatedPrice) {
+        $basis = latestAcceptedCostBasis($pdo, $productId);
+        if (!$basis || !is_numeric($basis['unit_cost']) || !is_finite((float) $basis['unit_cost'])) {
+            throw new InvalidArgumentException('A valid accepted cost basis is required before applying a calculated price.');
+        }
+        $markup = $pricingMethod === 'custom_markup'
+            ? (float) $customMarkup
+            : (float) categoryMarkupResolution($pdo, $categoryId)['markup_percentage'];
+        $price = calculatedSellingPrice((float) $basis['unit_cost'], $markup);
     }
     $barcode = cleanUpdateField($variation, 'barcode') ?? cleanUpdateField($payload, 'barcode') ?? ('AUTO-' . strtoupper(bin2hex(random_bytes(6))));
+    $specificationValues = validateAndNormalizeSpecificationValues($pdo, $typeId, is_array($variation['specifications'] ?? null) ? $variation['specifications'] : [], $productId);
+    if ($hasDynamicConfiguration && dynamicProductIdentityExists($pdo, $categoryId, $typeId, $brandName, $productName, $specificationValues, $productId)) {
+        throw new InvalidArgumentException('This exact product and specification already exists in Product Master.');
+    }
     $barcodeCheck = $pdo->prepare(
         'SELECT product_id FROM product
          WHERE LOWER(TRIM(barcode)) = LOWER(TRIM(:barcode))
@@ -86,27 +130,57 @@ try {
 
     $pdo->beginTransaction();
 
+    $supplierRowsStatement = $pdo->prepare('SELECT * FROM supplier_products WHERE product_id=:product_id FOR UPDATE');
+    $supplierRowsStatement->execute([':product_id'=>$productId]);
+    $supplierRows = $supplierRowsStatement->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($supplierRows as $supplierRow) {
+        $conversion = supplierPurchasingConversion($supplierRow);
+        $newBase = strtolower(trim((string)$inventoryUnit['unit_name']));
+        if ($newBase === strtolower(trim((string)$conversion['purchase_unit'])) && (int)$conversion['base_qty_per_purchase_unit'] > 1) {
+            throw new InvalidArgumentException('This unit is already used as a multi-unit Purchase Unit by a supplier. Update that supplier packaging hierarchy before changing the Product Base Unit.');
+        }
+        if (!empty($conversion['inner_unit']) && $newBase === strtolower(trim((string)$conversion['inner_unit'])) && (int)$conversion['units_per_inner_unit'] > 1) {
+            throw new InvalidArgumentException('This unit is already used as a multi-unit Inner Unit by a supplier. Update that supplier packaging hierarchy before changing the Product Base Unit.');
+        }
+    }
+
     $productStatement = $pdo->prepare(
         'UPDATE product
          SET barcode = :barcode,
              category_id = :category_id,
              type_id = :type_id,
+             inventory_unit_id = :inventory_unit_id,
              brand_name = :brand_name,
              product_name = :product_name,
-             price = :price
+             price = :price,
+             pricing_method = :pricing_method,
+             custom_markup_percentage = :custom_markup_percentage,
+             status = :status
          WHERE product_id = :product_id'
     );
     $productStatement->execute([
         ':barcode' => $barcode,
         ':category_id' => $categoryId,
         ':type_id' => $typeId,
+        ':inventory_unit_id' => $inventoryUnit['measurement_unit_id'],
         ':brand_name' => $brandName,
         ':product_name' => $productName,
         ':price' => (float) $price,
+        ':pricing_method' => $pricingMethod,
+        ':custom_markup_percentage' => $customMarkup,
+        ':status' => $productStatus,
         ':product_id' => $productId
     ]);
+    syncProductDefaultSellingPrice($pdo, $productId, (float)$price);
+    foreach ($supplierRows as $supplierRow) {
+        $supplierRow['inventory_unit'] = $inventoryUnit['unit_name'];
+        $pdo->prepare('UPDATE supplier_products SET inventory_unit=:unit WHERE supplier_product_id=:id')->execute([
+            ':unit'=>$inventoryUnit['unit_name'],':id'=>$supplierRow['supplier_product_id']
+        ]);
+        syncSupplierProductUnitConversions($pdo,(string)$supplierRow['supplier_product_id'],$supplierRow);
+    }
 
-    if ($categoryName === 'Medicine') {
+    if (!$hasDynamicConfiguration && $categoryName === 'Medicine' && in_array($detailSchema, ['', 'medicine'], true)) {
         $genericName = cleanUpdateField($payload, 'generic_name') ?? cleanUpdateField($variation, 'generic_name');
         $strengthValue = cleanUpdateNumber($variation, 'strength_value');
         $strengthUnit = cleanUpdateField($variation, 'strength_unit');
@@ -135,7 +209,7 @@ try {
         $detail->execute();
         $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
         $pdo->prepare('DELETE FROM medical_supply_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
-    } elseif ($categoryName === 'Grocery') {
+    } elseif (!$hasDynamicConfiguration && $categoryName === 'Grocery' && in_array($detailSchema, ['', 'grocery'], true)) {
         $netWeight = cleanUpdateNumber($variation, 'net_weight') ?? cleanUpdateNumber($variation, 'weight_value') ?? cleanUpdateNumber($variation, 'weight_volume_value');
         $detailValues = [
             ':product_id' => $productId,
@@ -157,7 +231,7 @@ try {
         $detail->execute($detailValues);
         $pdo->prepare('DELETE FROM medicine_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
         $pdo->prepare('DELETE FROM medical_supply_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
-    } elseif (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
+    } elseif (!$hasDynamicConfiguration && in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true) && in_array($detailSchema, ['', 'medical_supply'], true)) {
         $detailValues = [
             ':product_id' => $productId,
             ':variant' => cleanUpdateField($variation, 'variant_name') ?? cleanUpdateField($variation, 'variant_flavor'),
@@ -180,9 +254,26 @@ try {
         $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
     }
 
+    if ($hasDynamicConfiguration && array_key_exists('specifications', $variation)) {
+        saveProductSpecificationValues($pdo, $productId, $specificationValues);
+    }
     $pdo->commit();
 
     recordActivityLog($pdo, 'Products', 'Updated', 'Product updated: ' . $productName, $productId);
+    if (
+        $existingPricing['pricing_method'] !== $pricingMethod
+        || abs((float) $existingPricing['price'] - $price) >= 0.005
+        || ($existingPricing['custom_markup_percentage'] === null ? null : (float) $existingPricing['custom_markup_percentage']) !== $customMarkup
+    ) {
+        recordActivityLog($pdo, 'Pricing', 'Product pricing updated', json_encode([
+            'previous_pricing_method' => $existingPricing['pricing_method'],
+            'new_pricing_method' => $pricingMethod,
+            'previous_selling_price' => round((float) $existingPricing['price'], 2),
+            'new_selling_price' => $price,
+            'custom_markup_percentage' => $customMarkup,
+            'calculated_price_applied' => $applyCalculatedPrice,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $productId);
+    }
 
     echo json_encode([
         'status' => 'success',

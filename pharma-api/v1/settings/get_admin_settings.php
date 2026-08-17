@@ -14,9 +14,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit();
 }
 
+$settings = fetchSystemSettings($pdo);
+$profile = $settings;
+unset($profile['grnReceivedByName'], $profile['grnApprovedByName']);
+
 echo json_encode([
     'status' => 'success',
-    'profile' => fetchSystemSettings($pdo),
+    'profile' => $profile,
+    'grn' => [
+        'receivedByName' => $settings['grnReceivedByName'] ?? '',
+        'approvedByName' => $settings['grnApprovedByName'] ?? '',
+    ],
     'businessSchedule' => fetchBusinessHours($pdo),
     'businessExceptions' => fetchBusinessHourExceptions($pdo, $_GET['month'] ?? null),
     'nextBusinessException' => fetchNextBusinessHourException($pdo),

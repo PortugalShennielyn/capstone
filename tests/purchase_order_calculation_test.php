@@ -32,7 +32,7 @@ if (!$tuna) {
     throw new RuntimeException('The Rose pharmacy Tuna — Hot & Spicy • 100 g • Can supplier-product fixture was not found.');
 }
 
-assertSameValue('20.00', (string) $tuna['supplier_cost_price'], 'Supplier cost must be per can.');
+assertSameValue(20.0, (float) $tuna['supplier_cost_price'], 'Supplier cost must be per can.');
 assertSameValue('Box', (string) $tuna['purchase_unit'], 'Purchase unit must be Box.');
 assertSameValue(100, (int) $tuna['units_per_purchase_unit'], 'A box must contain 100 cans.');
 
@@ -74,4 +74,3 @@ try {
 assertSameValue(true, $tamperedRejected, 'A manipulated frontend total must be rejected.');
 
 echo "Purchase-order calculation tests passed.\n";
-

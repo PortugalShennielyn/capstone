@@ -16,6 +16,7 @@ try {
     $cashierId = trim((string) ($_GET['cashier_id'] ?? 'all'));
     $salesClerkId = trim((string) ($_GET['sales_clerk_id'] ?? 'all'));
     $paymentMethod = trim((string) ($_GET['payment_method'] ?? 'all'));
+    $paidOnly = filter_var($_GET['paid_only'] ?? false, FILTER_VALIDATE_BOOLEAN);
     $dateFrom = historyDateParam(trim((string) ($_GET['date_from'] ?? '')));
     $dateTo = historyDateParam(trim((string) ($_GET['date_to'] ?? '')));
     $page = max(1, (int) ($_GET['page'] ?? 1));
@@ -44,6 +45,9 @@ try {
     if ($paymentMethod !== 'all' && $paymentMethod !== '') {
         $where[] = 'COALESCE(p.payment_method, r.payment_method, "") = :payment_method';
         $params[':payment_method'] = $paymentMethod;
+    }
+    if ($paidOnly) {
+        $where[] = 'p.order_id IS NOT NULL';
     }
     if ($dateFrom !== '') {
         $where[] = 'DATE(COALESCE(o.completed_at, p.paid_at, r.printed_at, o.cancelled_at, o.sent_to_cashier_at, o.created_at)) >= :date_from';
@@ -84,6 +88,7 @@ try {
             COALESCE(NULLIF(ca.full_name, ''), ca.username, '') AS cashier_name,
             COALESCE(items.total_items, 0) AS total_items,
             COALESCE(p.final_amount, p.total_amount, o.total_amount) AS total_amount,
+            COALESCE(p.sales_clerk_discount, o.discount, 0) + COALESCE(p.cashier_discount_amount, 0) AS discount,
             COALESCE(p.payment_method, r.payment_method, '') AS payment_method,
             o.status,
             o.created_at,
@@ -97,7 +102,7 @@ try {
         LEFT JOIN sales_receipts r ON r.order_id = o.order_id
         LEFT JOIN users ca ON ca.user_id = COALESCE(o.assigned_cashier_id, r.cashier_id, p.cashier_id)
         LEFT JOIN (
-            SELECT order_id, SUM(quantity) AS total_items
+            SELECT order_id, SUM(COALESCE(NULLIF(selected_quantity, 0), quantity)) AS total_items
             FROM sales_order_items
             GROUP BY order_id
         ) items ON items.order_id = o.order_id
@@ -124,6 +129,7 @@ try {
             'cashier_name' => salesDisplayValue($row['cashier_name'], '-'),
             'total_items' => (int) ($row['total_items'] ?? 0),
             'total_amount' => salesMoneyValue($row['total_amount'] ?? 0),
+            'discount' => salesMoneyValue($row['discount'] ?? 0),
             'payment_method' => salesDisplayValue(ucwords(str_replace('_', ' ', (string) ($row['payment_method'] ?? ''))), '-'),
             'status_code' => (string) ($row['status'] ?? ''),
             'status' => salesStatusLabel((string) ($row['status'] ?? '')),

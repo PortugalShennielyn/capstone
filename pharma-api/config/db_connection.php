@@ -1,15 +1,27 @@
 <?php
-// 1. Automatic Session Path Configuration for Subfolders
+// 1. Project-wide PHP session configuration.
 if (session_status() === PHP_SESSION_NONE) {
-    // Tells PHP to lock session cookies strictly to your specific project subfolder
-    $current_dir = str_replace('\\', '/', __DIR__);
-    if (strpos($current_dir, 'PharmacySystem_for_DocR') !== false) {
-        session_set_cookie_params([
-            'path' => '/PharmacySystem_for_DocR/',
-            'samesite' => 'Lax'
-        ]);
-    }
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.cookie_httponly', '1');
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/PharmacySystem_for_DocR/',
+        'domain' => '',
+        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     session_start();
+
+    $maskedSessionId = session_id() === '' ? 'none' : substr(hash('sha256', session_id()), 0, 12);
+    error_log(sprintf(
+        '[AUTH] Session started session=%s user=%s file=%s',
+        $maskedSessionId,
+        empty($_SESSION['user_id']) ? 'none' : substr(hash('sha256', (string) $_SESSION['user_id']), 0, 12),
+        basename(__FILE__)
+    ));
 }
 
 // 2. CORS API Headers

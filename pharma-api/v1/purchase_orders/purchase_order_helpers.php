@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../activity_log_helpers.php';
 require_once __DIR__ . '/../products/product_status_schema.php';
+require_once __DIR__ . '/../suppliers/purchasing_conversion.php';
+require_once __DIR__ . '/supplier_claim_helpers.php';
 function ensurePurchaseOrderSchema(PDO $pdo): void
 {
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(40) NULL");
@@ -27,7 +29,7 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
             KEY idx_po_approval_audit_created (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
-    $pdo->exec("UPDATE purchase_orders SET status = 'Delivered with Return/Damage' WHERE status = 'Return/Damage'");
+    $pdo->exec("UPDATE purchase_orders SET status = 'Delivered' WHERE status IN ('Return/Damage', 'Delivered with Return/Damage')");
     $pdo->exec("UPDATE purchase_orders SET status = 'Cancelled' WHERE approval_status = 'Rejected' AND status = 'Pending'");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS product_name_snapshot VARCHAR(150) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS brand_name_snapshot VARCHAR(150) NULL");
@@ -39,7 +41,9 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS size_value_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS packaging_snapshot VARCHAR(100) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price_snapshot DECIMAL(12,2) NULL");
+    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price_snapshot DECIMAL(12,4) NULL");
+    $pdo->exec("ALTER TABLE purchase_order_items MODIFY unit_price_snapshot DECIMAL(12,4) NULL");
+    $pdo->exec("ALTER TABLE inventory_batches MODIFY unit_cost DECIMAL(12,4) NOT NULL DEFAULT 0.0000");
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS supplier_products (
             supplier_product_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
@@ -55,6 +59,8 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
             po_id CHAR(36) NOT NULL,
             received_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             remarks TEXT NULL,
+            inspection_status VARCHAR(40) NOT NULL DEFAULT 'Awaiting Inspection',
+            inspected_by CHAR(36) NULL,
             UNIQUE KEY unique_po_receiving (po_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
@@ -64,23 +70,26 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
             receiving_id CHAR(36) NOT NULL,
             po_item_id CHAR(36) NOT NULL,
             received_quantity INT NOT NULL DEFAULT 0,
-            damaged_quantity INT NOT NULL DEFAULT 0,
             UNIQUE KEY unique_receiving_item (receiving_id, po_item_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
     $pdo->exec(
-        "CREATE TABLE IF NOT EXISTS purchase_order_returns (
-            return_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
-            po_id CHAR(36) NOT NULL,
+        "CREATE TABLE IF NOT EXISTS supplier_claims (
+            claim_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
             po_item_id CHAR(36) NOT NULL,
-            return_quantity INT NOT NULL DEFAULT 0,
+            inventory_batch_id CHAR(36) NULL,
+            affected_quantity INT NOT NULL DEFAULT 0,
+            unit_conversion_id CHAR(36) NOT NULL,
             damage_reason VARCHAR(80) NOT NULL,
+            disposition VARCHAR(40) NULL,
+            resolution_type VARCHAR(40) NULL,
+            claim_status VARCHAR(40) NOT NULL DEFAULT 'Awaiting Supplier Resolution',
+            reported_by CHAR(36) NULL,
             remarks TEXT NULL,
-            return_status VARCHAR(40) NOT NULL DEFAULT 'Open',
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TIMESTAMP NULL DEFAULT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
-    $pdo->exec("ALTER TABLE purchase_order_returns ADD COLUMN IF NOT EXISTS return_status VARCHAR(40) NOT NULL DEFAULT 'Open'");
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS product_inventory (
             inventory_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
@@ -104,7 +113,6 @@ function purchaseOrderStatuses(): array
         'In transit',
         'Arrived',
         'Delivered',
-        'Delivered with Return/Damage',
         'Cancelled'
     ];
 }
@@ -125,10 +133,7 @@ function approvalStatuses(): array
 
 function completeDeliveryStatuses(): array
 {
-    return [
-        'Delivered',
-        'Delivered with Return/Damage'
-    ];
+    return ['Delivered'];
 }
 
 function paymentTermsOptions(): array
@@ -373,7 +378,7 @@ function calculatedPurchaseOrderItemAmounts(array $item): array
     $purchaseQty = positivePurchaseOrderInt($item['purchase_qty'] ?? $item['quantity'] ?? 1, 'Order quantity must be a positive whole number.');
     $unitsPerPurchaseUnit = positivePurchaseOrderInt($item['units_per_purchase_unit'] ?? 1, 'Units per Purchase Unit must be a positive whole number.');
     $unitPriceCents = purchaseOrderMoneyCents($item['price'] ?? 0, 'Supplier cost per base unit must be zero or greater.');
-    $inventoryQtyOrdered = $purchaseQty * $unitsPerPurchaseUnit;
+    $inventoryQtyOrdered = inventoryQuantityForPurchaseQuantity($purchaseQty, $unitsPerPurchaseUnit);
     $lineTotalCents = $inventoryQtyOrdered * $unitPriceCents;
 
     if ($inventoryQtyOrdered > PHP_INT_MAX || $lineTotalCents > PHP_INT_MAX) {
@@ -525,6 +530,7 @@ function supplierProductSetupByProduct(PDO $pdo, string $supplierId, array $item
             sp.product_id,
             sp.supplier_cost_price,
             COALESCE(NULLIF(sp.purchase_unit, ''), 'pcs') AS purchase_unit,
+            COALESCE(NULLIF(sp.inventory_unit, ''), 'pc') AS inventory_unit,
             COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit
          FROM supplier_products sp
          INNER JOIN product p ON p.product_id = sp.product_id
@@ -558,6 +564,7 @@ function applySupplierProductSetup(PDO $pdo, string $supplierId, array $items): 
         $supplierCost = $setup['supplier_cost_price'] ?? null;
 
         $item['purchase_unit'] = $purchaseUnit !== '' ? $purchaseUnit : 'pcs';
+        $item['unit'] = trim((string) ($setup['inventory_unit'] ?? $item['unit'] ?? 'pc')) ?: 'pc';
         $item['units_per_purchase_unit'] = $unitsPerPurchaseUnit;
         if ($supplierCost !== null && $supplierCost !== '') {
             $item['price'] = (float) $supplierCost;
@@ -639,11 +646,11 @@ function decoratePurchaseOrderReturnRecord(array $record): array
     $parsed = parsePurchaseOrderReturnRemarks($record['remarks'] ?? '');
     $metadata = $parsed['metadata'];
     $record['remarks'] = $parsed['remarks'];
-    $record['resolution'] = $metadata['resolution'] ?? '';
+    $record['resolution'] = $metadata['resolution'] ?? supplierClaimLegacyResolution($record['resolution_type'] ?? null, $record['disposition'] ?? null);
     $record['delivered_quantity'] = (int) ($metadata['delivered_quantity'] ?? ($record['received_quantity'] ?? 0));
     $record['missing_quantity'] = (int) ($metadata['missing_quantity'] ?? 0);
     $record['supplier_adjustment'] = (float) ($metadata['supplier_adjustment'] ?? 0);
-    $record['replacement_expected_qty'] = (int) ($metadata['replacement_expected_qty'] ?? 0);
+    $record['replacement_expected_qty'] = (int) ($metadata['replacement_expected_qty'] ?? (($record['resolution_type'] ?? '') === 'Replacement' ? ($record['affected_base_quantity'] ?? 0) : 0));
     $record['replacement_received_qty'] = (int) ($metadata['replacement_received_qty'] ?? 0);
     $record['replacement_outstanding_qty'] = max(0, $record['replacement_expected_qty'] - $record['replacement_received_qty']);
     $record['parent_return_id'] = $metadata['parent_return_id'] ?? null;

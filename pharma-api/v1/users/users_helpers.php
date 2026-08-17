@@ -13,6 +13,21 @@ function userColumnExists(PDO $pdo, string $column): bool
     return (int) $stmt->fetchColumn() > 0;
 }
 
+function userColumnType(PDO $pdo, string $column): ?string
+{
+    $stmt = $pdo->prepare(
+        'SELECT COLUMN_TYPE
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = "users"
+           AND COLUMN_NAME = :column
+         LIMIT 1'
+    );
+    $stmt->execute([':column' => $column]);
+    $type = $stmt->fetchColumn();
+    return $type === false ? null : strtolower((string) $type);
+}
+
 function ensureUserManagementSchema(PDO $pdo): void
 {
     if (!userColumnExists($pdo, 'password_hash')) {
@@ -29,18 +44,21 @@ function ensureUserManagementSchema(PDO $pdo): void
         $pdo->exec('ALTER TABLE users ADD COLUMN updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP AFTER created_at');
     }
 
-    $pdo->exec(
-        "UPDATE users
-         SET role = CASE role
-            WHEN 'Admin' THEN 'admin'
-            WHEN 'Sales Clerk' THEN 'salesclerk'
-            WHEN 'Cashier' THEN 'cashier'
-            WHEN 'Owner/Manager' THEN 'manager'
-            WHEN 'Manager / Owner' THEN 'manager'
-            ELSE role
-         END"
-    );
-    $pdo->exec("ALTER TABLE users MODIFY role ENUM('super_admin','admin','manager','cashier','salesclerk') NOT NULL DEFAULT 'salesclerk'");
+    $requiredRoleType = "enum('super_admin','admin','manager','supervisor','cashier','salesclerk')";
+    if (userColumnType($pdo, 'role') !== $requiredRoleType) {
+        $pdo->exec(
+            "UPDATE users
+             SET role = CASE role
+                WHEN 'Admin' THEN 'admin'
+                WHEN 'Sales Clerk' THEN 'salesclerk'
+                WHEN 'Cashier' THEN 'cashier'
+                WHEN 'Owner/Manager' THEN 'manager'
+                WHEN 'Manager / Owner' THEN 'manager'
+                ELSE role
+             END"
+        );
+        $pdo->exec("ALTER TABLE users MODIFY role ENUM('super_admin','admin','manager','supervisor','cashier','salesclerk') NOT NULL DEFAULT 'salesclerk'");
+    }
 }
 
 function sendUserJson(bool $success, string $message, $data = null, int $status = 200): void
@@ -72,6 +90,7 @@ function normalizeUserRole(string $role): string
         'manager_owner' => 'manager',
         'owner_manager' => 'manager',
         'manager' => 'manager',
+        'supervisor' => 'supervisor',
         'cashier' => 'cashier',
         'sales clerk' => 'salesclerk',
         'sales-clerk' => 'salesclerk',
@@ -86,6 +105,7 @@ function roleLabel(string $role): string
         'super_admin' => 'Super Admin',
         'admin' => 'Admin',
         'manager' => 'Manager',
+        'supervisor' => 'Supervisor',
         'cashier' => 'Cashier',
         'salesclerk' => 'Sales Clerk',
     ][$role] ?? $role;
@@ -93,7 +113,7 @@ function roleLabel(string $role): string
 
 function validUserRoles(): array
 {
-    return ['super_admin', 'admin', 'manager', 'cashier', 'salesclerk'];
+    return ['super_admin', 'admin', 'manager', 'supervisor', 'cashier', 'salesclerk'];
 }
 
 function normalizeUserStatus(string $status): string
@@ -137,6 +157,22 @@ function assertAssignableUserRole(string $role): void
 {
     if (!in_array($role, assignableUserRoles(), true)) {
         sendUserPermissionDenied();
+    }
+}
+
+function assertSingleActiveSupervisor(PDO $pdo, string $role, string $status, ?string $excludeUserId = null): void
+{
+    if ($role !== 'supervisor' || $status !== 'Active') return;
+    $sql = "SELECT COUNT(*) FROM users WHERE role = 'supervisor' AND status = 'Active' AND COALESCE(is_deleted, 0) = 0";
+    $params = [];
+    if ($excludeUserId !== null && cleanId($excludeUserId) !== '') {
+        $sql .= ' AND user_id <> :user_id';
+        $params[':user_id'] = cleanId($excludeUserId);
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    if ((int) $stmt->fetchColumn() > 0) {
+        sendUserJson(false, 'Only one active Supervisor account is allowed.', null, 409);
     }
 }
 

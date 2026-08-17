@@ -1,6 +1,7 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once 'product_pricing_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
@@ -19,6 +20,10 @@ try {
     $statement = $pdo->prepare(
         "SELECT
             p.product_id,
+            p.type_id,
+            p.inventory_unit_id,
+            pmu.unit_name AS inventory_unit_name,
+            COALESCE(NULLIF(pmu.unit_symbol,''),pmu.unit_name) AS inventory_unit_symbol,
             p.barcode,
             p.brand_name,
             p.product_name,
@@ -58,6 +63,7 @@ try {
          FROM product p
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id=p.inventory_unit_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
@@ -85,7 +91,8 @@ try {
                 WHERE source_batch_id IS NOT NULL
                 GROUP BY source_batch_id
             ) shelf ON shelf.source_batch_id = ib.batch_id
-            WHERE ib.batch_status IN ('active', 'expired', 'damaged', 'returned')
+            WHERE ib.product_id = :stock_product_id
+              AND ib.batch_status IN ('active', 'expired', 'damaged', 'returned')
             GROUP BY ib.product_id
          ) stock ON stock.product_id = p.product_id
          LEFT JOIN (
@@ -96,16 +103,21 @@ try {
                     - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED),
                     0
                 )) AS replacement_pending_quantity
-            FROM purchase_order_returns por
+            FROM supplier_claim_legacy_projection por
             INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
             WHERE por.remarks LIKE '[RETURN_META_V1]%'
+              AND poi.product_id = :replacement_product_id
               AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks, 17), CHAR(10), 1), '$.resolution')) = 'return_for_replacement'
             GROUP BY poi.product_id
          ) replacements ON replacements.product_id = p.product_id
          WHERE p.product_id = :product_id
          LIMIT 1"
     );
-    $statement->execute([':product_id' => $productId]);
+    $statement->execute([
+        ':product_id' => $productId,
+        ':stock_product_id' => $productId,
+        ':replacement_product_id' => $productId,
+    ]);
     $row = $statement->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) {
@@ -128,10 +140,27 @@ try {
     );
     $supplierStatement->execute([':product_id' => $productId]);
     $suppliers = $supplierStatement->fetchAll(PDO::FETCH_ASSOC);
+    $specificationStatement = $pdo->prepare(
+        "SELECT ps.specification_id, ps.specification_name,
+                COALESCE(NULLIF(pts.display_label, ''), ps.specification_name) AS display_name,
+                ps.field_style, psv.value_text, psv.value_number,
+                psv.measurement_unit_id, pmu.unit_name,
+                COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name) AS unit_symbol,
+                pmu.measurement_group, pmu.is_active AS measurement_unit_is_active
+         FROM product_specification_values psv
+         INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+         LEFT JOIN product_type_specifications pts ON pts.type_id = :type_id AND pts.specification_id = psv.specification_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = psv.measurement_unit_id
+         WHERE psv.product_id = :product_id
+         ORDER BY pts.sort_order, ps.specification_name"
+    );
+    $specificationStatement->execute([':product_id' => $productId, ':type_id' => $row['type_id']]);
+    $specifications = $specificationStatement->fetchAll();
 
     foreach ($suppliers as &$supplier) {
         $supplier['supplier_cost_price'] = $supplier['supplier_cost_price'] !== null ? (float) $supplier['supplier_cost_price'] : null;
         $supplier['units_per_purchase_unit'] = (int) ($supplier['units_per_purchase_unit'] ?? 1);
+        $supplier['estimated_purchase_unit_cost'] = round((float) ($supplier['supplier_cost_price'] ?? 0) * $supplier['units_per_purchase_unit'], 2);
     }
     unset($supplier);
 
@@ -174,6 +203,17 @@ try {
         'nearest_expiry_date' => $row['nearest_expiry_date'] ?? null,
         'active_batch_count' => (int) $row['active_batch_count'],
     ];
+    $pricingSnapshots = productPricingSnapshots($pdo, [$productId]);
+    $pricing = $pricingSnapshots[$productId] ?? null;
+    if (!$pricing) {
+        throw new RuntimeException('Product pricing details are unavailable.');
+    }
+    foreach ($suppliers as &$supplier) {
+        $supplier['is_latest_accepted_supplier'] = !empty($pricing['latest_cost_basis']['supplier_id'])
+            && $pricing['latest_cost_basis']['supplier_id'] === $supplier['supplier_id'];
+        $supplier['inventory_unit'] = $pricing['inventory_unit'];
+    }
+    unset($supplier);
 
     echo json_encode([
         'status' => 'success',
@@ -181,6 +221,8 @@ try {
             'product' => $product,
             'suppliers' => $suppliers,
             'inventory_summary' => $inventorySummary,
+            'specifications' => $specifications,
+            'pricing' => $pricing,
         ],
     ]);
 } catch (Throwable $error) {

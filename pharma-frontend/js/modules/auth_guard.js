@@ -1,10 +1,12 @@
 import API_BASE_URL from '../config/config.js';
 import {
     ACCESS_DENIED_MESSAGE,
+    allowedNavigationPages,
     isPageAllowed,
     primaryAccessRole,
+    roleLabel,
     sessionRoleSet
-} from './rbac.js?v=3';
+} from './rbac.js?v=7';
 
 const TAB_TOKEN_KEY = 'pharma_tab_token';
 const TAB_CHANNEL = 'pharma_tab_session_channel';
@@ -13,6 +15,7 @@ const OWNER_STALE_MS = 2400;
 const ADMIN_SETTINGS_KEY = 'drpAdminSettings';
 const DEFAULT_SESSION_TIMEOUT_MS = 1800000;
 const SESSION_CHECK_TIMEOUT_MS = 10000;
+const ACTIVITY_WRITE_INTERVAL_MS = 1000;
 
 let duplicateCheckPromise = null;
 let activeChannel = null;
@@ -23,6 +26,7 @@ let inactivityLogoutStarted = false;
 let currentSession = null;
 let sessionInitPromise = null;
 let authRedirectInProgress = false;
+let lastActivityWrite = 0;
 
 function tabToken() {
     try {
@@ -50,7 +54,20 @@ function clearTabToken() {
             }
         }
         sessionStorage.removeItem(TAB_TOKEN_KEY);
+        sessionStorage.removeItem('productMasterFileCache:v1');
     } catch (error) {}
+    window.__drpNavbarProfileDisplay?.clear();
+}
+
+function cacheAuthenticatedProfile(session) {
+    if (!session || typeof session !== 'object') return null;
+    const accessRole = primaryAccessRole(session);
+    const allowedPages = allowedNavigationPages(session);
+    return window.__drpNavbarProfileDisplay?.cache(session, {
+        accessRole,
+        allowedPages: allowedPages === '*' ? '*' : Array.from(allowedPages),
+        roleLabel: roleLabel(session)
+    }) || null;
 }
 
 function redirectToLogin() {
@@ -85,17 +102,49 @@ function sessionTimeoutConfig() {
 }
 
 async function clearServerSession() {
+    const token = tabToken();
     try {
         await fetch(`${API_BASE_URL}/auth/logout.php`, {
             method: 'POST',
             credentials: 'include',
-            cache: 'no-store'
+            cache: 'no-store',
+            headers: token ? { 'X-Tab-Token': token } : {}
         });
+    } catch (error) {}
+}
+
+function activityKey(token = tabToken()) {
+    return token ? `pharma_session_activity_${token}` : '';
+}
+
+function sharedActivityAt() {
+    try {
+        return Number(localStorage.getItem(activityKey()) || 0);
+    } catch (error) {
+        return 0;
+    }
+}
+
+function recordSharedActivity() {
+    const key = activityKey();
+    const now = Date.now();
+    if (!key || now - lastActivityWrite < ACTIVITY_WRITE_INTERVAL_MS) return;
+    lastActivityWrite = now;
+    try {
+        localStorage.setItem(key, String(now));
     } catch (error) {}
 }
 
 async function expireInactiveSession() {
     if (inactivityLogoutStarted || window.location.pathname.endsWith('/login.html')) {
+        return;
+    }
+
+    const config = sessionTimeoutConfig();
+    const remainingMs = config.sessionTimeoutMs - (Date.now() - sharedActivityAt());
+    if (remainingMs > 0) {
+        window.clearTimeout(inactivityTimer);
+        inactivityTimer = window.setTimeout(expireInactiveSession, remainingMs);
         return;
     }
 
@@ -118,6 +167,7 @@ function resetInactivityTimer() {
         return;
     }
 
+    recordSharedActivity();
     inactivityTimer = window.setTimeout(expireInactiveSession, config.sessionTimeoutMs);
 }
 
@@ -135,6 +185,12 @@ function startInactivityTimer() {
     window.addEventListener('storage', (event) => {
         if (event.key === ADMIN_SETTINGS_KEY) {
             resetInactivityTimer();
+        } else if (event.key === activityKey()) {
+            window.clearTimeout(inactivityTimer);
+            const config = sessionTimeoutConfig();
+            if (config.enabled) {
+                inactivityTimer = window.setTimeout(expireInactiveSession, config.sessionTimeoutMs);
+            }
         }
     });
     resetInactivityTimer();
@@ -304,7 +360,7 @@ async function serverSessionIsActive() {
             }
         });
 
-        if (response.status === 401 || response.status === 403) {
+        if (response.status === 401) {
             currentSession = null;
             return false;
         }
@@ -341,6 +397,12 @@ function redirectUnauthorizedPage() {
         sessionStorage.setItem('drpAccessDeniedMessage', ACCESS_DENIED_MESSAGE);
     } catch (error) {}
     const roles = sessionRoles();
+    if (roles.includes('supervisor') || roles.includes('ro_supervisor')) {
+        if (!window.location.pathname.endsWith('/supervisor_dashboard.html')) {
+            window.location.replace('supervisor_dashboard.html?access=denied');
+        }
+        return;
+    }
     if (roles.includes('salesclerk') || roles.includes('ro_sales_clerk')) {
         window.location.replace('sales_clerk_pos.html?access=denied');
         return;
@@ -420,7 +482,19 @@ async function initializePageSession() {
 
     const accessRole = primaryAccessRole(currentSession);
     document.body.dataset.sessionRole = accessRole;
+    if (accessRole === 'supervisor') {
+        document.body.classList.add('supervisor-read-only');
+        document.querySelectorAll('button, a').forEach(control => {
+            const copy = `${control.textContent || ''} ${control.getAttribute('title') || ''} ${control.getAttribute('aria-label') || ''}`.toLowerCase();
+            if (/\b(add|create|edit|update|delete|remove|adjust|move|transfer|receive|inspect|process|record|resolve|save)\b/.test(copy)) {
+                if (control.closest('#navbar-container') || control.closest('#requestModal') || control.matches('[data-action], [data-modal-decision]')) return;
+                control.classList.add('d-none');
+                control.setAttribute('aria-hidden', 'true');
+            }
+        });
+    }
     window.__drpSession = Object.freeze({ ...currentSession, access_role: accessRole });
+    cacheAuthenticatedProfile(window.__drpSession);
     window.dispatchEvent(new CustomEvent('pharma:session-ready', { detail: window.__drpSession }));
     startActiveTabResponder();
     startInactivityTimer();
@@ -430,6 +504,7 @@ async function initializePageSession() {
 
 export {
     TAB_TOKEN_KEY,
+    cacheAuthenticatedProfile,
     clearTabToken,
     ensurePageTabSession,
     redirectToLogin,
@@ -439,5 +514,5 @@ export {
 
 if (!window.location.pathname.endsWith('/login.html')) {
     installAuthenticatedFetch();
-    ensurePageTabSession();
+    window.__drpSessionReadyPromise = ensurePageTabSession();
 }

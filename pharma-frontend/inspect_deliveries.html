@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="en" data-bs-theme="light">
     <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=5"></script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Dr. R Pharmacy | Inspect Deliveries</title>
@@ -22,11 +24,11 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
             rel="stylesheet"
         />
-        <link href="./css/navbar.css?v=15" rel="stylesheet" />
-        <link href="./css/inspect_deliveries.css?v=3" rel="stylesheet" />
-        <link href="./css/purchase_receiving.css?v=3" rel="stylesheet" />
-        <script src="./js/navbar.js?v=55" defer></script>
-        <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
+        <link href="./css/navbar.css?v=20" rel="stylesheet" />
+        <link href="./css/inspect_deliveries.css?v=4" rel="stylesheet" />
+        <link href="./css/purchase_receiving.css?v=5" rel="stylesheet" />
+        <script src="./js/navbar.js?v=69" defer></script>
+        <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     </head>
     <body data-page="inspect-deliveries">
         <div id="navbar-container"></div>
@@ -161,18 +163,9 @@
                                     <option value="">All statuses</option>
                                     <option value="awaiting">Awaiting Inspection</option>
                                     <option value="in-progress">Inspection in Progress</option>
-                                    <option value="issue-found">Issue Found</option>
+                                    <option value="issue-found">With Issues</option>
                                     <option value="ready">Ready to Confirm</option>
                                     <option value="completed">Receiving Completed</option>
-                                </select>
-                            </div>
-                            <div class="filter-field filter-select">
-                                <label for="inspectionPaymentFilter">Payment Status</label
-                                ><select class="filter-control" id="inspectionPaymentFilter">
-                                    <option value="">All payment statuses</option>
-                                    <option value="Unpaid">Unpaid</option>
-                                    <option value="Partially Paid">Partially Paid</option>
-                                    <option value="Fully Paid">Fully Paid</option>
                                 </select>
                             </div>
                             <button
@@ -188,8 +181,7 @@
                             <div class="queue-table-header">
                                 <h2>Arrived Purchase Orders</h2>
                                 <p>
-                                    Active inspections and completed receiving records remain
-                                    together with separate receiving and payment statuses.
+                                    Review arrived orders and their physical inspection status.
                                 </p>
                             </div>
                             <div class="queue-table-wrap">
@@ -201,19 +193,18 @@
                                         <tr>
                                             <th>PO / GRN</th>
                                             <th>Supplier</th>
-                                            <th>Arrival / Received Date</th>
+                                            <th>Arrival Date</th>
                                             <th>Products</th>
                                             <th>Ordered Units</th>
                                             <th>Accepted Units</th>
                                             <th>Affected Units</th>
-                                            <th>Receiving Status</th>
-                                            <th>Payment Status</th>
-                                            <th>Actions</th>
+                                            <th>Inspection Status</th>
+                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody id="inspectionQueueRows">
                                         <tr>
-                                            <td colspan="10" class="empty-state">
+                                            <td colspan="9" class="empty-state">
                                                 Loading arrived purchase orders...
                                             </td>
                                         </tr>
@@ -244,7 +235,6 @@
                         <section class="panel po-header">
                             <div class="po-header-title">
                                 <h1 id="inspectionWorkspaceTitle">Purchase Order Inspection</h1>
-                                <span class="status-badge status-active">Arrived</span>
                             </div>
                             <div class="po-info-grid">
                                 <div class="po-info">
@@ -254,78 +244,28 @@
                                     <span>Supplier</span><strong id="receiveSupplierName">-</strong>
                                 </div>
                                 <div class="po-info">
-                                    <span>Expected / Actual Arrival</span
+                                    <span>Arrival Date</span
                                     ><strong id="receiveArrivalDate">-</strong>
                                 </div>
                                 <div class="po-info">
-                                    <span>Products</span><strong id="receiveProductCount">0</strong>
+                                    <span>Product</span><strong id="receiveProductCount">-</strong>
                                 </div>
                                 <div class="po-info">
-                                    <span>Ordered Units</span
+                                    <span>Ordered Qty</span
                                     ><strong id="receiveHeaderOrderedQty">0</strong>
+                                </div>
+                                <div class="po-info">
+                                    <span>PO Status</span><strong id="receivePoStatus" class="status-badge status-active">Arrived</strong>
                                 </div>
                             </div>
                         </section>
 
-                        <section class="panel receive-progress-card">
-                            <div class="receive-progress-head">
-                                <span>Receiving Progress</span
-                                ><span id="receiveProgressText"
-                                    >0 of 0 inspection checks complete · 0%</span
-                                >
-                            </div>
-                            <div
-                                class="progress"
-                                role="progressbar"
-                                aria-label="Overall receiving progress"
-                                aria-valuemin="0"
-                                aria-valuemax="100"
-                                aria-valuenow="0"
-                            >
-                                <div
-                                    id="receiveProgressBar"
-                                    class="progress-bar"
-                                    style="width: 0%"
-                                ></div>
-                            </div>
-                        </section>
-
-                        <div class="receive-summary-grid" aria-label="Receiving quantities">
-                            <div class="receive-summary-card">
-                                <span>Products</span><strong id="receiveMetricProducts">0</strong>
-                            </div>
-                            <div class="receive-summary-card">
-                                <span>Ordered Units</span
-                                ><strong id="receiveMetricOrdered">0</strong>
-                            </div>
-                            <div class="receive-summary-card">
-                                <span>Accepted Units</span
-                                ><strong id="receiveMetricAccepted">0</strong>
-                            </div>
-                            <div class="receive-summary-card">
-                                <span>Affected Units</span
-                                ><strong id="receiveMetricAffected">0</strong>
-                            </div>
-                            <div class="receive-summary-card">
-                                <span>Pending Inspection</span
-                                ><strong id="receiveMetricRemaining">0</strong>
-                            </div>
-                        </div>
-
-                        <section
-                            class="panel receive-checklist"
-                            aria-labelledby="receiveChecklistHeading"
-                        >
-                            <h2 id="receiveChecklistHeading">Inspection Steps</h2>
-                            <ul id="receiveChecklistItems" class="receive-checklist-list">
-                                <li class="check-warning">
-                                    <button class="receive-check-step" type="button">
-                                        <span class="receive-check-node"
-                                            ><i class="fa-solid fa-spinner fa-spin"></i></span
-                                        ><span class="receive-check-label">Loading</span>
-                                    </button>
-                                </li>
-                            </ul>
+                        <section class="panel receive-simple-steps" aria-label="Receiving steps">
+                            <div class="receive-simple-step is-active" data-receive-step="inspect"><span>1</span><strong>Inspect Products</strong></div>
+                            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                            <div class="receive-simple-step" data-receive-step="batch"><span>2</span><strong>Batch &amp; Expiry</strong></div>
+                            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                            <div class="receive-simple-step" data-receive-step="confirm"><span>3</span><strong>Confirm Receiving</strong></div>
                         </section>
 
                         <div class="receive-workspace-grid">
@@ -375,7 +315,7 @@
                                     ><span
                                         class="small text-muted"
                                         id="receiveCurrentProductProgress"
-                                        >Current product: 0 of 8 checks</span
+                                        >Product 0 of 0</span
                                     >
                                 </div>
                                 <div id="receiveInspectionCards" class="receive-card-stack"></div>
@@ -383,88 +323,26 @@
                         </div>
 
                         <div class="receive-lower-grid">
-                            <section
-                                class="panel payment-summary-card receive-scroll-target"
-                                aria-labelledby="receivePaymentHeading"
-                            >
+                            <section class="panel receiving-summary-card receive-scroll-target" aria-labelledby="receiveSummaryHeading">
                                 <div class="section-card-heading">
-                                    <span class="section-card-icon payment"
-                                        ><i class="fa-solid fa-wallet"></i
+                                    <span class="section-card-icon inventory"
+                                        ><i class="fa-solid fa-clipboard-list"></i
                                     ></span>
                                     <div>
-                                        <span class="section-eyebrow">Section 4</span>
-                                        <h2 id="receivePaymentHeading">PO Payable Summary</h2>
+                                        <span class="section-eyebrow">Step 3</span>
+                                        <h2 id="receiveSummaryHeading">Final Receiving Review</h2>
                                     </div>
                                 </div>
-                                <div class="payment-lines">
-                                    <div class="payment-line">
-                                        <span>Original PO Total</span
-                                        ><strong id="receiveOriginalTotal">₱0.00</strong>
-                                    </div>
-                                    <div class="payment-line">
-                                        <span>Accepted Goods Value</span
-                                        ><strong id="receiveAcceptedGoodsValue">₱0.00</strong>
-                                    </div>
-                                    <div class="payment-line returned-value">
-                                        <span>Returned Goods Value</span
-                                        ><strong id="receiveReturnedGoodsValue">₱0.00</strong>
-                                    </div>
-                                    <div class="payment-line">
-                                        <span>Supplier Credit</span
-                                        ><strong id="receiveDamageDeduction">-₱0.00</strong>
-                                    </div>
-                                    <div class="payment-line">
-                                        <label for="receiveAdditionalAmount"
-                                            >Supplier Discount</label
-                                        >
-                                        <div class="input-group input-group-sm payment-input">
-                                            <span class="input-group-text">₱</span
-                                            ><input
-                                                id="receiveAdditionalAmount"
-                                                class="form-control"
-                                                type="number"
-                                                min="0"
-                                                step="0.01"
-                                                value="0"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div class="payment-line total">
-                                        <span>Adjusted Payable</span
-                                        ><strong id="receiveFinalAmount">₱0.00</strong>
-                                    </div>
-                                </div>
-                                <div class="payment-status-panel">
-                                    <div class="payment-balance">
-                                        <span>Payment Status</span><strong>Unpaid</strong>
-                                    </div>
-                                    <div class="small text-muted">
-                                        Supplier payments are recorded after receiving from
-                                        Delivered Orders. Confirming receiving never marks the PO as
-                                        paid.
-                                    </div>
-                                </div>
-                            </section>
-                            <section
-                                class="panel receive-overall-remarks receive-scroll-target"
-                                aria-labelledby="receiveConfirmationHeading"
-                            >
-                                <div class="section-card-heading">
-                                    <span class="section-card-icon confirmation"
-                                        ><i class="fa-solid fa-circle-check"></i
-                                    ></span>
-                                    <div>
-                                        <span class="section-eyebrow">Section 5</span>
-                                        <h2 id="receiveConfirmationHeading">Final Confirmation</h2>
-                                    </div>
-                                </div>
-                                <label for="receivePoRemarks">Receiving Remarks</label
+                                <div id="receiveSummaryItems" class="receiving-summary-list"></div>
+                                <div class="receive-final-remarks">
+                                    <label for="receivePoRemarks">Receiving Remarks</label
                                 ><textarea
                                     id="receivePoRemarks"
                                     class="form-control"
-                                    rows="4"
+                                    rows="3"
                                     placeholder="Optional notes for the complete receiving transaction..."
                                 ></textarea>
+                                </div>
                                 <div
                                     id="receiveValidationSummary"
                                     class="receive-validation d-none"
@@ -510,6 +388,6 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/purchase_orders.js?v=70"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=77"></script>
     </body>
 </html>

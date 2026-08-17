@@ -201,7 +201,6 @@
 .supplier-product-table .col-product { width: 170px; min-width: 160px; }
 .supplier-product-table .col-specification { width: 220px; min-width: 200px; }
 .supplier-product-table .col-type { width: 130px; min-width: 120px; }
-.supplier-product-table .col-packaging { width: 120px; min-width: 110px; }
 .supplier-product-table .col-purchase-unit { width: 155px; min-width: 140px; }
 .supplier-product-table .col-supplier-cost {
     width: 150px;
@@ -245,8 +244,7 @@
 .supplier-product-table .col-supplier,
 .supplier-product-table .col-product,
 .supplier-product-table .col-specification,
-.supplier-product-table .col-type,
-.supplier-product-table .col-packaging {
+.supplier-product-table .col-type {
     text-align: left;
 }
 

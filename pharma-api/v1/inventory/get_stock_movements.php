@@ -88,7 +88,6 @@ function movementRecord(array $values): array
 }
 
 try {
-    ensureProductCategorySchema($pdo);
     $productId = cleanId($_GET['product_id'] ?? null);
     if ($productId === '') {
         throw new InvalidArgumentException('Product is required.');
@@ -217,51 +216,53 @@ try {
     }
 
     $transferStatement = $pdo->prepare(
-        "SELECT pss.selling_stock_id, pss.source_batch_id, pss.batch_number,
-                GREATEST(pss.quantity_stocked, COALESCE(ib.shelf_qty, 0), pss.quantity_remaining) AS quantity_stocked,
-                pss.quantity_remaining, pss.expiration_date, pss.created_at,
-                ib.received_date, al.user_id, u.full_name AS user_name, u.username
-         FROM product_selling_stock pss
-         LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
-         LEFT JOIN activity_logs al ON al.activity_id = (
-             SELECT al2.activity_id FROM activity_logs al2
-             WHERE al2.module = 'Inventory' AND al2.action = 'Moved to Shelf'
-               AND al2.reference_id IN (pss.selling_stock_id, pss.product_id)
-             ORDER BY ABS(TIMESTAMPDIFF(SECOND, al2.created_at, pss.created_at)) ASC, al2.created_at DESC
-             LIMIT 1
-         )
-         LEFT JOIN users u ON u.user_id = al.user_id
-         WHERE pss.product_id = :product_id AND pss.quantity_stocked > 0
-         ORDER BY pss.created_at DESC"
+        "SELECT t.transfer_id selling_stock_id, NULL source_batch_id,
+                GROUP_CONCAT(DISTINCT a.batch_number ORDER BY a.expiry_date SEPARATOR ', ') batch_number,
+                t.base_quantity quantity_stocked, NULL quantity_remaining,
+                MIN(a.expiry_date) expiration_date, t.created_at, NULL received_date,
+                t.movement_type, t.selected_quantity, t.selected_unit, t.base_unit,
+                t.source_location, t.destination_location, u.full_name user_name, u.username
+         FROM inventory_transfers t
+         LEFT JOIN inventory_transfer_allocations a ON a.transfer_id=t.transfer_id
+         LEFT JOIN users u ON u.user_id=t.transferred_by
+         WHERE t.product_id=:product_id
+         GROUP BY t.transfer_id, t.base_quantity, t.created_at, t.movement_type, t.selected_quantity,
+                  t.selected_unit, t.base_unit, t.source_location, t.destination_location, u.full_name, u.username
+         ORDER BY t.created_at DESC"
     );
     $transferStatement->execute([':product_id' => $productId]);
     foreach ($transferStatement->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $quantity = (int) ($row['quantity_stocked'] ?? 0);
+        $toShelf = strtoupper((string) ($row['movement_type'] ?? 'STORAGE_TO_SHELF')) === 'STORAGE_TO_SHELF';
         $movements[] = movementRecord([
             'movement_id' => 'transfer:' . $row['selling_stock_id'],
             'movement_date' => $row['created_at'],
-            'movement_code' => 'storage_to_shelf',
+            'movement_code' => $toShelf ? 'storage_to_shelf' : 'shelf_to_storage',
             'movement_label' => 'Storage → Shelf',
             'direction' => 'transfer',
             'quantity' => $quantity,
-            'storage_change' => -$quantity,
-            'shelf_change' => $quantity,
+            'storage_change' => $toShelf ? -$quantity : $quantity,
+            'shelf_change' => $toShelf ? $quantity : -$quantity,
             'on_hand_change' => 0,
             'reference' => $row['batch_number'] ?: $row['selling_stock_id'],
             'batch_id' => $row['source_batch_id'],
             'batch_number' => $row['batch_number'],
-            'from_location' => 'Storage',
-            'to_location' => 'Shelf',
+            'from_location' => $row['source_location'],
+            'to_location' => $row['destination_location'],
             'user_name' => movementUserName($row),
-            'reason' => 'Replenished shelf',
+            'reason' => $toShelf ? 'Replenished shelf' : 'Returned internal shelf stock',
             'details' => [
                 'batch_number' => $row['batch_number'] ?? null,
                 'expiry_date' => $row['expiration_date'] ?? null,
                 'received_date' => $row['received_date'] ?? null,
                 'quantity_moved' => $quantity,
+                'selected_quantity' => (int) ($row['selected_quantity'] ?? $quantity),
+                'selected_unit' => $row['selected_unit'] ?? null,
+                'base_unit' => $row['base_unit'] ?? null,
                 'remaining_shelf_quantity' => (int) ($row['quantity_remaining'] ?? 0),
             ],
         ]);
+        $movements[array_key_last($movements)]['movement_label'] = $toShelf ? 'Storage to Shelf' : 'Shelf to Storage';
     }
 
     $saleStatement = $pdo->prepare(
@@ -308,7 +309,7 @@ try {
         "SELECT por.return_id, por.return_quantity, por.damage_reason, por.remarks,
                 por.return_status, por.created_at, po.po_number, s.supplier_name,
                 al.user_id, u.full_name AS user_name, u.username
-         FROM purchase_order_returns por
+         FROM supplier_claim_legacy_projection por
          INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
          INNER JOIN purchase_orders po ON po.po_id = por.po_id
          LEFT JOIN suppliers s ON s.supplier_id = po.supplier_id

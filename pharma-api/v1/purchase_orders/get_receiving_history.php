@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
-    if (!purchaseOrderPaymentTableExists($pdo)) throw new RuntimeException('Purchase order payment storage is not installed.');
     $statement = $pdo->query(
         'SELECT por.po_id
          FROM purchase_order_receiving por
@@ -22,14 +21,15 @@ try {
     foreach ($statement->fetchAll(PDO::FETCH_COLUMN) as $poId) {
         $details = buildPurchaseOrderReceivingDetails($pdo, cleanId($poId));
         if (!$details) continue;
+        $firstItem = $details['items'][0] ?? [];
         $history[] = [
             'po_id' => $details['po_id'], 'grn_number' => $details['grn_number'], 'po_number' => $details['po_number'],
             'supplier_name' => $details['supplier_name'], 'arrival_date' => $details['expected_delivery_date'],
             'received_date' => $details['received_date'], 'products' => $details['products'],
+            'product_name' => $firstItem['product_name'] ?? '', 'brand_name' => $firstItem['brand_name'] ?? '',
             'ordered_units' => $details['totals']['ordered_units'],
             'accepted_units' => $details['totals']['accepted_units'], 'affected_units' => $details['totals']['affected_units'],
             'inventory_added' => $details['totals']['inventory_added'], 'receiving_result' => $details['receiving_result'],
-            'payment_status' => $details['payment']['payment_status'], 'remaining_balance' => $details['payment']['remaining_balance'],
             'received_by' => $details['received_by'], 'po_status' => $details['status']
         ];
     }

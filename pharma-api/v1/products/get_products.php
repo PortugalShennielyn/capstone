@@ -2,16 +2,20 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'product_category_schema.php';
+require_once 'product_customization_schema.php';
 require_once 'product_status_schema.php';
+require_once 'product_pricing_schema.php';
 
 try {
-    ensureProductStatusColumn($pdo);
     $stmt = $pdo->prepare(
         "SELECT
             p.product_id,
             p.barcode,
             p.category_id,
             p.type_id,
+            p.inventory_unit_id,
+            pmu.unit_name AS inventory_unit_name,
+            COALESCE(NULLIF(pmu.unit_symbol,''),pmu.unit_name) AS inventory_unit_symbol,
             p.brand_name,
             p.product_name,
             p.price,
@@ -50,6 +54,7 @@ try {
          FROM product p
          LEFT JOIN product_categories pc ON p.category_id = pc.category_id
          LEFT JOIN product_types pt ON p.type_id = pt.type_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id=p.inventory_unit_id
          LEFT JOIN medicine_details md ON p.product_id = md.product_id
          LEFT JOIN grocery_details gd ON p.product_id = gd.product_id
          LEFT JOIN medical_supply_details msd ON p.product_id = msd.product_id
@@ -89,9 +94,27 @@ try {
     $stmt->execute();
 
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $specificationRows = $pdo->query(
+        "SELECT psv.product_id, ps.specification_id, ps.specification_name,
+                COALESCE(NULLIF(pts.display_label, ''), ps.specification_name) AS display_name, ps.field_style,
+                psv.value_text, psv.value_number, psv.measurement_unit_id,
+                COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name) AS unit_symbol
+         FROM product_specification_values psv
+         INNER JOIN product p ON p.product_id = psv.product_id
+         INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+         LEFT JOIN product_type_specifications pts ON pts.type_id = p.type_id AND pts.specification_id = psv.specification_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = psv.measurement_unit_id
+         ORDER BY psv.product_id, pts.sort_order, ps.specification_name"
+    )->fetchAll();
+    $specificationsByProduct = [];
+    foreach ($specificationRows as $specificationRow) {
+        $specificationsByProduct[$specificationRow['product_id']][] = $specificationRow;
+    }
+    $pricingByProduct = productPricingSnapshots($pdo, array_column($products, 'product_id'));
     if (count($products) > 0) {
         foreach ($products as &$product) {
             $product['variations'] = [];
+            $product['specifications'] = $specificationsByProduct[$product['product_id']] ?? [];
             $product['available_stock'] = (int) ($product['available_stock'] ?? 0);
             $product['selling_stock'] = (int) ($product['selling_stock'] ?? 0);
             $product['total_inventory_quantity'] = (int) ($product['total_inventory_quantity'] ?? 0);
@@ -116,6 +139,14 @@ try {
             $product['packaging_size'] = $product['pack_content'] ?? ($product['medical_pack_content'] ?? '');
             $product['pack_content_qty'] = '';
             $product['pack_content_unit'] = $product['pack_content'] ?? '';
+            $pricing = $pricingByProduct[$product['product_id']] ?? null;
+            if (!$pricing) {
+                throw new RuntimeException('Pricing data is unavailable for product ' . $product['product_id'] . '.');
+            }
+            $product['pricing'] = $pricing;
+            $product['pricing_method'] = $pricing['pricing_method'];
+            $product['price_status'] = $pricing['price_status'];
+            $product['pricing_behavior'] = $pricing['pricing_behavior'];
         }
         unset($product);
     }

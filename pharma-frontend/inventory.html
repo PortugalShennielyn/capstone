@@ -1,23 +1,25 @@
 <!DOCTYPE html>
 <html data-bs-theme="light" lang="en">
  <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=9"></script>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <meta content="no-cache, no-store, must-revalidate" http-equiv="Cache-Control"/>
   <meta content="no-cache" http-equiv="Pragma"/>
   <meta content="0" http-equiv="Expires"/>
   <title>
-   Dr. R Pharmacy | Inventory
+   Dr. R Pharmacy | Storage Inventory
   </title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet"/>
-  <link href="./css/navbar.css?v=15" rel="stylesheet"/>
+  <link href="./css/navbar.css?v=20" rel="stylesheet"/>
   <link href="./css/inventory_history.css?v=3" rel="stylesheet"/>
-  <script defer="" src="./js/navbar.js?v=55">
+  <script defer="" src="./js/navbar.js?v=74">
   </script>
-  <script src="./js/modules/auth_guard.js?v=20" type="module">
+  <script src="./js/modules/auth_guard.js?v=29" type="module">
   </script>
   <style>
    :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
@@ -47,8 +49,14 @@
         .inventory-summary-card.is-value-card .inventory-summary-icon { width:24px; height:24px; font-size:12px; }
         .inventory-summary-card.is-value-card strong { font-size:clamp(.78rem,.84vw,.94rem); letter-spacing:0; }
         .inventory-card,.table-wrapper,.inventory-table-wrap { min-width:0; }
-        .inventory-filters { display:grid; grid-template-columns:minmax(240px,1fr) minmax(180px,240px); gap:12px; align-items:end; margin-bottom:14px; }
+        .inventory-filters { display:grid; grid-template-columns:minmax(240px,1fr) repeat(2,minmax(180px,240px)); gap:12px; align-items:end; margin-bottom:14px; }
         .inventory-filter-field label { margin-bottom:5px; color:#596274; font-size:11px; font-weight:800; }
+        .inventory-pr-toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px; margin:0 0 14px; padding:11px 13px; border:1px solid #ddd6fe; border-radius:9px; background:#faf8ff; }
+        .inventory-pr-toolbar[hidden] { display:none!important; }
+        .inventory-pr-selection-count { color:#5b21b6; font-size:12px; font-weight:850; }
+        .inventory-pr-selection-note { display:block; margin-top:2px; color:#7c6f91; font-size:10px; font-weight:650; }
+        .inventory-pr-select-cell { width:48px!important; min-width:48px!important; max-width:48px!important; padding-left:12px!important; padding-right:8px!important; text-align:center!important; }
+        .inventory-pr-select-cell .form-check-input { width:17px; height:17px; margin:0; cursor:pointer; }
         .inventory-product-status { display:inline-flex; align-items:center; justify-content:center; padding:4px 9px; border-radius:999px; font-size:10px; font-weight:850; line-height:1.2; white-space:nowrap; }
         .inventory-product-status.is-active { color:#166534; background:#dcfce7; }
         .inventory-product-status.is-inactive { color:#9f1239; background:#ffe4e6; }
@@ -57,38 +65,20 @@
         .inventory-table tbody tr.is-inactive td { background:#fafafa; }
         .inventory-table tbody tr.is-inactive:hover td { background:#f8fafc; }
         .inventory-inactive-warning { display:flex; align-items:flex-start; gap:9px; margin:10px 0 0; padding:10px 12px; border:1px solid #fecdd3; border-radius:8px; color:#9f1239; background:#fff1f2; font-size:12px; font-weight:700; line-height:1.4; }
-        .inventory-table-wrap { overflow-x:auto; }
-        .inventory-table { width:100%; min-width:1735px; border-collapse:separate; border-spacing:0; font-size:13px; font-weight:700; table-layout:auto; }
-        .inventory-table th,.inventory-table td { padding:12px 11px; border-bottom:1px solid #e5e7eb; vertical-align:middle; overflow-wrap:break-word; word-break:normal; }
+        .inventory-table-wrap,#globalTransferHistory { min-width:0; overflow-x:auto; }
+        .inventory-table { width:100%; min-width:0; border-collapse:separate; border-spacing:0; font-size:13px; font-weight:700; table-layout:fixed; }
+        .inventory-table th,.inventory-table td { min-width:0; padding:8px 10px; border-bottom:1px solid #e5e7eb; vertical-align:middle; white-space:normal; overflow-wrap:break-word; word-break:normal; }
         .inventory-table th { color:#596274; background:#f8fafc; font-size:11px; font-weight:800; text-align:left; text-transform:uppercase; letter-spacing:0; }
         .inventory-table td { text-align:left; }
         .inventory-table tbody tr:hover td { background:#fbfdff; }
-        .inventory-table .col-brand { width:clamp(150px,16%,230px); min-width:150px; }
-        .inventory-table .col-product { width:clamp(200px,22%,340px); min-width:200px; }
-        .inventory-table .col-specification { width:290px; min-width:290px; }
-        .inventory-table .col-type { width:145px; min-width:145px; }
-        .inventory-table .col-product-status { width:155px; min-width:155px; }
-        .inventory-table .col-qty { width:96px; }
-        .inventory-table .col-expiry { width:125px; min-width:125px; }
-        .inventory-table .col-received { width:135px; min-width:135px; }
-        .inventory-table .col-actions { width:170px; min-width:170px; }
-        .inventory-table th:nth-child(1), .inventory-table td:nth-child(1) { min-width:150px; text-align:left; }
-        .inventory-table th:nth-child(2), .inventory-table td:nth-child(2) { min-width:200px; text-align:left; }
-        .inventory-table th:nth-child(3), .inventory-table td:nth-child(3) { width:290px; min-width:290px; max-width:290px; }
-        .inventory-table th:nth-child(4), .inventory-table td:nth-child(4) { min-width:145px; }
-        .inventory-table th:nth-child(10), .inventory-table td:nth-child(10) { width:125px; min-width:125px; max-width:125px; text-align:center!important; }
-        .inventory-table th:nth-child(11), .inventory-table td:nth-child(11) { width:135px; min-width:135px; max-width:135px; text-align:center!important; white-space:nowrap!important; }
-        .inventory-table th:nth-child(12), .inventory-table td:nth-child(12) { width:170px; min-width:170px; max-width:170px; position:sticky; right:0; z-index:13; background:#fff!important; background-clip:padding-box!important; border-left:1px solid #dbeafe!important; box-shadow:-8px 0 14px rgba(15,23,42,.09)!important; text-align:center!important; white-space:nowrap!important; }
-        .inventory-table th:nth-child(12) { z-index:16; background:#f8fafc!important; }
-        .inventory-table tbody tr:hover td:nth-child(12) { background:#f8fafc!important; }
+        .inventory-table tbody tr.has-search-match { filter:drop-shadow(0 0 7px rgba(124,58,237,.18)); }
+        .inventory-table tbody tr.has-search-match td { border-top:1px solid rgba(124,58,237,.24); border-bottom-color:rgba(124,58,237,.24); background:#fbf9ff; }
+        .inventory-table tbody tr.has-search-match td:first-child { box-shadow:inset 3px 0 0 rgba(124,58,237,.72); }
+        .inventory-table tbody tr.has-search-match:hover td { background:#f8f4ff; }
         .inventory-table tbody tr.is-selected td { background:#f5f2ff!important; }
-        .inventory-table tbody tr.is-selected td:nth-child(12) { background:#f5f2ff!important; box-shadow:inset 3px 0 0 #8b5cf6,-8px 0 14px rgba(15,23,42,.09)!important; }
-        #table-inventory.data-table-enhanced th:nth-child(12),#table-inventory.data-table-enhanced td:nth-child(12) { width:170px!important; min-width:170px!important; max-width:170px!important; position:sticky!important; right:0!important; z-index:13!important; background:#fff!important; background-clip:padding-box!important; border-left:1px solid #dbeafe!important; box-shadow:-8px 0 14px rgba(15,23,42,.09)!important; }
-        #table-inventory.data-table-enhanced thead th:nth-child(12) { z-index:16!important; background:#f8fafc!important; }
-        #table-inventory.data-table-enhanced tbody tr:hover td:nth-child(12) { background:#f8fafc!important; }
-        #table-inventory.data-table-enhanced tbody tr.is-selected td:nth-child(12) { background:#f5f2ff!important; }
-        .brand-cell,.product-cell { display:block; max-width:100%; text-align:left; color:var(--text-main); font-size:13px; font-weight:750; line-height:1.28; white-space:normal; overflow:visible; overflow-wrap:break-word; word-break:normal; }
-        .specification-cell { display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; color:#465166; font-size:12px; font-weight:700; line-height:1.35; }
+        .brand-cell,.product-cell { display:block; max-width:100%; text-align:left; color:var(--text-main); font-size:13px; font-weight:750; line-height:1.28; white-space:normal; overflow:visible; overflow-wrap:break-word; word-break:normal; text-transform:uppercase; }
+        .specification-cell { display:block; max-width:100%; overflow:visible; color:#465166; font-size:12px; font-weight:700; line-height:1.35; white-space:normal; overflow-wrap:break-word; word-break:normal; }
+        .search-match { padding:0 .08em; border-radius:3px; color:inherit; background:#ddd0ff; box-shadow:0 0 0 1px rgba(124,58,237,.1); }
         .qty-number { font-variant-numeric:tabular-nums; font-weight:850; }
         .expiry-cell,.expiry-stack { text-align:center; }
         .date-stack { display:flex; flex-direction:column; align-items:center; gap:5px; }
@@ -116,73 +106,21 @@
         .move-batch-input { min-width:0; }
         .move-batch-input .form-control { min-height:40px; }
         .move-feedback { min-height:20px; color:#dc2626; font-size:12px; font-weight:700; }
+        .inventory-view-tabs { display:flex; gap:6px; margin:0 0 14px; padding:4px; width:max-content; max-width:100%; overflow-x:auto; border:1px solid var(--border-soft); border-radius:9px; background:#f8fafc; }
+        .inventory-view-tab { border:0; border-radius:7px; padding:7px 13px; color:#64748b; background:transparent; font-size:12px; font-weight:800; white-space:nowrap; }
+        .inventory-view-tab.active { color:#5b21b6; background:#fff; box-shadow:0 1px 4px rgba(15,23,42,.12); }
+        .transfer-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+        .transfer-route { display:flex; align-items:center; justify-content:center; gap:12px; margin:12px 0; color:#475569; font-size:13px; font-weight:800; }
+        .transfer-equivalent { margin-top:6px; color:#5b21b6; font-size:12px; font-weight:800; }
         .move-summary-grid { display:grid; grid-template-columns:minmax(220px,1.35fr) minmax(130px,.7fr) minmax(160px,.85fr); gap:12px; margin-bottom:14px; align-items:stretch; }
         .move-summary-grid .detail-box { min-width:0; }
         .move-summary-grid .detail-box strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .inventory-table .table-actions { display:flex!important; align-items:center!important; justify-content:center!important; gap:8px!important; white-space:nowrap!important; }
-        .inventory-table .table-actions .btn { width:34px!important; height:34px!important; min-width:34px!important; padding:0!important; display:inline-flex!important; align-items:center!important; justify-content:center!important; border-radius:8px; background:#fff; }
+        .inventory-table .table-actions { display:flex!important; align-items:center!important; justify-content:center!important; flex-wrap:wrap; gap:2px!important; white-space:normal!important; }
+        .inventory-table .table-actions .btn { width:24px!important; min-width:24px!important; height:24px!important; min-height:24px!important; padding:0!important; display:inline-flex!important; align-items:center!important; justify-content:center!important; gap:0!important; border-radius:6px; background:#fff; font-size:10px!important; font-weight:800; }
         .inventory-table .table-actions .view-inventory-btn { color:#475569; border-color:#cbd5e1; }
         .inventory-table .table-actions .move-selling-btn { color:#2563eb; border-color:#60a5fa; background:#eff6ff; }
         .inventory-table .table-actions .history-btn { color:#64748b; border-color:#cbd5e1; }
         .disabled-action-tooltip { display:inline-flex; cursor:not-allowed; }
-        table.inventory-table.data-table-enhanced { width:100%!important; min-width:1735px!important; table-layout:auto!important; }
-        table.inventory-table.data-table-enhanced th, table.inventory-table.data-table-enhanced td { padding:13px 12px!important; line-height:1.28!important; }
-        table.inventory-table.data-table-enhanced th:nth-child(1), table.inventory-table.data-table-enhanced td:nth-child(1), table.inventory-table.data-table-enhanced th:nth-child(2), table.inventory-table.data-table-enhanced td:nth-child(2) { text-align:left!important; }
-        table.inventory-table.data-table-enhanced col.col-brand { width:clamp(150px,16%,230px)!important; min-width:150px!important; }
-        table.inventory-table.data-table-enhanced col.col-product { width:clamp(200px,22%,340px)!important; min-width:200px!important; }
-        table.inventory-table.data-table-enhanced col.col-specification { width:290px!important; min-width:290px!important; }
-        table.inventory-table.data-table-enhanced col.col-type { width:145px!important; min-width:145px!important; }
-        table.inventory-table.data-table-enhanced col.col-product-status { width:155px!important; min-width:155px!important; }
-        table.inventory-table.data-table-enhanced col.col-qty { width:96px!important; }
-        table.inventory-table.data-table-enhanced col.col-expiry { width:125px!important; min-width:125px!important; }
-        table.inventory-table.data-table-enhanced col.col-received { width:135px!important; min-width:135px!important; }
-        table.inventory-table.data-table-enhanced col.col-actions { width:170px!important; min-width:170px!important; }
-        table.inventory-table.data-table-enhanced .table-actions { display:flex!important; gap:8px!important; width:auto!important; max-width:100%!important; }
-        .inventory-table-wrap > table.table.inventory-table.data-table-enhanced { width:100%!important; min-width:1735px!important; table-layout:auto!important; }
-        .inventory-table-wrap > table.table.inventory-table.data-table-enhanced th, .inventory-table-wrap > table.table.inventory-table.data-table-enhanced td { padding:13px 12px!important; line-height:1.28!important; }
-        .inventory-table-wrap > table.table.inventory-table.data-table-enhanced th:nth-child(1), .inventory-table-wrap > table.table.inventory-table.data-table-enhanced td:nth-child(1), .inventory-table-wrap > table.table.inventory-table.data-table-enhanced th:nth-child(2), .inventory-table-wrap > table.table.inventory-table.data-table-enhanced td:nth-child(2) { text-align:left!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced { width:100%!important; min-width:1735px!important; table-layout:auto!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th, .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td { padding:13px 12px!important; line-height:1.28!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(1), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(1), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(2), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(2) { text-align:left!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(10), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(10) { width:125px!important; min-width:125px!important; max-width:125px!important; right:auto!important; text-align:center!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(11), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(11) { width:135px!important; min-width:135px!important; max-width:135px!important; right:auto!important; text-align:center!important; white-space:nowrap!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced thead th:nth-child(10), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced thead th:nth-child(11) { position:sticky!important; top:0!important; right:auto!important; z-index:10!important; background:#f8fafc!important; box-shadow:inset 0 -1px 0 #e5e9f1!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced tbody td:nth-child(10), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced tbody td:nth-child(11) { position:static!important; right:auto!important; z-index:auto!important; box-shadow:none!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(12), .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced td:nth-child(12) { width:170px!important; min-width:170px!important; max-width:170px!important; position:sticky!important; right:0!important; z-index:13!important; overflow:hidden!important; background:#fff!important; background-clip:border-box!important; border-left:1px solid #dbeafe!important; box-shadow:-8px 0 14px rgba(15,23,42,.09)!important; text-align:center!important; white-space:nowrap!important; isolation:isolate; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced th:nth-child(12) { top:0!important; z-index:16!important; background:#f8fafc!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced tbody tr:hover td:nth-child(12) { background:#f8fafc!important; }
-        .inventory-table-wrap .data-table-wrapper > table.table.inventory-table.data-table-enhanced tbody tr.is-selected td:nth-child(12) { background:#f5f2ff!important; }
-        /* Expiry and Last Received scroll horizontally with the normal columns. */
-        #table-inventory thead th:nth-child(10), #table-inventory thead th:nth-child(11) {
-            position:sticky!important;
-            top:0!important;
-            right:auto!important;
-            z-index:10!important;
-            background:#f8fafc!important;
-            box-shadow:inset 0 -1px 0 #e5e9f1!important;
-        }
-        #table-inventory tbody td:nth-child(10), #table-inventory tbody td:nth-child(11) {
-            position:static!important;
-            right:auto!important;
-            z-index:auto!important;
-            box-shadow:none!important;
-        }
-        /* Actions is the only horizontally frozen column. */
-        #table-inventory th:nth-child(12), #table-inventory td:nth-child(12) {
-            position:sticky!important;
-            right:0!important;
-            z-index:13!important;
-            overflow:hidden!important;
-            background:#fff!important;
-            background-clip:border-box!important;
-            border-left:1px solid #dbeafe!important;
-            box-shadow:-8px 0 14px rgba(15,23,42,.09)!important;
-            isolation:isolate;
-        }
-        #table-inventory thead th:nth-child(12) { top:0!important; z-index:16!important; background:#f8fafc!important; }
-        #table-inventory tbody tr:hover td:nth-child(12) { background:#f8fafc!important; }
-        #table-inventory tbody tr.is-inactive td:nth-child(12) { background:#fafafa!important; }
-        #table-inventory tbody tr.is-selected td:nth-child(12) { background:#f5f2ff!important; }
         .empty-row { padding:36px!important; color:#8790a1!important; text-align:center!important; }
         .detail-section { margin-bottom:20px; }
         .detail-section h6 { margin:0 0 10px; font-weight:850; color:#374151; }
@@ -297,6 +235,9 @@
         body.dark-mode .inventory-batch-table tr.batch-status-status-na .batch-status-column { background:#172033!important; }
         body.dark-mode .move-batch-row { background:#111827; }
         body.dark-mode .move-batch-row.is-recommended { background:#0f2a23; }
+        body.dark-mode .inventory-pr-toolbar { border-color:#4c3b76; background:#211a35; }
+        body.dark-mode .inventory-pr-selection-count { color:#c4b5fd; }
+        body.dark-mode .inventory-pr-selection-note { color:#a99cc0; }
         #inventoryDetailsModal[data-modal-layout="medium"] .inventory-header-stock-cards { grid-template-columns:repeat(3,minmax(0,1fr)); }
         #inventoryDetailsModal[data-modal-layout="medium"] .inventory-secondary-sections,
         #inventoryDetailsModal[data-modal-layout="stacked"] .inventory-secondary-sections { grid-template-columns:1fr; }
@@ -305,13 +246,63 @@
             .main-wrapper { margin-left:0; }
             .page-body { padding:18px 12px; }
             .topbar { padding:0 14px; }
-            .inventory-table { min-width:1580px; }
             .inventory-summary-grid { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
             .move-summary-grid { grid-template-columns:1fr; }
             .move-batch-row { grid-template-columns:1fr; }
             .inventory-header-stock-cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .inventory-filters { grid-template-columns:minmax(220px,1fr) repeat(2,minmax(160px,1fr)); }
         }
-        @media (max-width:575.98px) { .receiving-info-grid { grid-template-columns:1fr; } .inventory-header-stock-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .inventory-attribute-list > div { grid-template-columns:1fr; gap:3px; } #inventoryDetailsModal .modal-footer { align-items:stretch; flex-direction:column; } .inventory-details-actions { width:100%; } .inventory-details-actions .btn, #inventoryDetailsModal .modal-footer > .btn { width:100%; } }
+        @media (max-width:575.98px) { .inventory-filters { grid-template-columns:1fr; } .receiving-info-grid { grid-template-columns:1fr; } .inventory-header-stock-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .inventory-attribute-list > div { grid-template-columns:1fr; gap:3px; } #inventoryDetailsModal .modal-footer { align-items:stretch; flex-direction:column; } .inventory-details-actions { width:100%; } .inventory-details-actions .btn, #inventoryDetailsModal .modal-footer > .btn { width:100%; } }
+
+        /* Shared proportional layout for Storage, Shelf, and Transfer History. */
+        .inventory-location-table,.inventory-history-table,
+        .inventory-location-table.data-table-enhanced,.inventory-history-table.data-table-enhanced { width:100%!important; min-width:0!important; table-layout:fixed!important; }
+        .inventory-location-table th,.inventory-location-table td,
+        .inventory-history-table th,.inventory-history-table td { position:static!important; min-width:0!important; max-width:none!important; padding:8px 10px!important; box-shadow:none!important; border-left:0!important; }
+        .inventory-col-brand,.inventory-col-product,.inventory-col-specification,.inventory-col-type,
+        .inventory-history-col-brand,.inventory-history-col-product,.inventory-history-col-allocation { text-align:left!important; }
+        .inventory-col-qty,.inventory-col-expiry,.inventory-col-status,.inventory-col-action,
+        .inventory-history-col-date,.inventory-history-col-movement,.inventory-history-col-selected,
+        .inventory-history-col-base,.inventory-history-col-user { text-align:center!important; }
+
+        .inventory-storage-table .inventory-col-brand { width:14%; }
+        .inventory-storage-table .inventory-col-product { width:20%; }
+        .inventory-storage-table .inventory-col-specification { width:22%; }
+        .inventory-storage-table .inventory-col-type { width:14%; }
+        .inventory-storage-table .inventory-col-qty { width:8%; }
+        .inventory-storage-table .inventory-col-expiry { width:8%; }
+        .inventory-storage-table .inventory-col-action { width:6%; }
+
+        .inventory-shelf-table .inventory-col-brand { width:12%; }
+        .inventory-shelf-table .inventory-col-product { width:18%; }
+        .inventory-shelf-table .inventory-col-specification { width:20%; }
+        .inventory-shelf-table .inventory-col-type { width:13%; }
+        .inventory-shelf-table .inventory-col-qty { width:8%; }
+        .inventory-shelf-table .inventory-col-expiry { width:8%; }
+        .inventory-shelf-table .inventory-col-status { width:7%; }
+        .inventory-shelf-table .inventory-col-action { width:6%; }
+
+        .inventory-history-table .inventory-history-col-date { width:10%; }
+        .inventory-history-table .inventory-history-col-brand { width:12%; }
+        .inventory-history-table .inventory-history-col-product { width:18%; }
+        .inventory-history-table .inventory-history-col-movement { width:12%; }
+        .inventory-history-table .inventory-history-col-selected { width:10%; }
+        .inventory-history-table .inventory-history-col-base { width:10%; }
+        .inventory-history-table .inventory-history-col-allocation { width:20%; }
+        .inventory-history-table .inventory-history-col-user { width:8%; }
+
+        .inventory-history-col-product,.inventory-history-col-allocation { white-space:normal; overflow-wrap:break-word; word-break:normal; }
+        @media (max-width:575.98px) {
+            .inventory-storage-table { min-width:760px!important; }
+            .inventory-shelf-table,.inventory-history-table { min-width:840px!important; }
+        }
+        .pos-status { display:inline-flex; padding:3px 7px; border-radius:999px; font-size:10px; font-weight:850; white-space:nowrap; }
+        .pos-status.is-available { color:#166534; background:#dcfce7; }
+        .pos-status.is-unavailable { color:#9f1239; background:#ffe4e6; }
+        .transfer-allocation-preview { margin-top:12px; border:1px solid var(--border-soft); border-radius:8px; overflow:hidden; }
+        .transfer-allocation-preview h6 { margin:0; padding:9px 11px; background:#f8fafc; font-size:11px; font-weight:850; text-transform:uppercase; }
+        .transfer-allocation-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; padding:8px 11px; border-top:1px solid var(--border-soft); font-size:11px; }
+        .transfer-allocation-row strong { font-weight:850; }
   </style>
  </head>
  <body>
@@ -326,10 +317,10 @@
      </button>
      <div class="page-title-mini">
       <strong>
-       Inventory
+        Storage Inventory
       </strong>
       <span>
-       Warehouse stock and sellable shelf movement
+        Received PO stock and warehouse stock movement
       </span>
      </div>
     </div>
@@ -352,10 +343,10 @@
       <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
        <div>
         <h1 class="h5 fw-bold mb-1">
-         Inventory Storage
+         Storage Inventory
         </h1>
         <p class="text-muted small mb-0">
-         Received PO stock stays here until moved to Products selling stock.
+          Received PO stock stays here until explicitly transferred to Shelf Inventory.
         </p>
        </div>
        <button class="btn btn-purple" id="btnRefreshInventory">
@@ -364,10 +355,14 @@
         Refresh
        </button>
       </div>
+       <nav class="inventory-view-tabs" aria-label="Storage Inventory views">
+        <button class="inventory-view-tab active" data-inventory-view="storage" type="button">Storage Inventory</button>
+        <button class="inventory-view-tab" data-inventory-view="history" type="button">Transfer History</button>
+      </nav>
       <div class="inventory-filters" role="search" aria-label="Inventory filters">
        <div class="inventory-filter-field">
         <label for="inventorySearch">Search Inventory</label>
-        <input class="form-control" id="inventorySearch" type="search" placeholder="Search product, brand, specification, or barcode"/>
+        <input class="form-control" id="inventorySearch" type="search" placeholder="Search product, brand, specification, type, or barcode"/>
        </div>
        <div class="inventory-filter-field">
         <label for="inventoryProductStatusFilter">Product Status</label>
@@ -377,66 +372,37 @@
          <option value="Inactive">Inactive</option>
         </select>
        </div>
-      </div>
-      <div class="inventory-table-wrap table-wrapper">
-       <table class="table table-hover align-middle inventory-table" id="table-inventory">
-        <colgroup>
-         <col class="col-brand"/>
-         <col class="col-product"/>
-         <col class="col-specification"/>
-         <col class="col-type"/>
-         <col class="col-product-status"/>
-         <col class="col-qty"/>
-         <col class="col-qty"/>
-         <col class="col-qty"/>
-         <col class="col-qty"/>
-         <col class="col-expiry"/>
-         <col class="col-received"/>
-         <col class="col-actions"/>
-        </colgroup>
+       <div class="inventory-filter-field">
+        <label for="inventoryStockStatusFilter">Stock Status</label>
+        <select class="form-select" id="inventoryStockStatusFilter">
+         <option value="all" selected>All Stock</option>
+         <option value="in_stock">In Stock</option>
+         <option value="low_stock">Low Stock</option>
+         <option value="out_of_stock">Out of Stock</option>
+         <option value="expiring_soon">Expiring Soon</option>
+        </select>
+       </div>
+       </div>
+       <div class="inventory-pr-toolbar" id="inventoryPrToolbar" hidden>
+        <div>
+         <span class="inventory-pr-selection-count" id="inventoryPrSelectionCount">0 products selected</span>
+         <small class="inventory-pr-selection-note">Create a replenishment request from the selected low-stock inventory products.</small>
+        </div>
+        <button class="btn btn-purple" id="createInventoryPrButton" type="button" disabled>
+         <i class="fa-solid fa-plus me-2"></i>Create Purchase Request
+        </button>
+       </div>
+       <div class="inventory-table-wrap table-wrapper">
+        <table class="table table-hover align-middle inventory-table inventory-location-table inventory-storage-table" id="table-inventory">
         <thead>
          <tr>
-          <th>
-           Brand
-          </th>
-          <th>
-           Product
-          </th>
-          <th>
-           Specification
-          </th>
-          <th>
-           Product Type
-          </th>
-          <th>
-           Product Status
-          </th>
-          <th>
-           Storage Qty
-          </th>
-          <th>
-           Shelf Qty
-          </th>
-          <th>
-           Damaged Qty
-          </th>
-          <th>
-           On Hand
-          </th>
-          <th>
-           Expiry
-          </th>
-          <th>
-           Last Received
-          </th>
-          <th>
-           Actions
-          </th>
+           <th class="inventory-col-brand">Brand</th><th class="inventory-col-product">Product</th><th class="inventory-col-specification">Specification</th><th class="inventory-col-type">Product Type</th>
+           <th class="inventory-col-qty">Storage<br/>Qty</th><th class="inventory-col-qty">Shelf<br/>Qty</th><th class="inventory-col-expiry">Nearest<br/>Expiry</th><th class="inventory-col-action">Action</th>
          </tr>
         </thead>
         <tbody>
          <tr>
-          <td class="empty-row" colspan="12">
+          <td class="empty-row" colspan="8">
            Loading inventory...
           </td>
          </tr>
@@ -487,11 +453,11 @@
      <form id="moveShelfForm">
       <div class="modal-header">
        <div>
-        <h5 class="modal-title fw-bold">
-         Move Storage to Shelf
+        <h5 class="modal-title fw-bold" id="moveShelfTitle">
+         Transfer to Shelf
         </h5>
         <p class="text-muted small mb-0">
-         Choose the exact batch quantities to move.
+         Stock is allocated by earliest expiry first (FEFO).
         </p>
        </div>
        <button class="btn-close" data-bs-dismiss="modal" type="button">
@@ -499,31 +465,33 @@
       </div>
       <div class="modal-body">
        <input id="moveProductId" type="hidden"/>
+       <input id="moveDirection" type="hidden" value="STORAGE_TO_SHELF"/>
        <div class="move-summary-grid">
         <div class="detail-box">
          <span>
           Product
          </span>
-         <strong id="moveProductName">
+        <strong id="moveProductName">
          </strong>
         </div>
         <div class="detail-box">
-         <span>
-          Shelf Qty
-         </span>
-         <strong class="qty-number" id="moveShelfQty">
-         </strong>
+         <span>Brand</span>
+         <strong id="moveBrandName"></strong>
         </div>
         <div class="detail-box">
-         <span>
-          Total Storage Qty
-         </span>
-         <strong class="qty-number" id="moveStorageQty">
-         </strong>
+         <span>Specification</span>
+         <strong id="moveSpecification"></strong>
         </div>
        </div>
-       <div class="move-batch-list" id="moveBatchList">
+       <div class="transfer-route"><span id="moveSourceLocation">Storage Inventory</span><i class="fa-solid fa-arrow-right"></i><span id="moveDestinationLocation">Shelf Inventory</span></div>
+       <div class="transfer-form-grid">
+        <div><label class="form-label small fw-bold" for="moveQuantity">Transfer Quantity</label><input class="form-control" id="moveQuantity" min="1" step="1" inputmode="numeric" required type="number"/></div>
+        <div><label class="form-label small fw-bold" for="moveUnit">Transfer Unit</label><select class="form-select" id="moveUnit" required></select><div class="transfer-equivalent" id="moveEquivalent">Equivalent: 0 base units</div></div>
+        <div class="detail-box"><span>Storage Available</span><strong id="moveStorageAvailable"></strong></div>
+        <div class="detail-box"><span>Shelf Before</span><strong id="moveShelfBefore"></strong></div>
+        <div class="detail-box"><span>Shelf After</span><strong id="moveShelfAfter"></strong></div>
        </div>
+       <div class="small text-muted mt-3" id="moveBatchList">Enter a quantity to preview batch / expiry allocation.</div>
        <div aria-live="polite" class="move-feedback mt-2" id="moveBatchFeedback">
        </div>
       </div>
@@ -531,10 +499,10 @@
        <button class="btn btn-light" data-bs-dismiss="modal" type="button">
         Cancel
        </button>
-       <button class="btn btn-purple" type="submit">
+       <button class="btn btn-purple" type="submit" id="moveSubmitButton">
         <i class="fa-solid fa-right-left me-2">
         </i>
-        Move Selected Stock
+        Transfer Stock
        </button>
       </div>
      </form>
@@ -580,10 +548,10 @@
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js">
   </script>
-  <script src="./js/modules/inventory.js?v=22" type="module">
+  <script src="./js/modules/inventory.js?v=30" type="module">
   </script>
   <script type="module">
-   import verifySession from './js/modules/auth.js?v=4'; await verifySession();
+   import verifySession from './js/modules/auth.js?v=8'; await verifySession();
   </script>
  </body>
 </html>

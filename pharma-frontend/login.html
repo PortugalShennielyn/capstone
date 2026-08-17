@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Login</title>
@@ -192,7 +193,7 @@
 
     <script type="module">
         import API_BASE_URL from './js/config/config.js';
-        import { clearTabToken, setTabToken } from './js/modules/auth_guard.js?v=20';
+        import { cacheAuthenticatedProfile, clearTabToken, setTabToken } from './js/modules/auth_guard.js?v=27';
 
         const loginForm = document.getElementById('loginForm');
         const usernameInput = document.getElementById('username');
@@ -314,6 +315,8 @@
                 }
 
                 setTabToken(data.tab_token);
+                cacheAuthenticatedProfile(data.session);
+                sessionStorage.removeItem('drpAccessDeniedMessage');
                 isRedirecting = true;
                 toastr.success('Login successful! Redirecting...');
 

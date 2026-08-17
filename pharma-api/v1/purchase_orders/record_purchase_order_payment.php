@@ -22,31 +22,36 @@ $method = strtolower(trim((string) ($payload['payment_method'] ?? '')));
 $paymentDate = trim((string) ($payload['payment_date'] ?? ''));
 $reference = trim((string) ($payload['reference_number'] ?? ''));
 $remarks = trim((string) ($payload['remarks'] ?? ''));
-$idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
+$paymentRequestKey = trim((string) ($payload['payment_request_key'] ?? ''));
 $expectedRemaining = isset($payload['expected_remaining_balance']) && is_numeric($payload['expected_remaining_balance'])
     ? round((float) $payload['expected_remaining_balance'], 2)
     : null;
 if ($poId === '') paymentError('Purchase order is required.', 400);
 if (!isset($payload['amount']) || !is_numeric($payload['amount']) || $amount <= 0) paymentError('Payment amount must be greater than zero.', 400);
-if ($method === '') paymentError('Payment method is required.', 400);
+if ($method === '') $method = 'cash';
 if ($paymentDate === '') paymentError('Payment date is required.', 400);
-if ($idempotencyKey === '') paymentError('Payment submission key is required.', 400);
-if (!in_array($method, ['cash', 'bank_transfer', 'check', 'gcash', 'card', 'other'], true)) paymentError('Select a valid supplier payment method.', 400);
+if ($paymentRequestKey === '') paymentError('Payment submission key is required.', 400);
+if ($method !== 'cash') paymentError('Purchase order payments must be recorded as Cash.', 400);
 $date = DateTime::createFromFormat('Y-m-d', $paymentDate);
 if (!$date || $date->format('Y-m-d') !== $paymentDate) paymentError('Payment date must be a valid date.', 400);
-if (strlen($idempotencyKey) > 100 || strlen($reference) > 100) paymentError('Reference number or submission key is too long.', 400);
+if (strlen($paymentRequestKey) > 100 || strlen($reference) > 100) paymentError('Reference number or submission key is too long.', 400);
 
 try {
     $pdo->beginTransaction();
-    $duplicate = $pdo->prepare('SELECT payment_id FROM purchase_order_payments WHERE idempotency_key = :key LIMIT 1');
-    $duplicate->execute([':key' => $idempotencyKey]);
+    $duplicate = $pdo->prepare('SELECT payment_id FROM purchase_order_payments WHERE payment_request_key = :key LIMIT 1');
+    $duplicate->execute([':key' => $paymentRequestKey]);
     if ($duplicate->fetchColumn()) paymentError('This payment submission was already recorded.', 409);
     $orderStatement = $pdo->prepare("SELECT po_id, po_number, final_payment, status FROM purchase_orders WHERE po_id = :po_id LIMIT 1 FOR UPDATE");
     $orderStatement->execute([':po_id' => $poId]);
     $order = $orderStatement->fetch(PDO::FETCH_ASSOC);
     if (!$order) paymentError('Purchase order not found.', 404);
-    if (!in_array($order['status'], ['Delivered', 'Delivered with Return/Damage'], true)) paymentError('Supplier payments can only be recorded for completed receiving records.', 422);
-    $before = purchaseOrderPaymentSummary($pdo, $poId, (float) $order['final_payment']);
+if ($order['status'] !== 'Delivered') paymentError('Supplier payments can only be recorded for completed receiving records.', 422);
+    $effectivePayable = purchaseOrderEffectivePayable($pdo, $poId, (float) $order['final_payment']);
+    if ((float) $order['final_payment'] <= 0 && $effectivePayable > 0) {
+        $pdo->prepare('UPDATE purchase_orders SET final_payment = :payable WHERE po_id = :po_id')
+            ->execute([':payable' => $effectivePayable, ':po_id' => $poId]);
+    }
+    $before = purchaseOrderPaymentSummary($pdo, $poId, $effectivePayable);
     if ($before['remaining_balance'] <= 0) paymentError('This purchase order is already fully paid.', 409);
     if ($expectedRemaining !== null && abs($expectedRemaining - $before['remaining_balance']) >= 0.01) {
         paymentError(
@@ -62,18 +67,18 @@ try {
     if ($amount > $before['remaining_balance']) paymentError('Payment amount exceeds the remaining balance by ₱' . number_format($amount - $before['remaining_balance'], 2) . '.', 422);
     $statement = $pdo->prepare(
         'INSERT INTO purchase_order_payments
-            (payment_id, po_id, amount, payment_method, payment_date, reference_number, remarks, recorded_by, idempotency_key)
+            (payment_id, po_id, amount, payment_method, payment_date, reference_number, remarks, recorded_by, payment_request_key)
          VALUES
-            (:payment_id, :po_id, :amount, :payment_method, :payment_date, :reference_number, :remarks, :recorded_by, :idempotency_key)'
+            (:payment_id, :po_id, :amount, :payment_method, :payment_date, :reference_number, :remarks, :recorded_by, :payment_request_key)'
     );
     $paymentId = newUuid($pdo);
     $statement->execute([
         ':payment_id' => $paymentId, ':po_id' => $poId, ':amount' => $amount, ':payment_method' => $method,
         ':payment_date' => $paymentDate, ':reference_number' => $reference !== '' ? $reference : null,
         ':remarks' => $remarks !== '' ? $remarks : null, ':recorded_by' => $_SESSION['user_id'] ?? null,
-        ':idempotency_key' => $idempotencyKey
+        ':payment_request_key' => $paymentRequestKey
     ]);
-    $summary = synchronizePurchaseOrderPaymentStatus($pdo, $poId, (float) $order['final_payment']);
+    $summary = synchronizePurchaseOrderPaymentStatus($pdo, $poId, $effectivePayable);
     $pdo->commit();
     recordActivityLog($pdo, 'Purchase Order', 'Supplier Payment', 'Supplier payment of ' . number_format($amount, 2) . ' recorded for PO ' . $order['po_number'], $poId);
     echo json_encode([

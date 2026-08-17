@@ -20,6 +20,9 @@ try {
     $amountPaid = cashierMoney($payload['amount_paid'] ?? $payload['cash_received'] ?? 0);
     $cashierDiscountType = strtolower(trim((string) ($payload['cashier_discount_type'] ?? 'none')));
     $cashierDiscountAmount = cashierMoney($payload['cashier_discount_amount'] ?? 0);
+    if (in_array($cashierDiscountType, ['senior', 'pwd'], true)) {
+        throw new RuntimeException('Senior Citizen and PWD VAT exemptions require eligible-item tax classification before they can be applied.');
+    }
     if ($orderId <= 0) {
         http_response_code(400);
         echo json_encode(['status' => 'error', 'message' => 'Missing order_id.']);
@@ -50,7 +53,8 @@ try {
     $totals = cashierPaymentTotals(
         cashierMoney($order['subtotal'] ?? 0),
         $cashierDiscountType,
-        $cashierDiscountAmount
+        $cashierDiscountAmount,
+        cashierMoney($order['discount'] ?? 0)
     );
     $totalAmount = $totals['final_amount'];
     if ($amountPaid <= 0) {
@@ -116,11 +120,15 @@ try {
         "UPDATE sales_orders
          SET status = 'completed',
              assigned_cashier_id = :cashier_id,
+             vat = :vat,
+             total_amount = :total_amount,
              completed_at = NOW()
          WHERE order_id = :order_id"
     );
     $update->execute([
         ':cashier_id' => $cashierId,
+        ':vat' => $totals['vat'],
+        ':total_amount' => $totalAmount,
         ':order_id' => $orderId,
     ]);
 

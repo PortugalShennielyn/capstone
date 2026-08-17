@@ -2,6 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
+require_once 'inventory_stock_summary.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
@@ -30,8 +31,7 @@ function inventoryDateStatus(?string $expiryDate): string
 }
 
 try {
-    ensureProductCategorySchema($pdo);
-
+    $inventoryStockSql = inventoryStockSummarySql();
     $statement = $pdo->prepare(
         "SELECT
             p.product_id,
@@ -40,6 +40,9 @@ try {
             p.barcode,
             p.price,
             p.status AS product_status,
+            p.inventory_unit_id,
+            pmu.unit_name AS inventory_unit_name,
+            COALESCE(NULLIF(pmu.unit_symbol,''),pmu.unit_name) AS inventory_unit_symbol,
             pc.category_name,
             pt.type_name,
             md.generic_name,
@@ -63,29 +66,25 @@ try {
             msd.sterile_status,
             msd.package_type AS medical_package_type,
             msd.pack_content AS medical_pack_content,
-            COALESCE(inv.storage_quantity, 0) AS storage_quantity,
-            COALESCE(inv.shelf_quantity, 0) AS shelf_quantity,
-            COALESCE(inv.damaged_quantity, 0) AS damaged_quantity,
-            COALESCE(inv.returned_quantity, 0) AS returned_quantity,
-            (
-                COALESCE(inv.storage_quantity, 0)
-                + COALESCE(inv.shelf_quantity, 0)
-            ) AS total_quantity,
+            specs.normalized_specification,
+            inv.storage_quantity,
+            inv.shelf_quantity,
+            inv.damaged_quantity,
+            inv.returned_quantity,
+            inv.current_stock_quantity,
+            inv.total_quantity,
+            inv.reorder_level,
+            inv.stock_status,
             inv.nearest_expiry_date,
             COALESCE(inv.active_batch_count, 0) AS active_batch_count,
             recv.latest_received_date AS last_received_date,
             recv.latest_supplier_name,
             recv.latest_po_number,
             COALESCE(cost.unit_cost, p.price, 0) AS inventory_unit_cost,
-            (
-                COALESCE(inv.storage_quantity, 0)
-                + COALESCE(inv.shelf_quantity, 0)
-            ) * COALESCE(cost.unit_cost, p.price, 0) AS inventory_value
-         FROM (
-            SELECT DISTINCT product_id
-            FROM inventory_batches
-         ) received_products
-         INNER JOIN product p ON p.product_id = received_products.product_id
+            inv.total_quantity * COALESCE(cost.unit_cost, p.price, 0) AS inventory_value
+         FROM ({$inventoryStockSql}) inv
+         INNER JOIN product p ON p.product_id = inv.product_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = p.inventory_unit_id
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
@@ -93,33 +92,31 @@ try {
          LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
          LEFT JOIN (
             SELECT
-                ib.product_id,
-                SUM(ib.storage_qty) AS storage_quantity,
-                SUM(COALESCE(selling.shelf_qty, 0)) AS shelf_quantity,
-                SUM(ib.damaged_qty) AS damaged_quantity,
-                SUM(ib.returned_qty) AS returned_quantity,
-                MIN(CASE
-                    WHEN (ib.storage_qty > 0 OR COALESCE(selling.shelf_qty, 0) > 0)
-                     AND ib.batch_status NOT IN ('returned', 'depleted')
-                    THEN ib.expiry_date
-                    ELSE NULL
-                END) AS nearest_expiry_date,
-                SUM(CASE
-                    WHEN (ib.storage_qty > 0 OR COALESCE(selling.shelf_qty, 0) > 0)
-                     AND ib.batch_status NOT IN ('returned', 'depleted')
-                    THEN 1
-                    ELSE 0
-                END) AS active_batch_count
-            FROM inventory_batches ib
-            LEFT JOIN (
-                SELECT source_batch_id, SUM(quantity_remaining) AS shelf_qty
-                FROM product_selling_stock
-                WHERE source_batch_id IS NOT NULL
-                GROUP BY source_batch_id
-            ) selling ON selling.source_batch_id = ib.batch_id
-            WHERE ib.batch_status IN ('active', 'expired', 'damaged', 'returned')
-            GROUP BY ib.product_id
-         ) inv ON inv.product_id = p.product_id
+                psv.product_id,
+                GROUP_CONCAT(
+                    COALESCE(
+                        NULLIF(TRIM(psv.value_text), ''),
+                        NULLIF(TRIM(CONCAT(
+                            TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(psv.value_number AS CHAR))),
+                            CASE
+                                WHEN COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name) IS NULL THEN ''
+                                ELSE CONCAT(' ', COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name))
+                            END
+                        )), '')
+                    )
+                    ORDER BY COALESCE(pts.sort_order, 2147483647), ps.specification_name
+                    SEPARATOR ' • '
+                ) AS normalized_specification
+            FROM product_specification_values psv
+            INNER JOIN product AS specification_product ON specification_product.product_id = psv.product_id
+            INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+            LEFT JOIN product_type_specifications pts
+                ON pts.type_id = specification_product.type_id
+               AND pts.specification_id = psv.specification_id
+            LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = psv.measurement_unit_id
+            WHERE NULLIF(TRIM(psv.value_text), '') IS NOT NULL OR psv.value_number IS NOT NULL
+            GROUP BY psv.product_id
+         ) specs ON specs.product_id = p.product_id
          LEFT JOIN (
             SELECT
                 product_id,
@@ -182,7 +179,7 @@ try {
                 CASE
                     WHEN inv.expiry_date IS NULL THEN 'Not Recorded'
                     WHEN inv.expiry_date < CURDATE() THEN 'Expired'
-                    WHEN inv.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'Expiring Soon'
+                    WHEN inv.expiry_date <= DATE_ADD(CURDATE(), INTERVAL COALESCE(pi.expiry_alert_days, 30) DAY) THEN 'Expiring Soon'
                     ELSE 'Safe'
                 END AS status
              FROM inventory_batches inv
@@ -243,7 +240,7 @@ try {
                 s.supplier_name,
                 por.remarks
              FROM purchase_order_receiving por
-             INNER JOIN purchase_order_receiving_items pori ON pori.receiving_id = por.receiving_id
+             INNER JOIN purchase_order_receiving_item_summary pori ON pori.receiving_id = por.receiving_id
              INNER JOIN purchase_order_items poi ON poi.po_item_id = pori.po_item_id
              INNER JOIN purchase_orders po ON po.po_id = por.po_id
              LEFT JOIN suppliers s ON s.supplier_id = po.supplier_id
@@ -291,7 +288,7 @@ try {
                 po.po_number,
                 por.damage_reason,
                 por.remarks
-             FROM purchase_order_returns por
+             FROM supplier_claim_legacy_projection por
              INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
              INNER JOIN purchase_orders po ON po.po_id = por.po_id
              WHERE poi.product_id IN ({$placeholders})
@@ -313,14 +310,21 @@ try {
         $row['shelf_quantity'] = (int) ($row['shelf_quantity'] ?? 0);
         $row['damaged_quantity'] = (int) ($row['damaged_quantity'] ?? 0);
         $row['total_quantity'] = (int) ($row['total_quantity'] ?? 0);
+        $row['current_stock_quantity'] = (int) ($row['current_stock_quantity'] ?? 0);
+        $row['reorder_level'] = (int) ($row['reorder_level'] ?? INVENTORY_LOW_STOCK_THRESHOLD);
         $row['inventory_unit_cost'] = (float) ($row['inventory_unit_cost'] ?? 0);
         $row['inventory_value'] = (float) ($row['inventory_value'] ?? 0);
         $row['active_batch_count'] = (int) ($row['active_batch_count'] ?? 0);
         $row['product_status'] = strcasecmp(trim((string) ($row['product_status'] ?? 'Active')), 'Inactive') === 0
             ? 'Inactive'
             : 'Active';
-        $row['expiry_status'] = inventoryDateStatus($row['nearest_expiry_date'] ?? null);
         $row['batches'] = $batchesByProduct[$productId] ?? [];
+        $availableBatches = array_values(array_filter($row['batches'], static function (array $batch): bool {
+            $available = (int) ($batch['storage_qty'] ?? 0) + (int) ($batch['shelf_qty'] ?? 0);
+            return $available > 0 && !in_array(strtolower((string) ($batch['batch_status'] ?? 'active')), ['returned', 'depleted'], true);
+        }));
+        $row['has_expiring_batch'] = count(array_filter($availableBatches, static fn (array $batch): bool => ($batch['status'] ?? '') === 'Expiring Soon')) > 0;
+        $row['expiry_status'] = $availableBatches[0]['status'] ?? inventoryDateStatus($row['nearest_expiry_date'] ?? null);
         $row['history'] = $historyByProduct[$productId] ?? [];
 
         usort($row['history'], function ($left, $right) {

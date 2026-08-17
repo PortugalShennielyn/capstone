@@ -5,20 +5,10 @@ require_once '../../config/require_auth.php';
 require_once 'cashier_helpers.php';
 
 try {
-    ensureSalesOrderCashSchema($pdo);
-    ensureCashierPaymentDiscountSchema($pdo);
-
     $tab = strtolower(trim((string) ($_GET['tab'] ?? 'waiting')));
     $search = trim((string) ($_GET['search'] ?? ''));
     $userId = cashierCurrentUserId();
     $isAdmin = cashierIsAdminSession();
-    $debugContext = [
-        'user_id' => $userId,
-        'role' => $_SESSION['role'] ?? '',
-        'roles' => $_SESSION['roles'] ?? [],
-        'role_identifiers' => $_SESSION['role_identifiers'] ?? [],
-        'tab' => $tab,
-    ];
 
     $where = [];
     $params = [];
@@ -62,7 +52,7 @@ try {
             o.cashier_accepted_at,
             o.completed_at,
             COUNT(soi.order_item_id) AS item_count,
-            COALESCE(SUM(soi.quantity), 0) AS total_quantity,
+            COALESCE(SUM(COALESCE(NULLIF(soi.selected_quantity, 0), soi.quantity)), 0) AS total_quantity,
             p.amount_paid,
             p.sales_clerk_discount AS payment_sales_clerk_discount,
             p.cashier_discount_type,
@@ -87,12 +77,9 @@ try {
             END DESC,
             o.order_id DESC
          LIMIT 80";
-    error_log('[DRP_DEBUG] cashier_orders context=' . json_encode($debugContext));
-    error_log('[DRP_DEBUG] cashier_orders sql=' . preg_replace('/\s+/', ' ', $sql) . ' params=' . json_encode($params));
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $orderRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    error_log('[DRP_DEBUG] cashier_orders result_count=' . count($orderRows));
 
     $completedScopeSql = $isAdmin ? '' : ' AND o.assigned_cashier_id = :completed_cashier_id';
     $salesScopeSql = $isAdmin ? '' : ' AND o.assigned_cashier_id = :sales_cashier_id';
@@ -109,7 +96,6 @@ try {
         ':completed_cashier_id' => $userId,
         ':sales_cashier_id' => $userId,
     ];
-    error_log('[DRP_DEBUG] cashier_orders summary_sql=' . preg_replace('/\s+/', ' ', $summaryStmt->queryString) . ' params=' . json_encode($summaryParams));
     $summaryStmt->execute($summaryParams);
     $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 

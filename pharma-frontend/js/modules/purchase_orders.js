@@ -1,5 +1,6 @@
 import PharmaUtils from '../utils.js';
 import { formatProductIdentity, formatProductSpecification } from './product_specification.js';
+import { purchasingConversion, inventoryQuantityFromPurchase } from './purchasing_conversion.js?v=1';
 
 const PURCHASE_ORDER_RUNTIME_VERSION = '70-po-total-column';
 document.documentElement.dataset.purchaseOrderRuntime = PURCHASE_ORDER_RUNTIME_VERSION;
@@ -13,8 +14,13 @@ const STATUS_META = {
     'In transit': '#06b6d4',
     'Arrived': '#8b5cf6',
     'Delivered': '#16a34a',
-    'Return/Damage': '#ef4444',
     'Cancelled': '#64748b'
+};
+
+const OPEN_CLAIMS_META = { label: 'Open Claims', color: '#ef4444' };
+
+const STATUS_LABELS = {
+    'In transit': 'In Transit'
 };
 
 const createDraftItems = [];
@@ -29,6 +35,7 @@ let lastStatusSummaryHtml = '';
 let currentRenderedTableHead = '';
 let selectedCreateDraftIndex = null;
 let activeEditOrder = null;
+let activeViewOrder = null;
 let editMajorFieldsLocked = false;
 let editingPoItemId = null;
 let editingPoItemKey = null;
@@ -522,6 +529,13 @@ function purchaseUnitInfo(item) {
     };
 }
 
+function supplierCostUnitLabel(item) {
+    const purchaseUnit = purchaseUnitInfo(item);
+    return item.cost_basis === 'purchase_unit'
+        ? (purchaseUnit.purchaseUnit || 'purchase unit')
+        : unitPriceLabel(purchaseUnit.singleStockUnit);
+}
+
 function productTableName(item) {
     return cleanText(item.product_display_name) || productDisplayParts(item).product || cleanText(item.product_name);
 }
@@ -634,6 +648,23 @@ function specificationTableCellList(items) {
     return productTableValueList(items, productSpecification, [], { className: 'po-spec-lines' });
 }
 
+function purchaseOrderItemsSummary(items = [], fallbackNames = []) {
+    const source = items.length ? items : fallbackNames.map((name) => ({ product_name: name }));
+    const count = source.length;
+    if (!count) {
+        return '<div class="po-items-summary"><strong>No products</strong></div>';
+    }
+
+    const fullProductName = (item) => cleanText(item.product_name) || productTableProductName(item) || 'Unnamed product';
+    const firstItem = source[0];
+    const firstName = fullProductName(firstItem);
+    const brand = cleanText(firstItem.brand_name);
+    const secondary = count > 1 ? `+${count - 1} more` : (brand && brand.toLowerCase() !== firstName.toLowerCase() ? brand : '');
+    const allNames = source.map(fullProductName).join(', ');
+
+    return `<div class="po-items-summary" title="${escapeHtml(allNames)}"><strong>${escapeHtml(firstName)}</strong>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ''}</div>`;
+}
+
 function unitDisplayFromDetails(item) {
     const category = cleanText(item.category_name).toLowerCase();
     const dosageForm = cleanText(item.dosage_form);
@@ -666,12 +697,22 @@ function sizeDisplayFromDetails(item) {
 
 function statusBadge(status) {
     const color = STATUS_META[status] || '#64748b';
-    return `<span class="badge status-badge text-white" style="background:${color}">${escapeHtml(status)}</span>`;
+    return `<span class="badge status-badge text-white" style="background:${color}">${escapeHtml(STATUS_LABELS[status] || status)}</span>`;
+}
+
+function purchaseOrderStatusStack(order) {
+    const claimBadge = cleanText(order.open_claim_badge);
+    return `<div class="po-status-stack">${statusBadge(order.status)}${claimBadge ? `<span class="po-claim-badge">${escapeHtml(claimBadge)}</span>` : ''}</div>`;
 }
 
 function paymentStatusBadge(status = 'Unpaid') {
-    const normalized = ['Unpaid', 'Partially Paid', 'Fully Paid'].includes(status) ? status : 'Unpaid';
+    const current = status === 'Fully Paid' ? 'Paid' : status;
+    const normalized = ['Unpaid', 'Partially Paid', 'Paid'].includes(current) ? current : 'Unpaid';
     return `<span class="po-payment-badge ${normalized.toLowerCase().replaceAll(' ', '-')}">${escapeHtml(normalized)}</span>`;
+}
+
+function isPurchaseOrderPaid(status, remainingBalance) {
+    return ['Paid', 'Fully Paid'].includes(String(status || '')) || Number(remainingBalance || 0) <= 0;
 }
 
 function validNextStatuses(order) {
@@ -684,12 +725,7 @@ function validNextStatuses(order) {
 }
 
 function isOperationallyLocked(order) {
-    return ['In transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled', 'Rejected'].includes(order.status || '');
-}
-
-function canOpenEditModal(order) {
-    if (isOperationallyLocked(order)) return false;
-    return ['Pending', 'Approved', 'Revision Requested'].includes(order.approval_status || 'Pending');
+    return ['In transit', 'Arrived', 'Delivered', 'Cancelled', 'Rejected'].includes(order.status || '');
 }
 
 function canEditMajorFields(order) {
@@ -763,7 +799,7 @@ function calculatePurchaseItem(item) {
         throw new Error('Units per Purchase Unit must be a positive whole number.');
     }
     if (!Number.isFinite(supplierUnitCost) || supplierUnitCost < 0) {
-        throw new Error('Supplier cost per base unit must be zero or greater.');
+        throw new Error('Supplier cost must be zero or greater.');
     }
 
     const totalBaseUnits = orderQty * unitsPerPurchaseUnit;
@@ -772,7 +808,8 @@ function calculatePurchaseItem(item) {
         throw new Error('The purchase quantity or supplier cost is too large.');
     }
 
-    const lineTotalCents = totalBaseUnits * supplierUnitCostCents;
+    const costQuantity = item.cost_basis === 'purchase_unit' ? orderQty : totalBaseUnits;
+    const lineTotalCents = costQuantity * supplierUnitCostCents;
     if (!Number.isSafeInteger(lineTotalCents)) {
         throw new Error('The purchase-order line total is too large.');
     }
@@ -1701,20 +1738,36 @@ function createPoModalParts() {
     return { modal, dialog, content };
 }
 
-function setCreatePoModalRect(nextRect = {}) {
+function setCreatePoModalRect(nextRect = {}, options = {}) {
     const { modal, dialog } = createPoModalParts();
     if (!modal || !dialog) return;
 
     const current = dialog.getBoundingClientRect();
-    const minWidth = Math.min(720, window.innerWidth - 16);
+    const preferredWidth = Number.parseFloat(modal.dataset.poPreferredWidth || '');
+    const preferredHeight = Number.parseFloat(modal.dataset.poPreferredHeight || '');
+    const minWidth = Math.min(900, window.innerWidth - 16);
     const minHeight = Math.min(540, window.innerHeight - 16);
     const maxWidth = Math.max(minWidth, window.innerWidth - 16);
     const maxHeight = Math.max(minHeight, window.innerHeight - 16);
-    const width = clampNumber(nextRect.width ?? current.width, minWidth, maxWidth);
-    const height = clampNumber(nextRect.height ?? current.height, minHeight, maxHeight);
+    const width = clampNumber(
+        nextRect.width ?? (Number.isFinite(preferredWidth) ? preferredWidth : current.width),
+        minWidth,
+        maxWidth
+    );
+    const height = clampNumber(
+        nextRect.height ?? (Number.isFinite(preferredHeight) ? preferredHeight : current.height),
+        minHeight,
+        maxHeight
+    );
     const left = clampNumber(nextRect.left ?? current.left, 8, Math.max(8, window.innerWidth - width - 8));
     const top = clampNumber(nextRect.top ?? current.top, 8, Math.max(8, window.innerHeight - height - 8));
 
+    if (!Number.isFinite(preferredWidth) || options.rememberUserSize) {
+        modal.dataset.poPreferredWidth = String(width);
+    }
+    if (!Number.isFinite(preferredHeight) || options.rememberUserSize) {
+        modal.dataset.poPreferredHeight = String(height);
+    }
     modal.classList.add('po-modal-positioned');
     modal.style.setProperty('--po-modal-left', `${left}px`);
     modal.style.setProperty('--po-modal-top', `${top}px`);
@@ -1728,7 +1781,7 @@ function centerCreatePoModal() {
     if (!modal || !dialog) return;
 
     const rect = dialog.getBoundingClientRect();
-    const width = Math.min(Math.max(rect.width, 720), window.innerWidth - 16);
+    const width = Math.min(Math.max(rect.width, Math.min(900, window.innerWidth - 16)), window.innerWidth - 16);
     const height = Math.min(Math.max(rect.height, 540), window.innerHeight - 16);
     setCreatePoModalRect({
         width,
@@ -1767,23 +1820,26 @@ function createPoFormHeights() {
     };
 }
 
-function applyCreatePoFormExpansion(nextHeight = null) {
+function applyCreatePoFormExpansion(nextHeight = null, options = {}) {
     const parts = createPoFormHeights();
     if (!parts) return;
     const { modal, body, itemHeight, divider, collapsed, expanded } = parts;
-    const current = Number.parseFloat(modal.dataset.poFormPrimaryHeight || '');
+    const userHeight = Number.parseFloat(modal.dataset.poFormUserPrimaryHeight || '');
     const lowerMinHeight = 220;
     const maxHeightForViewport = Math.max(collapsed, body.clientHeight - itemHeight - divider.offsetHeight - lowerMinHeight - 24);
     const allowedExpanded = clampNumber(Math.min(expanded, maxHeightForViewport), collapsed, expanded);
     const shouldForceCollapsed = allowedExpanded <= collapsed + 2;
     const target = shouldForceCollapsed
         ? collapsed
-        : nextHeight ?? (Number.isFinite(current) ? current : allowedExpanded);
+        : nextHeight ?? (Number.isFinite(userHeight) ? userHeight : allowedExpanded);
     const height = clampNumber(target, collapsed, allowedExpanded);
     const range = Math.max(1, expanded - collapsed);
     const opacity = clampNumber((height - collapsed) / range, 0, 1);
 
     modal.dataset.poFormPrimaryHeight = String(height);
+    if (options.rememberUserHeight) {
+        modal.dataset.poFormUserPrimaryHeight = String(height);
+    }
     modal.classList.toggle('po-form-collapsed', height <= collapsed + 2);
     modal.style.setProperty('--po-form-primary-height', `${height}px`);
     modal.style.setProperty('--po-form-primary-opacity', opacity.toFixed(3));
@@ -1856,7 +1912,10 @@ function initCreatePoModalLayoutControls() {
         const startY = event.clientY;
         const startHeight = Number.parseFloat(modal.dataset.poFormPrimaryHeight || '') || heights.expanded;
 
-        const move = (moveEvent) => applyCreatePoFormExpansion(startHeight + moveEvent.clientY - startY);
+        const move = (moveEvent) => applyCreatePoFormExpansion(
+            startHeight + moveEvent.clientY - startY,
+            { rememberUserHeight: true }
+        );
         const stop = () => {
             divider.classList.remove('is-dragging');
             divider.releasePointerCapture?.(event.pointerId);
@@ -1878,12 +1937,15 @@ function initCreatePoModalLayoutControls() {
         const start = dialog.getBoundingClientRect();
 
         const move = (moveEvent) => {
-            setCreatePoModalRect({
-                left: start.left,
-                top: start.top,
-                width: start.width + moveEvent.clientX - startX,
-                height: start.height + moveEvent.clientY - startY
-            });
+            setCreatePoModalRect(
+                {
+                    left: start.left,
+                    top: start.top,
+                    width: start.width + moveEvent.clientX - startX,
+                    height: start.height + moveEvent.clientY - startY
+                },
+                { rememberUserSize: true }
+            );
         };
         const stop = () => {
             corner.classList.remove('is-dragging');
@@ -2205,22 +2267,86 @@ async function loadSupplierProducts(supplierId, productSelectId = 'po-product-se
 
         productSelect.disabled = products.length === 0;
         if (productSelectId === 'po-product-select') syncPurchaseUnitFieldsFromSelectedProduct();
+        return products;
     } catch (err) {
         productSelect.innerHTML = '<option value="" disabled selected>Unable to load products</option>';
         PharmaUtils.toast.error(err.message);
+        return [];
     }
 }
 
-function renderStatusSummary(counts = {}) {
+async function prefillApprovedPurchaseRequest() {
+    const prId = new URLSearchParams(window.location.search).get('pr_id');
+    if (!prId) return;
+
+    try {
+        const data = await fetchJson(`${API_BASE_URL}/purchase_requests/get_purchase_requests.php`);
+        const request = (data.requests || data.data?.requests || []).find((entry) => String(entry.pr_id) === String(prId));
+        const remainingItems = (request?.items || []).filter((item) => Number(item.remaining_qty || 0) > 0);
+        if (!request || request.status !== 'Approved' || !remainingItems.length) {
+            throw new Error('This purchase request is not available for PO conversion.');
+        }
+
+        let matchedSupplier = null;
+        let matchedProductIds = new Set();
+        for (const supplier of supplierCache) {
+            const products = await loadSupplierProducts(supplier.supplier_id, 'po-product-select');
+            const productIds = new Set(products.map((product) => String(product.product_id)));
+            const coveredIds = new Set(remainingItems.map(item => String(item.product_id)).filter(productId => productIds.has(productId)));
+            if (coveredIds.size > matchedProductIds.size) {
+                matchedSupplier = supplier;
+                matchedProductIds = coveredIds;
+            }
+        }
+        if (!matchedSupplier) {
+            throw new Error('No active supplier is assigned to the remaining products in this approved request.');
+        }
+
+        const supplierSelect = document.getElementById('po-supplier-select');
+        supplierSelect.value = matchedSupplier.supplier_id;
+        await loadSupplierProducts(matchedSupplier.supplier_id, 'po-product-select');
+        const productSelect = document.getElementById('po-product-select');
+        createDraftItems.length = 0;
+        for (const requestItem of remainingItems.filter(item => matchedProductIds.has(String(item.product_id)))) {
+            const option = [...productSelect.options].find((entry) => String(entry.value) === String(requestItem.product_id));
+            const units = Math.max(1, Number(option?.dataset.unitsPerPurchaseUnit || 1));
+            const requestedQty = Number(requestItem.remaining_qty || 0);
+            if (!option || requestedQty <= 0 || requestedQty % units !== 0) {
+                throw new Error(`${requestItem.product_name || 'A requested product'} cannot be ordered in exactly ${requestedQty} base units with its supplier packaging.`);
+            }
+            createDraftItems.push(draftItemFromOption(option, requestedQty / units));
+        }
+
+        renderDraftItems(createDraftItems, '#table-po-items', 'remove-po-item');
+        renderSelectedProductPanel();
+        updateCreateSummary();
+        const badge = document.getElementById('po-conversion-source');
+        if (badge) {
+            badge.classList.remove('d-none');
+            const remainingSupplierCount = remainingItems.length - createDraftItems.length;
+            badge.querySelector('strong').textContent = `${request.pr_number} · ${request.requested_by_name}${remainingSupplierCount > 0 ? ` · ${remainingSupplierCount} item(s) remain for another PO` : ''}`;
+        }
+        showModal('createPurchaseOrderModal');
+    } catch (error) {
+        PharmaUtils.modal.error('Cannot convert purchase request', error.message);
+    }
+}
+
+function renderStatusSummary(counts = {}, openClaimsCount = 0) {
     const container = document.getElementById('po-status-summary');
     if (!container) return;
 
-    const nextHtml = Object.entries(STATUS_META).map(([status, color]) => `
+    const lifecycleCards = Object.entries(STATUS_META).map(([status, color]) => `
         <div class="status-card" style="--status-color:${color}">
-            <strong>${Number(status === 'Return/Damage' ? (counts['Return/Damage'] || counts['Delivered with Return/Damage'] || 0) : (counts[status] || 0))}</strong>
-            <p>${escapeHtml(status)}</p>
+            <strong>${Number(counts[status] || 0)}</strong>
+            <p>${escapeHtml(STATUS_LABELS[status] || status)}</p>
         </div>
     `).join('');
+    const nextHtml = `${lifecycleCards}
+        <div class="status-card status-card-informational" style="--status-color:${OPEN_CLAIMS_META.color}">
+            <strong>${Number(openClaimsCount || 0)}</strong>
+            <p>${escapeHtml(OPEN_CLAIMS_META.label)}</p>
+        </div>`;
 
     if (nextHtml === lastStatusSummaryHtml) return;
 
@@ -2234,20 +2360,32 @@ function renderTableHead(view = currentPoView) {
     const table = document.getElementById('table-purchase-orders');
     if (table) {
         table.dataset.poView = view;
-        const minWidth = view === 'delivered' ? '1810px' : (view === 'arrived' ? '1740px' : (view === 'archived' ? '1880px' : '1690px'));
+        table.closest('.po-table-scroll')?.classList.toggle('po-active-fit', view === 'active');
+        const minWidth = view === 'delivered' ? '1810px' : (view === 'arrived' ? '1740px' : (view === 'archived' ? '1880px' : '0px'));
         table.style.setProperty('min-width', minWidth, 'important');
 
+        const activeColumnWidths = [
+            ['col-po-number', '12%'],
+            ['col-pr-number', '13%'],
+            ['col-supplier', '14%'],
+            ['col-items-summary', '13%'],
+            ['col-money', '9%'],
+            ['col-delivery', '8%'],
+            ['col-terms', '9%'],
+            ['col-status', '12%'],
+            ['col-actions', '10%']
+        ];
         const columnLayouts = {
-            active: ['col-supplier', 'col-brand', 'col-items', 'col-specification', 'col-qty', 'col-purchase-unit', 'col-inventory-qty', 'col-money', 'col-terms', 'col-delivery', 'col-status', 'col-actions'],
+            active: activeColumnWidths.map(([columnClass]) => columnClass),
             arrived: ['col-date', 'col-po-number', 'col-supplier', 'col-brand', 'col-items', 'col-specification', 'col-qty', 'col-money', 'col-terms', 'col-delivery', 'col-status', 'col-actions'],
             delivered: ['col-po-number', 'col-supplier', 'col-specification', 'col-received', 'col-received', 'col-received', 'col-inventory-qty', 'col-money', 'col-money', 'col-money', 'col-money', 'col-payment-status', 'col-date', 'col-actions'],
             archived: ['col-po-number', 'col-supplier', 'col-brand', 'col-items', 'col-specification', 'col-qty', 'col-money', 'col-date', 'col-supplier', 'col-reason', 'col-status', 'col-actions']
         };
         const colgroup = document.getElementById('purchase-orders-colgroup');
         if (colgroup) {
-            colgroup.innerHTML = (columnLayouts[view] || columnLayouts.active)
-                .map((columnClass) => `<col class="${columnClass}">`)
-                .join('');
+            colgroup.innerHTML = view === 'active'
+                ? activeColumnWidths.map(([columnClass, width]) => `<col class="${columnClass}" style="width:${width}">`).join('')
+                : (columnLayouts[view] || columnLayouts.active).map((columnClass) => `<col class="${columnClass}">`).join('');
         }
     }
 
@@ -2262,7 +2400,7 @@ function renderTableHead(view = currentPoView) {
                 <th class="col-specification">Specification</th>
                 <th class="col-qty">Order Qty</th>
                 <th class="col-money">PO Total</th>
-                <th class="col-terms">Payment Terms</th>
+                <th class="col-terms">Payment Mode</th>
                 <th class="col-delivery">ETA</th>
                 <th class="col-status">Status</th>
                 <th class="col-actions">Actions</th>
@@ -2327,18 +2465,15 @@ function renderTableHead(view = currentPoView) {
 
     const nextHead = `
         <tr>
+            <th class="col-po-number">PO Number</th>
+            <th class="col-pr-number">PR Reference</th>
             <th class="col-supplier">Supplier</th>
-            <th class="col-brand">Brand</th>
-            <th class="col-items">Product</th>
-            <th class="col-specification">Specification</th>
-            <th class="col-qty">Order Qty</th>
-            <th class="col-purchase-unit">Purchase Unit</th>
-            <th class="col-inventory-qty">Stock to Receive</th>
+            <th class="col-items-summary">Items</th>
             <th class="col-money">PO Total</th>
-            <th class="col-terms">Payment</th>
             <th class="col-delivery">ETA</th>
+            <th class="col-terms">Payment Mode</th>
             <th class="col-status">Status</th>
-            <th class="col-actions">Actions</th>
+            <th class="col-actions">Action</th>
         </tr>
     `;
     if (currentRenderedTableHead !== nextHead) {
@@ -2366,45 +2501,32 @@ function commitPurchaseOrderTable(view, bodyHtml) {
 
 function renderActivePurchaseOrders(orders) {
     if (orders.length === 0) {
-        commitPurchaseOrderTable('active', tableEmpty(12, 'No active purchase orders found.'));
+        commitPurchaseOrderTable('active', tableEmpty(9, 'No active purchase orders found.'));
         return;
     }
 
     const bodyHtml = orders.map((order) => {
         const items = order.items || [];
         const itemNames = order.item_names || [];
-        const quantities = items.length ? items.map((item) => item.purchase_qty || 0) : (order.quantities || []);
-        const purchaseUnits = items.map((item) => purchaseUnitInfo(item).purchaseUnit || '-');
-        const inventoryQuantities = items.map((item) => {
-            return quantityWithInventoryUnit(item, Number(item.inventory_qty_ordered || inventoryQtyForItem(item) || 0));
-        });
-        const editButton = canOpenEditModal(order)
-            ? `
-                <button class="btn btn-sm btn-outline-secondary edit-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Edit ${escapeHtml(order.po_number)}" title="Edit PO">
-                    <i class="fa-solid fa-pen"></i>
-                </button>
-            `
-            : '';
-
         return `
         <tr>
+            <td class="po-number-cell">${escapeHtml(order.po_number || `PO-${order.po_id}`)}</td>
+            <td class="po-reference-cell"><strong>${escapeHtml(order.pr_number || 'Historical / Manual')}</strong>${order.pr_number ? '<span>Automatic PO</span>' : '<span>Manual record</span>'}</td>
             <td class="po-supplier-cell">${escapeHtml(order.supplier_name)}</td>
-            <td class="po-brand-cell">${brandTableCellList(items)}</td>
-            <td class="po-product-cell">${productTableCellList(items, itemNames)}</td>
-            <td class="po-spec-cell">${specificationTableCellList(items)}</td>
-            <td class="po-qty-cell">${numberedList(quantities, { plain: true })}</td>
-            <td>${numberedList(purchaseUnits)}</td>
-            <td class="po-qty-cell">${numberedList(inventoryQuantities, { plain: true })}</td>
+            <td class="po-items-summary-cell">${purchaseOrderItemsSummary(items, itemNames)}</td>
             <td class="po-price-cell"><span class="po-money">${peso(order.total_amount)}</span></td>
-            <td>${escapeHtml(order.payment_terms || 'Not set')}</td>
             <td class="po-delivery-cell">${formatDate(order.expected_delivery_date)}</td>
-            <td class="po-status-cell">${statusBadge(order.status)}</td>
+            <td>${escapeHtml(order.payment_terms || 'Not set')}</td>
+            <td class="po-status-cell">${purchaseOrderStatusStack(order)}</td>
             <td class="po-actions-cell">
                 <div class="po-actions">
                     <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number)}" title="View PO">
                         <i class="fa-regular fa-eye"></i>
                     </button>
-                    ${editButton}
+                    <button class="btn btn-sm btn-outline-dark print-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Print ${escapeHtml(order.po_number)}" title="Print PO">
+                        <i class="fa-solid fa-print"></i>
+                    </button>
+                    ${order.status === 'Delivered' && !isPurchaseOrderPaid(order.payment_status, order.remaining_balance ?? order.final_payment) ? `<button class="btn btn-sm btn-purple manage-payment-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Manage Payment for ${escapeHtml(order.po_number || '')}" title="Manage Payment"><i class="fa-solid fa-wallet"></i></button>` : ''}
                     ${statusActionButton(order)}
                 </div>
             </td>
@@ -2441,9 +2563,8 @@ function renderArrivedPurchaseOrders(orders) {
                 <td class="po-status-cell">${statusBadge(order.status || 'Arrived')}${order.inspection_in_progress ? '<span class="badge bg-info text-dark d-block mt-1">Inspection in Progress</span>' : ''}</td>
                 <td class="po-actions-cell">
                     <div class="po-actions">
-                        <button class="btn btn-sm btn-outline-primary receive-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Inspect PO ${escapeHtml(order.po_number || '')}" title="Inspect delivery">
-                            <i class="fa-solid fa-clipboard-check"></i>
-                        </button>
+                        <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || '')}" title="View PO"><i class="fa-regular fa-eye"></i></button>
+                        <button class="btn btn-sm btn-outline-dark print-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Print ${escapeHtml(order.po_number || '')}" title="Print PO"><i class="fa-solid fa-print"></i></button>
                         ${statusActionButton(order)}
                     </div>
                 </td>
@@ -2488,10 +2609,10 @@ function renderDeliveredPurchaseOrders(orders) {
                 <td>${paymentStatusBadge(order.payment_status || 'Unpaid')}</td>
                 <td>${formatDate(deliveryDate)}</td>
                 <td class="po-actions-cell">
-                    <div class="po-payment-actions">
-                        <button class="btn btn-sm btn-outline-primary view-receiving-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View Receiving for ${escapeHtml(order.po_number || '')}" title="View Receiving"><i class="fa-regular fa-eye"></i></button>
-                        <button class="btn btn-sm btn-outline-secondary print-delivered-grn-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Print GRN for ${escapeHtml(order.po_number || '')}" title="Print GRN"><i class="fa-solid fa-print"></i></button>
-                        ${String(order.payment_status) !== 'Fully Paid' && Number(order.remaining_balance ?? order.final_payment) > 0 ? `<button class="btn btn-sm btn-purple manage-payment-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Manage Payment for ${escapeHtml(order.po_number || '')}" title="Manage Payment"><i class="fa-solid fa-wallet"></i></button>` : ''}
+                    <div class="po-actions">
+                        <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || '')}" title="View PO"><i class="fa-regular fa-eye"></i></button>
+                        <button class="btn btn-sm btn-outline-dark print-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Print ${escapeHtml(order.po_number || '')}" title="Print PO"><i class="fa-solid fa-print"></i></button>
+                        ${!isPurchaseOrderPaid(order.payment_status, order.remaining_balance ?? order.final_payment) ? `<button class="btn btn-sm btn-purple manage-payment-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Manage Payment for ${escapeHtml(order.po_number || '')}" title="Manage Payment"><i class="fa-solid fa-wallet"></i></button>` : ''}
                     </div>
                 </td>
             </tr>
@@ -2507,61 +2628,20 @@ async function loadPurchaseOrders(options = {}) {
     const viewAtRequest = currentPoView;
 
     try {
-        const statusFilter = viewAtRequest === 'active' ? (document.getElementById('po-status-filter')?.value || '') : '';
-        const query = viewAtRequest === 'delivered'
-            ? '?scope=complete'
-            : (viewAtRequest === 'arrived'
-                ? '?status=Arrived'
-                : (viewAtRequest === 'archived'
-                    ? '?status=Cancelled'
-                    : (statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '')));
+        const statusFilter = document.getElementById('po-status-filter')?.value || '';
+        const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '?scope=all';
         const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_orders.php${query}`);
 
         if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;
 
         let orders = data.purchase_orders || [];
-        if (viewAtRequest === 'active' && !statusFilter && orders.length === 0) {
-            const activeCount = ['Pending', 'In transit']
-                .reduce((total, status) => total + Number(data.status_counts?.[status] || 0), 0);
-
-            if (activeCount > 0) {
-                const fallback = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_orders.php?scope=all&t=${Date.now()}`);
-                if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;
-                orders = (fallback.purchase_orders || []).filter((order) =>
-                    ['Pending', 'In transit'].includes(order.status) && order.approval_status !== 'Rejected'
-                );
-                data.status_counts = fallback.status_counts || data.status_counts;
-            }
-        }
-
-        if (updateSummary) renderStatusSummary(data.status_counts || {});
-        if (viewAtRequest === 'arrived') {
-            renderArrivedPurchaseOrders(orders);
-        } else if (viewAtRequest === 'delivered') {
-            renderDeliveredPurchaseOrders(orders);
-        } else if (viewAtRequest === 'archived') {
-            renderArchivedPurchaseOrders(orders);
-        } else {
-            renderActivePurchaseOrders(orders);
-            window.setTimeout(() => {
-                if (
-                    loadToken === purchaseOrdersLoadToken
-                    && currentPoView === 'active'
-                    && orders.length > 0
-                    && !document.querySelector('#table-purchase-orders tbody')?.textContent.trim()
-                ) {
-                    renderActivePurchaseOrders(orders);
-                }
-            }, 250);
-        }
+        if (updateSummary) renderStatusSummary(data.status_counts || {}, data.open_claims_count || 0);
+        renderActivePurchaseOrders(orders);
     } catch (err) {
         if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;
 
         if (updateSummary) renderStatusSummary({});
-        if (viewAtRequest === 'arrived') renderArrivedPurchaseOrders([]);
-        else if (viewAtRequest === 'delivered') renderDeliveredPurchaseOrders([]);
-        else if (viewAtRequest === 'archived') renderArchivedPurchaseOrders([]);
-        else renderActivePurchaseOrders([]);
+        renderActivePurchaseOrders([]);
         PharmaUtils.toast.error(err.message);
     }
 }
@@ -2594,15 +2674,7 @@ function setPurchaseOrderView(view, options = {}) {
 }
 
 function purchaseOrderViewFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    const tab = String(params.get('tab') || '').trim().toLowerCase();
-    const viewMap = {
-        active: 'active',
-        arrived: 'arrived',
-        delivered: 'delivered',
-        archived: 'archived'
-    };
-    return viewMap[tab] || 'active';
+    return 'active';
 }
 
 function renderDraftItems(items, tableSelector, removeClass) {
@@ -2861,6 +2933,8 @@ function purchaseOrderPayload(prefix, items, poId = null) {
 
     if (poId) {
         payload.po_id = poId;
+    } else {
+        payload.pr_id = new URLSearchParams(window.location.search).get('pr_id') || '';
     }
 
     return payload;
@@ -2953,7 +3027,7 @@ async function populateEditPurchaseOrder(order) {
 function applyEditLocks(order) {
     const lockedTitle = isOperationallyLocked(order)
         ? `Items cannot be changed while this purchase order is ${order.status}.`
-        : 'Item changes are locked after owner approval.';
+        : 'Item changes are locked after an approved PR is converted to a purchase order.';
     const lockMajor = !canEditMajorFields(order);
     const lockAll = isOperationallyLocked(order);
     editMajorFieldsLocked = lockMajor || lockAll;
@@ -3007,99 +3081,38 @@ function applyEditLocks(order) {
 async function openViewPurchaseOrder(poId) {
     try {
         const order = await getPurchaseOrder(poId);
+        activeViewOrder = order;
         document.getElementById('viewPoNumber').textContent = order.po_number;
-        document.getElementById('viewPoDetails').innerHTML = `
-            <div class="po-detail-box"><span>Supplier</span><strong>${escapeHtml(order.supplier_name)}</strong></div>
-            <div class="po-detail-box"><span>Order Date</span><strong>${formatDate(order.order_date)}</strong></div>
-            <div class="po-detail-box"><span>Payment</span><strong>${escapeHtml(order.payment_terms)}</strong></div>
-            <div class="po-detail-box"><span>ETA</span><strong>${formatDate(order.expected_delivery_date)}</strong></div>
-            <div class="po-detail-box"><span>Total Amount</span><strong>${peso(order.total_amount)}</strong></div>
-            <div class="po-detail-box"><span>Adjusted Payable</span><strong>${peso(order.final_payment)}</strong></div>
-            <div class="po-detail-box"><span>Payment State</span><strong>${escapeHtml(order.payment_state || 'Unpaid')}</strong></div>
-            <div class="po-detail-box"><span>Status</span><strong>${escapeHtml(order.status)}</strong></div>
-        `;
-        document.getElementById('viewPoItems').innerHTML = order.items.map((item) => {
-            const purchaseUnit = purchaseUnitInfo(item);
-            const stockToReceive = quantityWithInventoryUnit(item, Number(item.inventory_qty_ordered || inventoryQtyForItem(item) || 0));
-
-            return `
-                <tr>
-                    <td>${escapeHtml(productTableBrand(item) || '-')}</td>
-                    <td>${escapeHtml(productTableProductName(item))}${inactivePoProductWarning(item)}</td>
-                    <td>${escapeHtml(productSpecification(item) || '-')}</td>
-                    <td>${peso(item.price)} / ${escapeHtml(unitPriceLabel(purchaseUnit.singleStockUnit))}</td>
-                    <td>${escapeHtml(purchaseUnitQuantityLabel(item))}</td>
-                    <td>${escapeHtml(purchaseUnit.conversionNote || '-')}</td>
-                    <td>${escapeHtml(stockToReceive)}</td>
-                    <td>${escapeHtml(item.received_quantity || 0)}</td>
-                    <td>
-                        ${escapeHtml(item.damaged_quantity || 0)}
-                        ${Number(item.returned_quantity || 0) > 0 ? `
-                            <div class="small text-danger fw-bold mt-1" title="${escapeHtml(item.return_reasons || '')}">
-                                Returned Qty: ${escapeHtml(item.returned_quantity)}
-                            </div>
-                            <div class="small text-muted">${escapeHtml(item.return_reasons || 'No reason')}</div>
-                        ` : ''}
-                    </td>
-                    <td>${peso(item.returned_amount)}</td>
-                    <td>${peso(productLineTotal(item))}</td>
-                </tr>
-            `;
-        }).join('');
+        const generatedDocument = document.getElementById('generatedPoDocument');
+        const generatedFrame = document.getElementById('generatedPoFrame');
+        generatedDocument.hidden = false;
+        generatedFrame.style.height = '1123px';
+        generatedFrame.src = `purchase_order_print.html?po_id=${encodeURIComponent(order.po_id)}&embed=1`;
+        const modalBody = document.querySelector('#viewPurchaseOrderModal .modal-body');
+        if (modalBody) modalBody.scrollTop = 0;
         showModal('viewPurchaseOrderModal');
+        window.requestAnimationFrame(() => { if (modalBody) modalBody.scrollTop = 0; });
     } catch (err) {
         PharmaUtils.toast.error(err.message);
     }
 }
 
-async function openEditPurchaseOrder(poId) {
-    try {
-        const order = await getPurchaseOrder(poId);
-        if (!canOpenEditModal(order)) {
-            PharmaUtils.toast.info('This purchase order is locked after processing.');
-            await openViewPurchaseOrder(poId);
-            return;
-        }
-        await populateEditPurchaseOrder(order);
-        showModal('editPurchaseOrderModal');
-    } catch (err) {
-        PharmaUtils.toast.error(err.message);
-    }
-}
+window.addEventListener('message', (event) => {
+    const frame = document.getElementById('generatedPoFrame');
+    if (event.origin !== window.location.origin || event.source !== frame?.contentWindow || event.data?.type !== 'drp:purchase-order-preview-ready') return;
+    frame.style.height = `${Math.max(1123, Number(event.data.height || 1123))}px`;
+    const modalBody = document.querySelector('#viewPurchaseOrderModal .modal-body');
+    if (modalBody) modalBody.scrollTop = 0;
+});
 
-async function updatePurchaseOrder() {
-    const saveButton = document.getElementById('btnUpdatePo');
-    if (saveButton?.dataset.saving === 'true') return;
-    try {
-        if (saveButton) {
-            saveButton.dataset.saving = 'true';
-            saveButton.disabled = true;
-            saveButton.textContent = 'Saving...';
-        }
-        const poId = document.getElementById('edit-po-id')?.value;
-        const payload = purchaseOrderPayload('edit-po', editDraftItems, poId);
-        PharmaUtils.modal.loading('Updating Purchase Order...');
-        await fetchJson(`${API_BASE_URL}/purchase_orders/update_po.php`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const refreshedOrder = await getPurchaseOrder(poId);
-        await populateEditPurchaseOrder(refreshedOrder);
-        PharmaUtils.modal.close();
-        hideModal('editPurchaseOrderModal');
-        await loadPurchaseOrders({ updateSummary: true });
-        await PharmaUtils.modal.success('Purchase Order Updated', 'The purchase order was updated successfully.');
-    } catch (err) {
-        PharmaUtils.modal.close();
-        PharmaUtils.modal.error('Failed to update purchase order', err.message);
-    } finally {
-        if (saveButton) {
-            saveButton.dataset.saving = 'false';
-            saveButton.textContent = activeEditOrder?.approval_status === 'Revision Requested' ? 'Resubmit for Approval' : 'Save Changes';
-            saveButton.disabled = editDraftItems.length === 0 || Boolean(activeEditOrder && isOperationallyLocked(activeEditOrder));
-        }
-    }
+function printPurchaseOrder(order) {
+    if (!order) throw new Error('Open a purchase order before printing.');
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) throw new Error('Allow pop-ups to print this purchase order.');
+    const token = sessionStorage.getItem('pharma_tab_token');
+    if (token) printWindow.sessionStorage.setItem('pharma_tab_token', token);
+    printWindow.opener = null;
+    printWindow.location.replace(`purchase_order_print.html?po_id=${encodeURIComponent(order.po_id)}&print=1`);
 }
 
 async function updatePurchaseOrderStatusFromTable(poId) {
@@ -3165,15 +3178,20 @@ async function updatePurchaseOrderStatusFromTable(poId) {
     }
 }
 
-const RECEIVE_ISSUE_TYPES = ['Expired', 'Broken package', 'Wrong item delivered', 'Incorrect quantity', 'Damaged during delivery', 'Other'];
+const RECEIVE_ISSUE_TYPES = ['Damaged Product', 'Broken Package', 'Expired', 'Wrong Item', 'Short Quantity', 'Other'];
+const RECEIVE_DISPOSITIONS = [
+    ['return_to_supplier', 'Return to Supplier'],
+    ['hold_quarantine', 'Hold / Quarantine'],
+    ['dispose', 'Dispose']
+];
 const RECEIVE_RESOLUTIONS = [
-    ['return_for_credit', 'Return for supplier credit'],
-    ['return_for_replacement', 'Return for replacement'],
-    ['keep_with_discount', 'Keep with supplier discount'],
-    ['keep_damaged', 'Keep as damaged stock'],
-    ['reject_without_replacement', 'Reject without replacement']
+    ['replacement', 'Replacement'],
+    ['supplier_credit', 'Supplier Credit'],
+    ['next_po_credit', 'Credit on Next PO'],
+    ['no_compensation', 'No Supplier Compensation']
 ];
 let receiveSubmitting = false;
+let receiveValidationAttempted = false;
 
 function receiveDraftItem(item) {
     const draftItems = activeReceiveOrder?.inspection_draft?.items || [];
@@ -3195,20 +3213,109 @@ function receiveBatchRow(batch = {}, requiresExpiry = false, autoAllocate = fals
 }
 
 function receiveQuantityModel(orderItem = {}, values = {}) {
+    const conversion = purchasingConversion({
+        purchase_unit: orderItem.purchase_unit,
+        inventory_unit: orderItem.unit || 'unit',
+        units_per_purchase_unit: orderItem.units_per_purchase_unit || 1
+    });
     const ordered = Number(orderItem.inventory_qty_ordered || orderItem.quantity || 0);
-    const delivered = Number(values.delivered_quantity ?? values.received_quantity ?? ordered);
-    const damaged = Number(values.damaged_quantity ?? 0);
+    const orderedPurchase = Number(orderItem.purchase_qty || (ordered / conversion.baseQtyPerPurchaseUnit) || 0);
+    const hasPurchaseValue = Object.prototype.hasOwnProperty.call(values, 'delivered_purchase_quantity');
+    const hasLegacyValue = Object.prototype.hasOwnProperty.call(values, 'delivered_quantity') || Object.prototype.hasOwnProperty.call(values, 'received_quantity');
+    const deliveredPurchase = Number(hasPurchaseValue
+        ? values.delivered_purchase_quantity
+        : (hasLegacyValue ? Number(values.delivered_quantity ?? values.received_quantity ?? 0) / conversion.baseQtyPerPurchaseUnit : orderedPurchase));
+    const delivered = inventoryQuantityFromPurchase(deliveredPurchase, conversion);
+    const damaged = Math.max(0, Number(values.damaged_base_quantity ?? values.damaged_quantity ?? 0));
+    const action = Math.max(0, Number(values.action_base_quantity ?? values.action_quantity ?? damaged));
     const missing = Math.max(0, ordered - delivered);
-    const affected = Math.max(0, damaged) + missing;
-    const resolution = values.resolution || (values.damage_action === 'return' ? 'return_for_credit' : (values.damage_action === 'keep' ? 'keep_damaged' : 'none'));
-    const returned = ['return_for_credit', 'return_for_replacement'].includes(resolution) ? Math.max(0, damaged) : 0;
-    const disposed = resolution === 'reject_without_replacement' ? Math.max(0, damaged) : 0;
-    const accepted = Math.max(0, delivered - returned - disposed);
+    const affected = Math.max(action, damaged) + missing;
+    const legacyResolution = values.resolution || 'none';
+    const resolution = ({ return_for_replacement: 'replacement', return_for_credit: 'supplier_credit', keep_with_discount: 'supplier_credit', reject_without_replacement: 'no_compensation', keep_damaged: 'no_compensation' })[legacyResolution] || legacyResolution;
+    const legacyDisposition = values.disposition || values.damage_action || '';
+    const disposition = ({ return: 'return_to_supplier', keep: 'hold_quarantine' })[legacyDisposition] || legacyDisposition;
+    const returned = disposition === 'return_to_supplier' ? action : 0;
+    const disposed = disposition === 'dispose' ? action : 0;
+    const quarantined = disposition === 'hold_quarantine' ? action : 0;
+    const accepted = Math.max(0, delivered - action);
     const resolved = affected > 0 && resolution !== 'none' ? affected : 0;
     const unitPrice = Number(orderItem.price || 0);
-    const supplierCredit = ['return_for_credit', 'reject_without_replacement'].includes(resolution) ? affected * unitPrice : 0;
-    const replacementPending = resolution === 'return_for_replacement' ? affected * unitPrice : 0;
-    return { ordered, delivered, damaged, missing, accepted, affected, resolution, returned, disposed, resolved, unitPrice, supplierCredit, replacementPending };
+    return { ordered, orderedPurchase, deliveredPurchase, delivered, damaged, action, missing, accepted, affected, disposition, resolution, returned, disposed, quarantined, resolved, unitPrice, conversion };
+}
+
+function receiveConversionOptions(conversions, selectedId, inventoryUnit) {
+    const rows = Array.isArray(conversions) && conversions.length
+        ? conversions
+        : [{ conversion_id: '', unit_name: inventoryUnit, base_quantity: 1 }];
+    return rows.map((entry) => {
+        const factor = Number(entry.base_quantity || 1);
+        const label = `${entry.unit_name} — ${factor} ${inventoryUnit}`;
+        return `<option value="${escapeHtml(entry.conversion_id)}" data-base-quantity="${factor}" data-unit-name="${escapeHtml(entry.unit_name)}" ${String(entry.conversion_id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    }).join('');
+}
+
+function receiveUnitCountLabel(quantity, unitName) {
+    const count = Number(quantity || 0);
+    const unit = String(unitName || 'unit');
+    if (count === 1 || /^pc(s)?$/i.test(unit)) return `${count} ${unit}`;
+    if (/[^aeiou]y$/i.test(unit)) return `${count} ${unit.slice(0, -1)}ies`;
+    if (/(s|x|z|ch|sh)$/i.test(unit)) return `${count} ${unit}es`;
+    return `${count} ${unit}s`;
+}
+
+function receiveBaseQuantityBreakdown(quantity, conversions, inventoryUnit) {
+    let remaining = Math.max(0, Math.trunc(Number(quantity || 0)));
+    const rows = (Array.isArray(conversions) ? [...conversions] : [])
+        .filter((entry) => Number(entry.base_quantity || 0) > 0)
+        .sort((left, right) => Number(right.base_quantity) - Number(left.base_quantity));
+    const parts = [];
+    rows.forEach((entry) => {
+        const factor = Number(entry.base_quantity);
+        const count = Math.floor(remaining / factor);
+        if (count <= 0) return;
+        parts.push(receiveUnitCountLabel(count, entry.unit_name));
+        remaining -= count * factor;
+    });
+    if (remaining > 0 || !parts.length) parts.push(receiveUnitCountLabel(remaining, inventoryUnit));
+    return parts.join(' + ');
+}
+
+function receiveReceivedHierarchy(purchaseQuantity, conversion, conversions) {
+    const receivedBase = inventoryQuantityFromPurchase(Number(purchaseQuantity || 0), conversion);
+    const parts = (Array.isArray(conversions) ? [...conversions] : [])
+        .filter((entry) => Number(entry.base_quantity || 0) > 0 && receivedBase % Number(entry.base_quantity) === 0)
+        .sort((left, right) => Number(right.base_quantity) - Number(left.base_quantity))
+        .map((entry) => receiveUnitCountLabel(receivedBase / Number(entry.base_quantity), entry.unit_name));
+    const receivedLabel = receiveUnitCountLabel(purchaseQuantity, conversion.purchaseUnit);
+    const remainder = parts.filter((part) => part !== receivedLabel);
+    return `${receivedLabel} received${remainder.length ? ` = ${remainder.join(' = ')}` : ''}`;
+}
+
+function receiveDamageLineRow(line, conversions, inventoryUnit) {
+    const rows = Array.isArray(conversions) && conversions.length ? conversions : [{ conversion_id: '', unit_name: inventoryUnit, base_quantity: 1 }];
+    const base = rows.find((entry) => Number(entry.base_quantity) === 1) || rows[rows.length - 1];
+    const packages = rows.filter((entry) => Number(entry.base_quantity) > 1);
+    const affectedOptions = packages.length ? packages : rows;
+    const defaultAffected = [...affectedOptions].sort((left, right) => Number(left.base_quantity) - Number(right.base_quantity))[0];
+    const selectedAffected = affectedOptions.find((entry) => String(entry.conversion_id) === String(line?.affected_unit_conversion_id)) || defaultAffected;
+    return `<div class="receive-damage-line" data-affected-sequence="0">
+        <strong class="receive-damage-line-label">${escapeHtml(selectedAffected?.unit_name || 'Unit')}</strong>
+        <div class="receive-field"><label>Affected Unit</label><select class="form-select damage-affected-unit">${affectedOptions.map((entry) => `<option value="${escapeHtml(entry.conversion_id)}" data-base-quantity="${Number(entry.base_quantity || 1)}" data-unit-name="${escapeHtml(entry.unit_name)}" ${String(entry.conversion_id) === String(selectedAffected?.conversion_id) ? 'selected' : ''}>${escapeHtml(`${entry.unit_name} — ${Number(entry.base_quantity || 1)} ${inventoryUnit}`)}</option>`).join('')}</select></div>
+        <div class="receive-field"><label>Damaged Pieces</label><div class="receive-damage-piece-control"><input class="form-control damage-line-qty" type="number" min="1" step="1" value="${escapeHtml(line?.damaged_quantity ?? '')}" placeholder="Qty"><span>${escapeHtml(base?.unit_name || inventoryUnit)}</span></div><small class="receive-field-error damage-line-error"></small></div>
+        <button class="btn btn-sm btn-outline-danger receive-remove-damage-line" type="button" title="Remove affected package" aria-label="Remove affected package"><i class="fa-solid fa-trash"></i></button>
+        <input class="damage-unit-conversion" type="hidden" value="${escapeHtml(base?.conversion_id || '')}">
+    </div>`;
+}
+
+function receiveQuantityValuesWithConversions(orderItem, values = {}) {
+    const conversions = Array.isArray(orderItem?.package_conversions) ? orderItem.package_conversions : [];
+    const factorFor = (conversionId) => Number(conversions.find((entry) => String(entry.conversion_id) === String(conversionId))?.base_quantity || 1);
+    if (!Object.prototype.hasOwnProperty.call(values, 'action_quantity') && !values.damaged_unit_conversion_id) return values;
+    return {
+        ...values,
+        damaged_base_quantity: Number(values.damaged_quantity || 0) * factorFor(values.damaged_unit_conversion_id),
+        action_base_quantity: Number(values.action_quantity || 0) * factorFor(values.action_unit_conversion_id)
+    };
 }
 
 function renderReceiveItems(order) {
@@ -3216,13 +3323,32 @@ function renderReceiveItems(order) {
     if (!container) return;
     container.innerHTML = (order.items || []).map((item, index) => {
         const draft = receiveDraftItem(item);
-        const quantities = receiveQuantityModel(item, draft);
-        const { ordered, delivered, damaged, accepted } = quantities;
+        const packageConversions = Array.isArray(item.package_conversions) ? item.package_conversions : [];
+        const baseConversion = packageConversions.find((entry) => Number(entry.base_quantity) === 1)
+            || packageConversions[packageConversions.length - 1]
+            || { conversion_id: '', unit_name: item.unit || 'unit', base_quantity: 1 };
+        const actionConversion = packageConversions.find((entry) => entry.conversion_id === (draft.action_unit_conversion_id || draft.unit_conversion_id))
+            || baseConversion;
+        const legacySelectedQuantity = draft.affected_quantity ?? '';
+        const damageLines = Array.isArray(draft.damage_lines) ? draft.damage_lines : [];
+        if (!damageLines.length && Number(draft.damaged_base_quantity || draft.damaged_quantity || 0) > 0) {
+            damageLines.push({ affected_unit_conversion_id: draft.damaged_unit_conversion_id || baseConversion.conversion_id, damaged_quantity: Number(draft.damaged_base_quantity || draft.damaged_quantity || 0), damaged_unit_conversion_id: baseConversion.conversion_id });
+        }
+        const actionInput = draft.action_quantity ?? legacySelectedQuantity;
+        const damagedBase = damageLines.reduce((sum, line) => sum + Number(line.damaged_quantity || 0) * Number(packageConversions.find((entry) => String(entry.conversion_id) === String(line.damaged_unit_conversion_id))?.base_quantity || 1), 0);
+        const actionBase = Number(actionInput || 0) * Number(actionConversion.base_quantity || 1);
+        const quantities = receiveQuantityModel(item, { ...draft, damaged_base_quantity: damagedBase, action_base_quantity: actionBase });
+        const { ordered, orderedPurchase, deliveredPurchase, delivered, damaged, accepted, conversion } = quantities;
         const requiresExpiry = isMedicineItem(item);
         const batches = Array.isArray(draft.batches) && draft.batches.length
             ? draft.batches
             : (accepted > 0 ? [{ quantity: accepted, expiry_date: '', no_expiry: !requiresExpiry, auto_allocate: true }] : []);
         const resolution = quantities.resolution;
+        const disposition = quantities.disposition;
+        const hasIssue = draft.has_issue === true || draft.has_issue === 1 || draft.has_issue === '1' || quantities.affected > 0;
+        const storedIssueType = String(draft.issue_type || '');
+        const draftIssueType = storedIssueType.startsWith('Other:') ? 'Other' : storedIssueType;
+        const draftIssueDetail = String(draft.issue_detail || (storedIssueType.startsWith('Other:') ? storedIssueType.slice(6).trim() : ''));
         const productName = productTableProductName(item);
         const brandName = productTableBrand(item);
         const subtitle = [productSpecification(item), productSizeValue(item), unitDisplayFromDetails(item), productPackagingValue(item)].filter(Boolean).join(' · ');
@@ -3232,10 +3358,9 @@ function renderReceiveItems(order) {
                 <span class="receive-item-index">${index + 1}</span>
                 <span class="receive-card-title"><strong>${escapeHtml([brandName, productName].filter(Boolean).join(' — '))}</strong><small>${escapeHtml(subtitle || quantityWithInventoryUnit(item, ordered))}</small></span>
                 <span class="receive-item-result">
-                    <span>Ordered<b class="receive-header-ordered">${ordered}</b></span>
-                    <span>Accepted<b class="receive-header-accepted">${accepted}</b></span>
-                    <span>Damaged<b class="receive-header-damaged">${Number(damaged)}</b></span>
-                    <span>Returned<b class="receive-header-returned">${quantities.returned}</b></span>
+                    <span>Ordered<b class="receive-header-ordered">${orderedPurchase} ${escapeHtml(conversion.purchaseUnit)}</b></span>
+                    <span>Accepted<b class="receive-header-accepted">${accepted} ${escapeHtml(conversion.inventoryUnit)}</b></span>
+                    <span>Unavailable<b class="receive-header-affected">${quantities.affected} ${escapeHtml(conversion.inventoryUnit)}</b></span>
                 </span>
                 <span class="receive-status-stack"><span class="receive-inspection-badge">Waiting</span><span class="receive-issue-flag d-none">Issue Found</span></span>
             </button>
@@ -3243,47 +3368,51 @@ function renderReceiveItems(order) {
             <div class="receive-card-body ${index === 0 ? '' : 'd-none'}">
                 <div class="receive-product-facts">
                     <div><span>Brand</span><strong>${escapeHtml(brandName || '-')}</strong></div>
-                    <div><span>Generic</span><strong>${escapeHtml(item.generic_name || item.variant_flavor || '-')}</strong></div>
+                    <div><span>Product</span><strong>${escapeHtml(productName || '-')}</strong></div>
                     <div><span>Specification</span><strong>${escapeHtml(productSpecification(item) || '-')}</strong></div>
-                    <div><span>Strength</span><strong>${escapeHtml(item.strength || productSizeValue(item) || '-')}</strong></div>
-                    <div><span>Packaging</span><strong>${escapeHtml([unitDisplayFromDetails(item), productPackagingValue(item)].filter(Boolean).join(' · ') || '-')}</strong></div>
-                    <div class="receive-financial-fact"><span>Unit Price</span><strong>${peso(item.price || 0)}</strong></div>
-                    <div class="receive-financial-fact"><span>Original Line Total</span><strong>${peso(productLineTotal(item))}</strong></div>
+                    <div><span>Purchase Unit</span><strong>${escapeHtml(conversion.purchaseUnit)}</strong></div>
+                    <div><span>Inventory Equivalent</span><strong>${ordered} ${escapeHtml(conversion.inventoryUnit)}</strong></div>
                 </div>
                 <div class="receive-form-grid">
                     <section class="receive-process-card receiving-inspection-card receive-scroll-target">
-                        <div class="section-card-heading"><span class="section-card-icon inspection"><i class="fa-solid fa-clipboard-check"></i></span><div><span class="section-eyebrow">Section 1</span><h3>Receiving Inspection</h3></div></div>
-                        <div class="receive-quantity-grid">
-                            <div class="receive-field receive-quantity-anchor"><label>Ordered Qty</label><div class="receive-calculated receive-ordered-qty">${ordered}</div></div>
-                            <div class="receive-field"><label>Received Qty</label><input class="form-control receive-qty-input" type="number" min="0" step="1" value="${escapeHtml(delivered)}"></div>
-                            <div class="receive-field receive-damage-anchor"><label>Damaged Qty</label><input class="form-control damaged-qty-input" type="number" min="0" step="1" value="${escapeHtml(damaged)}"></div>
-                            <div class="receive-field returned-field"><label>Returned Qty</label><div class="receive-calculated receive-returned-qty">${quantities.returned}</div></div>
-                            <div class="receive-field disposed-field"><label>Disposed Qty</label><div class="receive-calculated receive-disposed-qty">${quantities.disposed}</div></div>
-                            <div class="receive-field"><label>Missing Qty</label><div class="receive-calculated receive-missing-qty">${Math.max(0, ordered - Number(delivered))}</div></div>
-                            <div class="receive-field accepted-field"><label>Accepted Qty</label><div class="receive-calculated receive-accepted-qty">${accepted}</div><small>Calculated automatically from the selected resolution.</small></div>
+                        <div class="section-card-heading"><span class="section-card-icon inspection"><i class="fa-solid fa-clipboard-check"></i></span><div><span class="section-eyebrow">Step 1</span><h3>Inspect Product</h3></div></div>
+                        <div class="receive-quantity-grid receive-arrival-grid">
+                            <div class="receive-field receive-quantity-anchor"><label>Received ${escapeHtml(conversion.purchaseUnit)} Qty</label><div class="receive-actual-control"><input class="form-control receive-qty-input" type="number" min="0" max="${escapeHtml(orderedPurchase)}" step="1" value="${escapeHtml(deliveredPurchase)}"><span>${escapeHtml(conversion.purchaseUnit)}</span></div><small class="receive-inventory-equivalent">${escapeHtml(receiveReceivedHierarchy(deliveredPurchase, conversion, packageConversions))}</small><small class="receive-field-error receive-qty-error"></small></div>
+                            <div class="receive-field receive-any-issue-field"><label>Any Issue?</label><select class="form-select receive-issue-toggle" aria-label="Any Issue"><option value="0" ${hasIssue ? '' : 'selected'}>No</option><option value="1" ${hasIssue ? 'selected' : ''}>Yes</option></select><small class="receive-shortage-note">${quantities.missing > 0 ? `Short by ${quantities.missing} ${escapeHtml(conversion.inventoryUnit)}` : 'No shortage detected.'}</small></div>
                         </div>
                     </section>
                     <div class="receive-field receive-inspection-action receive-scroll-target">
                         <label>Inspection Status</label>
                         <div class="receive-inspection-control">
                             <span class="receive-readiness-text">Complete the required checks below.</span>
-                            <button class="btn btn-sm btn-primary receive-complete-inspection" type="button" disabled><i class="fa-solid fa-clipboard-check me-1"></i>Complete Inspection</button>
+                            <button class="btn btn-sm btn-primary receive-complete-inspection" type="button" disabled><i class="fa-solid fa-clipboard-check me-1"></i>Complete Product Inspection</button>
                             <span class="receive-completed-action d-none"><i class="fa-solid fa-circle-check me-1"></i>Inspection Complete</span>
                             <button class="btn btn-sm btn-outline-secondary receive-reopen-inspection d-none" type="button"><i class="fa-solid fa-pen me-1"></i>Reopen Inspection</button>
                             <input class="receive-inspected-input" type="hidden" value="${draft.inspection_complete ? '1' : '0'}">
                         </div>
                     </div>
-                    <section class="receive-issue-panel receive-process-card receive-scroll-target d-none">
-                        <div class="section-card-heading"><span class="section-card-icon issue"><i class="fa-solid fa-triangle-exclamation"></i></span><div><span class="section-eyebrow">Section 2</span><h3>Issue Resolution</h3></div></div>
-                        <div class="receive-field receive-issue-type-field"><label>Issue Type *</label><select class="form-select receive-issue-type"><option value="">Select issue...</option>${RECEIVE_ISSUE_TYPES.map((value) => `<option value="${value}" ${draft.issue_type === value ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
-                        <div class="receive-field receive-resolution-field"><label>Resolution *</label><select class="form-select receive-resolution"><option value="none">Select resolution...</option>${RECEIVE_RESOLUTIONS.map(([value, label]) => `<option value="${value}" ${resolution === value ? 'selected' : ''}>${label}</option>`).join('')}</select></div>
-                        <div class="receive-field receive-item-adjustment-wrap d-none"><label>Supplier Adjustment *</label><div class="input-group"><span class="input-group-text">₱</span><input class="form-control receive-item-adjustment" type="number" min="0" step="0.01" value="${escapeHtml(draft.supplier_adjustment || 0)}"></div></div>
-                        <div class="receive-field receive-item-remarks-field"><label>Item Remarks *</label><textarea class="form-control receive-remarks-input" rows="2" placeholder="Describe the discrepancy and agreement...">${escapeHtml(draft.remarks || '')}</textarea></div>
+                    <section class="receive-issue-panel receive-process-card receive-scroll-target ${hasIssue ? '' : 'd-none'}">
+                        <div class="section-card-heading"><span class="section-card-icon issue"><i class="fa-solid fa-triangle-exclamation"></i></span><div><span class="section-eyebrow">Issue</span><h3>Issue Details</h3></div></div>
+                        <div class="receive-damage-breakdown receive-damage-anchor">
+                            <div class="receive-damage-breakdown-head"><div><strong>Damage Breakdown</strong><small>Record each affected package separately.</small></div><button class="btn btn-sm btn-outline-primary receive-add-damage-line" type="button"><i class="fa-solid fa-plus me-1"></i>Add Affected Pack</button></div>
+                            <div class="receive-damage-lines">${damageLines.map((line) => receiveDamageLineRow(line, packageConversions, conversion.inventoryUnit)).join('')}</div>
+                            <div class="receive-damage-totals"><span>Affected Packs: <strong class="receive-affected-package-count">${damageLines.length}</strong></span><span>Physically Damaged: <strong class="damaged-base-equivalent">${damagedBase} ${escapeHtml(conversion.inventoryUnit)}</strong></span></div>
+                            <small class="receive-field-error receive-damaged-error"></small>
+                        </div>
+                        <div class="receive-field receive-issue-type-field"><label>Issue Type *</label><select class="form-select receive-issue-type"><option value="">Select issue...</option>${RECEIVE_ISSUE_TYPES.map((value) => `<option value="${value}" ${draftIssueType === value ? 'selected' : ''}>${value}</option>`).join('')}</select><small class="receive-field-error receive-issue-type-error"></small></div>
+                        <div class="receive-field receive-disposition-field"><label>Affected Goods Action *</label><select class="form-select receive-disposition"><option value="">Select action...</option>${RECEIVE_DISPOSITIONS.map(([value, label]) => `<option value="${value}" ${disposition === value ? 'selected' : ''}>${label}</option>`).join('')}<option value="not_applicable" ${disposition === 'not_applicable' ? 'selected' : ''}>Not Applicable</option></select><small class="receive-field-error receive-disposition-error"></small></div>
+                        <div class="receive-field receive-action-quantity-field ${disposition && disposition !== 'not_applicable' ? '' : 'd-none'}"><label>Action Qty *</label><div class="receive-affected-control"><input class="form-control action-qty-input" type="number" min="0" step="1" value="${escapeHtml(actionInput)}" placeholder="Qty"><select class="form-select action-unit-conversion">${receiveConversionOptions(packageConversions, actionConversion.conversion_id, conversion.inventoryUnit)}</select></div><small class="action-base-equivalent">${escapeHtml(receiveUnitCountLabel(actionInput, actionConversion.unit_name))} = ${actionBase} ${escapeHtml(conversion.inventoryUnit)} removed</small><small class="receive-field-error receive-action-error"></small></div>
+                        <div class="receive-field receive-resolution-field"><label>Supplier Resolution *</label><select class="form-select receive-resolution"><option value="none">Select resolution...</option>${RECEIVE_RESOLUTIONS.map(([value, label]) => `<option value="${value}" ${resolution === value ? 'selected' : ''}>${label}</option>`).join('')}</select><small class="receive-field-error receive-resolution-error"></small></div>
+                        <div class="receive-field receive-other-issue-field ${draftIssueType === 'Other' ? '' : 'd-none'}"><label>Specify Issue *</label><input class="form-control receive-issue-other" maxlength="70" value="${escapeHtml(draftIssueDetail)}" placeholder="Describe the issue"><small class="receive-field-error receive-other-error"></small></div>
+                        <div class="receive-field receive-item-remarks-field"><label>Item Remarks</label><textarea class="form-control receive-remarks-input" rows="3" placeholder="Optional details about the discrepancy or supplier agreement...">${escapeHtml(draft.remarks || '')}</textarea></div>
+                    </section>
+                    <section class="receive-accepted-panel accepted-field">
+                        <label>Accepted to Inventory</label><div class="receive-calculated receive-accepted-qty">${accepted} ${escapeHtml(conversion.inventoryUnit)} total</div><small class="receive-accepted-source">${actionBase > 0 ? `${delivered} ${escapeHtml(conversion.inventoryUnit)} received − ${actionBase} ${escapeHtml(conversion.inventoryUnit)} unavailable` : `Equivalent remaining: ${escapeHtml(receiveBaseQuantityBreakdown(accepted, packageConversions, conversion.inventoryUnit))}`}</small><small class="receive-accepted-equivalent ${actionBase > 0 ? '' : 'd-none'}">Equivalent remaining: ${escapeHtml(receiveBaseQuantityBreakdown(accepted, packageConversions, conversion.inventoryUnit))}</small>
                     </section>
                     <section class="receive-batches receive-process-card receive-scroll-target">
-                        <div class="receive-batches-head"><div class="section-card-heading"><span class="section-card-icon inventory"><i class="fa-solid fa-boxes-stacked"></i></span><div><span class="section-eyebrow">Section 3</span><h3>Inventory Batch Allocation</h3></div></div><button class="btn btn-sm btn-outline-primary receive-add-batch" type="button"><i class="fa-solid fa-plus me-1"></i>Add Batch</button></div>
+                        <div class="receive-batches-head"><div class="section-card-heading"><span class="section-card-icon inventory"><i class="fa-solid fa-boxes-stacked"></i></span><div><span class="section-eyebrow">Step 2</span><h3>Batch &amp; Expiry</h3></div></div><button class="btn btn-sm btn-outline-primary receive-add-batch" type="button"><i class="fa-solid fa-plus me-1"></i>Add Batch</button></div>
                         <div class="receive-allocation-summary"><strong class="receive-allocation-state">Allocated 0 / ${accepted}</strong><span class="receive-allocation-badge">Incomplete</span></div><div class="receive-allocation-reason">${accepted} units remaining.</div>
-                        <div class="receive-batch-list">${batches.map((batch) => receiveBatchRow(batch, requiresExpiry, batch.auto_allocate === true || (batches.length === 1 && Number(batch.quantity) !== accepted))).join('')}</div>
+                        <div class="receive-batch-list">${batches.map((batch) => receiveBatchRow(batch, requiresExpiry, batch.auto_allocate === true || (batches.length === 1 && batch.auto_allocate !== false))).join('')}</div>
                     </section>
                 </div>
             </div>
@@ -3307,13 +3436,9 @@ function orderTotal(order) {
 
 function setReceiveCardLocked(card, locked) {
     card.classList.toggle('is-locked', locked);
-    card.querySelectorAll('input:not(.receive-inspected-input), select, textarea, .receive-add-batch, .receive-remove-batch').forEach((control) => {
+    card.querySelectorAll('.receiving-inspection-card input, .receive-issue-panel input, .receive-issue-panel select, .receive-issue-panel textarea').forEach((control) => {
         if (locked) {
             control.disabled = true;
-            return;
-        }
-        if (control.matches('.receive-batch-expiry')) {
-            control.disabled = control.closest('.receive-batch-row')?.querySelector('.receive-batch-no-expiry')?.checked === true;
             return;
         }
         control.disabled = false;
@@ -3321,16 +3446,9 @@ function setReceiveCardLocked(card, locked) {
 }
 
 function receiveFormState(strict = true) {
-    const originalTotal = (activeReceiveOrder?.items || []).reduce((total, item) => total + productLineTotal(item), 0);
-    const supplierDiscount = Number(document.getElementById('receiveAdditionalAmount')?.value || 0);
     const state = {
-        originalTotal,
-        supplierCredit: 0,
-        replacementPending: 0,
-        acceptedGoodsValue: 0,
-        returnedGoodsValue: 0,
-        supplierDiscount: Number.isFinite(supplierDiscount) ? Math.max(0, supplierDiscount) : 0,
         ordered: 0,
+        received: 0,
         accepted: 0,
         affected: 0,
         remaining: 0,
@@ -3339,75 +3457,132 @@ function receiveFormState(strict = true) {
         items: [],
         taskTotal: 0,
         taskCompleted: 0,
-        checks: { quantities: true, damage: true, returns: true, batches: true, expiry: true, resolution: true, remarks: true, finalInspection: true },
-        applicable: { quantities: true, damage: true, returns: true, batches: true, expiry: false, resolution: false, remarks: false, finalInspection: true }
+        checks: { inspection: true, batches: true, confirmation: true },
+        applicable: { inspection: true, batches: true, confirmation: true }
     };
-    if (!Number.isFinite(supplierDiscount) || supplierDiscount < 0) {
-        state.errors.push('Supplier discount must be a non-negative amount.');
-        state.hardErrors.push('Supplier discount must be a non-negative amount.');
-    }
 
     document.querySelectorAll('#receiveInspectionCards .receive-item-card').forEach((card, cardIndex) => {
         const orderItem = activeReceiveOrder?.items.find((item) => String(item.po_item_id) === String(card.dataset.poItemId));
-        const delivered = Number(card.querySelector('.receive-qty-input')?.value || 0);
-        const damaged = Number(card.querySelector('.damaged-qty-input')?.value || 0);
+        const deliveredPurchase = Number(card.querySelector('.receive-qty-input')?.value || 0);
+        const damageLines = [];
+        let damaged = 0;
+        let affectedPackageCapacity = 0;
+        let damageLinesValid = true;
+        const affectedSequences = new Map();
+        [...card.querySelectorAll('.receive-damage-line')].forEach((row, lineIndex) => {
+            const affectedUnit = row.querySelector('.damage-affected-unit');
+            const affectedUnitConversionId = affectedUnit?.value || '';
+            const affectedUnitBaseQuantity = Number(affectedUnit?.selectedOptions?.[0]?.dataset.baseQuantity || 1);
+            const affectedUnitName = affectedUnit?.selectedOptions?.[0]?.dataset.unitName || 'Unit';
+            const damagedQuantity = Number(row.querySelector('.damage-line-qty')?.value || 0);
+            const damagedUnitConversionId = row.querySelector('.damage-unit-conversion')?.value || '';
+            const damagedUnitBaseQuantity = Number((orderItem?.package_conversions || []).find((entry) => String(entry.conversion_id) === String(damagedUnitConversionId))?.base_quantity || 1);
+            const damagedBaseQuantity = damagedQuantity * damagedUnitBaseQuantity;
+            const sequence = (affectedSequences.get(affectedUnitName) || 0) + 1;
+            affectedSequences.set(affectedUnitName, sequence);
+            const label = row.querySelector('.receive-damage-line-label');
+            if (label) label.textContent = `${affectedUnitName} ${sequence}`;
+            const rowValid = Number.isInteger(damagedQuantity) && damagedQuantity > 0 && damagedBaseQuantity <= affectedUnitBaseQuantity;
+            damageLinesValid = damageLinesValid && rowValid;
+            damaged += Math.max(0, damagedBaseQuantity);
+            affectedPackageCapacity += affectedUnitBaseQuantity;
+            const rowError = row.querySelector('.damage-line-error');
+            if (rowError) rowError.textContent = damagedBaseQuantity > affectedUnitBaseQuantity
+                ? `Damage cannot exceed ${affectedUnitBaseQuantity} ${orderItem?.unit || 'units'} in one ${affectedUnitName}.`
+                : (receiveValidationAttempted && !rowValid ? 'Enter a positive damaged quantity.' : '');
+            row.querySelector('.damage-line-qty')?.classList.toggle('is-invalid', damagedBaseQuantity > affectedUnitBaseQuantity);
+            const lineQuantityInput = row.querySelector('.damage-line-qty');
+            if (lineQuantityInput) lineQuantityInput.max = String(Math.floor(affectedUnitBaseQuantity / Math.max(1, damagedUnitBaseQuantity)));
+            damageLines.push({ sequence_no: lineIndex + 1, affected_unit_conversion_id: affectedUnitConversionId, damaged_quantity: damagedQuantity, damaged_unit_conversion_id: damagedUnitConversionId });
+        });
+        const baseConversion = (orderItem?.package_conversions || []).find((entry) => Number(entry.base_quantity) === 1) || (orderItem?.package_conversions || []).slice(-1)[0] || {};
+        const damagedQuantity = damaged;
+        const damagedUnitConversionId = baseConversion.conversion_id || '';
+        const actionQuantity = Number(card.querySelector('.action-qty-input')?.value || 0);
+        const actionUnit = card.querySelector('.action-unit-conversion');
+        const actionUnitConversionId = actionUnit?.value || '';
+        const actionUnitBaseQuantity = Number(actionUnit?.selectedOptions?.[0]?.dataset.baseQuantity || 1);
+        let issueSelected = card.querySelector('.receive-issue-toggle')?.value === '1';
+        if (!issueSelected) damaged = 0;
+        let action = issueSelected ? actionQuantity * actionUnitBaseQuantity : 0;
         const inspectionInput = card.querySelector('.receive-inspected-input');
         let inspected = inspectionInput?.value === '1';
         const issueType = card.querySelector('.receive-issue-type')?.value || '';
+        const issueDetail = card.querySelector('.receive-issue-other')?.value.trim() || '';
+        let disposition = card.querySelector('.receive-disposition')?.value || '';
         const resolution = card.querySelector('.receive-resolution')?.value || 'none';
-        const quantities = receiveQuantityModel(orderItem, { delivered_quantity: delivered, damaged_quantity: damaged, resolution });
-        const { ordered, missing, accepted, affected, returned, disposed } = quantities;
+        if (disposition === 'not_applicable') action = 0;
+        let quantities = receiveQuantityModel(orderItem, { delivered_purchase_quantity: deliveredPurchase, damaged_base_quantity: damaged, action_base_quantity: action, disposition, resolution });
+        if (quantities.missing > 0) {
+            issueSelected = true;
+            const issueControl = card.querySelector('.receive-issue-toggle');
+            if (issueControl) issueControl.value = '1';
+            if (!disposition && damaged === 0) disposition = 'not_applicable';
+            const dispositionControl = card.querySelector('.receive-disposition');
+            if (dispositionControl && !dispositionControl.value && damaged === 0) dispositionControl.value = 'not_applicable';
+            quantities = receiveQuantityModel(orderItem, { delivered_purchase_quantity: deliveredPurchase, damaged_base_quantity: damaged, action_base_quantity: action, disposition, resolution });
+        }
+        const { ordered, orderedPurchase, delivered, missing, accepted, affected, returned, disposed, quarantined } = quantities;
+        const packageConversions = Array.isArray(orderItem?.package_conversions) ? orderItem.package_conversions : [];
         const itemRemarks = card.querySelector('.receive-remarks-input')?.value.trim() || '';
-        const itemAdjustment = Number(card.querySelector('.receive-item-adjustment')?.value || 0);
-        const quantitiesComplete = Number.isInteger(delivered) && delivered >= 0 && delivered <= ordered && Number.isInteger(damaged) && damaged >= 0 && damaged <= delivered;
-        const damageRecorded = Number.isInteger(damaged) && damaged >= 0 && damaged <= delivered;
+        const physicalAction = ['return_to_supplier', 'hold_quarantine', 'dispose'].includes(disposition);
+        const quantitiesComplete = Number.isInteger(deliveredPurchase) && deliveredPurchase >= 0 && deliveredPurchase <= orderedPurchase
+            && damageLinesValid && affectedPackageCapacity <= delivered && damaged <= delivered
+            && Number.isInteger(actionQuantity) && actionQuantity >= 0 && action <= delivered;
         const itemErrors = [];
 
-        if (!Number.isInteger(delivered) || delivered < 0) itemErrors.push('Delivered quantity must be a non-negative whole number.');
-        if (!Number.isInteger(damaged) || damaged < 0) itemErrors.push('Damaged quantity must be a non-negative whole number.');
-        if (delivered > ordered) { itemErrors.push('Delivered quantity exceeds the ordered quantity. Resolve the excess before confirming.'); state.hardErrors.push(`Product ${cardIndex + 1}: Delivered quantity exceeds the ordered quantity.`); }
-        if (damaged > delivered) { itemErrors.push('Damaged quantity exceeds delivered quantity.'); state.hardErrors.push(`Product ${cardIndex + 1}: Damaged quantity exceeds delivered quantity.`); }
-        if (strict && affected > 0 && !issueType) itemErrors.push('Select an issue type.');
-        if (strict && affected > 0 && resolution === 'none') itemErrors.push('Select a resolution.');
-        if (strict && affected > 0 && !itemRemarks) itemErrors.push('Enter item remarks.');
-        if (missing > 0 && ['keep_with_discount', 'keep_damaged'].includes(resolution)) itemErrors.push('Keep is not valid while units are missing; select a supplier return, replacement, or rejection resolution.');
-        if (resolution === 'keep_with_discount' && (!Number.isFinite(itemAdjustment) || itemAdjustment <= 0)) itemErrors.push('Enter the agreed supplier adjustment.');
-        if (resolution !== 'keep_with_discount' && itemAdjustment > 0) { itemErrors.push('Item adjustment is only valid for Keep with supplier discount.'); state.hardErrors.push(`Product ${cardIndex + 1}: Remove the supplier adjustment or choose the matching resolution.`); }
+        if (!Number.isInteger(deliveredPurchase) || deliveredPurchase < 0) itemErrors.push('Delivered Purchase Unit quantity must be a non-negative whole number.');
+        if (!damageLinesValid) itemErrors.push('Complete each damage breakdown row with a valid quantity.');
+        if (affectedPackageCapacity > delivered) itemErrors.push('Affected package rows exceed the quantity physically received.');
+        if (!Number.isInteger(actionQuantity) || actionQuantity < 0) itemErrors.push('Action quantity must be a non-negative whole number.');
+        if (deliveredPurchase > orderedPurchase) { itemErrors.push('Delivered quantity exceeds the ordered PO quantity. Resolve the excess before confirming.'); state.hardErrors.push(`Product ${cardIndex + 1}: Delivered quantity exceeds the ordered quantity.`); }
+        if (damaged > delivered) { itemErrors.push('Damaged quantity exceeds the received quantity.'); state.hardErrors.push(`Product ${cardIndex + 1}: Damaged quantity exceeds the received quantity.`); }
+        if (action > delivered) { itemErrors.push('Action quantity exceeds the received quantity.'); state.hardErrors.push(`Product ${cardIndex + 1}: Action quantity exceeds the received quantity.`); }
+        if (physicalAction && action < damaged) itemErrors.push('Action quantity cannot be less than the physically damaged quantity.');
+        if (issueSelected && missing === 0 && damaged === 0 && action === 0) itemErrors.push('Enter a damaged or action quantity.');
+        if (strict && issueSelected && !issueType) itemErrors.push('Select an issue type.');
+        if (strict && issueSelected && issueType === 'Other' && !issueDetail) itemErrors.push('Specify the issue.');
+        if (strict && issueSelected && !disposition) itemErrors.push('Select a disposition.');
+        if (strict && physicalAction && action <= 0) itemErrors.push('Enter the action quantity.');
+        if (strict && damaged > 0 && disposition === 'not_applicable') itemErrors.push('Select what will physically happen to the damaged goods.');
+        if (strict && missing > 0 && damaged === 0 && action === 0 && disposition !== 'not_applicable') itemErrors.push('Use Not Applicable for a short delivery with no goods to remove.');
+        if (strict && issueSelected && resolution === 'none') itemErrors.push('Select a requested resolution.');
 
         let batchRows = [...card.querySelectorAll('.receive-batch-row')];
         if (accepted > 0 && batchRows.length === 0) {
             card.querySelector('.receive-batch-list')?.insertAdjacentHTML('beforeend', receiveBatchRow({ quantity: accepted, expiry_date: '', no_expiry: card.dataset.requiresExpiry !== '1' }, card.dataset.requiresExpiry === '1', true));
             batchRows = [...card.querySelectorAll('.receive-batch-row')];
         }
-        const autoRow = batchRows.length === 1 && batchRows[0].dataset.autoAllocation === '1' ? batchRows[0] : null;
+        const autoRow = batchRows.find((row) => row.dataset.autoAllocation === '1') || null;
+        const hasOtherFilledBatch = batchRows.some((row) => row !== autoRow && String(row.querySelector('.receive-batch-qty')?.value || '').trim() !== '');
         if (autoRow && accepted === 0) {
             autoRow.remove();
-            batchRows = [];
-        } else if (autoRow) {
+            batchRows = batchRows.filter((row) => row !== autoRow);
+        } else if (autoRow && !hasOtherFilledBatch) {
             autoRow.querySelector('.receive-batch-qty').value = String(accepted);
         }
         const batches = [];
         let allocated = 0;
         batchRows.forEach((row) => {
-            const quantity = Number(row.querySelector('.receive-batch-qty')?.value || 0);
+            const rawQuantity = String(row.querySelector('.receive-batch-qty')?.value || '').trim();
+            if (rawQuantity === '') return;
+            const quantity = Number(rawQuantity);
             const noExpiry = row.querySelector('.receive-batch-no-expiry')?.checked === true;
             const expiryDate = row.querySelector('.receive-batch-expiry')?.value || '';
             if (strict && (!Number.isInteger(quantity) || quantity <= 0)) itemErrors.push('Every batch needs a positive whole quantity.');
             if (strict && accepted > 0 && card.dataset.requiresExpiry === '1' && !expiryDate) itemErrors.push('An expiry date is required for every medicine batch.');
             allocated += Number.isFinite(quantity) ? Math.max(0, quantity) : 0;
-            batches.push({ batch_identifier: row.querySelector('.receive-batch-id')?.value.trim() || '', quantity, expiry_date: expiryDate, no_expiry: noExpiry });
+            batches.push({ batch_identifier: row.querySelector('.receive-batch-id')?.value.trim() || '', quantity, expiry_date: expiryDate, no_expiry: noExpiry, auto_allocate: row.dataset.autoAllocation === '1' });
         });
 
         const batchRowsValid = batches.every((batch) => Number.isInteger(batch.quantity) && batch.quantity > 0);
         const batchesComplete = batchRowsValid && allocated === accepted && (accepted === 0 || batches.length > 0);
         const expiryComplete = accepted === 0 || card.dataset.requiresExpiry !== '1' || (batches.length > 0 && batches.every((batch) => Boolean(batch.expiry_date)));
-        const adjustmentComplete = resolution === 'keep_with_discount'
-            ? Number.isFinite(itemAdjustment) && itemAdjustment > 0
-            : Number.isFinite(itemAdjustment) && itemAdjustment === 0;
-        const resolutionComplete = affected === 0 ? adjustmentComplete : (Boolean(issueType) && resolution !== 'none' && adjustmentComplete);
-        const remarksComplete = affected === 0 || itemRemarks !== '';
-        const returnRecorded = affected === 0 || resolutionComplete;
-        const readyForInspection = quantitiesComplete && batchesComplete && expiryComplete && resolutionComplete && remarksComplete;
+        const issueComplete = !issueSelected || (Boolean(issueType) && (issueType !== 'Other' || Boolean(issueDetail)) && Boolean(disposition) && resolution !== 'none'
+            && (!physicalAction || (action > 0 && action >= damaged))
+            && !(damaged > 0 && disposition === 'not_applicable')
+            && !(missing > 0 && damaged === 0 && action === 0 && disposition !== 'not_applicable'));
+        const readyForInspection = quantitiesComplete && issueComplete;
 
         if (strict && allocated > accepted) itemErrors.push(`Allocated inventory exceeds accepted inventory by ${allocated - accepted} unit${allocated - accepted === 1 ? '' : 's'}.`);
         if (strict && allocated < accepted) itemErrors.push(`${accepted - allocated} unit${accepted - allocated === 1 ? '' : 's'} remain to be allocated to inventory batches.`);
@@ -3417,49 +3592,88 @@ function receiveFormState(strict = true) {
             inspected = false;
             if (inspectionInput) inspectionInput.value = '0';
         }
-        if (strict && !inspected) itemErrors.push(readyForInspection ? 'Complete this product inspection.' : 'Finish the required inspection checks.');
+        if (strict && !inspected) itemErrors.push(readyForInspection ? 'Complete this product inspection.' : 'Finish the required product details.');
 
-        state.supplierCredit += quantities.supplierCredit;
-        state.replacementPending += quantities.replacementPending;
-        state.acceptedGoodsValue += accepted * quantities.unitPrice;
-        state.returnedGoodsValue += (returned + disposed) * quantities.unitPrice;
-        if (resolution === 'keep_with_discount' && Number.isFinite(itemAdjustment)) state.supplierDiscount += Math.max(0, itemAdjustment);
         state.ordered += ordered;
+        state.received += delivered;
         state.accepted += accepted;
         state.affected += affected;
         if (!inspected) state.remaining += 1;
-        state.taskTotal += 6;
-        state.taskCompleted += [quantitiesComplete, batchesComplete, expiryComplete, resolutionComplete, remarksComplete, inspected].filter(Boolean).length;
-        state.checks.quantities = state.checks.quantities && quantitiesComplete;
-        state.checks.damage = state.checks.damage && damageRecorded;
-        state.checks.returns = state.checks.returns && returnRecorded;
-        state.checks.batches = state.checks.batches && batchesComplete;
-        state.checks.expiry = state.checks.expiry && expiryComplete;
-        state.checks.resolution = state.checks.resolution && resolutionComplete;
-        state.checks.remarks = state.checks.remarks && remarksComplete;
-        state.checks.finalInspection = state.checks.finalInspection && inspected;
-        state.applicable.expiry = state.applicable.expiry || (accepted > 0 && card.dataset.requiresExpiry === '1');
-        state.applicable.resolution = state.applicable.resolution || affected > 0;
-        state.applicable.remarks = state.applicable.remarks || affected > 0;
+        state.taskTotal += 3;
+        state.taskCompleted += [inspected, batchesComplete && expiryComplete, inspected && batchesComplete && expiryComplete].filter(Boolean).length;
+        state.checks.inspection = state.checks.inspection && inspected;
+        state.checks.batches = state.checks.batches && batchesComplete && expiryComplete;
+        state.checks.confirmation = state.checks.confirmation && inspected && batchesComplete && expiryComplete;
         state.errors.push(...itemErrors.map((error) => `Product ${cardIndex + 1}: ${error}`));
-        state.items.push({ po_item_id: card.dataset.poItemId, delivered_quantity: delivered, received_quantity: delivered, damaged_quantity: damaged, returned_quantity: returned, disposed_quantity: disposed, issue_type: issueType, resolution, damage_action: resolution === 'return_for_credit' ? 'return' : (['keep_with_discount', 'keep_damaged'].includes(resolution) ? 'keep' : 'none'), supplier_adjustment: Number.isFinite(itemAdjustment) ? Math.max(0, itemAdjustment) : 0, batches, remarks: itemRemarks, inspection_complete: inspected, accepted_quantity: accepted, missing_quantity: missing });
+        state.items.push({ po_item_id: card.dataset.poItemId, delivered_purchase_quantity: deliveredPurchase, delivered_quantity: delivered, received_quantity: delivered, has_issue: issueSelected, damage_lines: issueSelected ? damageLines : [], damaged_quantity: issueSelected ? damagedQuantity : 0, damaged_unit_conversion_id: damagedUnitConversionId, damaged_base_quantity: damaged, action_quantity: issueSelected && physicalAction ? actionQuantity : 0, action_unit_conversion_id: actionUnitConversionId, action_base_quantity: action, affected_quantity: issueSelected ? (physicalAction ? actionQuantity : damagedQuantity) : 0, unit_conversion_id: physicalAction ? actionUnitConversionId : damagedUnitConversionId, returned_quantity: returned, quarantined_quantity: quarantined, disposed_quantity: disposed, disposition: issueSelected ? disposition : '', issue_type: issueSelected ? issueType : '', issue_detail: issueSelected && issueType === 'Other' ? issueDetail : '', resolution: issueSelected ? resolution : 'none', batches, remarks: issueSelected ? itemRemarks : '', inspection_complete: inspected, accepted_quantity: accepted, missing_quantity: missing });
 
         card.dataset.ready = readyForInspection ? '1' : '0';
         card.dataset.checkQuantities = quantitiesComplete ? '1' : '0';
-        card.dataset.checkDamage = damageRecorded ? '1' : '0';
-        card.dataset.checkReturns = returnRecorded ? '1' : '0';
         card.dataset.checkBatches = batchesComplete ? '1' : '0';
         card.dataset.checkExpiry = expiryComplete ? '1' : '0';
-        card.dataset.checkResolution = resolutionComplete ? '1' : '0';
-        card.dataset.checkRemarks = remarksComplete ? '1' : '0';
+        card.dataset.checkResolution = issueComplete ? '1' : '0';
+        card.dataset.checkRemarks = issueComplete ? '1' : '0';
         card.dataset.checkFinalInspection = inspected ? '1' : '0';
-        card.classList.toggle('has-error', delivered > ordered || damaged > delivered || (resolution !== 'keep_with_discount' && itemAdjustment > 0));
-        card.querySelector('.receive-missing-qty').textContent = String(missing);
-        card.querySelector('.receive-accepted-qty').textContent = String(accepted);
-        card.querySelector('.receive-returned-qty').textContent = String(returned);
-        card.querySelector('.receive-disposed-qty').textContent = String(disposed);
-        card.querySelector('.receive-issue-panel').classList.toggle('d-none', affected <= 0);
-        card.querySelector('.receive-item-adjustment-wrap').classList.toggle('d-none', resolution !== 'keep_with_discount');
+        card.classList.toggle('has-error', deliveredPurchase > orderedPurchase || damaged > delivered || affectedPackageCapacity > delivered || action > delivered || (physicalAction && action < damaged));
+        const missingQuantity = card.querySelector('.receive-missing-qty');
+        if (missingQuantity) missingQuantity.textContent = String(missing);
+        const missingPurchase = card.querySelector('.receive-missing-purchase');
+        if (missingPurchase) missingPurchase.textContent = `Remaining: ${Math.max(0, orderedPurchase - deliveredPurchase)} ${quantities.conversion.purchaseUnit}`;
+        card.querySelector('.receive-accepted-qty').textContent = `${accepted} ${quantities.conversion.inventoryUnit} total`;
+        const acceptedSource = card.querySelector('.receive-accepted-source');
+        const acceptedEquivalent = card.querySelector('.receive-accepted-equivalent');
+        const acceptedBreakdown = receiveBaseQuantityBreakdown(accepted, packageConversions, quantities.conversion.inventoryUnit);
+        if (acceptedSource) acceptedSource.textContent = action > 0
+            ? `${delivered} ${quantities.conversion.inventoryUnit} received − ${action} ${quantities.conversion.inventoryUnit} unavailable`
+            : `Equivalent remaining: ${acceptedBreakdown}`;
+        if (acceptedEquivalent) {
+            acceptedEquivalent.textContent = `Equivalent remaining: ${acceptedBreakdown}`;
+            acceptedEquivalent.classList.toggle('d-none', action <= 0);
+        }
+        const damagedEquivalent = card.querySelector('.damaged-base-equivalent');
+        if (damagedEquivalent) damagedEquivalent.textContent = `${damaged} ${quantities.conversion.inventoryUnit} total`;
+        const affectedCount = card.querySelector('.receive-affected-package-count');
+        if (affectedCount) affectedCount.textContent = String(damageLines.length);
+        const actionEquivalent = card.querySelector('.action-base-equivalent');
+        if (actionEquivalent) {
+            const actionUnitName = actionUnit?.selectedOptions?.[0]?.dataset.unitName || quantities.conversion.inventoryUnit;
+            actionEquivalent.textContent = `${receiveUnitCountLabel(actionQuantity, actionUnitName)} = ${action} ${quantities.conversion.inventoryUnit} removed`;
+        }
+        const receivedEquivalent = card.querySelector('.receive-inventory-equivalent');
+        if (receivedEquivalent) receivedEquivalent.textContent = receiveReceivedHierarchy(deliveredPurchase, quantities.conversion, packageConversions);
+        const actionInput = card.querySelector('.action-qty-input');
+        if (actionInput) actionInput.max = String(Math.floor(delivered / Math.max(1, actionUnitBaseQuantity)));
+        card.querySelector('.receive-issue-panel').classList.toggle('d-none', !issueSelected);
+        card.querySelector('.receive-other-issue-field')?.classList.toggle('d-none', issueType !== 'Other');
+        const shortOnly = issueType === 'Short Quantity' && missing > 0 && damaged === 0;
+        const dispositionControl = card.querySelector('.receive-disposition');
+        if (shortOnly && dispositionControl) dispositionControl.value = 'not_applicable';
+        dispositionControl?.querySelectorAll('option').forEach((option) => {
+            if (option.value === 'not_applicable') option.hidden = false;
+            else if (option.value) option.hidden = shortOnly;
+        });
+        card.querySelector('.receive-action-quantity-field')?.classList.toggle('d-none', !physicalAction);
+
+        const showFieldErrors = strict && receiveValidationAttempted;
+        const fieldErrors = [
+            ['.receive-qty-error', !Number.isInteger(deliveredPurchase) || deliveredPurchase < 0 || deliveredPurchase > orderedPurchase, 'Enter a valid received quantity.'],
+            ['.receive-damaged-error', issueSelected && (!damageLinesValid || affectedPackageCapacity > delivered || damaged > delivered), affectedPackageCapacity > delivered ? `Cannot add affected packages beyond ${receiveUnitCountLabel(deliveredPurchase, quantities.conversion.purchaseUnit)} received.` : 'Complete the damage breakdown.'],
+            ['.receive-action-error', issueSelected && physicalAction && (!Number.isInteger(actionQuantity) || action <= 0 || action > delivered || action < damaged), action < damaged ? 'Action Qty must cover all damaged units.' : 'Enter a valid action quantity.'],
+            ['.receive-issue-type-error', issueSelected && !issueType, 'Select an issue type.'],
+            ['.receive-other-error', issueSelected && issueType === 'Other' && !issueDetail, 'Specify the issue.'],
+            ['.receive-disposition-error', issueSelected && !disposition, 'Select an affected goods action.'],
+            ['.receive-resolution-error', issueSelected && resolution === 'none', 'Select a supplier resolution.']
+        ];
+        fieldErrors.forEach(([selector, invalid, message]) => {
+            const error = card.querySelector(selector);
+            const showImmediately = selector === '.receive-damaged-error' && affectedPackageCapacity > delivered;
+            if (error) error.textContent = (showImmediately || (showFieldErrors && invalid)) ? message : '';
+        });
+        const addDamage = card.querySelector('.receive-add-damage-line');
+        const defaultAffectedFactor = Math.min(...packageConversions.filter((entry) => Number(entry.base_quantity) > 1).map((entry) => Number(entry.base_quantity)), delivered || 1);
+        if (addDamage) addDamage.disabled = affectedPackageCapacity + defaultAffectedFactor > delivered;
+        const shortageNote = card.querySelector('.receive-shortage-note');
+        if (shortageNote) shortageNote.textContent = missing > 0 ? `Short by ${missing} ${quantities.conversion.inventoryUnit}` : 'No shortage detected.';
         const allocationDifference = accepted - allocated;
         const allocationState = card.querySelector('.receive-allocation-state');
         const allocationBadge = card.querySelector('.receive-allocation-badge');
@@ -3467,29 +3681,26 @@ function receiveFormState(strict = true) {
         const allocationSummary = card.querySelector('.receive-allocation-summary');
         if (allocationState) allocationState.textContent = `Allocated ${allocated} / ${accepted}`;
         const allocationComplete = allocated === accepted && (accepted === 0 || batches.length > 0) && batchRowsValid;
-        if (allocationBadge) allocationBadge.textContent = allocationComplete ? '✓ Complete' : '✕ Allocation error';
-        if (allocationReason) allocationReason.textContent = allocationComplete ? 'Accepted inventory is fully allocated.' : (allocationDifference > 0 ? `${allocationDifference} unit${allocationDifference === 1 ? '' : 's'} remaining.` : `Over allocated by ${Math.abs(allocationDifference)} unit${Math.abs(allocationDifference) === 1 ? '' : 's'}.`);
+        if (allocationBadge) allocationBadge.textContent = allocationComplete ? '✓ Complete' : (allocationDifference < 0 ? '✕ Allocation error' : 'Incomplete');
+        if (allocationReason) allocationReason.textContent = allocationComplete ? 'Accepted inventory is fully allocated.' : (allocationDifference > 0 ? `${allocationDifference} unit${allocationDifference === 1 ? '' : 's'} remaining.` : (allocationDifference < 0 ? `Over allocated by ${Math.abs(allocationDifference)} unit${Math.abs(allocationDifference) === 1 ? '' : 's'}.` : 'Complete the remaining batch details.'));
         allocationSummary?.classList.toggle('is-complete', allocationComplete);
         allocationSummary?.classList.toggle('has-error', !allocationComplete);
-        card.querySelector('.receive-header-ordered').textContent = String(ordered);
-        card.querySelector('.receive-header-accepted').textContent = String(accepted);
-        card.querySelector('.receive-header-damaged').textContent = String(damaged);
-        card.querySelector('.receive-header-returned').textContent = String(returned);
+        card.querySelector('.receive-header-ordered').textContent = `${orderedPurchase} ${quantities.conversion.purchaseUnit}`;
+        card.querySelector('.receive-header-accepted').textContent = `${accepted} ${quantities.conversion.inventoryUnit}`;
+        card.querySelector('.receive-header-affected').textContent = `${affected} ${quantities.conversion.inventoryUnit}`;
 
         let status = 'Waiting';
-        if (inspected) status = 'Inspection Complete';
+        if (inspected && affected > 0) status = 'Has Issue';
+        else if (inspected) status = 'Complete';
         else if (!quantitiesComplete) status = 'Waiting for Quantity Verification';
-        else if (!batchesComplete) status = 'Waiting for Batch Allocation';
-        else if (!expiryComplete) status = 'Waiting for Expiry Date';
-        else if (!resolutionComplete) status = 'Waiting for Issue Resolution';
-        else if (!remarksComplete) status = 'Waiting for Remarks';
-        else if (readyForInspection) status = 'Ready for Inspection';
+        else if (!issueComplete) status = 'Complete Issue Details';
+        else if (readyForInspection) status = 'Ready to Complete';
 
         const badge = card.querySelector('.receive-inspection-badge');
         badge.textContent = status;
         badge.classList.toggle('complete', inspected);
         badge.classList.toggle('ready', readyForInspection && !inspected);
-        badge.classList.toggle('issue', affected > 0 && !inspected && !readyForInspection);
+        badge.classList.toggle('issue', affected > 0);
         card.querySelector('.receive-issue-flag')?.classList.toggle('d-none', affected <= 0);
         card.classList.remove('state-waiting', 'state-active', 'state-complete', 'state-issue');
         card.classList.add(inspected ? 'state-complete' : (affected > 0 ? 'state-issue' : ((readyForInspection || card.dataset.touched === '1') ? 'state-active' : 'state-waiting')));
@@ -3504,27 +3715,15 @@ function receiveFormState(strict = true) {
         completedAction?.classList.toggle('d-none', !inspected);
         reopenButton?.classList.toggle('d-none', !inspected);
         const readinessText = card.querySelector('.receive-readiness-text');
-        let readinessMessage = 'Complete the required inspection checks.';
-        if (inspected) readinessMessage = 'Inspection completed. Reopen to make changes.';
+        let readinessMessage = 'Complete the product details.';
+        if (inspected) readinessMessage = 'Product inspection complete. Allocate accepted stock below.';
         else if (!quantitiesComplete) readinessMessage = 'Complete quantity verification first.';
-        else if (!batchesComplete) readinessMessage = allocated < accepted ? `Allocate ${accepted - allocated} remaining unit${accepted - allocated === 1 ? '' : 's'} to batches.` : `Remove ${allocated - accepted} over-allocated unit${allocated - accepted === 1 ? '' : 's'} from batches.`;
-        else if (!expiryComplete) readinessMessage = 'Enter the required expiry date first.';
-        else if (!resolutionComplete) readinessMessage = 'Complete issue type and resolution first.';
-        else if (!remarksComplete) readinessMessage = 'Enter the required item remarks first.';
+        else if (!issueComplete) readinessMessage = 'Complete the issue details first.';
         else if (readyForInspection) readinessMessage = 'Ready to complete.';
         if (readinessText) readinessText.textContent = readinessMessage;
         setReceiveCardLocked(card, inspected);
     });
 
-    state.finalAmount = state.originalTotal - state.supplierCredit - state.replacementPending - state.supplierDiscount;
-    const paymentStatus = document.getElementById('receivePaymentStatus')?.value || 'Unpaid';
-    const enteredAmountPaid = Number(document.getElementById('receiveAmountPaid')?.value || 0);
-    state.paymentStatus = paymentStatus;
-    state.amountPaid = paymentStatus === 'Fully Paid' ? Math.max(0, state.finalAmount) : (paymentStatus === 'Unpaid' ? 0 : enteredAmountPaid);
-    state.remainingBalance = Math.max(0, state.finalAmount - (Number.isFinite(state.amountPaid) ? state.amountPaid : 0));
-    if (!['Unpaid', 'Partially Paid', 'Fully Paid'].includes(paymentStatus)) state.errors.push('Select a valid payment status.');
-    if (paymentStatus === 'Partially Paid' && (!Number.isFinite(enteredAmountPaid) || enteredAmountPaid <= 0 || enteredAmountPaid >= state.finalAmount)) state.errors.push('Amount paid must be greater than zero and less than the final amount payable for a partially paid order.');
-    if (state.finalAmount < 0) { state.errors.push('Payment adjustments exceed the original PO total.'); state.hardErrors.push('Payment adjustments exceed the original PO total.'); }
     state.errors = [...new Set(state.errors)];
     state.hardErrors = [...new Set(state.hardErrors)];
     state.valid = state.errors.length === 0;
@@ -3535,66 +3734,55 @@ function receivePaymentSummary() { return receiveFormState(true); }
 
 function renderReceivePaymentSummary() {
     const summary = receiveFormState(true);
-    const original = document.getElementById('receiveOriginalTotal');
-    const deduction = document.getElementById('receiveDamageDeduction');
-    const acceptedValue = document.getElementById('receiveAcceptedGoodsValue');
-    const returnedValue = document.getElementById('receiveReturnedGoodsValue');
-    const finalAmount = document.getElementById('receiveFinalAmount');
-    if (original) original.textContent = peso(summary.originalTotal);
-    if (deduction) deduction.textContent = summary.supplierCredit > 0 ? `-${peso(summary.supplierCredit)}` : peso(0);
-    if (acceptedValue) acceptedValue.textContent = peso(summary.acceptedGoodsValue);
-    if (returnedValue) returnedValue.textContent = peso(summary.returnedGoodsValue);
-    if (finalAmount) finalAmount.textContent = peso(summary.finalAmount);
-    const paymentStatus = document.getElementById('receivePaymentStatus')?.value || 'Unpaid';
-    document.getElementById('receiveAmountPaidWrap')?.classList.toggle('d-none', paymentStatus !== 'Partially Paid');
-    const amountPaid = document.getElementById('receiveAmountPaid');
-    if (amountPaid && paymentStatus === 'Fully Paid') amountPaid.value = summary.finalAmount.toFixed(2);
-    if (amountPaid && paymentStatus === 'Unpaid') amountPaid.value = '0';
-    const remainingBalance = document.getElementById('receiveRemainingBalance');
-    if (remainingBalance) remainingBalance.textContent = peso(summary.remainingBalance);
-    document.getElementById('receiveMetricProducts').textContent = String(summary.items.length);
-    document.getElementById('receiveMetricOrdered').textContent = String(summary.ordered);
-    document.getElementById('receiveMetricAccepted').textContent = String(summary.accepted);
-    document.getElementById('receiveMetricAffected').textContent = String(summary.affected);
-    document.getElementById('receiveMetricRemaining').textContent = String(summary.remaining);
-    const percent = summary.taskTotal ? Math.round((summary.taskCompleted / summary.taskTotal) * 100) : 0;
-    const progressText = document.getElementById('receiveProgressText');
-    if (progressText) progressText.textContent = `${summary.taskCompleted} of ${summary.taskTotal} inspection checks complete · ${percent}%`;
-    const progressBar = document.getElementById('receiveProgressBar');
-    if (progressBar) {
-        progressBar.style.width = `${percent}%`;
-        progressBar.closest('.progress')?.setAttribute('aria-valuenow', String(percent));
-    }
-    const checklist = document.getElementById('receiveChecklistItems');
-    if (checklist) {
-        const checklistItems = [
-            ['quantities', 'Quantities', 'Verify delivered, accepted, damaged, returned, and missing quantities.'],
-            ['damage', 'Damage', 'Record the damaged quantity.'],
-            ['returns', 'Returns', 'Complete the return decision when an issue exists.'],
-            ['batches', 'Batches', 'Allocate accepted units exactly across batches.'],
-            ['expiry', 'Expiry', 'Enter every required batch expiry date.'],
-            ['resolution', 'Resolution', 'Select the issue type and resolution.'],
-            ['remarks', 'Remarks', 'Enter the required receiving remarks.'],
-            ['finalInspection', 'Finalize', 'Complete the final product inspection.']
-        ];
-        const currentIndex = checklistItems.findIndex(([key]) => summary.applicable[key] !== false && !summary.checks[key]);
-        checklist.innerHTML = checklistItems.map(([key, label, help], index) => {
-            const applicable = summary.applicable[key] !== false;
-            const complete = summary.checks[key];
-            const current = index === currentIndex;
-            const itemClass = !applicable ? 'check-na' : (complete ? 'check-complete' : `check-warning${current ? ' check-current' : ''}`);
-            const icon = !applicable ? 'fa-minus' : (complete ? 'fa-check' : 'fa-triangle-exclamation');
-            const stateText = !applicable ? 'Not applicable' : (complete ? 'Complete' : (current ? 'Current required step' : 'Incomplete'));
-            return `<li class="${itemClass}"><button class="receive-check-step" type="button" data-check-key="${key}" title="${escapeHtml(`${help} ${stateText}.`)}" aria-label="${escapeHtml(`${label}: ${stateText}`)}"><span class="receive-check-node"><i class="fa-solid ${icon}"></i></span><span class="receive-check-label">${escapeHtml(label)}</span></button></li>`;
+    const summaryList = document.getElementById('receiveSummaryItems');
+    if (summaryList) summaryList.innerHTML = summary.items.map((item, index) => {
+        const orderItem = activeReceiveOrder?.items.find((candidate) => String(candidate.po_item_id) === String(item.po_item_id)) || {};
+        const conversion = purchasingConversion({ purchase_unit: orderItem.purchase_unit, inventory_unit: orderItem.unit || 'unit', units_per_purchase_unit: orderItem.units_per_purchase_unit || 1 });
+        const damagedConversion = (orderItem.package_conversions || []).find((entry) => String(entry.conversion_id) === String(item.damaged_unit_conversion_id));
+        const actionConversion = (orderItem.package_conversions || []).find((entry) => String(entry.conversion_id) === String(item.action_unit_conversion_id));
+        const dispositionLabel = RECEIVE_DISPOSITIONS.find(([value]) => value === item.disposition)?.[1] || (item.disposition === 'not_applicable' ? 'Not Applicable — Short Delivery' : '-');
+        const resolutionLabel = RECEIVE_RESOLUTIONS.find(([value]) => value === item.resolution)?.[1] || 'No issue';
+        const damagedLabel = item.has_issue
+            ? `${Number(item.damaged_quantity || 0)} ${damagedConversion?.unit_name || conversion.inventoryUnit}${Number(item.damaged_base_quantity || 0) !== Number(item.damaged_quantity || 0) ? ` / ${Number(item.damaged_base_quantity || 0)} ${conversion.inventoryUnit}` : ''}`
+            : `0 ${conversion.inventoryUnit}`;
+        const actionVerb = ({ return_to_supplier: 'Returned / Removed', hold_quarantine: 'Held / Removed', dispose: 'Disposed / Removed' })[item.disposition] || 'Returned / Removed';
+        const actionLabel = item.disposition === 'not_applicable'
+            ? 'Not Applicable'
+            : `${Number(item.action_quantity || 0)} ${actionConversion?.unit_name || conversion.inventoryUnit}${Number(item.action_base_quantity || 0) !== Number(item.action_quantity || 0) ? ` / ${Number(item.action_base_quantity || 0)} ${conversion.inventoryUnit}` : ''}`;
+        const damageBreakdown = (item.damage_lines || []).map((line, lineIndex) => {
+            const affectedUnit = (orderItem.package_conversions || []).find((entry) => String(entry.conversion_id) === String(line.affected_unit_conversion_id));
+            const damagedUnit = (orderItem.package_conversions || []).find((entry) => String(entry.conversion_id) === String(line.damaged_unit_conversion_id));
+            return `<li>${escapeHtml(`${affectedUnit?.unit_name || 'Package'} ${lineIndex + 1}`)} → ${Number(line.damaged_quantity || 0)} ${escapeHtml(damagedUnit?.unit_name || conversion.inventoryUnit)} damaged</li>`;
         }).join('');
-    }
+        const issueReview = item.has_issue ? `<span class="receiving-issue-state">Issue recorded</span>` : `<span class="receiving-no-issues">No issues</span>`;
+        return `<article class="receiving-summary-item"><header><strong>${escapeHtml([productTableBrand(orderItem), productTableProductName(orderItem)].filter(Boolean).join(' — ') || `Product ${index + 1}`)}</strong>${issueReview}</header>${damageBreakdown ? `<div class="receiving-damage-breakdown"><span>Damage Breakdown</span><ul>${damageBreakdown}</ul></div>` : ''}<dl>
+            <div><dt>PO Ordered</dt><dd>${Number(orderItem.purchase_qty || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(orderItem.inventory_qty_ordered || orderItem.quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
+            <div><dt>Actual Received</dt><dd>${Number(item.delivered_purchase_quantity || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(item.received_quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
+            <div><dt>Physically Damaged</dt><dd>${escapeHtml(damagedLabel)}</dd></div>
+            <div><dt>${escapeHtml(actionVerb)}</dt><dd>${escapeHtml(actionLabel)}</dd></div>
+            <div><dt>Accepted to Inventory</dt><dd>${Number(item.accepted_quantity || 0)} ${escapeHtml(conversion.inventoryUnit)} total</dd></div>
+            <div><dt>Issue</dt><dd>${escapeHtml(item.issue_type || 'No issue')}</dd></div>
+            <div><dt>Affected Goods Action</dt><dd>${escapeHtml(dispositionLabel)}</dd></div>
+            <div><dt>Supplier Resolution</dt><dd>${escapeHtml(resolutionLabel)}</dd></div>
+        </dl></article>`;
+    }).join('');
+    const steps = [...document.querySelectorAll('.receive-simple-step')];
+    const inspectionComplete = summary.checks.inspection;
+    const batchesComplete = summary.checks.batches;
+    steps.forEach((step, index) => {
+        const complete = index === 0 ? inspectionComplete : (index === 1 ? inspectionComplete && batchesComplete : summary.valid);
+        const active = index === 0 ? !inspectionComplete : (index === 1 ? inspectionComplete && !batchesComplete : inspectionComplete && batchesComplete);
+        step.classList.toggle('is-complete', complete);
+        step.classList.toggle('is-active', active);
+    });
     const validation = document.getElementById('receiveValidationSummary');
-    validation.classList.toggle('d-none', summary.errors.length === 0);
-    validation.innerHTML = summary.errors.length ? `<strong>Cannot confirm receiving</strong><ul>${summary.errors.slice(0, 6).map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul>` : '';
+    const showValidation = receiveValidationAttempted && summary.errors.length > 0;
+    validation.classList.toggle('d-none', !showValidation);
+    validation.innerHTML = showValidation ? '<strong>Please correct the highlighted fields before confirming.</strong>' : '';
     const confirmButton = document.getElementById('btnConfirmReceivePo');
     if (confirmButton) confirmButton.disabled = !summary.valid || receiveSubmitting;
     const footer = document.getElementById('receiveFooterStatus');
-    if (footer) footer.textContent = summary.valid ? 'Ready to confirm receiving.' : `Cannot confirm because ${String(summary.errors[0] || 'required receiving checks are incomplete').replace(/^Product \d+: /, '').replace(/\.$/, '').toLowerCase()}.`;
+    if (footer) footer.textContent = summary.valid ? 'Ready to confirm receiving.' : (receiveValidationAttempted ? 'Please correct the highlighted fields before confirming.' : 'Complete each product inspection and batch allocation.');
     const cards = [...document.querySelectorAll('#receiveInspectionCards .receive-item-card')];
     const inspectedProducts = cards.filter((card) => card.querySelector('.receive-inspected-input')?.value === '1').length;
     const overallProducts = document.getElementById('receiveOverallProductProgress');
@@ -3605,7 +3793,7 @@ function renderReceivePaymentSummary() {
         const complete = card.querySelector('.receive-inspected-input')?.value === '1';
         const issue = !card.querySelector('.receive-issue-flag')?.classList.contains('d-none');
         navItem.classList.toggle('is-complete', complete);
-        navItem.classList.toggle('has-issue', issue && !complete);
+        navItem.classList.toggle('has-issue', issue);
         const status = card.querySelector('.receive-inspection-badge')?.textContent || 'Waiting';
         const copy = navItem.querySelector('small');
         if (copy) copy.textContent = status;
@@ -3619,9 +3807,8 @@ function updateCurrentProductProgress() {
     const card = document.querySelector(`#receiveInspectionCards .receive-item-card[data-product-index="${activeInspectionProductIndex}"]`);
     const target = document.getElementById('receiveCurrentProductProgress');
     if (!card || !target) return;
-    const keys = ['Quantities', 'Damage', 'Returns', 'Batches', 'Expiry', 'Resolution', 'Remarks', 'FinalInspection'];
-    const complete = keys.filter((key) => card.dataset[`check${key}`] === '1').length;
-    target.textContent = `Current product: ${complete} of 8 checks`;
+    const cards = [...document.querySelectorAll('#receiveInspectionCards .receive-item-card')];
+    target.textContent = `Product ${activeInspectionProductIndex + 1} of ${cards.length}`;
 }
 
 function showReceiveProduct(index, scroll = true) {
@@ -3690,7 +3877,7 @@ function navigateReceiveChecklistStep(checkKey) {
             focusTarget = card.querySelector('.receive-qty-input');
         } else if (checkKey === 'damage') {
             target = card.querySelector('.receive-damage-anchor');
-            focusTarget = card.querySelector('.damaged-qty-input');
+            focusTarget = card.querySelector('.damage-line-qty, .receive-add-damage-line');
         } else if (checkKey === 'returns') {
             target = card.querySelector('.receive-return-anchor');
         } else if (checkKey === 'batches') {
@@ -3724,22 +3911,23 @@ async function openReceivePurchaseOrder(poId) {
         return;
     }
     try {
+        receiveValidationAttempted = false;
         activeReceiveOrder = await getPurchaseOrder(poId);
         if (activeReceiveOrder.status !== 'Arrived') throw new Error('This purchase order is no longer available for active inspection.');
         document.getElementById('receivePoNumber').textContent = activeReceiveOrder.po_number || '-';
         document.getElementById('receiveSupplierName').textContent = activeReceiveOrder.supplier_name || '-';
         document.getElementById('receiveArrivalDate').textContent = formatDate(activeReceiveOrder.received_date || activeReceiveOrder.expected_delivery_date || activeReceiveOrder.order_date);
-        document.getElementById('receiveProductCount').textContent = String(activeReceiveOrder.items?.length || 0);
-        document.getElementById('receiveHeaderOrderedQty').textContent = String((activeReceiveOrder.items || []).reduce((sum, item) => sum + Number(item.inventory_qty_ordered || item.quantity || 0), 0));
+        const headerItems = activeReceiveOrder.items || [];
+        const firstHeaderItem = headerItems[0] || {};
+        const firstProductName = [productTableBrand(firstHeaderItem), productTableProductName(firstHeaderItem)].filter(Boolean).join(' — ') || '-';
+        document.getElementById('receiveProductCount').textContent = headerItems.length > 1 ? `${firstProductName} + ${headerItems.length - 1} more` : firstProductName;
+        document.getElementById('receiveHeaderOrderedQty').textContent = headerItems.length === 1
+            ? receiveUnitCountLabel(Number(firstHeaderItem.purchase_qty || 0), purchasingConversion({ purchase_unit: firstHeaderItem.purchase_unit, inventory_unit: firstHeaderItem.unit || 'unit', units_per_purchase_unit: firstHeaderItem.units_per_purchase_unit || 1 }).purchaseUnit)
+            : 'See item details';
+        document.getElementById('receivePoStatus').textContent = activeReceiveOrder.status || 'Arrived';
         document.getElementById('receivePoRemarks').value = activeReceiveOrder.inspection_draft?.remarks || '';
         document.getElementById('inspectionBreadcrumbPo').textContent = activeReceiveOrder.po_number || 'Purchase Order';
         document.getElementById('inspectionWorkspaceTitle').textContent = `Inspect ${activeReceiveOrder.po_number || 'Delivery'}`;
-        const additionalAmount = document.getElementById('receiveAdditionalAmount');
-        if (additionalAmount) additionalAmount.value = activeReceiveOrder.inspection_draft?.supplier_discount || '0';
-        const paymentStatus = document.getElementById('receivePaymentStatus');
-        if (paymentStatus) paymentStatus.value = activeReceiveOrder.inspection_draft?.payment_status || activeReceiveOrder.payment_status || 'Unpaid';
-        const amountPaid = document.getElementById('receiveAmountPaid');
-        if (amountPaid) amountPaid.value = activeReceiveOrder.inspection_draft?.amount_paid || '0';
         document.getElementById('receiveDraftBadge')?.classList.toggle('d-none', !activeReceiveOrder.inspection_in_progress);
         renderReceiveItems(activeReceiveOrder);
         renderReceivePaymentSummary();
@@ -3761,8 +3949,6 @@ function receivePayload(strict = true) {
     return {
         po_id: activeReceiveOrder.po_id,
         remarks: document.getElementById('receivePoRemarks')?.value || '',
-        supplier_discount: Number(document.getElementById('receiveAdditionalAmount')?.value || 0),
-        additional_amount: Number(document.getElementById('receiveAdditionalAmount')?.value || 0),
         items: summary.items
     };
 }
@@ -3771,8 +3957,8 @@ function receiveReceiptRows(payload) {
     return payload.items.map((payloadItem) => {
         const orderItem = activeReceiveOrder.items.find((item) => String(item.po_item_id) === String(payloadItem.po_item_id)) || {};
         const receivedQty = Number(payloadItem.received_quantity || 0);
-        const damagedQty = Number(payloadItem.damaged_quantity || 0);
-        const goodQty = Math.max(0, receivedQty - damagedQty);
+        const damagedQty = Number(payloadItem.damaged_base_quantity || payloadItem.damaged_quantity || 0);
+        const goodQty = Number(payloadItem.accepted_quantity ?? Math.max(0, receivedQty - Number(payloadItem.action_base_quantity || damagedQty)));
         const unitCost = Number(orderItem.price || 0);
         const affectedQty = damagedQty + Math.max(0, Number(orderItem.inventory_qty_ordered || orderItem.quantity || 0) - receivedQty);
         const supplierCredit = ['return_for_credit', 'reject_without_replacement'].includes(payloadItem.resolution) ? affectedQty * unitCost : 0;
@@ -3795,17 +3981,19 @@ function receiveReceiptRows(payload) {
     }).join('');
 }
 
-let currentReceiptReport = null;
-
 function receiptReportFromReceiving(details) {
     return {
-        pharmacyName: details.pharmacy?.name || 'Pharmacy',
-        pharmacyAddress: details.pharmacy?.address || 'Address not configured',
-        contact: details.pharmacy?.contact_number || 'Contact number not configured',
+        pharmacyName: details.pharmacy?.name || 'Dr. R Pharmacy',
+        pharmacyAddress: details.pharmacy?.address || '',
+        contact: details.pharmacy?.contact_number || '',
         grnNo: details.grn_number,
         poNo: details.po_number,
         supplier: details.supplier_name,
-        receivedBy: details.received_by || 'System',
+        supplierAddress: details.supplier_address || '',
+        deliveryReference: details.delivery_reference || '',
+        receivedBy: details.grn_settings?.received_by_name || '',
+        checkedBy: '',
+        approvedBy: details.grn_settings?.approved_by_name || '',
         receivedDate: details.received_date,
         status: details.receiving_result,
         paymentTerms: details.payment_terms || 'Not set',
@@ -3819,14 +4007,17 @@ function receiptReportFromReceiving(details) {
         remainingBalance: Number(details.payment?.remaining_balance || 0),
         paymentStatus: details.payment?.payment_status || 'Unpaid',
         items: (details.items || []).map((item) => ({
+            productCode: item.product_code || item.sku || '',
+            category: item.category_name || '',
             product: item.product_name,
             brand: item.brand_name,
-            specification: [item.generic_or_variant, item.strength, item.size_value, item.unit, item.packaging].filter(Boolean).join(' · '),
+            specification: [item.generic_or_variant, item.strength, item.size_value, item.packaging].filter(Boolean).join(' - '),
             orderedQty: Number(item.ordered_quantity || 0),
             receivedQty: Number(item.delivered_quantity || 0),
             acceptedQty: Number(item.accepted_quantity || 0),
             goodQty: Number(item.accepted_quantity || 0),
             damagedQty: Number(item.damaged_quantity || 0),
+            damageBreakdown: item.damage_breakdown || [],
             returnedQty: Number(item.returned_quantity || 0),
             missingQty: Number(item.missing_quantity || 0),
             replacementPendingQty: Number(item.replacement_pending_quantity || 0),
@@ -3851,231 +4042,222 @@ function receiptDisplayDate(value) {
         : parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function receiptItemName(item) {
-    const product = String(item.product || '').trim();
-    const brand = String(item.brand || '').trim();
-    const specification = String(item.specification || '').trim();
-    const base = !brand || product.toLowerCase().includes(brand.toLowerCase())
-        ? (product || brand || 'Item')
-        : `${brand} ${product}`.trim();
-    return [base, specification].filter(Boolean).join(' ');
-}
-
 function receiptTotals(report) {
     return {
         ordered: report.items.reduce((sum, item) => sum + item.orderedQty, 0),
+        received: report.items.reduce((sum, item) => sum + item.receivedQty, 0),
         accepted: report.items.reduce((sum, item) => sum + Number(item.acceptedQty ?? item.goodQty ?? 0), 0),
         damaged: report.items.reduce((sum, item) => sum + item.damagedQty, 0),
+        returned: report.items.reduce((sum, item) => sum + item.returnedQty, 0),
         inventoryAdded: report.items.reduce((sum, item) => sum + Number(item.inventoryAdded ?? item.goodQty ?? 0), 0)
     };
 }
 
-function receiptResolutionLines(item) {
-    if (item.resolution === 'return_for_replacement') return `&nbsp;&nbsp;Returned for Replacement: ${item.returnedQty}<br>&nbsp;&nbsp;Replacement Pending: ${item.replacementPendingQty}<br>`;
-    if (item.resolution === 'return_for_credit') return `&nbsp;&nbsp;Returned for Credit: ${item.returnedQty}<br>`;
-    if (item.resolution === 'reject_without_replacement') return `&nbsp;&nbsp;Rejected: ${item.damagedQty}<br>`;
-    if (['keep_damaged', 'keep_with_discount'].includes(item.resolution)) return `&nbsp;&nbsp;Kept and Accepted: ${item.damagedQty}<br>`;
-    return '';
+function grnInformationRows(rows) {
+    return rows
+        .filter(([label, value]) => label === 'Received By' || String(value ?? '').trim() !== '')
+        .map(([label, value]) => `<div class="grn-info-row${['PO Number', 'GRN Number'].includes(label) ? ' grn-number-row' : ''}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+        .join('');
 }
 
-function receiptDetailHtml(report) {
-    return `
-        <div class="receipt full-report">
-            <div class="center"><strong>${escapeHtml(report.pharmacyName)}</strong></div>
-            <div class="title">FULL RECEIVING REPORT</div>
-            <div class="dash"></div>
-            ${report.items.map((item, index) => `
-                <div class="item">
-                    <strong>${index + 1}. ${escapeHtml(receiptItemName(item))}</strong><br>
-                    &nbsp;&nbsp;Ordered: ${item.orderedQty} ${escapeHtml(item.unitLabel)}<br>
-                    &nbsp;&nbsp;Received: ${item.receivedQty}<br>
-                    &nbsp;&nbsp;Accepted into Inventory: ${item.acceptedQty ?? item.goodQty}<br>
-                    &nbsp;&nbsp;Damaged: ${item.damagedQty}<br>
-                    &nbsp;&nbsp;Returned: ${item.returnedQty || 0}<br>
-                    &nbsp;&nbsp;Missing: ${item.missingQty || 0}<br>
-                    ${receiptResolutionLines(item)}
-                    &nbsp;&nbsp;Resolution: ${escapeHtml(item.resolutionLabel || item.damageAction || 'No issue')}<br>
-                    &nbsp;&nbsp;Inventory Added: ${item.inventoryAdded ?? item.goodQty}<br>
-                    &nbsp;&nbsp;Unit Cost: ${peso(item.unitCost)}<br>
-                    &nbsp;&nbsp;Batch / Expiry: ${escapeHtml((item.batches || []).map((batch) => `${batch.batch_identifier} (${batch.batch_quantity}) · ${batch.expiry_date ? formatDate(batch.expiry_date) : 'No expiry'}`).join('; ') || item.expiryDate)}<br>
-                    &nbsp;&nbsp;Remarks: ${escapeHtml(item.remarks || 'None')}
-                </div>
-                <div class="dash"></div>
-            `).join('')}
-            </aside>
-        </div>
-    `;
-}
-
-function receiptHtml(report) {
-    const totals = receiptTotals(report);
-    return `
-        <div class="receipt">
-            <div class="center receipt-head"><strong>${escapeHtml(report.pharmacyName)}</strong><br>${escapeHtml(report.pharmacyAddress)}<br>${escapeHtml(report.contact)}</div>
-            <div class="title">GOODS RECEIVED NOTE</div>
-            <div class="line"><span>PO No:</span><span>${escapeHtml(report.poNo)}</span></div>
-            <div class="line"><span>GRN No:</span><span>${escapeHtml(report.grnNo)}</span></div>
-            <div class="line"><span>Supplier:</span><span>${escapeHtml(report.supplier)}</span></div>
-            <div class="line"><span>Received:</span><span>${escapeHtml(receiptDisplayDate(report.receivedDate))}</span></div>
-            <div class="line"><span>Received By:</span><span>${escapeHtml(report.receivedBy)}</span></div>
-            <div class="line"><span>Status:</span><span>${escapeHtml(report.status)}</span></div>
-            <div class="dash"></div>
-            <div class="title">ITEMS</div>
-            ${report.items.map((item, index) => `
-                <div class="item">
-                    <strong>${index + 1}. ${escapeHtml(receiptItemName(item))}</strong><br>
-                    &nbsp;&nbsp;${item.orderedQty} ${escapeHtml(item.unitLabel)} x ${peso(item.unitCost)}<br>
-                    &nbsp;&nbsp;Delivered: ${item.receivedQty}<br>
-                    &nbsp;&nbsp;Accepted into Inventory: ${item.acceptedQty ?? item.goodQty}<br>
-                    &nbsp;&nbsp;Damaged: ${item.damagedQty}<br>
-                    ${receiptResolutionLines(item)}
-                    &nbsp;&nbsp;Resolution: ${escapeHtml(item.resolutionLabel || item.damageAction || 'No issue')}<br>
-                    &nbsp;&nbsp;Inventory Added: ${item.inventoryAdded ?? item.goodQty}
-                </div>
-                <div class="dash"></div>
-            `).join('')}
-            <div class="title">SUMMARY</div>
-            <div class="line"><span>Items Ordered</span><span>${totals.ordered}</span></div>
-            <div class="line"><span>Items Accepted</span><span>${totals.accepted}</span></div>
-            <div class="line"><span>Damaged</span><span>${totals.damaged}</span></div>
-            <div class="line"><span>Inventory Added</span><span>${totals.inventoryAdded}</span></div>
-            <br>
-            <div class="line"><span>Original PO Total:</span><span>${peso(report.originalTotal || 0)}</span></div>
-            <div class="line"><span>Returned / Rejected Value:</span><span>${peso(report.returnedRejectedValue || 0)}</span></div>
-            <div class="line"><span>Supplier Credit:</span><span>-${peso(report.supplierCredit)}</span></div>
-            <div class="line"><span>Supplier Discount:</span><span>-${peso(report.supplierDiscount)}</span></div>
-            <div class="line"><span>Total Paid:</span><span>${peso(report.totalPaid || 0)}</span></div>
-            <div class="line"><span>Remaining Balance:</span><span>${peso(report.remainingBalance || 0)}</span></div>
-            <div class="line"><span>Payment Status:</span><span>${escapeHtml(report.paymentStatus || 'Unpaid')}</span></div>
-            <div class="final center">ADJUSTED PAYABLE<br><strong>${peso(report.adjustedPayable ?? report.finalPayment)}</strong></div>
-            <div class="dash"></div>
-            <strong>Remarks:</strong><br>${escapeHtml(report.remarks || 'None')}
-            <div class="signature">Received By:</div>
-            <div class="sign-line"></div>
-            <div class="signature">Checked By:</div>
-            <div class="sign-line"></div>
-            <div class="dash"></div>
-            <div class="center">Thank you.</div>
-        </div>
-    `;
-}
-
-function downloadReceiptPdf(report = currentReceiptReport) {
-    if (!report) return;
-    const jsPDF = window.jspdf?.jsPDF;
-    if (!jsPDF) return;
-    const height = Math.max(220, 145 + (report.items.length * 40));
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [80, height] });
-    const margin = 5;
-    let y = 7;
-    const add = (text, options = {}) => {
-        doc.setFont('courier', options.bold ? 'bold' : 'normal');
-        doc.setFontSize(options.size || 9);
-        const lines = doc.splitTextToSize(String(text ?? ''), 70);
-        doc.text(lines, options.center ? 40 : margin, y, { align: options.center ? 'center' : 'left' });
-        y += lines.length * ((options.size || 9) * 0.42) + (options.gap ?? 1.5);
-    };
-    const dash = () => { doc.line(margin, y, 75, y); y += 3.5; };
-    const pair = (label, value, options = {}) => {
-        doc.setFont('courier', options.bold ? 'bold' : 'normal');
-        doc.setFontSize(options.size || 9);
-        doc.text(String(label), margin, y);
-        doc.text(String(value), 75, y, { align: 'right' });
-        y += options.gap ?? 4;
-    };
-    const totals = receiptTotals(report);
-    add(report.pharmacyName, { center: true, bold: true, size: 12 });
-    add(report.pharmacyAddress, { center: true, size: 8 });
-    add(report.contact, { center: true, size: 8, gap: 3 });
-    add('GOODS RECEIVED NOTE', { center: true, bold: true, size: 10, gap: 3 });
-    add(`PO No: ${report.poNo}`);
-    add(`GRN No: ${report.grnNo}`);
-    add(`Supplier: ${report.supplier}`);
-    add(`Received: ${receiptDisplayDate(report.receivedDate)}`);
-    add(`Received By: ${report.receivedBy}`);
-    add(`Status: ${report.status}`);
-    dash();
-    add('ITEMS', { center: true, bold: true, size: 10 });
-    report.items.forEach((item, index) => {
-        add(`${index + 1}. ${receiptItemName(item)}`, { bold: true });
-        add(`   ${item.orderedQty} ${item.unitLabel} x ${peso(item.unitCost)}`);
-        add(`   Delivered: ${item.receivedQty}`);
-        add(`   Accepted into Inventory: ${item.acceptedQty ?? item.goodQty}`);
-        add(`   Damaged: ${item.damagedQty}`);
-        if (item.returnedQty) add(`   Returned: ${item.returnedQty}`);
-        if (item.missingQty) add(`   Missing: ${item.missingQty}`);
-        if (item.replacementPendingQty) add(`   Replacement Pending: ${item.replacementPendingQty}`);
-        add(`   Resolution: ${item.resolutionLabel || item.damageAction || 'No issue'}`);
-        add(`   Inventory Added: ${item.inventoryAdded ?? item.goodQty}`, { gap: 3 });
-        dash();
+function grnGroupedItems(items) {
+    const groups = [];
+    const groupIndex = new Map();
+    items.forEach((item, index) => {
+        const category = String(item.category || '').trim();
+        const key = category.toLowerCase();
+        if (!groupIndex.has(key)) {
+            groupIndex.set(key, groups.length);
+            groups.push({ category, items: [] });
+        }
+        groups[groupIndex.get(key)].items.push({ item, index });
     });
-    add('SUMMARY', { center: true, bold: true, size: 10 });
-    pair('Items Ordered', totals.ordered);
-    pair('Items Accepted', totals.accepted);
-    pair('Damaged', totals.damaged);
-    pair('Inventory Added', totals.inventoryAdded);
-    y += 2;
-    pair('Original PO Total', peso(report.originalTotal || 0));
-    pair('Returned / Rejected', peso(report.returnedRejectedValue || 0));
-    pair('Supplier Credit', `-${peso(report.supplierCredit)}`);
-    pair('Supplier Discount', `-${peso(report.supplierDiscount)}`);
-    pair('Total Paid', peso(report.totalPaid || 0));
-    pair('Remaining Balance', peso(report.remainingBalance || 0));
-    pair('Payment Status', report.paymentStatus || 'Unpaid', { gap: 6 });
-    add('ADJUSTED PAYABLE', { center: true, bold: true, size: 11, gap: 1 });
-    add(peso(report.adjustedPayable ?? report.finalPayment), { center: true, bold: true, size: 14, gap: 4 });
-    dash();
-    add('Remarks:', { bold: true });
-    add(report.remarks || 'None', { gap: 5 });
-    add('Received By:', { gap: 7 });
-    dash();
-    add('Checked By:', { gap: 7 });
-    dash();
-    add('Thank you.', { center: true });
-    doc.save(`${report.grnNo}.pdf`);
+    return groups;
 }
 
-window.__drpDownloadPoReceiptPdf = () => downloadReceiptPdf();
+function grnProductRows(report) {
+    return grnGroupedItems(report.items).map((group) => `
+        ${group.category ? `<tr class="grn-category-row"><th colspan="13">${escapeHtml(group.category.toUpperCase())}</th></tr>` : ''}
+        ${group.items.map(({ item, index }) => {
+            const lineTotal = Number(item.orderedQty || 0) * Number(item.unitCost || 0);
+            return `
+                <tr>
+                    <td class="center">${index + 1}</td>
+                    <td>${escapeHtml(item.brand || '')}</td>
+                    <td>${escapeHtml(item.product || '')}</td>
+                    <td>${escapeHtml(item.specification || '')}</td>
+                    <td class="center">${escapeHtml(item.unitLabel || '')}</td>
+                    <td class="number">${item.orderedQty}</td>
+                    <td class="number">${item.receivedQty}</td>
+                    <td class="number">${item.acceptedQty ?? item.goodQty}</td>
+                    <td class="number">${item.damagedQty}</td>
+                    <td class="number">${item.returnedQty || 0}</td>
+                    <td class="center">${escapeHtml(item.expiryDate || '')}</td>
+                    <td class="money">${peso(item.unitCost)}</td>
+                    <td class="money">${peso(lineTotal)}</td>
+                </tr>
+            `;
+        }).join('')}
+    `).join('');
+}
 
-function openReceiptPreview(report) {
-    currentReceiptReport = report;
-    const receiptWindow = window.open('', '_blank', 'width=420,height=720');
+function openReceiptPreview(report, options = {}) {
+    const receiptWindow = options.targetWindow || window.open('', '_blank', 'width=1200,height=850');
     if (!receiptWindow) return;
+    const totals = receiptTotals(report);
     receiptWindow.document.write(`
         <!doctype html>
         <html>
         <head>
+            <meta charset="utf-8">
             <title>Goods Received Note</title>
             <style>
-                body { margin: 0; color: #000; background: #f3f4f6; font-family: "Courier New", monospace; }
-                .actions { display: flex; gap: 8px; justify-content: center; padding: 14px; }
-                button { padding: 8px 12px; border: 1px solid #000; background: #fff; color:#000; cursor: pointer; }
-                .receipt { width: 80mm; margin: 0 auto 24px; padding: 10px 12px; background: #fff; box-sizing: border-box; font-size: 12px; line-height: 1.35; overflow-wrap: break-word; word-break: normal; hyphens: none; }
+                * { box-sizing: border-box; }
+                @page { size: A4 portrait; margin: 10mm; }
+                body { margin: 0; color: #111; background: #e5e7eb; font-family: Arial, Helvetica, sans-serif; }
+                .actions { display: flex; gap: 8px; justify-content: center; padding: 12px; }
+                ${options.embedded ? '.actions { display: none; } body { padding: 18px 0; }' : ''}
+                button { padding: 8px 14px; border: 1px solid #111; border-radius: 3px; background: #fff; color: #111; font: 600 13px Arial, sans-serif; cursor: pointer; }
+                .grn-document { display: flex; flex-direction: column; width: 210mm; min-height: 297mm; margin: 0 auto 24px; padding: 10mm; background: #fff; box-shadow: 0 8px 28px rgba(0,0,0,.16); font-size: 8pt; line-height: 1.25; }
+                .grn-header { padding-bottom: 2.5mm; text-align: center; border-bottom: 1.5px solid #111; }
+                .grn-pharmacy { font-size: 15pt; font-weight: 800; letter-spacing: .2px; }
+                .grn-address, .grn-contact { margin-top: .6mm; font-size: 7.5pt; line-height: 1.2; }
+                .grn-title { margin-top: 2mm; font-size: 11.5pt; font-weight: 800; letter-spacing: 1.1px; }
+                .grn-info-grid { display: grid; grid-template-columns: minmax(0,.95fr) minmax(0,1.25fr) minmax(0,.8fr); gap: 3mm; padding: 2.5mm 0; border-bottom: 1px solid #444; }
+                .grn-info-column { min-width: 0; }
+                .grn-info-row { display: grid; grid-template-columns: 22mm minmax(0,1fr); gap: 1.5mm; margin: .8mm 0; align-items: start; }
+                .grn-info-row span { font-size: 6pt; line-height: 1.25; font-weight: 700; color: #444; text-transform: uppercase; }
+                .grn-info-row strong { min-width: 0; font-size: 7.2pt; line-height: 1.25; font-weight: 700; overflow-wrap: break-word; word-break: normal; }
+                .grn-number-row { grid-template-columns: 22mm minmax(0,1fr); }
+                .grn-number-row strong { white-space: nowrap; font-size: 7pt; }
+                .grn-table { width: 100%; margin-top: 2.5mm; border-collapse: collapse; table-layout: fixed; }
+                .grn-table col:nth-child(1) { width: 3%; }
+                .grn-table col:nth-child(2) { width: 8%; }
+                .grn-table col:nth-child(3) { width: 11%; }
+                .grn-table col:nth-child(4) { width: 17%; }
+                .grn-table col:nth-child(5) { width: 6%; }
+                .grn-table col:nth-child(n+6):nth-child(-n+10) { width: 4.5%; }
+                .grn-table col:nth-child(11) { width: 9%; }
+                .grn-table col:nth-child(12) { width: 8%; }
+                .grn-table col:nth-child(13) { width: 9.5%; }
+                .grn-table th, .grn-table td { padding: 1.25mm .7mm; border: .35mm solid #555; vertical-align: top; overflow-wrap: anywhere; }
+                .grn-table thead { display: table-header-group; }
+                .grn-table thead th { background: #e8e8e8; font-size: 5.4pt; line-height: 1.1; text-align: center; text-transform: uppercase; overflow-wrap: normal; word-break: normal; }
+                .grn-table tbody td { font-size: 6.2pt; }
+                .grn-table tr { break-inside: avoid; page-break-inside: avoid; }
+                .grn-category-row th { padding: 1.2mm; background: #d5d5d5; font-size: 6.5pt; text-align: left; letter-spacing: .5px; }
                 .center { text-align: center; }
-                .receipt-head strong { font-size: 14px; }
-                .title { margin: 10px 0 8px; text-align: center; font-weight: 800; }
-                .line { display: flex; justify-content: space-between; gap: 8px; }
-                .line span:last-child { text-align: right; overflow-wrap: break-word; word-break: normal; hyphens: none; }
-                .dash { margin: 9px 0; border-top: 1px dashed #000; }
-                .item { margin-top: 7px; overflow-wrap: break-word; word-break: normal; hyphens: none; }
-                .final { margin-top: 10px; font-weight: 900; font-size: 13px; }
-                .final strong { display: block; margin-top: 3px; font-size: 18px; }
-                .signature { margin-top: 16px; }
-                .sign-line { margin-top: 14px; border-top: 1px solid #000; }
-                .full-report { display: none; }
-                body.show-full .receipt-summary { display: none; }
-                body.show-full .full-report { display: block; }
-                @media print { body { background: #fff; } .actions { display: none; } .receipt { margin: 0; width: 80mm; } }
+                .number { text-align: center; font-variant-numeric: tabular-nums; }
+                .money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+                .grn-lower { display: grid; grid-template-columns: minmax(0,1fr) 78mm; gap: 6mm; margin-top: 3mm; break-inside: avoid; page-break-inside: avoid; }
+                .grn-section-title { margin-bottom: 2mm; padding-bottom: 1mm; border-bottom: 1px solid #333; font-size: 7pt; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; }
+                .grn-remarks-box { min-height: 24mm; padding: 2.5mm; border: .35mm solid #555; white-space: pre-wrap; }
+                .grn-summary { width: 100%; border-collapse: collapse; }
+                .grn-summary td { padding: 1.1mm 1.5mm; border-bottom: .25mm solid #aaa; font-size: 7pt; }
+                .grn-summary td:last-child { text-align: right; font-weight: 700; }
+                .grn-summary .grn-payable td { padding-top: 2mm; border-top: .5mm solid #222; border-bottom: .5mm double #222; font-size: 8pt; }
+                .grn-footer-spacer { flex: 1 0 4mm; min-height: 4mm; }
+                .grn-signatures { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12mm; break-inside: avoid; page-break-inside: avoid; }
+                .grn-signature { text-align: center; }
+                .grn-signature-line { min-height: 10mm; padding: 4.5mm 1mm 1mm; border-bottom: .35mm solid #222; font-weight: 700; overflow-wrap: break-word; }
+                .grn-signature-label { margin-top: 1.5mm; font-size: 6.5pt; font-weight: 700; text-transform: uppercase; }
+                @media print {
+                    body { background: #fff; }
+                    .actions { display: none; }
+                    .grn-document { width: 190mm; min-height: 277mm; margin: 0; padding: 0; box-shadow: none; }
+                    .grn-table thead { display: table-header-group; }
+                    .grn-table tbody tr, .grn-lower, .grn-signatures { break-inside: avoid; page-break-inside: avoid; }
+                }
             </style>
         </head>
         <body>
             <div class="actions">
-                <button onclick="window.opener.__drpDownloadPoReceiptPdf && window.opener.__drpDownloadPoReceiptPdf()">Print / Download PDF</button>
-                <button onclick="document.body.classList.toggle('show-full')">Full Report</button>
+                <button onclick="window.print()">Print / Save PDF</button>
                 <button onclick="window.close()">Close</button>
             </div>
-            <div class="receipt-summary">${receiptHtml(report)}</div>
-            ${receiptDetailHtml(report)}
+            <main class="grn-document">
+                <header class="grn-header">
+                    <div class="grn-pharmacy">${escapeHtml(report.pharmacyName)}</div>
+                    ${report.pharmacyAddress ? `<div class="grn-address">${escapeHtml(report.pharmacyAddress)}</div>` : ''}
+                    ${report.contact ? `<div class="grn-contact">Contact Number: ${escapeHtml(report.contact)}</div>` : ''}
+                    <div class="grn-title">GOODS RECEIVED NOTE</div>
+                </header>
+                <section class="grn-info-grid">
+                    <div class="grn-info-column">${grnInformationRows([
+                        ['Supplier', report.supplier],
+                        ['Supplier Address', report.supplierAddress],
+                        ['Received By', report.receivedBy]
+                    ])}</div>
+                    <div class="grn-info-column">${grnInformationRows([
+                        ['PO Number', report.poNo],
+                        ['GRN Number', report.grnNo],
+                        ['Received Date', receiptDisplayDate(report.receivedDate)]
+                    ])}</div>
+                    <div class="grn-info-column">${grnInformationRows([
+                        ['Receiving Status', report.status],
+                        ['Payment Status', report.paymentStatus],
+                        ['Delivery Reference', report.deliveryReference]
+                    ])}</div>
+                </section>
+                <table class="grn-table">
+                    <colgroup>${'<col>'.repeat(13)}</colgroup>
+                    <thead><tr>
+                        <th>#</th><th>Brand</th><th>Product Name</th><th>Specification</th><th>Unit</th>
+                        <th>Ord.<br>Qty</th><th>Rcvd.<br>Qty</th><th>Accept.<br>Qty</th><th>Damage<br>Qty</th><th>Return<br>Qty</th>
+                        <th>Expiry Date</th><th>Unit Cost</th><th>Line Total</th>
+                    </tr></thead>
+                    <tbody>${grnProductRows(report)}</tbody>
+                </table>
+                <section class="grn-lower">
+                    <div>
+                        <div class="grn-section-title">Remarks</div>
+                        <div class="grn-remarks-box">${escapeHtml(report.remarks || '')}</div>
+                    </div>
+                    <div>
+                        <div class="grn-section-title">Receiving Summary</div>
+                        <table class="grn-summary">
+                            <tr><td>Total Ordered Qty</td><td>${totals.ordered}</td></tr>
+                            <tr><td>Total Received Qty</td><td>${totals.received}</td></tr>
+                            <tr><td>Total Accepted Qty</td><td>${totals.accepted}</td></tr>
+                            <tr><td>Total Damaged Qty</td><td>${totals.damaged}</td></tr>
+                            <tr><td>Total Returned Qty</td><td>${totals.returned}</td></tr>
+                            <tr><td>Inventory Added</td><td>${totals.inventoryAdded}</td></tr>
+                        </table>
+                    </div>
+                </section>
+                <div class="grn-footer-spacer" aria-hidden="true"></div>
+                <section class="grn-signatures">
+                    <div class="grn-signature"><div class="grn-signature-line">${escapeHtml(report.receivedBy || '')}</div><div class="grn-signature-label">Received By</div></div>
+                    <div class="grn-signature"><div class="grn-signature-line">${escapeHtml(report.checkedBy || '')}</div><div class="grn-signature-label">Checked By</div></div>
+                    <div class="grn-signature"><div class="grn-signature-line">${escapeHtml(report.approvedBy || '')}</div><div class="grn-signature-label">Approved By</div></div>
+                </section>
+            </main>
+            <script>
+                function positionGrnSignatureFooter() {
+                    const documentNode = document.querySelector('.grn-document');
+                    const signatureNode = document.querySelector('.grn-signatures');
+                    const spacerNode = document.querySelector('.grn-footer-spacer');
+                    if (!documentNode || !signatureNode || !spacerNode) return;
+                    spacerNode.style.flex = '0 0 auto';
+                    spacerNode.style.height = '0px';
+                    const ruler = document.createElement('div');
+                    ruler.style.cssText = 'position:absolute;visibility:hidden;height:277mm;width:1px;';
+                    document.body.appendChild(ruler);
+                    const pageHeight = ruler.getBoundingClientRect().height;
+                    ruler.remove();
+                    const documentTop = documentNode.getBoundingClientRect().top + parseFloat(getComputedStyle(documentNode).paddingTop || 0);
+                    const signatureTop = signatureNode.getBoundingClientRect().top - documentTop;
+                    const signatureHeight = signatureNode.getBoundingClientRect().height;
+                    const pageOffset = ((signatureTop % pageHeight) + pageHeight) % pageHeight;
+                    let gap = pageHeight - pageOffset - signatureHeight;
+                    if (gap < 0) gap += pageHeight;
+                    spacerNode.style.height = Math.max(0, gap) + 'px';
+                }
+                window.addEventListener('load', positionGrnSignatureFooter);
+                window.addEventListener('beforeprint', positionGrnSignatureFooter);
+                window.addEventListener('resize', positionGrnSignatureFooter);
+                ${options.embedded ? `function fitEmbeddedGrn(){ document.body.style.zoom = Math.min(1, Math.max(.42, (window.innerWidth - 28) / 794)); } window.addEventListener('load', fitEmbeddedGrn); window.addEventListener('resize', fitEmbeddedGrn);` : ''}
+            <\/script>
         </body>
         </html>
     `);
@@ -4085,6 +4267,8 @@ function openReceiptPreview(report) {
 async function submitReceivePurchaseOrder() {
     if (receiveSubmitting) return;
     try {
+        receiveValidationAttempted = true;
+        renderReceivePaymentSummary();
         const payload = receivePayload();
         receiveSubmitting = true;
         const button = document.getElementById('btnConfirmReceivePo');
@@ -4095,6 +4279,7 @@ async function submitReceivePurchaseOrder() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+        try { sessionStorage.removeItem('productMasterFileCache:v1'); } catch {}
 
         PharmaUtils.modal.close();
         const confirmedPoId = activeReceiveOrder.po_id;
@@ -4154,6 +4339,7 @@ function openNextUninspectedCard() {
 
 const receivingDetailsCache = new Map();
 let activeReceivingDetails = null;
+let receivingUiScrollY = 0;
 let supplierPaymentSubmitting = false;
 let supplierPaymentSubmissionKey = '';
 let supplierPaymentPendingState = null;
@@ -4163,6 +4349,10 @@ let supplierPaymentResultContext = null;
 function receivingResolutionLabel(resolution = 'none') {
     return ({
         none: 'No issue',
+        replacement: 'Replacement',
+        supplier_credit: 'Supplier Credit',
+        next_po_credit: 'Credit on Next PO',
+        no_compensation: 'No Supplier Compensation',
         return_for_credit: 'Return for Supplier Credit',
         return_for_replacement: 'Return for Replacement',
         keep_with_discount: 'Keep with Supplier Discount',
@@ -4177,18 +4367,40 @@ function paymentMethodLabel(method = '') {
 
 function ensureReceivingUi() {
     if (document.getElementById('receivingUiBackdrop')) return;
-    document.body.insertAdjacentHTML('beforeend', `
-        <div class="receiving-ui-backdrop" id="receivingUiBackdrop"></div>
+    const inspectPage = document.body.dataset.page === 'inspect-deliveries';
+    const purchaseOrdersPage = document.body.dataset.page === 'purchase-orders';
+    const receivingReviewUi = inspectPage ? `
+        <section class="grn-modal" id="grnModal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="grnPreviewTitle" data-mode="preview" hidden>
+            <div class="grn-preview-shell">
+                <div class="grn-preview-view" id="grnPreviewView">
+                    <header class="grn-preview-toolbar">
+                        <div class="grn-toolbar-left"><strong id="grnPreviewTitle">Goods Received Note</strong><div class="grn-revision-meta"><span><b>Last Edited:</b> <span id="grnLastEdited">Not edited yet</span></span><span id="grnEditedByRow" class="d-none"><b>Edited By:</b> <span id="grnEditedBy"></span></span><span id="grnEditReasonRow" class="d-none"><b>Reason:</b> <span id="grnEditReason"></span></span></div></div>
+                        <div class="grn-preview-actions"><button class="btn btn-primary" id="btnGrnPreviewPrint" type="button"><i class="fa-solid fa-print me-1"></i>Print GRN</button><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button></div>
+                    </header>
+                    <div class="grn-preview-scroll"><iframe id="grnPreviewFrame" title="Goods Received Note A4 preview"></iframe></div>
+                </div>
+                <div class="grn-edit-view" id="grnEditView" hidden>
+                    <header><div><h2 id="grnEditTitle">Edit Goods Received Note</h2><p>Correct confirmed receiving values. Original PO identity and ordered quantities remain read-only.</p></div></header>
+                    <div class="grn-edit-body" id="grnEditBody"></div>
+                    <footer><button class="btn btn-light border" id="btnCancelGrnEdit" type="button">Cancel</button><button class="btn btn-purple" id="btnSaveGrnEdit" type="button" disabled><i class="fa-solid fa-floppy-disk me-1"></i>Save Changes</button></footer>
+                </div>
+            </div>
+        </section>` : purchaseOrdersPage ? '' : `
         <aside class="receiving-drawer" id="receivingDetailsDrawer" aria-hidden="true" aria-labelledby="receivingDetailsTitle">
             <header class="receiving-drawer-header"><div class="receiving-drawer-title"><h2 id="receivingDetailsTitle">Receiving Details</h2><p id="receivingDetailsSubtitle">Posted receiving record</p></div><button class="receiving-drawer-close" type="button" data-close-receiving-ui aria-label="Close receiving details"><i class="fa-solid fa-xmark"></i></button></header>
             <div class="receiving-drawer-body" id="receivingDetailsBody"><div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading receiving details...</div></div>
-            <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button><button class="btn btn-outline-primary" id="btnDrawerPrintGrn" type="button"><i class="fa-solid fa-print me-1"></i>Print GRN</button><button class="btn btn-purple" id="btnDrawerManagePayment" type="button"><i class="fa-solid fa-wallet me-1"></i>Manage Payment</button></footer>
-        </aside>
-        <aside class="receiving-drawer" id="supplierPaymentDrawer" aria-hidden="true" aria-labelledby="supplierPaymentTitle">
-            <header class="receiving-drawer-header"><div class="receiving-drawer-title"><h2 id="supplierPaymentTitle">Supplier Payment</h2><p id="supplierPaymentSubtitle">Purchase order payment</p></div><button class="receiving-drawer-close" type="button" data-close-receiving-ui aria-label="Close supplier payment"><i class="fa-solid fa-xmark"></i></button></header>
-            <div class="receiving-drawer-body" id="supplierPaymentBody"><div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading payment details...</div></div>
-            <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button><button class="btn btn-purple" id="btnSaveSupplierPayment" type="button"><i class="fa-solid fa-money-check-dollar me-1"></i>Record Payment</button></footer>
-        </aside>
+            <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button><button class="btn btn-outline-primary" id="btnDrawerPrintGrn" type="button"><i class="fa-solid fa-print me-1"></i>Print GRN</button><button class="btn btn-purple" id="btnDrawerManagePayment" type="button"><i class="fa-solid fa-wallet me-1"></i>Record Payment</button></footer>
+        </aside>`;
+    document.body.insertAdjacentHTML('beforeend', `
+        <div class="receiving-ui-backdrop" id="receivingUiBackdrop"></div>
+        ${receivingReviewUi}
+        <section class="supplier-payment-dialog" id="supplierPaymentDrawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="supplierPaymentTitle">
+            <div class="supplier-payment-dialog-card supplier-payment-entry-card">
+                <header class="receiving-drawer-header"><div class="receiving-drawer-title"><h2 id="supplierPaymentTitle">PO Payment</h2><p id="supplierPaymentSubtitle">Cash purchase order payment</p></div><button class="receiving-drawer-close" type="button" data-close-receiving-ui aria-label="Close supplier payment"><i class="fa-solid fa-xmark"></i></button></header>
+                <div class="receiving-drawer-body" id="supplierPaymentBody"><div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading payment details...</div></div>
+                <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button><button class="btn btn-purple" id="btnSaveSupplierPayment" type="button"><i class="fa-solid fa-money-check-dollar me-1"></i>Record Payment</button></footer>
+            </div>
+        </section>
         <section class="supplier-payment-dialog" id="supplierPaymentConfirmDialog" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="supplierPaymentConfirmTitle" aria-describedby="supplierPaymentConfirmMessage">
             <div class="supplier-payment-dialog-card">
                 <header class="supplier-payment-dialog-header"><span class="supplier-payment-dialog-icon information"><i class="fa-solid fa-circle-info"></i></span><div><h2 id="supplierPaymentConfirmTitle">Confirm Supplier Payment</h2><p>Review the financial details before posting.</p></div></header>
@@ -4205,12 +4417,19 @@ function ensureReceivingUi() {
         </section>`);
     document.querySelectorAll('[data-close-receiving-ui]').forEach((button) => button.addEventListener('click', closeReceivingUi));
     document.getElementById('receivingUiBackdrop')?.addEventListener('click', () => {
-        if (document.querySelector('.supplier-payment-dialog.is-open')) return;
+        if (document.querySelector('.supplier-payment-dialog.is-open') || document.getElementById('grnModal')?.dataset.mode === 'edit') return;
         closeReceivingUi();
     });
     document.getElementById('btnDrawerPrintGrn')?.addEventListener('click', () => activeReceivingDetails && openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails)));
     document.getElementById('btnDrawerManagePayment')?.addEventListener('click', () => activeReceivingDetails && openSupplierPayment(activeReceivingDetails.po_id));
+    document.getElementById('btnGrnPreviewPrint')?.addEventListener('click', () => activeReceivingDetails && openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails)));
+    document.getElementById('btnCancelGrnEdit')?.addEventListener('click', closeGrnEditForm);
+    document.getElementById('btnSaveGrnEdit')?.addEventListener('click', saveGrnEdit);
     document.getElementById('btnSaveSupplierPayment')?.addEventListener('click', submitSupplierPayment);
+    document.getElementById('supplierPaymentBody')?.addEventListener('click', (event) => {
+        const option = event.target.closest('.payment-basis-option');
+        if (option) selectSupplierPaymentBasis(option.dataset.paymentBasis || '');
+    });
     document.getElementById('btnCancelSupplierPaymentConfirm')?.addEventListener('click', cancelSupplierPaymentConfirmation);
     document.getElementById('btnConfirmSupplierPayment')?.addEventListener('click', confirmSupplierPayment);
     document.getElementById('btnSupplierPaymentResultSecondary')?.addEventListener('click', handleSupplierPaymentResultSecondary);
@@ -4222,16 +4441,32 @@ function ensureReceivingUi() {
 function closeReceivingUi() {
     document.querySelectorAll('.receiving-drawer').forEach((drawer) => { drawer.classList.remove('is-open'); drawer.setAttribute('aria-hidden', 'true'); drawer.setAttribute('inert', ''); });
     document.querySelectorAll('.supplier-payment-dialog').forEach((dialog) => { dialog.classList.remove('is-open'); dialog.setAttribute('aria-hidden', 'true'); dialog.setAttribute('inert', ''); });
+    document.querySelectorAll('.grn-modal').forEach((dialog) => { dialog.classList.remove('is-open'); dialog.hidden = true; dialog.setAttribute('aria-hidden', 'true'); dialog.setAttribute('inert', ''); });
     document.getElementById('receivingUiBackdrop')?.classList.remove('is-open');
     document.body.style.overflow = '';
+    window.scrollTo(0, receivingUiScrollY);
 }
 
 function showReceivingDrawer(drawerId) {
     ensureReceivingUi();
-    document.querySelectorAll('.supplier-payment-dialog').forEach((dialog) => { dialog.classList.remove('is-open'); dialog.setAttribute('aria-hidden', 'true'); dialog.setAttribute('inert', ''); });
+    if (!document.getElementById('receivingUiBackdrop')?.classList.contains('is-open')) receivingUiScrollY = window.scrollY;
+    document.querySelectorAll('.supplier-payment-dialog').forEach((dialog) => { const active = dialog.id === drawerId; dialog.classList.toggle('is-open', active); dialog.setAttribute('aria-hidden', active ? 'false' : 'true'); dialog.toggleAttribute('inert', !active); });
     document.querySelectorAll('.receiving-drawer').forEach((drawer) => { const active = drawer.id === drawerId; drawer.classList.toggle('is-open', active); drawer.setAttribute('aria-hidden', active ? 'false' : 'true'); drawer.toggleAttribute('inert', !active); });
+    document.querySelectorAll('.grn-modal').forEach((dialog) => { const active = dialog.id === drawerId; dialog.hidden = !active; dialog.classList.toggle('is-open', active); dialog.setAttribute('aria-hidden', active ? 'false' : 'true'); dialog.toggleAttribute('inert', !active); });
     document.getElementById('receivingUiBackdrop')?.classList.add('is-open');
     document.body.style.overflow = 'hidden';
+}
+
+function setGrnModalMode(mode = 'preview') {
+    const modal = document.getElementById('grnModal');
+    const preview = document.getElementById('grnPreviewView');
+    const edit = document.getElementById('grnEditView');
+    if (!modal || !preview || !edit) return;
+    const editing = mode === 'edit';
+    modal.dataset.mode = editing ? 'edit' : 'preview';
+    preview.hidden = editing;
+    edit.hidden = !editing;
+    modal.setAttribute('aria-labelledby', editing ? 'grnEditTitle' : 'grnPreviewTitle');
 }
 
 async function fetchReceivingDetails(poId, fresh = false) {
@@ -4243,6 +4478,27 @@ async function fetchReceivingDetails(poId, fresh = false) {
 
 function receivingItemDisplayName(item) {
     return [item.brand_name, item.product_name, item.generic_or_variant, item.strength, item.size_value, item.unit, item.packaging].filter((value) => String(value || '').trim()).join(' · ');
+}
+
+function receivingQuantityLabel(value, unit = 'Pc') {
+    return `${Number(value || 0)} ${String(unit || 'Pc')}`;
+}
+
+function receivingReturnedLabel(item) {
+    const baseQuantity = Number(item.returned_quantity || 0);
+    const selectedQuantity = Number(item.action_selected_quantity || 0);
+    const selectedUnit = String(item.action_unit_name || '').trim();
+    const base = receivingQuantityLabel(baseQuantity, item.unit || 'Pc');
+    return selectedQuantity > 0 && selectedUnit && (selectedQuantity !== baseQuantity || selectedUnit !== item.unit)
+        ? `${selectedQuantity} ${selectedUnit} / ${base}`
+        : base;
+}
+
+function receivingSupplierResolution(details) {
+    const labels = [...new Set((details.items || [])
+        .filter((item) => item.resolution && item.resolution !== 'none')
+        .map((item) => receivingResolutionLabel(item.resolution)))];
+    return labels.length ? labels.join(', ') : 'No supplier claim';
 }
 
 function renderPaymentHistory(payments = []) {
@@ -4276,19 +4532,29 @@ function renderReceivingDetails(details) {
         </div>
         <div class="receiving-section-title"><i class="fa-solid fa-magnifying-glass"></i>Product Inspection Results</div>
         ${items.map((item, index) => `
-            <article class="receiving-item-detail"><div class="receiving-item-head"><strong>${index + 1}. ${escapeHtml(receivingItemDisplayName(item))}</strong><span class="receiving-result-badge">${escapeHtml(receivingResolutionLabel(item.resolution))}</span></div>
+            <article class="receiving-item-detail"><div class="receiving-item-head"><div class="receiving-product-name"><strong>${index + 1}. ${escapeHtml(item.product_name || 'Product')}</strong>${item.brand_name ? `<span>${escapeHtml(item.brand_name)}</span>` : ''}</div><span class="receiving-result-badge">${escapeHtml(receivingResolutionLabel(item.resolution))}</span></div>
                 <div class="receiving-qty-grid">
-                    ${[['Ordered',item.ordered_quantity],['Delivered',item.delivered_quantity],['Accepted',item.accepted_quantity],['Damaged',item.damaged_quantity],['Returned',item.returned_quantity],['Missing',item.missing_quantity],['Replacement Pending',item.replacement_pending_quantity],['Inventory Added',item.inventory_added]].map(([label,value]) => `<div class="receiving-qty"><span>${label}</span><b>${Number(value || 0)}</b></div>`).join('')}
+                    ${[
+                        ['Ordered', receivingQuantityLabel(item.ordered_quantity, item.unit)],
+                        ['Delivered', receivingQuantityLabel(item.delivered_quantity, item.unit)],
+                        ['Accepted', receivingQuantityLabel(item.accepted_quantity, item.unit)],
+                        ['Physically Damaged', receivingQuantityLabel(item.damaged_quantity, item.unit)],
+                        ['Returned', receivingReturnedLabel(item)],
+                        ['Missing', receivingQuantityLabel(item.missing_quantity, item.unit)],
+                        ['Replacement Pending', receivingQuantityLabel(item.replacement_pending_quantity, item.unit)],
+                        ['Inventory Added', receivingQuantityLabel(item.inventory_added, item.unit)]
+                    ].map(([label,value]) => `<div class="receiving-qty"><span>${label}</span><b>${escapeHtml(value)}</b></div>`).join('')}
                 </div>
-                ${item.resolution !== 'none' ? `<div class="receiving-issue-copy"><strong>${escapeHtml(item.issue_type || 'Issue')}</strong> · ${escapeHtml(receivingResolutionLabel(item.resolution))}${item.return_status ? ` · ${escapeHtml(item.return_status)}` : ''}<br>${escapeHtml(item.item_remarks || 'No item remarks.')}</div>` : ''}
+                ${(item.damage_breakdown || []).length ? `<section class="receiving-damage-details"><h4>Damage Breakdown</h4>${item.damage_breakdown.map((line) => `<div class="receiving-damage-row"><span>${escapeHtml(line.affected_unit_name || 'Package')} ${Number(line.sequence_no || 0)}</span><strong>${Number(line.damaged_base_quantity || 0)} ${escapeHtml(item.unit || line.damaged_unit_name || 'Pc')} damaged</strong></div>`).join('')}<div class="receiving-damage-total"><span>Total Physically Damaged</span><strong>${receivingQuantityLabel(item.damaged_quantity, item.unit)} damaged</strong></div></section>` : ''}
+                ${item.resolution !== 'none' ? `<dl class="receiving-claim-summary"><div><dt>Issue</dt><dd>${escapeHtml(item.issue_type || 'Issue')}</dd></div><div><dt>Affected Goods Action</dt><dd>${escapeHtml(item.affected_goods_action || 'Not Applicable')}</dd></div><div><dt>Supplier Resolution</dt><dd>${escapeHtml(receivingResolutionLabel(item.resolution))}</dd></div><div><dt>Claim Status</dt><dd>${escapeHtml(item.return_status || 'Pending')}</dd></div>${String(item.item_remarks || '').trim() ? `<div class="wide"><dt>Item Remarks</dt><dd>${escapeHtml(item.item_remarks)}</dd></div>` : ''}</dl>` : ''}
             </article>`).join('')}
         <div class="receiving-section-title"><i class="fa-solid fa-boxes-stacked"></i>Batch and Expiry Allocation</div>
         ${items.map((item, index) => `<article class="receiving-item-detail"><div class="receiving-item-head"><strong>${index + 1}. ${escapeHtml(receivingItemDisplayName(item))}</strong><span>${Number(item.inventory_added || 0)} added</span></div><table class="receiving-batch-table"><thead><tr><th>Batch Identifier</th><th>Batch Qty</th><th>Inventory Qty</th><th>Damaged</th><th>Returned</th><th>Expiry</th></tr></thead><tbody>${(item.batches || []).length ? item.batches.map((batch) => `<tr><td>${escapeHtml(batch.batch_identifier)}</td><td>${batch.batch_quantity}</td><td>${batch.inventory_quantity}</td><td>${batch.damaged_qty}</td><td>${batch.returned_qty}</td><td>${escapeHtml(batch.expiry_date ? formatDate(batch.expiry_date) : 'No expiry')}</td></tr>`).join('') : '<tr><td colspan="6">No inventory batch was posted.</td></tr>'}</tbody></table></article>`).join('')}
         <div class="receiving-section-title"><i class="fa-solid fa-file-invoice-dollar"></i>Financial Summary</div>
         <div class="receiving-financial-card">
             <div class="receiving-money-line"><span>Original PO Total</span><strong>${peso(details.total_amount)}</strong></div>
-            <div class="receiving-money-line"><span>Returned or Rejected Value</span><strong>${peso(details.totals?.returned_rejected_value || 0)}</strong></div>
             ${supplierCredit > 0 || supplierDiscount > 0 ? `<details class="payment-adjustments"><summary>Adjustment breakdown</summary>${supplierCredit > 0 ? `<div class="receiving-money-line"><span>Supplier Credit</span><strong>-${peso(supplierCredit)}</strong></div>` : ''}${supplierDiscount > 0 ? `<div class="receiving-money-line"><span>Supplier Discount</span><strong>-${peso(supplierDiscount)}</strong></div>` : ''}</details>` : ''}
+            <div class="receiving-money-line"><span>Credits Applied</span><strong>-${peso(payment.supplier_credit_applied || 0)}</strong></div>
             <div class="receiving-money-line"><span>Adjusted Payable</span><strong>${peso(payment.adjusted_payable)}</strong></div>
             <div class="receiving-money-line"><span>Total Paid</span><strong>${peso(payment.total_paid)}</strong></div>
             <div class="receiving-money-line emphasis"><span>Remaining Balance</span><strong>${peso(payment.remaining_balance)}</strong></div>
@@ -4301,6 +4567,10 @@ function renderReceivingDetails(details) {
 }
 
 async function openReceivingDetails(poId) {
+    if (document.body.dataset.page === 'inspect-deliveries') {
+        await openGrnPreview(poId);
+        return;
+    }
     showReceivingDrawer('receivingDetailsDrawer');
     const body = document.getElementById('receivingDetailsBody');
     if (body) body.innerHTML = '<div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading receiving details...</div>';
@@ -4312,42 +4582,238 @@ async function openReceivingDetails(poId) {
         if (body) body.innerHTML = renderReceivingDetails(details);
         const manage = document.getElementById('btnDrawerManagePayment');
         if (manage) {
-            const canManage = details.payment?.payment_status !== 'Fully Paid' && Number(details.payment?.remaining_balance || 0) > 0;
+            const canManage = !isPurchaseOrderPaid(details.payment?.payment_status, details.payment?.remaining_balance);
             manage.classList.toggle('d-none', !canManage);
-            manage.innerHTML = '<i class="fa-solid fa-wallet me-1"></i>Manage Payment';
+            manage.innerHTML = '<i class="fa-solid fa-wallet me-1"></i>Record Payment';
         }
     } catch (error) {
         if (body) body.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`;
     }
 }
 
+function updateGrnRevisionToolbar(details) {
+    const revision = details.latest_revision || null;
+    const lastEdited = document.getElementById('grnLastEdited');
+    const editedByRow = document.getElementById('grnEditedByRow');
+    const reasonRow = document.getElementById('grnEditReasonRow');
+    if (lastEdited) lastEdited.textContent = revision ? receiptDisplayDate(revision.edited_at) : 'Not edited yet';
+    if (editedByRow) editedByRow.classList.toggle('d-none', !revision);
+    if (reasonRow) reasonRow.classList.toggle('d-none', !revision);
+    if (revision) {
+        const editedBy = document.getElementById('grnEditedBy');
+        const reason = document.getElementById('grnEditReason');
+        if (editedBy) editedBy.textContent = revision.edited_by_name || 'System';
+        if (reason) reason.textContent = revision.edit_reason || '';
+    }
+}
+
+function renderGrnPreviewDocument(details) {
+    const frame = document.getElementById('grnPreviewFrame');
+    if (!frame?.contentWindow) return;
+    openReceiptPreview(receiptReportFromReceiving(details), { targetWindow: frame.contentWindow, embedded: true });
+}
+
+async function openGrnPreview(poId) {
+    ensureReceivingUi();
+    setGrnModalMode('preview');
+    showReceivingDrawer('grnModal');
+    const frame = document.getElementById('grnPreviewFrame');
+    if (frame) frame.srcdoc = '<!doctype html><html><body style="font-family:Arial;padding:40px;text-align:center;color:#667085">Loading Goods Received Note...</body></html>';
+    try {
+        const details = await fetchReceivingDetails(poId, true);
+        activeReceivingDetails = details;
+        updateGrnRevisionToolbar(details);
+        renderGrnPreviewDocument(details);
+    } catch (error) {
+        if (frame) frame.srcdoc = `<!doctype html><html><body style="font-family:Arial;padding:40px;color:#b42318">${escapeHtml(error.message)}</body></html>`;
+    }
+}
+
+function grnConversionOptions(item, selectedId) {
+    return (item.package_conversions || []).map((conversion) => `<option value="${escapeHtml(conversion.conversion_id)}" ${String(conversion.conversion_id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(conversion.unit_name)} — ${Number(conversion.base_quantity)} ${escapeHtml(item.unit || 'Pc')}</option>`).join('');
+}
+
+function grnDispositionValue(value) {
+    return ({ 'Return to Supplier':'return_to_supplier', 'Hold/Quarantine':'hold_quarantine', Dispose:'dispose', 'Not Applicable':'not_applicable' })[value] || 'not_applicable';
+}
+
+function grnEditDamageRow(item, line = {}, index = 0) {
+    const defaultConversion = item.package_conversions?.find((conversion) => Number(conversion.base_quantity) === 1)?.conversion_id || item.package_conversions?.[0]?.conversion_id || '';
+    return `<div class="grn-edit-damage-row" data-damage-row><span class="grn-damage-number">Package ${index + 1}</span><select data-field="affected_conversion">${grnConversionOptions(item, line.affected_unit_conversion_id || item.package_conversions?.[0]?.conversion_id)}</select><input data-field="damaged_quantity" type="number" min="1" step="1" value="${Number(line.damaged_quantity || 1)}"><select data-field="damaged_conversion">${grnConversionOptions(item, line.damaged_unit_conversion_id || defaultConversion)}</select><button class="btn btn-sm btn-outline-danger" type="button" data-remove-grn-damage aria-label="Remove damage row"><i class="fa-solid fa-trash"></i></button></div>`;
+}
+
+function grnEditSelectOptions(options, selected) {
+    return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${String(value) === String(selected) ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+}
+
+function renderGrnEditForm(details) {
+    const paid = Number(details.payment?.total_paid || 0);
+    return `
+        <section class="grn-edit-identity"><div><span>PO Number</span><strong>${escapeHtml(details.po_number)}</strong></div><div><span>Supplier</span><strong>${escapeHtml(details.supplier_name)}</strong></div><div><span>GRN Number</span><strong>${escapeHtml(details.grn_number)}</strong></div></section>
+        <div class="grn-edit-notice"><i class="fa-solid fa-shield-halved"></i><span>Only quantity differences are posted. Existing inventory and payments are never reinserted or silently replaced.</span></div>
+        ${(details.items || []).map((item, index) => `
+            <article class="grn-edit-item" data-po-item-id="${escapeHtml(item.po_item_id)}">
+                <header><div><span>Item ${index + 1}</span><strong>${escapeHtml(item.product_name)}</strong><small>${escapeHtml(item.brand_name || '')}</small></div><div class="grn-readonly-ordered"><span>Original Ordered</span><strong>${receivingQuantityLabel(item.ordered_quantity, item.unit)}</strong></div></header>
+                <div class="grn-edit-grid">
+                    <label><span>Received Quantity</span><input data-field="received_quantity" type="number" min="0" max="${Number(item.ordered_quantity)}" step="1" value="${Number(item.delivered_quantity || 0)}"></label>
+                    <label><span>Physically Damaged</span><div class="grn-inline-fields"><input data-field="damaged_quantity" type="number" min="0" step="1" value="${Number(item.damaged_selected_quantity || item.damaged_quantity || 0)}"><select data-field="damaged_conversion">${grnConversionOptions(item, item.damaged_unit_conversion_id)}</select></div></label>
+                    <label><span>Affected Goods Quantity</span><div class="grn-inline-fields"><input data-field="action_quantity" type="number" min="0" step="1" value="${Number(item.action_selected_quantity || 0)}"><select data-field="action_conversion">${grnConversionOptions(item, item.action_unit_conversion_id)}</select></div></label>
+                    <label><span>Issue</span><select data-field="issue_type"><option value="">No issue</option>${grnEditSelectOptions(['Damaged Product','Broken Package','Expired','Wrong Item','Short Quantity','Other'].map((value) => [value,value]), item.issue_type)}</select></label>
+                    <label><span>Affected Goods Action</span><select data-field="disposition">${grnEditSelectOptions([['not_applicable','Not Applicable'],['return_to_supplier','Return to Supplier'],['hold_quarantine','Hold / Quarantine'],['dispose','Dispose']], grnDispositionValue(item.affected_goods_action))}</select></label>
+                    <label><span>Supplier Resolution</span><select data-field="resolution">${grnEditSelectOptions([['none','No issue'],['replacement','Replacement'],['supplier_credit','Supplier Credit'],['next_po_credit','Credit on Next PO'],['no_compensation','No Supplier Compensation']], item.resolution || 'none')}</select></label>
+                </div>
+                <section class="grn-edit-damage"><div class="grn-edit-subhead"><strong>Damage Breakdown</strong><button class="btn btn-sm btn-outline-primary" type="button" data-add-grn-damage><i class="fa-solid fa-plus me-1"></i>Add Package</button></div><div data-damage-list>${(item.damage_breakdown || []).map((line, lineIndex) => grnEditDamageRow(item, line, lineIndex)).join('')}</div></section>
+                <section class="grn-edit-batches"><strong>Batch &amp; Expiry</strong>${(item.batches || []).map((batch) => `<div class="grn-edit-batch" data-batch-id="${escapeHtml(batch.batch_id)}"><span>${escapeHtml(batch.batch_identifier)}</span><label>Quantity<input data-field="batch_quantity" type="number" min="1" step="1" value="${Number(batch.batch_quantity || 0)}"></label><label>Expiry Date<input data-field="batch_expiry" type="date" value="${escapeHtml(batch.expiry_date || '')}"></label></div>`).join('')}</section>
+                <label class="grn-edit-remarks"><span>Item Remarks</span><textarea data-field="item_remarks" rows="2">${escapeHtml(item.item_remarks || '')}</textarea></label>
+            </article>`).join('')}
+        <label class="grn-edit-remarks"><span>Receiving Remarks</span><textarea id="grnEditReceivingRemarks" rows="3">${escapeHtml(details.receiving_remarks || '')}</textarea></label>
+        ${paid > 0 ? `<label class="grn-financial-warning"><input id="grnAcknowledgeFinancial" type="checkbox"><span><strong>Payment history exists (${peso(paid)} paid).</strong> I understand corrected financial quantities may change the outstanding balance; historical payments will remain unchanged.</span></label>` : ''}
+        <label class="grn-edit-reason"><span>Reason for Edit <b>*</b></span><textarea id="grnEditReasonInput" maxlength="500" rows="3" placeholder="Explain why this confirmed receiving record must be corrected."></textarea><small>This reason and the complete before/after values will be saved in the GRN revision history.</small></label>`;
+}
+
+function updateGrnEditSaveState() {
+    const reasonPresent = Boolean(document.getElementById('grnEditReasonInput')?.value.trim());
+    const acknowledgement = document.getElementById('grnAcknowledgeFinancial');
+    const save = document.getElementById('btnSaveGrnEdit');
+    if (save) save.disabled = !reasonPresent || (acknowledgement && !acknowledgement.checked);
+}
+
+function refreshGrnDamageNumbers(itemNode) {
+    itemNode.querySelectorAll('[data-damage-row]').forEach((row, index) => { const label = row.querySelector('.grn-damage-number'); if (label) label.textContent = `Package ${index + 1}`; });
+}
+
+function openGrnEditForm() {
+    if (!activeReceivingDetails) return;
+    setGrnModalMode('edit');
+    showReceivingDrawer('grnModal');
+    const body = document.getElementById('grnEditBody');
+    if (!body) return;
+    body.innerHTML = renderGrnEditForm(activeReceivingDetails);
+    body.onclick = (event) => {
+        const itemNode = event.target.closest('.grn-edit-item');
+        if (!itemNode) return;
+        if (event.target.closest('[data-remove-grn-damage]')) { event.target.closest('[data-damage-row]')?.remove(); refreshGrnDamageNumbers(itemNode); }
+        const add = event.target.closest('[data-add-grn-damage]');
+        if (add) {
+            const item = activeReceivingDetails.items.find((candidate) => String(candidate.po_item_id) === String(itemNode.dataset.poItemId));
+            const list = itemNode.querySelector('[data-damage-list]');
+            if (item && list) { list.insertAdjacentHTML('beforeend', grnEditDamageRow(item, {}, list.querySelectorAll('[data-damage-row]').length)); }
+        }
+    };
+    document.getElementById('grnEditReasonInput')?.addEventListener('input', updateGrnEditSaveState);
+    document.getElementById('grnAcknowledgeFinancial')?.addEventListener('change', updateGrnEditSaveState);
+    updateGrnEditSaveState();
+}
+
+async function openGrnEditor(poId) {
+    ensureReceivingUi();
+    setGrnModalMode('edit');
+    showReceivingDrawer('grnModal');
+    const body = document.getElementById('grnEditBody');
+    if (body) body.innerHTML = '<div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading Goods Received Note...</div>';
+    try {
+        activeReceivingDetails = await fetchReceivingDetails(poId, true);
+        openGrnEditForm();
+    } catch (error) {
+        closeReceivingUi();
+        PharmaUtils.modal.error('GRN could not be loaded', error.message);
+    }
+}
+
+function closeGrnEditForm() {
+    closeReceivingUi();
+}
+
+function grnEditPayload() {
+    return {
+        receiving_id: activeReceivingDetails.receiving_id,
+        edit_reason: document.getElementById('grnEditReasonInput')?.value.trim() || '',
+        receiving_remarks: document.getElementById('grnEditReceivingRemarks')?.value.trim() || '',
+        acknowledge_financial_impact: Boolean(document.getElementById('grnAcknowledgeFinancial')?.checked),
+        items: [...document.querySelectorAll('.grn-edit-item')].map((itemNode) => ({
+            po_item_id: itemNode.dataset.poItemId,
+            received_quantity: Number(itemNode.querySelector('[data-field="received_quantity"]')?.value || 0),
+            damaged_quantity: Number(itemNode.querySelector('[data-field="damaged_quantity"]')?.value || 0),
+            damaged_unit_conversion_id: itemNode.querySelector('[data-field="damaged_conversion"]')?.value || '',
+            action_quantity: Number(itemNode.querySelector('[data-field="action_quantity"]')?.value || 0),
+            action_unit_conversion_id: itemNode.querySelector('[data-field="action_conversion"]')?.value || '',
+            issue_type: itemNode.querySelector('[data-field="issue_type"]')?.value || '',
+            disposition: itemNode.querySelector('[data-field="disposition"]')?.value || 'not_applicable',
+            resolution: itemNode.querySelector('[data-field="resolution"]')?.value || 'none',
+            remarks: itemNode.querySelector('[data-field="item_remarks"]')?.value.trim() || '',
+            damage_lines: [...itemNode.querySelectorAll('[data-damage-row]')].map((row) => ({ affected_unit_conversion_id:row.querySelector('[data-field="affected_conversion"]')?.value || '', damaged_quantity:Number(row.querySelector('[data-field="damaged_quantity"]')?.value || 0), damaged_unit_conversion_id:row.querySelector('[data-field="damaged_conversion"]')?.value || '' })),
+            batches: [...itemNode.querySelectorAll('.grn-edit-batch')].map((batch) => ({ batch_id:batch.dataset.batchId, quantity:Number(batch.querySelector('[data-field="batch_quantity"]')?.value || 0), expiry_date:batch.querySelector('[data-field="batch_expiry"]')?.value || '' }))
+        }))
+    };
+}
+
+async function saveGrnEdit() {
+    if (!activeReceivingDetails || !document.getElementById('grnEditReasonInput')?.value.trim()) return;
+    const button = document.getElementById('btnSaveGrnEdit');
+    try {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/update_receiving_grn.php`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(grnEditPayload()) });
+        receivingDetailsCache.delete(String(activeReceivingDetails.po_id));
+        await loadInspectionQueue();
+        closeReceivingUi();
+        PharmaUtils.toast.success(data.message || 'Goods Received Note updated.');
+    } catch (error) {
+        PharmaUtils.modal.error('GRN was not updated', error.message);
+        updateGrnEditSaveState();
+    } finally {
+        if (button) button.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Save Changes';
+    }
+}
+
 function renderSupplierPayment(details) {
     const payment = details.payment || {};
-    const fullyPaid = payment.payment_status === 'Fully Paid' || Number(payment.remaining_balance || 0) <= 0;
-    const remainingBalance = Math.max(Number(payment.adjusted_payable || 0) - Number(payment.total_paid || 0), 0);
-    const supplierCredit = Number(details.totals?.supplier_credit || 0);
-    const supplierDiscount = Number(details.totals?.supplier_discount || 0);
+    const originalTotal = Number(details.total_amount || 0);
+    const previousPayments = Number(payment.total_paid || 0);
+    const confirmedCredit = Number(payment.supplier_credit_applied || 0);
+    const remainingBalance = Math.max(originalTotal - previousPayments - confirmedCredit, 0);
+    const fullyPaid = isPurchaseOrderPaid(payment.payment_status, remainingBalance);
+    const acceptedGoodsValue = Number(details.totals?.accepted_goods_value || 0);
+    const acceptedQuantity = Number(details.totals?.accepted_units || 0);
+    const replacementQuantity = (details.items || []).reduce((sum, item) => sum + Number(item.replacement_pending_quantity || 0), 0);
+    const replacementReferenceValue = (details.items || []).reduce((sum, item) => sum + (Number(item.replacement_pending_quantity || 0) * Number(item.unit_price || 0)), 0);
+    const unitLabels = [...new Set((details.items || []).map((item) => cleanText(item.unit)).filter(Boolean))];
+    const quantityUnit = unitLabels.length === 1 ? unitLabels[0] : 'units';
+    const claimStatuses = [...new Set((details.items || []).map((item) => cleanText(item.return_status)).filter(Boolean))];
+    const claimStatus = claimStatuses.length ? claimStatuses.join(', ') : 'No open claim';
+    const payments = Array.isArray(payment.payments) ? payment.payments : [];
     return `
-        <div class="receiving-section-title"><i class="fa-solid fa-chart-pie"></i>Payment Summary</div>
-        <div class="receiving-financial-card">
-            <div class="receiving-money-line"><span>Original PO Total</span><strong>${peso(details.total_amount)}</strong></div>
-            <div class="receiving-money-line"><span>Returned or Rejected Value</span><strong>${peso(details.totals?.returned_rejected_value || 0)}</strong></div>
-            ${supplierCredit > 0 || supplierDiscount > 0 ? `<details class="payment-adjustments"><summary>Adjustment breakdown</summary>${supplierCredit > 0 ? `<div class="receiving-money-line"><span>Supplier Credit</span><strong>-${peso(supplierCredit)}</strong></div>` : ''}${supplierDiscount > 0 ? `<div class="receiving-money-line"><span>Supplier Discount</span><strong>-${peso(supplierDiscount)}</strong></div>` : ''}</details>` : ''}
-            <div class="receiving-money-line"><span>Adjusted Payable</span><strong>${peso(payment.adjusted_payable)}</strong></div>
-            <div class="receiving-money-line"><span>Previously Paid</span><strong>${peso(payment.total_paid)}</strong></div>
-            <div class="receiving-money-line emphasis"><span>Remaining Balance</span><strong>${peso(remainingBalance)}</strong></div>
-            <div class="payment-summary-status"><span>Payment Status</span>${paymentStatusBadge(payment.payment_status)}</div>
+        <div class="po-payment-section-heading"><i class="fa-solid fa-receipt"></i><span>PO Payment</span></div>
+        <div class="po-payment-summary-grid">
+            <div><span>Original PO Total</span><strong>${peso(originalTotal)}</strong></div>
+            <div><span>Previous Payments</span><strong>${peso(previousPayments)}</strong></div>
+            <div><span>Received / Accepted</span><strong>${escapeHtml(receivingQuantityLabel(acceptedQuantity, quantityUnit))}</strong></div>
+            <div><span>Replacement Pending</span><strong>${escapeHtml(receivingQuantityLabel(replacementQuantity, quantityUnit))}</strong>${replacementQuantity > 0 ? `<small>Reference value: ${peso(replacementReferenceValue)}</small>` : ''}</div>
+            <div><span>Supplier Resolution</span><strong>${escapeHtml(receivingSupplierResolution(details))}</strong></div>
+            <div><span>Claim Status</span><strong>${escapeHtml(claimStatus)}</strong></div>
+            <div><span>Confirmed Supplier Credit</span><strong>${peso(confirmedCredit)}</strong></div>
+            <div><span>Payment Status</span>${paymentStatusBadge(payment.payment_status)}</div>
         </div>
         ${fullyPaid ? '<div class="alert alert-success mt-3 mb-0"><i class="fa-solid fa-circle-check me-2"></i>This purchase order is fully paid. Additional payments are not allowed.</div>' : `
-        <div class="receiving-section-title"><i class="fa-solid fa-money-check-dollar"></i>Record Supplier Payment</div>
+        <div class="po-payment-section-heading"><i class="fa-solid fa-sliders"></i><span>Payment Basis</span></div>
+        <div class="payment-basis-options" role="radiogroup" aria-label="Payment Basis">
+            <button class="payment-basis-option" type="button" role="radio" aria-checked="false" data-payment-basis="full">Full PO</button>
+            <button class="payment-basis-option" type="button" role="radio" aria-checked="false" data-payment-basis="accepted">Accepted Goods Only</button>
+            <button class="payment-basis-option" type="button" role="radio" aria-checked="false" data-payment-basis="custom">Custom Amount</button>
+        </div>
+        <div class="po-payment-section-heading"><i class="fa-solid fa-money-bill-wave"></i><span>Payment</span></div>
         <form class="supplier-payment-form" id="supplierPaymentForm" novalidate>
-            <div class="form-field"><div class="payment-amount-heading"><label for="supplierPaymentAmount">Payment Amount</label><button class="payment-full-balance" id="btnPayFullBalance" type="button">Pay Full Balance</button></div><div class="payment-amount-control"><span class="payment-currency-prefix">₱</span><input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" max="${remainingBalance}" value="${remainingBalance.toFixed(2)}" inputmode="decimal" autocomplete="off" aria-describedby="supplierPaymentValidation"></div><div class="payment-live-balance"><span>Balance After Payment</span><strong id="supplierPaymentBalanceAfter">${peso(0)}</strong></div><div class="payment-validation" id="supplierPaymentValidation" aria-live="polite"></div></div>
-            <div class="form-field"><label for="supplierPaymentMethod">Payment Method</label><select id="supplierPaymentMethod"><option value="">Select method...</option><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="check">Check</option><option value="gcash">E-wallet</option><option value="other">Other</option></select></div>
-            <div class="form-field"><label for="supplierPaymentDate">Payment Date</label><input id="supplierPaymentDate" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-            <div class="form-field"><label id="supplierPaymentReferenceLabel" for="supplierPaymentReference">Reference Number</label><input id="supplierPaymentReference" maxlength="100" placeholder="Optional payment reference"></div>
-            <div class="form-field full"><label for="supplierPaymentRemarks">Payment Remarks</label><textarea id="supplierPaymentRemarks" placeholder="Optional payment notes"></textarea></div>
+            <div class="form-field full"><label for="supplierPaymentAmount">Amount to Pay Now</label><div class="payment-amount-control"><span class="payment-currency-prefix">₱</span><input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" max="${remainingBalance}" value="" inputmode="decimal" autocomplete="off" aria-describedby="supplierPaymentValidation" disabled></div><p class="payment-mode-note">Payment Mode: <strong>Cash</strong></p><div class="payment-validation" id="supplierPaymentValidation" aria-live="polite">Select a payment basis.</div></div>
+            <div class="payment-calculation-card full">
+                <div><span>Previous Payments</span><strong>${peso(previousPayments)}</strong></div>
+                <div><span>Confirmed Current-PO Credits</span><strong>${peso(confirmedCredit)}</strong></div>
+                <div><span>Amount to Pay Now</span><strong id="supplierPaymentAmountSummary">${peso(0)}</strong></div>
+                <div class="balance"><span>Balance After Payment</span><strong id="supplierPaymentBalanceAfter">${peso(remainingBalance)}</strong></div>
+            </div>
+            <input type="hidden" id="supplierPaymentOriginalTotal" value="${originalTotal}">
+            <input type="hidden" id="supplierPaymentAcceptedValue" value="${acceptedGoodsValue}">
         </form>`}
-        <div class="receiving-section-title"><i class="fa-solid fa-clock-rotate-left"></i>Payment History</div><p class="receiving-section-kicker">Posted supplier payments are read-only.</p>${renderPaymentHistory(payment.payments || [])}`;
+        ${payments.length ? `<div class="po-payment-section-heading"><i class="fa-solid fa-clock-rotate-left"></i><span>Payment History</span></div>${renderPaymentHistory(payments)}` : ''}`;
 }
 
 function supplierPaymentReferenceMeta(method = '') {
@@ -4376,41 +4842,69 @@ function supplierPaymentLongDate(value) {
     return Number.isNaN(date.getTime()) ? formatDate(value) : date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function captureSupplierPaymentState() {
+function supplierPaymentCalculationValues() {
     const payment = activeReceivingDetails?.payment || {};
+    const originalTotal = Number(activeReceivingDetails?.total_amount || 0);
+    const previouslyPaid = Number(payment.total_paid || 0);
+    const confirmedCredit = Number(payment.supplier_credit_applied || 0);
+    const acceptedValue = Number(activeReceivingDetails?.totals?.accepted_goods_value || 0);
+    const remainingBalance = Math.max(0, originalTotal - previouslyPaid - confirmedCredit);
+    return {
+        originalTotal,
+        previouslyPaid,
+        confirmedCredit,
+        acceptedValue,
+        remainingBalance,
+        acceptedPayment: Math.max(0, Math.min(remainingBalance, acceptedValue - previouslyPaid - confirmedCredit))
+    };
+}
+
+function selectSupplierPaymentBasis(basis, customAmount = '') {
+    const input = document.getElementById('supplierPaymentAmount');
+    if (!input) return;
+    const values = supplierPaymentCalculationValues();
+    document.querySelectorAll('.payment-basis-option').forEach((option) => {
+        option.setAttribute('aria-checked', option.dataset.paymentBasis === basis ? 'true' : 'false');
+    });
+    input.disabled = !basis;
+    input.readOnly = basis !== 'custom';
+    input.classList.toggle('is-readonly', basis !== 'custom' && Boolean(basis));
+    if (basis === 'full') input.value = values.remainingBalance.toFixed(2);
+    else if (basis === 'accepted') input.value = values.acceptedPayment.toFixed(2);
+    else if (basis === 'custom') input.value = customAmount;
+    else input.value = '';
+    updateSupplierPaymentValidation();
+    if (basis === 'custom') requestAnimationFrame(() => input.focus());
+}
+
+function captureSupplierPaymentState() {
+    const values = supplierPaymentCalculationValues();
     const amount = Number(document.getElementById('supplierPaymentAmount')?.value || 0);
-    const remainingBalance = Number(payment.remaining_balance || 0);
+    const paymentBasis = document.querySelector('.payment-basis-option[aria-checked="true"]')?.dataset.paymentBasis || '';
     return {
         poId: activeReceivingDetails?.po_id || '',
         poNumber: activeReceivingDetails?.po_number || '',
         supplier: activeReceivingDetails?.supplier_name || '',
+        paymentBasis,
         amount: Math.round(amount * 100) / 100,
         amountInput: document.getElementById('supplierPaymentAmount')?.value || '',
-        paymentMethod: document.getElementById('supplierPaymentMethod')?.value || '',
-        paymentDate: document.getElementById('supplierPaymentDate')?.value || '',
-        referenceNumber: document.getElementById('supplierPaymentReference')?.value || '',
-        remarks: document.getElementById('supplierPaymentRemarks')?.value || '',
-        adjustedPayable: Number(payment.adjusted_payable || 0),
-        previouslyPaid: Number(payment.total_paid || 0),
-        remainingBalance,
-        balanceAfter: Math.max(0, Math.round((remainingBalance - amount) * 100) / 100),
-        resultingStatus: amount >= remainingBalance - 0.005 ? 'Fully Paid' : 'Partially Paid',
+        paymentMethod: 'cash',
+        paymentDate: new Date().toISOString().slice(0, 10),
+        referenceNumber: '',
+        remarks: '',
+        adjustedPayable: values.originalTotal - values.confirmedCredit,
+        previouslyPaid: values.previouslyPaid,
+        remainingBalance: values.remainingBalance,
+        balanceAfter: Math.max(0, Math.round((values.remainingBalance - amount) * 100) / 100),
+        resultingStatus: amount >= values.remainingBalance - 0.005 ? 'Paid' : 'Partially Paid',
         idempotencyKey: supplierPaymentSubmissionKey
     };
 }
 
 function restoreSupplierPaymentState(state) {
     if (!state) return;
-    const values = {
-        supplierPaymentAmount: state.amountInput,
-        supplierPaymentMethod: state.paymentMethod,
-        supplierPaymentDate: state.paymentDate,
-        supplierPaymentReference: state.referenceNumber,
-        supplierPaymentRemarks: state.remarks
-    };
-    Object.entries(values).forEach(([id, value]) => { const control = document.getElementById(id); if (control) control.value = value ?? ''; });
+    selectSupplierPaymentBasis(state.paymentBasis || 'custom', state.amountInput || '');
     supplierPaymentSubmissionKey = state.idempotencyKey;
-    updateSupplierPaymentReferenceUi();
     updateSupplierPaymentValidation();
 }
 
@@ -4467,8 +4961,8 @@ function renderSupplierPaymentConfirmation(state) {
         <div class="result-value"><span>Balance After Payment</span><strong>${peso(state.balanceAfter)}</strong></div>
         <div><span>Resulting Payment Status</span>${paymentStatusBadge(state.resultingStatus)}</div>`;
     const message = document.getElementById('supplierPaymentConfirmMessage');
-    if (message) message.textContent = state.resultingStatus === 'Fully Paid'
-        ? 'This payment will settle the remaining balance and mark this purchase order as Fully Paid.'
+    if (message) message.textContent = state.resultingStatus === 'Paid'
+        ? 'This payment will settle the remaining balance and mark this purchase order as Paid.'
         : `This payment will be recorded as a partial supplier payment. A remaining balance of ${peso(state.balanceAfter)} will remain.`;
 }
 
@@ -4522,7 +5016,8 @@ async function handleSupplierPaymentResultPrimary() {
     const context = supplierPaymentResultContext;
     setSupplierPaymentDialogOpen('supplierPaymentResultDialog', false);
     if (context.type === 'success') {
-        await openReceivingDetails(context.poId);
+        if (document.body.dataset.page === 'purchase-orders') await openSupplierPayment(context.poId);
+        else await openReceivingDetails(context.poId);
         return;
     }
     if (context.refreshOnReturn) {
@@ -4536,16 +5031,15 @@ async function handleSupplierPaymentResultPrimary() {
 
 function updateSupplierPaymentValidation() {
     if (!activeReceivingDetails) return false;
-    const remaining = Number(activeReceivingDetails.payment?.remaining_balance || 0);
+    const values = supplierPaymentCalculationValues();
+    const remaining = values.remainingBalance;
+    const basis = document.querySelector('.payment-basis-option[aria-checked="true"]')?.dataset.paymentBasis || '';
     const amount = Number(document.getElementById('supplierPaymentAmount')?.value || 0);
-    const method = document.getElementById('supplierPaymentMethod')?.value || '';
-    const date = document.getElementById('supplierPaymentDate')?.value || '';
     let message = 'Ready to record payment.';
     let valid = true;
-    if (!Number.isFinite(amount) || amount <= 0) { valid = false; message = 'Payment amount must be greater than zero.'; }
+    if (!basis) { valid = false; message = 'Select a payment basis.'; }
+    else if (!Number.isFinite(amount) || amount <= 0) { valid = false; message = 'Payment amount must be greater than zero.'; }
     else if (amount > remaining) { valid = false; message = `Payment amount exceeds the remaining balance by ${peso(amount - remaining)}.`; }
-    else if (!method) { valid = false; message = 'Select a payment method.'; }
-    else if (!date) { valid = false; message = 'Select the payment date.'; }
     const validation = document.getElementById('supplierPaymentValidation');
     if (validation) validation.textContent = valid ? '' : message;
     const amountInput = document.getElementById('supplierPaymentAmount');
@@ -4553,7 +5047,9 @@ function updateSupplierPaymentValidation() {
     if (amountInput) { amountInput.classList.toggle('is-invalid', amountInvalid); amountInput.setAttribute('aria-invalid', amountInvalid ? 'true' : 'false'); }
     const after = document.getElementById('supplierPaymentBalanceAfter');
     if (after) after.textContent = peso(Math.max(remaining - (Number.isFinite(amount) ? amount : 0), 0));
-    after?.closest('.payment-live-balance')?.classList.toggle('is-invalid', amount > remaining || amount < 0);
+    const amountSummary = document.getElementById('supplierPaymentAmountSummary');
+    if (amountSummary) amountSummary.textContent = peso(Number.isFinite(amount) ? Math.max(0, amount) : 0);
+    after?.closest('.payment-calculation-card')?.classList.toggle('is-invalid', amount > remaining || amount < 0);
     const button = document.getElementById('btnSaveSupplierPayment');
     if (button) {
         button.disabled = !valid || supplierPaymentSubmitting;
@@ -4574,17 +5070,8 @@ async function openSupplierPayment(poId, options = {}) {
         document.getElementById('supplierPaymentSubtitle').textContent = `${details.po_number} · ${details.supplier_name}`;
         if (body) body.innerHTML = renderSupplierPayment(details);
         const save = document.getElementById('btnSaveSupplierPayment');
-        if (save) save.classList.toggle('d-none', details.payment?.payment_status === 'Fully Paid');
-        ['supplierPaymentAmount', 'supplierPaymentDate'].forEach((id) => document.getElementById(id)?.addEventListener('input', updateSupplierPaymentValidation));
-        document.getElementById('supplierPaymentMethod')?.addEventListener('change', () => { updateSupplierPaymentReferenceUi(); updateSupplierPaymentValidation(); });
-        document.getElementById('btnPayFullBalance')?.addEventListener('click', () => {
-            const input = document.getElementById('supplierPaymentAmount');
-            if (!input) return;
-            input.value = Math.max(Number(details.payment?.adjusted_payable || 0) - Number(details.payment?.total_paid || 0), 0).toFixed(2);
-            updateSupplierPaymentValidation();
-            input.focus();
-            input.select();
-        });
+        if (save) save.classList.toggle('d-none', isPurchaseOrderPaid(details.payment?.payment_status, details.payment?.remaining_balance));
+        document.getElementById('supplierPaymentAmount')?.addEventListener('input', updateSupplierPaymentValidation);
         const amountInput = document.getElementById('supplierPaymentAmount');
         amountInput?.addEventListener('change', () => {
             const value = Number(amountInput.value);
@@ -4592,9 +5079,8 @@ async function openSupplierPayment(poId, options = {}) {
             updateSupplierPaymentValidation();
         });
         if (options.preservedState) restoreSupplierPaymentState(options.preservedState);
-        else updateSupplierPaymentReferenceUi();
         updateSupplierPaymentValidation();
-        requestAnimationFrame(() => { amountInput?.focus(); amountInput?.select(); });
+        requestAnimationFrame(() => body?.querySelector('input[name="supplierPaymentBasis"]')?.focus());
     } catch (error) {
         if (body) body.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`;
         document.getElementById('btnSaveSupplierPayment')?.classList.add('d-none');
@@ -4621,7 +5107,7 @@ async function confirmSupplierPayment() {
                 payment_date: state.paymentDate,
                 reference_number: state.referenceNumber.trim(),
                 remarks: state.remarks.trim(),
-                idempotency_key: state.idempotencyKey,
+                payment_request_key: state.idempotencyKey,
                 expected_remaining_balance: state.remainingBalance
             })
         });
@@ -4631,13 +5117,13 @@ async function confirmSupplierPayment() {
         else await loadPurchaseOrders();
         supplierPaymentSubmissionKey = globalThis.crypto?.randomUUID?.() || `po-payment-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         supplierPaymentPendingState = null;
-        const fullyPaid = data.payment_status === 'Fully Paid' || Number(data.remaining_balance || 0) <= 0;
+        const fullyPaid = isPurchaseOrderPaid(data.payment_status, data.remaining_balance);
         showSupplierPaymentResult({
             type: 'success',
             title: 'Payment Recorded',
             poId: state.poId,
             message: fullyPaid
-                ? `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. This purchase order is now Fully Paid.`
+                ? `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. This purchase order is now Paid.`
                 : `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. Remaining balance: ${peso(data.remaining_balance)}.`
         });
     } catch (error) {
@@ -4782,17 +5268,23 @@ function inspectionQueueSnapshot(order) {
     let allReady = true;
     (order.items || []).forEach((orderItem) => {
         const item = draft.items.find((candidate) => String(candidate.po_item_id) === String(orderItem.po_item_id)) || {};
-        const quantity = receiveQuantityModel(orderItem, item);
+        const quantity = receiveQuantityModel(orderItem, receiveQuantityValuesWithConversions(orderItem, item));
         const batches = Array.isArray(item.batches) ? item.batches : [];
         const allocated = batches.reduce((sum, batch) => sum + Math.max(0, Number(batch.quantity || 0)), 0);
-        const quantitiesComplete = Number.isInteger(quantity.delivered) && quantity.delivered >= 0 && quantity.delivered <= quantity.ordered && Number.isInteger(quantity.damaged) && quantity.damaged >= 0 && quantity.damaged <= quantity.delivered;
+        const quantitiesComplete = Number.isInteger(quantity.delivered) && quantity.delivered >= 0 && quantity.delivered <= quantity.ordered
+            && Number.isInteger(quantity.damaged) && quantity.damaged >= 0 && quantity.damaged <= quantity.delivered
+            && Number.isInteger(quantity.action) && quantity.action >= 0 && quantity.action <= quantity.delivered;
         const batchesComplete = allocated === quantity.accepted && (quantity.accepted === 0 || batches.length > 0) && batches.every((batch) => Number.isInteger(Number(batch.quantity)) && Number(batch.quantity) > 0);
         const expiryComplete = quantity.accepted === 0 || !isMedicineItem(orderItem) || (batches.length > 0 && batches.every((batch) => Boolean(batch.expiry_date)));
-        const adjustment = Number(item.supplier_adjustment || 0);
+        const physicalAction = ['return_to_supplier', 'hold_quarantine', 'dispose'].includes(quantity.disposition);
+        const dispositionComplete = quantity.action > 0 || quantity.damaged > 0
+            ? physicalAction && quantity.action >= quantity.damaged
+            : (quantity.missing > 0 ? quantity.disposition === 'not_applicable' : true);
+        const issueDetailComplete = item.issue_type !== 'Other' || Boolean(String(item.issue_detail || '').trim());
         const resolutionComplete = quantity.affected === 0
-            ? quantity.resolution === 'none' && adjustment === 0
-            : Boolean(item.issue_type) && quantity.resolution !== 'none' && (quantity.resolution === 'keep_with_discount' ? adjustment > 0 : adjustment === 0);
-        const remarksComplete = quantity.affected === 0 || Boolean(String(item.remarks || '').trim());
+            ? quantity.resolution === 'none'
+            : Boolean(item.issue_type) && issueDetailComplete && dispositionComplete && quantity.resolution !== 'none';
+        const remarksComplete = true;
         const inspected = item.inspection_complete === true || item.inspection_complete === 1 || item.inspection_complete === '1';
         completed += [quantitiesComplete, batchesComplete, expiryComplete, resolutionComplete, remarksComplete, inspected].filter(Boolean).length;
         hasIssues = hasIssues || quantity.affected > 0;
@@ -4802,7 +5294,7 @@ function inspectionQueueSnapshot(order) {
     const percent = Math.round((completed / total) * 100);
     const ready = allReady && (order.items || []).length > 0;
     const key = ready ? 'ready' : (hasIssues ? 'issue-found' : 'in-progress');
-    const status = ready ? 'Ready to Confirm' : (hasIssues ? 'Issue Found' : 'Inspection in Progress');
+    const status = ready ? 'Ready to Confirm' : (hasIssues ? 'With Issues' : 'Inspection in Progress');
     return { completed, total, percent, hasIssues, ready, key, status };
 }
 
@@ -4817,7 +5309,7 @@ function inspectionActiveTotals(order) {
     }
     return (order.items || []).reduce((totals, item) => {
         const draftItem = draftItems.find((candidate) => String(candidate.po_item_id) === String(item.po_item_id)) || {};
-        const quantity = receiveQuantityModel(item, draftItem);
+        const quantity = receiveQuantityModel(item, receiveQuantityValuesWithConversions(item, draftItem));
         totals.ordered += Number(quantity.ordered || 0);
         totals.accepted += Number(quantity.accepted || 0);
         totals.affected += Number(quantity.affected || 0);
@@ -4825,47 +5317,55 @@ function inspectionActiveTotals(order) {
     }, { ordered: 0, accepted: 0, affected: 0 });
 }
 
+function inspectionQueueProductSummary(order) {
+    const items = Array.isArray(order.items) ? order.items : [];
+    const first = items[0] || order;
+    const count = order.receiving_completed === true ? Number(order.products || 0) : items.length;
+    const product = first.product_name_snapshot || first.product_name || 'Product';
+    const brand = first.brand_name_snapshot || first.brand_name || '';
+    const more = Math.max(0, count - 1);
+    const secondary = [brand, more > 0 ? `+${more} more` : ''].filter(Boolean).join(' • ');
+    return `<div class="queue-product-summary"><strong>${escapeHtml(product)}</strong>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ''}</div>`;
+}
+
 function renderInspectionQueue() {
     const search = String(document.getElementById('inspectionSearch')?.value || '').trim().toLowerCase();
     const from = document.getElementById('inspectionDateFrom')?.value || '';
     const to = document.getElementById('inspectionDateTo')?.value || '';
     const inspectionStatus = document.getElementById('inspectionStatusFilter')?.value || '';
-    const paymentStatus = document.getElementById('inspectionPaymentFilter')?.value || '';
     const filtered = inspectionQueueOrders.filter((order) => {
         const snapshot = order.receiving_completed === true ? { key: 'completed', status: 'Receiving Completed', hasIssues: Number(order.affected_units || 0) > 0 } : (order.inspection_snapshot || inspectionQueueSnapshot(order));
-        const haystack = `${order.po_number || ''} ${order.grn_number || ''} ${order.supplier_name || ''}`.toLowerCase();
+        const firstItem = Array.isArray(order.items) ? (order.items[0] || {}) : order;
+        const haystack = `${order.po_number || ''} ${order.grn_number || ''} ${order.supplier_name || ''} ${firstItem.product_name_snapshot || firstItem.product_name || ''} ${firstItem.brand_name_snapshot || firstItem.brand_name || ''}`.toLowerCase();
         const arrival = String(order.received_date || order.arrival_date || order.expected_delivery_date || order.order_date || '').slice(0, 10);
         return (!search || haystack.includes(search))
             && (!from || arrival >= from)
             && (!to || arrival <= to)
-            && (!inspectionStatus || snapshot.key === inspectionStatus)
-            && (!paymentStatus || String(order.payment_status || 'Unpaid') === paymentStatus);
+            && (!inspectionStatus || snapshot.key === inspectionStatus);
     });
     const rows = document.getElementById('inspectionQueueRows');
     if (!rows) return;
     if (!filtered.length) {
-        rows.innerHTML = '<tr><td colspan="10" class="empty-state">No arrived purchase orders match the selected filters.</td></tr>';
+        rows.innerHTML = '<tr><td colspan="9" class="empty-state">No arrived purchase orders match the selected filters.</td></tr>';
         return;
     }
     rows.innerHTML = filtered.map((order) => {
         const completed = order.receiving_completed === true;
         const snapshot = completed ? { key: 'completed', status: 'Receiving Completed', hasIssues: Number(order.affected_units || 0) > 0 } : (order.inspection_snapshot || inspectionQueueSnapshot(order));
         const totals = completed ? { ordered: Number(order.ordered_units || 0), accepted: Number(order.accepted_units || 0), affected: Number(order.affected_units || 0) } : inspectionActiveTotals(order);
-        const productCount = completed ? Number(order.products || 0) : (Array.isArray(order.items) ? order.items.length : 0);
         const statusClass = snapshot.key === 'completed' ? 'status-complete' : (snapshot.ready ? 'status-ready' : (snapshot.hasIssues ? 'status-warning' : (snapshot.key === 'in-progress' ? 'status-active' : 'status-neutral')));
         const arrivalDate = order.arrival_date || order.expected_delivery_date || order.order_date;
         const receivedDate = order.received_date;
         const actionLabel = snapshot.key === 'awaiting' ? 'Start Inspection' : 'Continue Inspection';
         const actions = completed
-            ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Receiving" aria-label="View Receiving for ${escapeHtml(order.po_number || '')}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-secondary queue-action-icon queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Print GRN" aria-label="Print GRN for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-print"></i></button>${String(order.payment_status) !== 'Fully Paid' && Number(order.remaining_balance || 0) > 0 ? `<button class="btn btn-sm btn-purple queue-action-icon queue-manage-payment" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Manage Payment" aria-label="Manage Payment for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-wallet"></i></button>` : ''}`
+            ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Goods Received Note" aria-label="View Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-primary queue-action-icon queue-edit-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Edit Goods Received Note" aria-label="Edit Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-outline-secondary queue-action-icon queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Print Goods Received Note" aria-label="Print Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-print"></i></button>`
             : `<button class="btn btn-sm ${snapshot.key === 'awaiting' ? 'btn-outline-primary' : 'btn-primary'} queue-action-icon inspect-queue-action" type="button" data-po-id="${escapeHtml(order.po_id)}" title="${actionLabel}" aria-label="${actionLabel} for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-clipboard-check"></i></button>`;
         return `<tr class="queue-row" data-po-id="${escapeHtml(order.po_id)}">
             <td><span class="queue-po" title="${escapeHtml(order.po_number || '-')}">${escapeHtml(order.po_number || '-')}</span><span class="queue-secondary" title="${escapeHtml(completed ? order.grn_number : 'No GRN yet')}">${escapeHtml(completed ? order.grn_number : 'No GRN yet')}</span></td>
             <td title="${escapeHtml(order.supplier_name || '-')}">${escapeHtml(order.supplier_name || '-')}</td>
-            <td>${completed ? `<strong>${escapeHtml(formatDate(receivedDate))}</strong><span class="queue-secondary">Arrived ${escapeHtml(formatDate(arrivalDate))}</span>` : `<strong>${escapeHtml(formatDate(arrivalDate))}</strong><span class="queue-secondary">Awaiting receiving</span>`}</td>
-            <td>${productCount}</td><td>${totals.ordered}</td><td>${totals.accepted}</td><td>${totals.affected}</td>
+            <td><strong>${escapeHtml(formatDate(arrivalDate))}</strong>${completed ? `<span class="queue-secondary">Received ${escapeHtml(formatDate(receivedDate))}</span>` : ''}</td>
+            <td>${inspectionQueueProductSummary(order)}</td><td>${totals.ordered}</td><td>${totals.accepted}</td><td>${totals.affected}</td>
             <td><span class="queue-status-badge ${statusClass}">${escapeHtml(snapshot.status)}</span></td>
-            <td>${paymentStatusBadge(order.payment_status || 'Unpaid')}</td>
             <td><div class="queue-row-actions">${actions}</div></td>
         </tr>`;
     }).join('');
@@ -4884,7 +5384,7 @@ function updateInspectionQueueSummary() {
 
 async function loadInspectionQueue() {
     const rows = document.getElementById('inspectionQueueRows');
-    if (rows) rows.innerHTML = '<tr><td colspan="10" class="empty-state"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading arrived purchase orders...</td></tr>';
+    if (rows) rows.innerHTML = '<tr><td colspan="9" class="empty-state"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading arrived purchase orders...</td></tr>';
     try {
         const [activeData, completedData] = await Promise.all([
             fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_orders.php?status=Arrived&t=${Date.now()}`),
@@ -4980,6 +5480,10 @@ function bindReceiveWorkspaceEvents() {
     cards?.addEventListener('change', (event) => {
         const card = event.target.closest('.receive-item-card');
         if (card) card.dataset.touched = '1';
+        if (event.target.matches('.receive-issue-type') && event.target.value === 'Short Quantity') {
+            const action = card?.querySelector('.receive-disposition');
+            if (action) action.value = 'not_applicable';
+        }
         if (event.target.matches('.receive-batch-no-expiry')) {
             const expiry = event.target.closest('.receive-batch-row')?.querySelector('.receive-batch-expiry');
             if (expiry) { expiry.disabled = event.target.checked; if (event.target.checked) expiry.value = ''; }
@@ -4987,6 +5491,22 @@ function bindReceiveWorkspaceEvents() {
         renderReceivePaymentSummary();
     });
     cards?.addEventListener('click', (event) => {
+        const addDamage = event.target.closest('.receive-add-damage-line');
+        if (addDamage) {
+            const card = addDamage.closest('.receive-item-card');
+            const orderItem = activeReceiveOrder?.items.find((item) => String(item.po_item_id) === String(card?.dataset.poItemId));
+            const conversions = Array.isArray(orderItem?.package_conversions) ? orderItem.package_conversions : [];
+            card?.querySelector('.receive-damage-lines')?.insertAdjacentHTML('beforeend', receiveDamageLineRow({}, conversions, orderItem?.unit || 'unit'));
+            renderReceivePaymentSummary();
+            card?.querySelector('.receive-damage-line:last-child .damage-line-qty')?.focus();
+            return;
+        }
+        const removeDamage = event.target.closest('.receive-remove-damage-line');
+        if (removeDamage) {
+            removeDamage.closest('.receive-damage-line')?.remove();
+            renderReceivePaymentSummary();
+            return;
+        }
         const complete = event.target.closest('.receive-complete-inspection');
         if (complete) {
             const card = complete.closest('.receive-item-card');
@@ -4994,6 +5514,7 @@ function bindReceiveWorkspaceEvents() {
             const input = card.querySelector('.receive-inspected-input');
             if (input) input.value = '1';
             renderReceivePaymentSummary();
+            openNextUninspectedCard();
             return;
         }
         const reopen = event.target.closest('.receive-reopen-inspection');
@@ -5027,22 +5548,22 @@ function initInspectDeliveries() {
     ensureReceivingUi();
     document.querySelectorAll('[data-inspection-back]').forEach((button) => button.addEventListener('click', () => showInspectionQueue({ pushHistory: true })));
     document.getElementById('btnRefreshInspectionQueue')?.addEventListener('click', loadInspectionQueue);
-    ['inspectionSearch', 'inspectionStatusFilter', 'inspectionPaymentFilter'].forEach((id) => document.getElementById(id)?.addEventListener(id === 'inspectionSearch' ? 'input' : 'change', renderInspectionQueue));
+    ['inspectionSearch', 'inspectionStatusFilter'].forEach((id) => document.getElementById(id)?.addEventListener(id === 'inspectionSearch' ? 'input' : 'change', renderInspectionQueue));
     ['inspectionDateFrom', 'inspectionDateTo'].forEach((id) => document.getElementById(id)?.addEventListener('change', () => { updateInspectionDateSummary(); renderInspectionQueue(); }));
     document.getElementById('btnClearInspectionFilters')?.addEventListener('click', () => {
-        ['inspectionSearch', 'inspectionDateFrom', 'inspectionDateTo', 'inspectionStatusFilter', 'inspectionPaymentFilter'].forEach((id) => { const control = document.getElementById(id); if (control) control.value = ''; });
+        ['inspectionSearch', 'inspectionDateFrom', 'inspectionDateTo', 'inspectionStatusFilter'].forEach((id) => { const control = document.getElementById(id); if (control) control.value = ''; });
         updateInspectionDateSummary();
         renderInspectionQueue();
     });
     document.getElementById('inspectionQueueRows')?.addEventListener('click', (event) => {
         const inspect = event.target.closest('.inspect-queue-action');
         const view = event.target.closest('.queue-view-receiving');
+        const edit = event.target.closest('.queue-edit-receiving');
         const print = event.target.closest('.queue-print-grn');
-        const payment = event.target.closest('.queue-manage-payment');
         if (inspect) openInspectionWorkspace(inspect.dataset.poId, { pushHistory: true });
         else if (view) openReceivingDetails(view.dataset.poId);
+        else if (edit) openGrnEditor(edit.dataset.poId);
         else if (print) openDeliveredReceipt(print.dataset.poId);
-        else if (payment) openSupplierPayment(payment.dataset.poId);
     });
     window.addEventListener('popstate', () => {
         const nextParams = new URLSearchParams(window.location.search);
@@ -5063,12 +5584,10 @@ function initPurchaseOrders() {
     ensureReceivingUi();
 
     setTheme(localStorage.getItem('drpTheme') || 'light');
-    initCreatePoModalLayoutControls();
     initEditPoModalLayoutControls();
     initViewPoModalLayoutControls();
 
     document.getElementById('themeToggle')?.addEventListener('click', () => setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark'));
-    document.querySelector('[data-bs-target="#createPurchaseOrderModal"]')?.addEventListener('click', () => showModal('createPurchaseOrderModal'));
     document.querySelectorAll('[data-bs-dismiss="modal"]').forEach((button) => {
         button.addEventListener('click', () => hideModal(button.closest('.modal')?.id));
     });
@@ -5122,8 +5641,6 @@ function initPurchaseOrders() {
     }));
     document.getElementById('btnEditAddPoItem')?.addEventListener('click', addOrUpdateEditDraftItem);
     document.getElementById('btnCancelEditPoItem')?.addEventListener('click', () => clearEditProductEditor({ focusProduct: true }));
-    document.getElementById('btnSubmitPo')?.addEventListener('click', submitPurchaseOrder);
-    document.getElementById('btnUpdatePo')?.addEventListener('click', updatePurchaseOrder);
     document.getElementById('btnConfirmReceivePo')?.addEventListener('click', submitReceivePurchaseOrder);
     document.getElementById('btnSaveReceiveDraft')?.addEventListener('click', saveReceiveInspectionDraft);
     document.getElementById('btnOpenNextInspection')?.addEventListener('click', openNextUninspectedCard);
@@ -5131,14 +5648,13 @@ function initPurchaseOrders() {
     const statusFilter = document.getElementById('po-status-filter');
     const params = new URLSearchParams(window.location.search);
     const initialPoView = purchaseOrderViewFromUrl();
+    const linkedPoId = params.get('po_id') || '';
     const queryStatus = initialPoView === 'active' ? (params.get('status') || '') : '';
     if (params.get('action') === 'create') {
-        window.setTimeout(() => {
-            showModal('createPurchaseOrderModal');
-            const cleanUrl = new URL(window.location.href);
-            cleanUrl.searchParams.delete('action');
-            window.history.replaceState(null, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
-        }, 0);
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('action');
+        window.history.replaceState(null, '', `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+        PharmaUtils.toast.info('Purchase orders are generated automatically after final CEO approval.');
     }
     if (statusFilter && queryStatus && STATUS_META[queryStatus]) {
         if (![...statusFilter.options].some(option => option.value === queryStatus)) {
@@ -5223,6 +5739,10 @@ function initPurchaseOrders() {
         }
     });
     document.getElementById('createPurchaseOrderModal')?.addEventListener('hidden.bs.modal', resetCreateDraft);
+    document.getElementById('viewPurchaseOrderModal')?.addEventListener('hidden.bs.modal', () => { activeViewOrder = null; });
+    document.getElementById('printPurchaseOrderButton')?.addEventListener('click', () => {
+        try { printPurchaseOrder(activeViewOrder); } catch (error) { PharmaUtils.toast.error(error.message); }
+    });
     document.getElementById('editPurchaseOrderModal')?.addEventListener('hidden.bs.modal', () => {
         clearEditProductEditor();
         activeEditOrder = null;
@@ -5331,20 +5851,12 @@ function initPurchaseOrders() {
     });
     document.getElementById('table-purchase-orders')?.addEventListener('click', (event) => {
         const viewButton = event.target.closest('.view-po-btn');
-        const editButton = event.target.closest('.edit-po-btn');
+        const printButton = event.target.closest('.print-po-btn');
         const statusButton = event.target.closest('.status-po-btn');
-        const receiveButton = event.target.closest('.receive-po-btn');
-        const receiptButton = event.target.closest('.receipt-po-btn');
-        const receivingButton = event.target.closest('.view-receiving-btn');
-        const printGrnButton = event.target.closest('.print-delivered-grn-btn');
         const managePaymentButton = event.target.closest('.manage-payment-btn, .view-payment-history-btn');
         if (viewButton) openViewPurchaseOrder(viewButton.dataset.poId);
-        if (editButton) openEditPurchaseOrder(editButton.dataset.poId);
+        if (printButton) printPurchaseOrder({ po_id:printButton.dataset.poId });
         if (statusButton) updatePurchaseOrderStatusFromTable(statusButton.dataset.poId);
-        if (receiveButton) window.location.href = `inspect_deliveries.html?po=${encodeURIComponent(receiveButton.dataset.poId)}`;
-        if (receiptButton) openDeliveredReceipt(receiptButton.dataset.poId);
-        if (receivingButton) openReceivingDetails(receivingButton.dataset.poId);
-        if (printGrnButton) openDeliveredReceipt(printGrnButton.dataset.poId);
         if (managePaymentButton) openSupplierPayment(managePaymentButton.dataset.poId);
     });
 
@@ -5352,7 +5864,8 @@ function initPurchaseOrders() {
     renderDraftItems(editDraftItems, '#table-edit-po-items', 'remove-edit-po-item');
     loadPOSuppliers();
     if (initialPoView === 'active') {
-        loadPurchaseOrders({ updateSummary: true });
+        const initialLoad = loadPurchaseOrders({ updateSummary: true });
+        if (linkedPoId) initialLoad.then(() => openViewPurchaseOrder(linkedPoId)).catch(error => showError(error.message));
     } else {
         setPurchaseOrderView(initialPoView, { updateSummary: true });
     }

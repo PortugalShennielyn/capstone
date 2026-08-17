@@ -165,6 +165,14 @@ try {
         ];
     }, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
+    foreach ($products as &$product) {
+        $product['selling_units'] = productSellingOptions($pdo, (string) $product['product_id'], true);
+        $defaultOption = productDefaultSellingOption($pdo, (string) $product['product_id']);
+        if ($defaultOption) $product['price'] = $defaultOption['selling_price'];
+    }
+    $products = array_values(array_filter($products, static fn(array $product): bool => !empty($product['selling_units'])));
+    unset($product);
+
     echo json_encode([
         'status' => 'success',
         'data' => $products,

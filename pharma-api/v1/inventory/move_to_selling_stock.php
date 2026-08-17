@@ -99,9 +99,7 @@ try {
     $updateBatch = $pdo->prepare(
         "UPDATE inventory_batches
          SET storage_qty = storage_qty - :quantity,
-             shelf_qty = shelf_qty + :quantity_for_shelf,
              batch_status = CASE
-                WHEN storage_qty - :quantity_for_depleted <= 0 AND shelf_qty + :quantity_for_depleted_shelf <= 0 THEN 'depleted'
                 WHEN expiry_date IS NOT NULL AND expiry_date < CURDATE() THEN 'expired'
                 ELSE 'active'
              END
@@ -168,9 +166,6 @@ try {
 
         $updateBatch->execute([
             ':quantity' => $quantityToMove,
-            ':quantity_for_shelf' => $quantityToMove,
-            ':quantity_for_depleted' => $quantityToMove,
-            ':quantity_for_depleted_shelf' => $quantityToMove,
             ':quantity_for_guard' => $quantityToMove,
             ':batch_id' => $batch['batch_id']
         ]);

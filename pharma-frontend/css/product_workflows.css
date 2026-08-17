@@ -1,4 +1,13 @@
 /* Shared Product Master form and Supplier assignment workflow */
+#productDetailsModal.fade .modal-dialog,
+#productBarcodeModal.fade .modal-dialog,
+#addProductModal.fade .modal-dialog,
+#editProductModal.fade .modal-dialog,
+#selectedPricingModal.fade .modal-dialog,
+.product-customizer-modal.fade .modal-dialog {
+    transition: transform 140ms ease-out;
+}
+
 #addProductModal .modal-dialog,
 #editProductModal .modal-dialog {
     width: min(1020px, 92vw);
@@ -63,6 +72,13 @@
     display: block;
 }
 
+.product-field-error {
+    margin-top: 5px;
+    color: #be123c;
+    font-size: .72rem;
+    font-weight: 700;
+}
+
 .product-variants-toolbar strong {
     color: #344054;
     font-size: .82rem;
@@ -105,14 +121,14 @@
 }
 
 #assignSupplierProductsModal .modal-header {
-    padding: 18px 22px 14px;
+    padding: 12px 22px 10px;
 }
 
 #assignSupplierProductsModal .assignment-progress {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    padding: 0 22px 14px;
+    padding: 0 22px 10px;
     border-bottom: 1px solid #e8ebf1;
 }
 
@@ -121,7 +137,7 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
-    padding: 9px 11px;
+    padding: 7px 11px;
     border: 1px solid #e4e7ec;
     border-radius: 8px;
     color: #667085;
@@ -172,8 +188,8 @@
 }
 
 #assignSupplierProductsModal .modal-footer {
-    min-height: 66px;
-    padding: 12px 22px;
+    min-height: 60px;
+    padding: 10px 22px;
     border-top: 1px solid #e5e8ef;
 }
 
@@ -182,7 +198,7 @@
 }
 
 .assignment-section-card {
-    padding: 16px;
+    padding: 10px 14px;
     border: 1px solid #e3e7ee;
     border-radius: 10px;
     background: #fff;
@@ -214,7 +230,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1.35fr) minmax(300px, .9fr);
     gap: 16px;
-    margin-top: 16px;
+    margin-top: 10px;
 }
 
 .assignment-panel {
@@ -230,7 +246,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 12px 14px;
+    padding: 9px 12px;
     border-bottom: 1px solid #e8ebf0;
 }
 
@@ -241,7 +257,7 @@
 }
 
 .assignment-product-results {
-    height: clamp(280px, 43vh, 440px);
+    height: clamp(340px, 50vh, 460px);
     overflow-y: auto;
     overscroll-behavior: contain;
 }
@@ -250,7 +266,7 @@
     display: grid;
     grid-template-columns: 22px minmax(0, 1fr);
     gap: 10px;
-    padding: 11px 14px;
+    padding: 5px 12px;
     border-bottom: 1px solid #edf0f4;
     cursor: pointer;
 }
@@ -288,7 +304,8 @@
 
 .assignment-selected-list {
     display: grid;
-    max-height: clamp(280px, 43vh, 440px);
+    height: clamp(340px, 50vh, 460px);
+    max-height: none;
     gap: 9px;
     padding: 12px;
     overflow-y: auto;
@@ -474,7 +491,7 @@ body.dark-mode .assignment-review-card {
     .assignment-product-results,
     .assignment-selected-list {
         height: auto;
-        max-height: 310px;
+        max-height: 340px;
     }
 }
 

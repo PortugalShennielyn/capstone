@@ -258,7 +258,8 @@ function fetchSystemSettings(PDO $pdo): array
 {
     $stmt = $pdo->query(
         "SELECT pharmacy_name, pharmacy_email, contact_number, tin_license_number,
-                pharmacy_address, website, timezone, logo_path
+                pharmacy_address, website, timezone, logo_path,
+                grn_received_by_name, grn_approved_by_name
          FROM system_settings
          ORDER BY setting_id ASC
          LIMIT 1"
@@ -275,6 +276,8 @@ function fetchSystemSettings(PDO $pdo): array
         'website' => (string) ($row['website'] ?? ''),
         'timeZone' => (string) ($row['timezone'] ?? 'Asia/Manila'),
         'logoName' => (string) ($row['logo_path'] ?? ''),
+        'grnReceivedByName' => (string) ($row['grn_received_by_name'] ?? ''),
+        'grnApprovedByName' => (string) ($row['grn_approved_by_name'] ?? ''),
     ];
 }
 

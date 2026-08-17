@@ -1,4 +1,5 @@
 import API_BASE_URL from '../config/config.js';
+import { savedTransactionTotals } from './sales_financials.js?v=1';
 
 let shellReady = false;
 
@@ -133,14 +134,7 @@ function itemSpec(item) {
 }
 
 function totals(order) {
-    const subtotal = Number(order.subtotal || 0);
-    const discount = Number(order.cashier_discount_amount || 0);
-    const taxable = Math.max(0, subtotal - discount);
-    const vat = Number((taxable * 0.12) || order.vat || 0);
-    const finalAmount = Number(order.final_amount || order.total_amount || taxable + vat);
-    const cashReceived = Number(order.amount_paid || order.cash_received || 0);
-    const change = Number(order.change_amount || Math.max(0, cashReceived - finalAmount));
-    return { subtotal, discount, vat, finalAmount, cashReceived, change };
+    return savedTransactionTotals(order);
 }
 
 function receiptHtml(order) {
@@ -182,8 +176,9 @@ function receiptHtml(order) {
             ${rows}
             <div class="receipt-divider-print"></div>
             <div class="receipt-total-print"><span>Subtotal:</span><span>${esc(plainMoney(total.subtotal))}</span></div>
-            <div class="receipt-total-print"><span>VAT (12%):</span><span>${esc(plainMoney(total.vat))}</span></div>
             <div class="receipt-total-print"><span>Discount:</span><span>${esc(plainMoney(total.discount))}</span></div>
+            <div class="receipt-total-print"><span>VATable Sales:</span><span>${esc(plainMoney(total.vatableSales))}</span></div>
+            <div class="receipt-total-print"><span>VAT (12%):</span><span>${esc(plainMoney(total.vat))}</span></div>
             <div class="receipt-total-print is-grand"><span>TOTAL:</span><span>${esc(plainMoney(total.finalAmount))}</span></div>
             <div class="receipt-payment-print receipt-payment-spaced"><span>Cash Received:</span><span>${esc(plainMoney(total.cashReceived))}</span></div>
             <div class="receipt-payment-print"><span>Change:</span><span>${esc(plainMoney(total.change))}</span></div>

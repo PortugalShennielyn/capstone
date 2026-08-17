@@ -23,15 +23,18 @@ function reportRoleContext(): array
     $management = count(array_intersect($roles, ['super_admin', 'admin', 'manager', 'ro_super_admin', 'ro_admin', 'ro_manager'])) > 0;
     $cashier = count(array_intersect($roles, ['cashier', 'ro_cashier'])) > 0;
     $clerk = count(array_intersect($roles, ['salesclerk', 'ro_salesclerk'])) > 0;
+    $supervisor = count(array_intersect($roles, ['supervisor', 'ro_supervisor'])) > 0;
     return [
         'management' => $management,
         'cashier' => $cashier,
         'sales_clerk' => $clerk,
+        'supervisor' => $supervisor,
         'user_id' => (string) ($_SESSION['user_id'] ?? ''),
         'user_name' => (string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User'),
         'available_categories' => $management
             ? ['overview', 'sales', 'inventory', 'purchases', 'expiry', 'products', 'staff']
-            : ($cashier ? ['sales', 'staff'] : ['sales', 'products', 'staff']),
+            : ($supervisor ? ['overview', 'inventory', 'purchases', 'expiry', 'products']
+            : ($cashier ? ['sales', 'staff'] : ['sales', 'products', 'staff'])),
     ];
 }
 
@@ -144,7 +147,7 @@ function reportSalesWhere(array $filters, array $role, string $alias = 'o'): arr
 {
     $where = ["{$alias}.status = 'completed'", "{$alias}.completed_at >= :start_date", "{$alias}.completed_at < :end_date"];
     $params = [':start_date' => $filters['start_date'], ':end_date' => $filters['date_end_exclusive']];
-    if (!$role['management']) {
+    if (!$role['management'] && empty($role['supervisor'])) {
         if ($role['cashier']) {
             $where[] = "COALESCE({$alias}.assigned_cashier_id, pay.cashier_id) = :scope_user";
         } else {
@@ -210,7 +213,7 @@ function reportFilterOptions(PDO $pdo, array $role): array
         'brands' => array_column(reportRows($pdo, "SELECT DISTINCT brand_name AS name FROM product WHERE brand_name IS NOT NULL AND brand_name <> '' ORDER BY brand_name"), 'name'),
         'suppliers' => reportRows($pdo, 'SELECT supplier_id AS id, supplier_name AS name FROM suppliers WHERE archived_at IS NULL ORDER BY supplier_name'),
         'payment_methods' => ['cash', 'gcash', 'card', 'mixed'],
-        'po_statuses' => ['Pending', 'In transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled'],
+        'po_statuses' => ['Pending', 'In transit', 'Arrived', 'Delivered', 'Cancelled'],
         'stock_statuses' => ['healthy', 'low', 'out', 'negative'],
         'cashiers' => [],
         'sales_clerks' => [],

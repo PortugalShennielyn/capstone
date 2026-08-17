@@ -1,5 +1,5 @@
 import API_BASE_URL from '../config/config.js';
-import verifySession from './auth.js?v=3';
+import verifySession from './auth.js?v=5';
 
 const todayIso = localIsoDate();
 const state = {

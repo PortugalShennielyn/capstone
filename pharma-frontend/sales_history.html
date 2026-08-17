@@ -1,15 +1,17 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=5"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Sales History</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=55" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
+    <link href="./css/navbar.css?v=20" rel="stylesheet">
+    <script src="./js/navbar.js?v=69" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root { --purple:#6d28d9; --ink:#111827; --muted:#667085; --line:#e5eaf3; --soft:#f5f7fb; --green:#15803d; --red:#b91c1c; --amber:#b45309; --blue:#1d4ed8; }
         * { box-sizing:border-box; }
@@ -227,7 +229,8 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module">
         import API_BASE_URL from './js/config/config.js';
-        import verifySession from './js/modules/auth.js?v=4';
+        import verifySession from './js/modules/auth.js?v=8';
+        import { savedTransactionTotals } from './js/modules/sales_financials.js?v=1';
 
         const state = { page: 1, perPage: 10, dateFrom: '', dateTo: '', status: 'all', cashier: 'all', clerk: 'all', payment: 'all', search: '', selectedOrder: null, filters: {} };
         const els = {
@@ -373,13 +376,12 @@
         function receiptSpec(item) { return [item.generic_name, item.strength || item.net_weight || item.specification].map((part) => String(part || '').trim()).filter(Boolean).join(' / '); }
         function productLine(item) { const brand = String(item.brand_name || '').trim(); const product = String(item.product_name || 'Item').trim(); return brand && brand.toLowerCase() !== product.toLowerCase() ? `${brand} ${product}` : product; }
         function totals(order) {
-            const subtotal = Number(order.subtotal || 0); const discount = Number(order.cashier_discount_amount || 0); const taxable = Math.max(0, subtotal - discount);
-            const vat = Number(order.vat || taxable * 0.12); const total = Number(order.final_amount || order.total_amount || taxable + vat); const paid = Number(order.amount_paid || order.cash_received || 0); const change = Number(order.change_amount || Math.max(0, paid - total));
-            return { subtotal, discount, vat, total, paid, change };
+            const saved = savedTransactionTotals(order);
+            return { ...saved, total: saved.finalAmount, paid: saved.cashReceived };
         }
         function receiptMarkup(order) {
             const t = totals(order);
-            return `<div class="detail-grid"><div class="detail-item"><span>Receipt</span><strong>${esc(order.receipt_no || '-')}</strong></div><div class="detail-item"><span>Order</span><strong>${esc(order.order_no || '-')}</strong></div><div class="detail-item"><span>Status</span><strong>${esc(order.status || '-')}</strong></div><div class="detail-item"><span>Date</span><strong>${esc(formatDate(order.completed_at || order.created_at))}</strong></div><div class="detail-item"><span>Customer</span><strong>${esc(order.customer_name || 'Walk-in Customer')}</strong></div><div class="detail-item"><span>Payment</span><strong>${esc(order.payment_method || 'cash')}</strong></div><div class="detail-item"><span>Sales Clerk</span><strong>${esc(order.sales_clerk_name || 'Unassigned')}</strong></div><div class="detail-item"><span>Cashier</span><strong>${esc(order.cashier_name || '-')}</strong></div></div><h3 class="h6 fw-bold">Products</h3><table class="drawer-table"><thead><tr><th>Product</th><th>Variant / Specification</th><th>Qty</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>${(order.items || []).map((item) => `<tr><td>${esc(productLine(item))}</td><td>${esc(receiptSpec(item) || '-')}</td><td>${esc(count(item.quantity))}</td><td class="nowrap">${esc(money(item.unit_price))}</td><td class="nowrap">${esc(money(item.line_total))}</td></tr>`).join('') || '<tr><td colspan="5">No product lines found.</td></tr>'}</tbody></table><h3 class="h6 fw-bold">Payment Summary</h3><div class="totals"><div class="total-row"><span>Subtotal</span><strong>${esc(money(t.subtotal))}</strong></div><div class="total-row"><span>Discount</span><strong>${esc(money(t.discount))}</strong></div><div class="total-row"><span>VAT / Tax</span><strong>${esc(money(t.vat))}</strong></div><div class="total-row grand"><span>Total</span><strong>${esc(money(t.total))}</strong></div><div class="total-row"><span>Cash Received</span><strong>${esc(money(t.paid))}</strong></div><div class="total-row"><span>Change</span><strong>${esc(money(t.change))}</strong></div></div>`;
+            return `<div class="detail-grid"><div class="detail-item"><span>Receipt</span><strong>${esc(order.receipt_no || '-')}</strong></div><div class="detail-item"><span>Order</span><strong>${esc(order.order_no || '-')}</strong></div><div class="detail-item"><span>Status</span><strong>${esc(order.status || '-')}</strong></div><div class="detail-item"><span>Date</span><strong>${esc(formatDate(order.completed_at || order.created_at))}</strong></div><div class="detail-item"><span>Customer</span><strong>${esc(order.customer_name || 'Walk-in Customer')}</strong></div><div class="detail-item"><span>Payment</span><strong>${esc(order.payment_method || 'cash')}</strong></div><div class="detail-item"><span>Sales Clerk</span><strong>${esc(order.sales_clerk_name || 'Unassigned')}</strong></div><div class="detail-item"><span>Cashier</span><strong>${esc(order.cashier_name || '-')}</strong></div></div><h3 class="h6 fw-bold">Products</h3><table class="drawer-table"><thead><tr><th>Product</th><th>Variant / Specification</th><th>Qty</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>${(order.items || []).map((item) => `<tr><td>${esc(productLine(item))}</td><td>${esc(receiptSpec(item) || '-')}</td><td>${esc(count(item.quantity))}</td><td class="nowrap">${esc(money(item.unit_price))}</td><td class="nowrap">${esc(money(item.line_total))}</td></tr>`).join('') || '<tr><td colspan="5">No product lines found.</td></tr>'}</tbody></table><h3 class="h6 fw-bold">Payment Summary</h3><div class="totals"><div class="total-row"><span>Subtotal</span><strong>${esc(money(t.subtotal))}</strong></div><div class="total-row"><span>Discount</span><strong>${esc(money(t.discount))}</strong></div><div class="total-row"><span>VATable Sales</span><strong>${esc(money(t.vatableSales))}</strong></div><div class="total-row"><span>VAT (12%)</span><strong>${esc(money(t.vat))}</strong></div><div class="total-row grand"><span>Total</span><strong>${esc(money(t.total))}</strong></div><div class="total-row"><span>Cash Received</span><strong>${esc(money(t.paid))}</strong></div><div class="total-row"><span>Change</span><strong>${esc(money(t.change))}</strong></div></div>`;
         }
         async function openTransaction(orderId) {
             els.drawerBody.innerHTML = '<div class="empty-state">Loading transaction...</div>'; els.drawer.classList.add('show'); els.drawer.setAttribute('aria-hidden', 'false');

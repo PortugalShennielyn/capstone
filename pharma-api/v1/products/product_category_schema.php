@@ -129,13 +129,13 @@ function ensureProductCategorySchema(PDO $pdo): void
         ]);
     }
 
-    $unitSeed = $pdo->prepare(
-        "INSERT INTO product_measurement_units (unit_name)
-         VALUES (:unit_name)
-         ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name)"
-    );
+    $unitSeedCheck = $pdo->prepare('SELECT 1 FROM product_measurement_units WHERE LOWER(TRIM(unit_name)) = LOWER(TRIM(:unit_name)) LIMIT 1');
+    $unitSeed = $pdo->prepare('INSERT INTO product_measurement_units (unit_name) VALUES (:unit_name)');
     foreach (['%', 'mg', 'mcg', 'g', 'kg', 'mL', 'L', 'oz', 'lb', 'IU', 'mg/mL', 'mg/5mL', 'cc', 'pcs', 'tablet', 'capsule', 'box', 'bottle', 'can', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule', 'jar', 'roll', 'strip', 'plastic pack', 'carton', 'pouch'] as $unitName) {
-        $unitSeed->execute([':unit_name' => $unitName]);
+        $unitSeedCheck->execute([':unit_name' => $unitName]);
+        if (!$unitSeedCheck->fetchColumn()) {
+            $unitSeed->execute([':unit_name' => $unitName]);
+        }
     }
     $pdo->exec("DELETE FROM product_measurement_units WHERE unit_name IN ('N/A', 'Select category first...')");
 
@@ -426,7 +426,7 @@ function ensureInventoryBatchSchema(PDO $pdo): void
         ) shelf ON shelf.source_inventory_id = inv.inventory_id
         LEFT JOIN (
             SELECT po_item_id, SUM(return_quantity) AS returned_qty
-            FROM purchase_order_returns
+            FROM supplier_claim_legacy_projection
             GROUP BY po_item_id
         ) ret ON ret.po_item_id = poi.po_item_id
         WHERE existing.batch_id IS NULL"
@@ -447,7 +447,7 @@ function ensureInventoryBatchSchema(PDO $pdo): void
          LEFT JOIN purchase_order_receiving por ON por.po_id = po.po_id
          LEFT JOIN (
             SELECT po_item_id, SUM(return_quantity) AS damaged_qty
-            FROM purchase_order_returns
+            FROM supplier_claim_legacy_projection
             GROUP BY po_item_id
          ) ret ON ret.po_item_id = poi.po_item_id
          SET ib.po_id = po.po_id,
@@ -512,6 +512,21 @@ function getProductTypeId(PDO $pdo, string $categoryId, string $typeId): ?string
     return $validTypeId !== '' ? $validTypeId : null;
 }
 
+function findProductTypeByNormalizedName(PDO $pdo, string $categoryId, string $typeName, string $excludeTypeId = ''): ?array
+{
+    $statement = $pdo->prepare(
+        "SELECT type_id, category_id, type_name
+         FROM product_types
+         WHERE category_id = :category_id
+           AND LOWER(TRIM(type_name)) = LOWER(TRIM(:type_name))
+           AND type_id <> :exclude_type_id
+         LIMIT 1"
+    );
+    $statement->execute([':category_id' => $categoryId, ':type_name' => trim($typeName), ':exclude_type_id' => $excludeTypeId]);
+    $row = $statement->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
 function getMeasurementUnitId(PDO $pdo, string $measurementUnitId): ?string
 {
     $unitIdColumn = getMeasurementUnitIdColumn($pdo);
@@ -557,50 +572,33 @@ function optionalProductField(array $payload, string $field): ?string
 
 function getProductCategories(PDO $pdo): array
 {
+    require_once __DIR__ . '/product_pricing_schema.php';
     $statement = $pdo->query(
-        "SELECT category_id, category_name
+        "SELECT category_id, category_name, default_markup_percentage, pricing_behavior
          FROM product_categories
+         WHERE category_name IN ('Grocery', 'Medicine', 'Medical Supplies')
          ORDER BY category_name ASC"
     );
-
-    return $statement->fetchAll(PDO::FETCH_ASSOC);
+    $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as &$row) {
+        $row['default_markup_percentage'] = round((float) $row['default_markup_percentage'], 2);
+        $resolution = categoryMarkupResolution($pdo, $row['category_id']);
+        $row['effective_markup_percentage'] = $resolution['markup_percentage'];
+        $row['markup_source'] = $resolution['source_label'];
+        $row['markup_is_fallback'] = $resolution['is_fallback'];
+    }
+    unset($row);
+    return $rows;
 }
 
 function getProductTypesByCategory(PDO $pdo, string $categoryId): array
 {
-    $categoryStatement = $pdo->prepare(
-        "SELECT category_name
-         FROM product_categories
-         WHERE category_id = :category_id
-         LIMIT 1"
-    );
-    $categoryStatement->execute([':category_id' => $categoryId]);
-    $categoryName = (string) $categoryStatement->fetchColumn();
-
-    if (strcasecmp($categoryName, 'Medicine') === 0) {
-        $statement = $pdo->prepare(
-            "SELECT pt.type_id, pt.category_id, pt.type_name
-             FROM product_types pt
-             WHERE pt.category_id = :category_id
-               AND NOT EXISTS (
-                    SELECT 1
-                    FROM product_types medical_pt
-                    INNER JOIN product_categories medical_pc
-                        ON medical_pc.category_id = medical_pt.category_id
-                    WHERE medical_pt.type_name = pt.type_name
-                      AND medical_pc.category_name IN ('Medical Supply', 'Medical Supplies')
-               )
-             ORDER BY pt.type_name ASC"
-        );
-        $statement->execute([':category_id' => $categoryId]);
-
-        return $statement->fetchAll(PDO::FETCH_ASSOC);
-    }
-
     $statement = $pdo->prepare(
-        "SELECT type_id, category_id, type_name
-         FROM product_types
-         WHERE category_id = :category_id
+        "SELECT pt.type_id, pt.category_id, pt.type_name
+         FROM product_types pt
+         INNER JOIN product_categories pc ON pc.category_id = pt.category_id
+         WHERE pt.category_id = :category_id
+           AND pc.category_name IN ('Grocery', 'Medicine', 'Medical Supplies')
          ORDER BY type_name ASC"
     );
     $statement->execute([':category_id' => $categoryId]);

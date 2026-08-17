@@ -131,13 +131,30 @@ try {
          WHERE order_id = :order_id'
     );
     $itemStmt->execute([':order_id' => $orderId]);
-    $orderItems = salesNormalizeCartItems($itemStmt->fetchAll(PDO::FETCH_ASSOC));
+    $storedOrderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+    $orderItems = [];
+    foreach ($storedOrderItems as $storedItem) {
+        $productId = trim((string) ($storedItem['product_id'] ?? ''));
+        if ($productId === '') continue;
+        if (!isset($orderItems[$productId])) $orderItems[$productId] = ['product_id'=>$productId,'base_quantity'=>0];
+        $orderItems[$productId]['base_quantity'] += max(0,(int)($storedItem['quantity'] ?? 0));
+    }
+    $orderItems = array_values($orderItems);
     if (!$orderItems) {
         throw new RuntimeException('Order has no items.');
     }
 
     $products = salesLoadProductsByIds($pdo, array_column($orderItems, 'product_id'));
-    [$stockOk, $stockMessage] = salesValidateCartStock($orderItems, $products);
+    $stockOk = true;
+    $stockMessage = '';
+    foreach ($orderItems as $orderItem) {
+        $product = $products[$orderItem['product_id']] ?? null;
+        if (!$product || (int)$orderItem['base_quantity'] > (int)$product['available_stock']) {
+            $stockOk = false;
+            $stockMessage = 'Insufficient shelf stock for ' . ($product['product_name'] ?? 'an order item') . '.';
+            break;
+        }
+    }
     if (!$stockOk) {
         http_response_code(409);
         echo json_encode(['status' => 'error', 'message' => $stockMessage]);

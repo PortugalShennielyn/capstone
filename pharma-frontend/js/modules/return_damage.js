@@ -15,6 +15,7 @@ const REASON_META = {
 };
 
 let activeReturnDamage = null;
+let supplierClaimSources = [];
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -50,8 +51,8 @@ function setTheme(theme) {
 
 function statusBadge(record) {
     const status = record.return_status || record.purchase_order_status || 'Open';
-    const color = ['Resolved', 'Replacement received'].includes(status) ? '#16a34a'
-        : (status === 'Cancelled' ? '#64748b' : (status === 'Replacement partially received' ? '#2563eb' : '#f97316'));
+    const color = ['Resolved', 'Replacement received', 'Replacement Received / Resolved'].includes(status) ? '#16a34a'
+        : (status === 'Cancelled' ? '#64748b' : (['Replacement partially received', 'Replacement Partially Received'].includes(status) ? '#2563eb' : '#f97316'));
     return `<span class="badge text-white" style="background:${color}">${escapeHtml(status)}</span>`;
 }
 
@@ -123,6 +124,53 @@ async function loadReturnDamageRecords() {
     }
 }
 
+function renderClaimSourceSelection() {
+    const sourceSelect = document.getElementById('claimSourceBatch');
+    if (!sourceSelect) return;
+    sourceSelect.innerHTML = '<option value="">Select delivered stock...</option>' + supplierClaimSources.map((source, index) => `<option value="${index}">${escapeHtml(source.po_number)} · ${escapeHtml([source.brand_name, source.product_name].filter(Boolean).join(' — '))} · Batch ${escapeHtml(source.batch_number)} · ${Number(source.usable_quantity)} usable</option>`).join('');
+    document.getElementById('claimUnitConversion').innerHTML = '';
+    document.getElementById('claimSourceAvailability').textContent = '';
+}
+
+function updateClaimSource() {
+    const selectedIndex = document.getElementById('claimSourceBatch')?.value ?? '';
+    const source = selectedIndex === '' ? null : supplierClaimSources[Number(selectedIndex)];
+    const conversionSelect = document.getElementById('claimUnitConversion');
+    if (!source || !conversionSelect) { if (conversionSelect) conversionSelect.innerHTML = ''; return; }
+    conversionSelect.innerHTML = (source.package_conversions || []).map((conversion) => `<option value="${escapeHtml(conversion.conversion_id)}" data-base-quantity="${Number(conversion.base_quantity || 1)}">${escapeHtml(conversion.unit_name)} (${Number(conversion.base_quantity || 1)} base units)</option>`).join('');
+    document.getElementById('claimSourceAvailability').textContent = `${source.usable_quantity} usable base units: ${source.storage_qty} storage, ${source.shelf_qty} shelf.`;
+}
+
+async function openNewSupplierClaim() {
+    try {
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_supplier_claim_sources.php`);
+        supplierClaimSources = data.sources || [];
+        renderClaimSourceSelection();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('newSupplierClaimModal')).show();
+    } catch (error) { PharmaUtils.toast.error(error.message); }
+}
+
+async function saveNewSupplierClaim() {
+    const selectedIndex = document.getElementById('claimSourceBatch')?.value ?? '';
+    const source = selectedIndex === '' ? null : supplierClaimSources[Number(selectedIndex)];
+    const quantity = Number(document.getElementById('claimAffectedQuantity')?.value || 0);
+    const conversionSelect = document.getElementById('claimUnitConversion');
+    const baseQuantity = Number(conversionSelect?.selectedOptions?.[0]?.dataset.baseQuantity || 0);
+    if (!source) return PharmaUtils.toast.error('Select the original delivered batch.');
+    if (!Number.isInteger(quantity) || quantity <= 0) return PharmaUtils.toast.error('Affected quantity must be a positive whole number.');
+    if (!conversionSelect?.value || quantity * baseQuantity > Number(source.usable_quantity)) return PharmaUtils.toast.error('Affected package quantity exceeds usable stock in this batch.');
+    const button = document.getElementById('btnSaveSupplierClaim');
+    try {
+        button.disabled = true;
+        const payload = { po_id: source.po_id, returns: [{ po_item_id: source.po_item_id, inventory_batch_id: source.inventory_batch_id, affected_quantity: quantity, unit_conversion_id: conversionSelect.value, damage_reason: document.getElementById('claimDamageReason').value, disposition: document.getElementById('claimDisposition').value, resolution_type: document.getElementById('claimResolution').value, remarks: document.getElementById('claimRemarks').value.trim() }] };
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/save_purchase_order_return.php`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+        bootstrap.Modal.getInstance(document.getElementById('newSupplierClaimModal'))?.hide();
+        PharmaUtils.toast.success(data.message);
+        await loadReturnDamageRecords();
+    } catch (error) { PharmaUtils.modal.error('Failed to save supplier claim', error.message); }
+    finally { button.disabled = false; }
+}
+
 function detailGrid(record) {
     const isMedicine = record.category_name === 'Medicine';
     const isLiquid = /\b(liquid|syrup|solution|suspension|drops|betadine|povidone)\b/.test(
@@ -154,6 +202,7 @@ function detailGrid(record) {
         <div class="detail-box"><span>Ordered Quantity</span><strong>${escapeHtml(record.ordered_quantity)}</strong></div>
         <div class="detail-box"><span>Received Quantity</span><strong>${escapeHtml(record.received_quantity)}</strong></div>
         <div class="detail-box"><span>Damaged Quantity</span><strong>${escapeHtml(record.damaged_quantity)}</strong></div>
+        ${record.affected_unit_name ? `<div class="detail-box"><span>Affected Package Level</span><strong>${escapeHtml(record.affected_quantity)} ${escapeHtml(record.affected_unit_name)}</strong></div>` : ''}
         <div class="detail-box"><span>Return Quantity</span><strong>${escapeHtml(record.return_quantity)}</strong></div>
         <div class="detail-box"><span>Damage Reason</span><strong>${escapeHtml(record.damage_reason)}</strong></div>
         ${record.resolution ? `<div class="detail-box"><span>Resolution</span><strong>${escapeHtml(resolutionLabels[record.resolution] || record.resolution)}</strong></div>` : ''}
@@ -190,6 +239,8 @@ async function openEditModal(returnId) {
         document.getElementById('editReturnDamageDetails').innerHTML = detailGrid(activeReturnDamage);
         document.getElementById('edit-return-quantity').value = activeReturnDamage.return_quantity || 1;
         document.getElementById('edit-damage-reason').value = activeReturnDamage.damage_reason || 'Other';
+        document.getElementById('edit-claim-disposition').value = activeReturnDamage.disposition || 'Hold/Quarantine';
+        document.getElementById('edit-claim-resolution').value = activeReturnDamage.resolution_type || '';
         document.getElementById('edit-return-remarks').value = activeReturnDamage.remarks || '';
         bootstrap.Modal.getOrCreateInstance(document.getElementById('editReturnDamageModal')).show();
     } catch (error) {
@@ -204,6 +255,8 @@ async function saveReturnDamageEdit() {
             return_id: returnId,
             return_quantity: Number(document.getElementById('edit-return-quantity')?.value || 0),
             damage_reason: document.getElementById('edit-damage-reason')?.value || '',
+            disposition: document.getElementById('edit-claim-disposition')?.value || '',
+            resolution_type: document.getElementById('edit-claim-resolution')?.value || '',
             remarks: document.getElementById('edit-return-remarks')?.value || ''
         };
 
@@ -329,6 +382,9 @@ function initReturnDamage() {
         setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
     });
     document.getElementById('btnRefreshReturnDamage')?.addEventListener('click', loadReturnDamageRecords);
+    document.getElementById('btnNewSupplierClaim')?.addEventListener('click', openNewSupplierClaim);
+    document.getElementById('claimSourceBatch')?.addEventListener('change', updateClaimSource);
+    document.getElementById('btnSaveSupplierClaim')?.addEventListener('click', saveNewSupplierClaim);
     document.getElementById('btnSaveReturnDamageEdit')?.addEventListener('click', saveReturnDamageEdit);
     document.getElementById('btnOpenReplacementArrival')?.addEventListener('click', openReplacementArrival);
     document.getElementById('btnSaveReplacementArrival')?.addEventListener('click', saveReplacementArrival);

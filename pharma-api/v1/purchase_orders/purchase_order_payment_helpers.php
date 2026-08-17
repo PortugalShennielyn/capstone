@@ -8,9 +8,27 @@ function purchaseOrderPaymentTableExists(PDO $pdo): bool
 
 function purchaseOrderPaymentStatus(float $adjustedPayable, float $totalPaid): string
 {
+    if ($adjustedPayable <= 0) return 'Paid';
     if ($totalPaid <= 0) return 'Unpaid';
-    if ($adjustedPayable > 0 && $totalPaid >= $adjustedPayable) return 'Fully Paid';
+    if ($adjustedPayable > 0 && $totalPaid >= $adjustedPayable) return 'Paid';
     return 'Partially Paid';
+}
+
+function purchaseOrderEffectivePayable(PDO $pdo, string $poId, ?float $storedPayable = null): float
+{
+    $statement = $pdo->prepare(
+        'SELECT COALESCE(
+                    NULLIF(po.total_amount, 0),
+                    SUM(COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, 0))),
+                    0
+                )
+         FROM purchase_orders po
+         LEFT JOIN purchase_order_items poi ON poi.po_id = po.po_id
+         WHERE po.po_id = :po_id
+         GROUP BY po.po_id, po.total_amount'
+    );
+    $statement->execute([':po_id' => $poId]);
+    return round(max(0, (float) $statement->fetchColumn()), 2);
 }
 
 function purchaseOrderPaymentSummary(PDO $pdo, string $poId, ?float $adjustedPayable = null): array
@@ -20,12 +38,16 @@ function purchaseOrderPaymentSummary(PDO $pdo, string $poId, ?float $adjustedPay
         $payableStatement->execute([':po_id' => $poId]);
         $adjustedPayable = (float) ($payableStatement->fetchColumn() ?: 0);
     }
+    $adjustedPayable = purchaseOrderEffectivePayable($pdo, $poId, $adjustedPayable);
+    $creditApplied = supplierClaimCreditAppliedToPo($pdo, $poId);
+    $adjustedPayable = max(0, (float) $adjustedPayable - $creditApplied);
     $paidStatement = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM purchase_order_payments WHERE po_id = :po_id');
     $paidStatement->execute([':po_id' => $poId]);
     $totalPaid = round((float) $paidStatement->fetchColumn(), 2);
     $adjustedPayable = round(max(0, (float) $adjustedPayable), 2);
     return [
         'adjusted_payable' => $adjustedPayable,
+        'supplier_credit_applied' => $creditApplied,
         'total_paid' => $totalPaid,
         'remaining_balance' => round(max(0, $adjustedPayable - $totalPaid), 2),
         'payment_status' => purchaseOrderPaymentStatus($adjustedPayable, $totalPaid)

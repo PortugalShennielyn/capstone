@@ -1,6 +1,8 @@
  <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+<script src="./js/navbar_bootstrap.js?v=9"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Suppliers</title>
@@ -8,11 +10,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <link href="./css/suppliers.css?v=4" rel="stylesheet">
-    <link href="./css/product_workflows.css?v=1" rel="stylesheet">
-    <script src="./js/navbar.js?v=55" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=20"></script>
+    <link href="./css/navbar.css?v=20" rel="stylesheet">
+    <link href="./css/suppliers.css?v=5" rel="stylesheet">
+    <link href="./css/product_workflows.css?v=4" rel="stylesheet">
+<script src="./js/navbar.js?v=74" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --sidebar-bg:#1f2530; --sidebar-bg-deep:#171c25; --sidebar-text:#c6ccd8; --sidebar-muted:#8790a1; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
         * { box-sizing:border-box; } body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter",sans-serif; } body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; } a { text-decoration:none; }
@@ -45,8 +47,68 @@
         .supplier-product-edit-dialog .modal-footer { position:sticky; bottom:0; z-index:3; background:#fff; border-top:1px solid var(--border-soft); }
         .supplier-product-modal-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr); gap:18px; align-items:start; }
         .supplier-product-modal-grid.supplier-assignment-only { grid-template-columns:minmax(0,560px); justify-content:center; }
-        #editSupplierProductModal .supplier-product-edit-dialog { width:min(620px,calc(100vw - 32px)); max-width:min(620px,calc(100vw - 32px)); min-width:0; }
-        #editSupplierProductModal .modal-content { min-width:0; min-height:520px; resize:none; }
+        #editSupplierProductModal .supplier-product-edit-dialog { width:94vw; max-width:1360px; height:88vh; min-width:0; margin:6vh auto; }
+        #editSupplierProductModal .modal-content { width:100%; height:100%; min-width:0; min-height:0; max-height:none; resize:none; overflow:hidden; }
+        #editSupplierProductModal form { min-height:0; flex:1 1 auto; display:flex; flex-direction:column; overflow:hidden; }
+        #editSupplierProductModal .modal-header,#editSupplierProductModal .modal-footer { flex:0 0 auto; z-index:4; background:#fff; }
+        #editSupplierProductModal .modal-header { display:block; padding:18px 22px 0; cursor:default; }
+        #editSupplierProductModal .modal-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+        #editSupplierProductModal .modal-body { min-height:0; flex:1 1 auto; padding:16px 22px 18px; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-gutter:stable; background:#fafbff; }
+        #editSupplierProductModal .modal-footer { padding:14px 22px; border-top:1px solid var(--border-soft); }
+        .supplier-edit-tabs { display:flex; gap:6px; margin-top:16px; border-bottom:0; overflow-x:auto; scrollbar-width:none; }
+        .supplier-edit-tabs::-webkit-scrollbar { display:none; }
+        .supplier-edit-tabs .nav-link { min-width:max-content; padding:11px 16px; border:0; border-bottom:3px solid transparent; border-radius:8px 8px 0 0; color:#667085; background:transparent; font-size:.82rem; font-weight:850; }
+        .supplier-edit-tabs .nav-link.active { color:var(--purple); border-bottom-color:var(--purple); background:#f5f3ff; }
+        .supplier-edit-tab-pane { min-width:0; }
+        .supplier-edit-tab-grid { display:grid; gap:12px; align-items:start; }
+        .supplier-edit-tab-grid > .supplier-product-edit-section { min-width:0; }
+        .supplier-product-readonly-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+        .supplier-product-readonly-field { min-width:0; }
+        .supplier-product-readonly-field.is-wide { grid-column:span 2; }
+        .supplier-product-readonly-label { display:block; margin-bottom:5px; color:#667085; font-size:.75rem; font-weight:800; }
+        .supplier-product-readonly-value { min-height:40px; padding:9px 12px; border:1px solid #d9e2ef; border-radius:8px; color:#344054; background:#fff; font-size:.9rem; font-weight:750; line-height:1.35; overflow-wrap:anywhere; }
+        .supplier-compact-section { padding:0; overflow:hidden; border-color:#e7eaf0; background:#fff; box-shadow:0 2px 8px rgba(31,41,55,.025); }
+        .supplier-compact-section h6 { margin:0; padding:10px 12px; border-bottom:1px solid #e7eaf0; color:#312e81; background:#f5f3ff; }
+        .supplier-compact-table { width:100%; margin:0; table-layout:fixed; border-collapse:collapse; }
+        .supplier-compact-table th,.supplier-compact-table td { padding:8px 12px; border:1px solid #e7eaf0; vertical-align:middle; }
+        .supplier-compact-table th { width:15%; color:#475569; background:#f8fafc; font-size:.73rem; font-weight:850; text-transform:uppercase; }
+        .supplier-compact-table td { color:#253047; background:#fff; font-size:.86rem; font-weight:750; overflow-wrap:anywhere; }
+        .supplier-compact-table .form-control,.supplier-compact-table .form-select { min-height:36px; padding-top:6px; padding-bottom:6px; border-color:#dbe2ea; background:#fff; }
+        .supplier-compact-table .form-control:focus,.supplier-compact-table .form-select:focus { border-color:#8b5cf6; box-shadow:0 0 0 .16rem rgba(124,58,237,.12); }
+        .supplier-compact-table .form-select:disabled { color:#334155; opacity:1; background-color:#f8fafc; border-color:#e2e8f0; }
+        .supplier-hierarchy-table th { width:auto; }
+        .supplier-hierarchy-table .hierarchy-actions { width:48px; text-align:center; }
+        .supplier-hierarchy-unit { font-weight:850; }
+        .supplier-hierarchy-toolbar { display:flex; align-items:center; gap:14px; padding:8px 12px; border-top:1px solid var(--border-soft); }
+        .supplier-hierarchy-toolbar .btn { padding:3px 0; font-weight:800; }
+        .supplier-compact-conversion { padding:9px 12px; border-top:1px solid #ddd6fe; color:#6d28d9; background:#f3f0ff; font-size:.92rem; font-weight:900; }
+        .supplier-compact-conversion strong { display:block; }
+        .supplier-review-impact { grid-column:1/-1; padding:12px 16px; border:1px solid #ddd6fe; border-radius:8px; color:#6d28d9; background:#f3f0ff; font-size:.92rem; font-weight:900; text-align:center; }
+        .supplier-product-attribute-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+        .supplier-product-attributes-empty { grid-column:1/-1; margin:0; padding:18px; border:1px dashed #cbd5e1; border-radius:8px; color:#667085; background:#fff; text-align:center; }
+        .supplier-pricing-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .supplier-pricing-grid .span-2 { grid-column:1/-1; }
+        .supplier-pricing-system-heading { margin-top:2px; padding-top:12px; border-top:1px solid #dfe6f0; color:#667085; font-size:.74rem; font-weight:900; text-transform:uppercase; letter-spacing:.04em; }
+        .supplier-pricing-unit { display:flex; align-items:center; min-height:40px; padding:9px 12px; border:1px solid #d9e2ef; border-radius:8px; background:#fff; color:#344054; font-size:.9rem; font-weight:800; }
+        .supplier-conversion-meaning { margin-top:14px; padding:11px 13px; border-radius:8px; color:#1e3a8a; background:#eff6ff; font-size:.86rem; font-weight:800; }
+        .supplier-conversion-primary-row { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(110px,.7fr) minmax(0,1.2fr); gap:14px; align-items:start; }
+        .supplier-inner-unit-toggle-row { margin-top:8px; }
+        .supplier-inner-unit-toggle-row .btn { padding-left:0; border:0; box-shadow:none; font-weight:800; }
+        .supplier-conversion-inner-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; margin-top:10px; padding:12px; border:1px solid #dbe5f2; border-radius:8px; background:#fff; }
+        .supplier-conversion-meaning .supplier-product-readonly-label { color:#5270a3; text-transform:uppercase; letter-spacing:.03em; }
+        .supplier-conversion-meaning strong { display:block; margin-top:5px; color:#1d4ed8; font-size:1rem; }
+        .supplier-product-master-info { margin-top:14px; padding-top:14px; border-top:1px solid #e3e8f0; }
+        .supplier-pricing-calculated { min-height:40px; padding:9px 12px; border:1px solid #dbeafe; border-radius:8px; color:#1e3a8a; background:#eff6ff; font-size:.9rem; font-weight:800; }
+        .supplier-review-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+        .supplier-review-card { min-width:0; padding:18px; border:1px solid var(--border-soft); border-radius:10px; background:#fff; }
+        .supplier-review-card h6 { margin:0 0 12px; color:#344054; font-size:.8rem; font-weight:900; text-transform:uppercase; letter-spacing:.03em; }
+        .supplier-review-list { display:grid; gap:0; margin:0; }
+        .supplier-review-row { display:grid; grid-template-columns:minmax(150px,.85fr) minmax(0,1.15fr); gap:16px; padding:9px 0; border-top:1px solid #edf0f5; }
+        .supplier-review-row:first-child { border-top:0; }
+        .supplier-review-row dt { color:#667085; font-size:.76rem; font-weight:800; }
+        .supplier-review-row dd { margin:0; color:#253047; font-size:.88rem; font-weight:850; text-align:right; overflow-wrap:anywhere; }
+        .supplier-review-emphasis { grid-column:1/-1; border-color:#bfdbfe; background:#eff6ff; }
+        .supplier-review-emphasis .supplier-review-row { border-color:rgba(37,99,235,.14); }
         .supplier-product-section-stack { display:grid; gap:14px; }
         .supplier-product-edit-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr); gap:18px; align-items:start; }
         .supplier-product-edit-section { padding:16px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
@@ -82,7 +144,22 @@
         body.dark-mode #table-suppliers thead th,
         body.dark-mode #table-supplier-products thead th { background:#202b3d!important; color:#cbd5e1!important; box-shadow:inset 0 -1px 0 #334155!important; }
         body.dark-mode .supplier-product-edit-section { background:#111827; border-color:#263244; }
-        body.dark-mode .supplier-product-reference-price { background:#182131; border-color:#263244; color:#e5e7eb; }
+        body.dark-mode .supplier-product-reference-price,
+        body.dark-mode .supplier-product-readonly-value,
+        body.dark-mode .supplier-pricing-unit,
+        body.dark-mode .supplier-product-attributes-empty,
+        body.dark-mode .supplier-review-card { background:#182131; border-color:#263244; color:#e5e7eb; }
+        body.dark-mode #editSupplierProductModal .modal-header,
+        body.dark-mode #editSupplierProductModal .modal-footer { background:#182131; border-color:#263244; }
+        body.dark-mode .supplier-edit-tabs .nav-link.active { background:#2e1065; color:#ddd6fe; }
+        body.dark-mode .supplier-product-readonly-label,
+        body.dark-mode .supplier-review-row dt { color:#cbd5e1; }
+        body.dark-mode .supplier-review-row { border-color:#263244; }
+        body.dark-mode .supplier-review-row dd { color:#f1f5f9; }
+        body.dark-mode .supplier-conversion-meaning,
+        body.dark-mode .supplier-review-emphasis { color:#bfdbfe; background:#172554; border-color:#1d4ed8; }
+        body.dark-mode .supplier-conversion-inner-row { background:#182131; border-color:#263244; }
+        body.dark-mode .supplier-pricing-calculated { color:#bfdbfe; background:#172554; border-color:#1d4ed8; }
         body.dark-mode .supplier-product-preview-card { border-color:#1d4ed8; background:#172554; }
         body.dark-mode .supplier-product-preview-row { border-top-color:rgba(191,219,254,.22); }
         body.dark-mode .supplier-product-preview-row span { color:#cbd5e1; }
@@ -93,8 +170,8 @@
         body.dark-mode #addSupplierModal .modal-footer { border-color:#263244; background:#182131; }
         body.dark-mode #addSupplierModal .form-label { color:#cbd5e1; }
         @media (max-width:1199.98px) { .supplier-product-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-        @media (max-width:991.98px) { .supplier-product-edit-grid,.supplier-product-modal-grid { grid-template-columns:1fr; } .supplier-product-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-        @media (max-width:575.98px) { .supplier-product-form-grid { grid-template-columns:1fr; } .supplier-product-form-grid .span-2 { grid-column:auto; } }
+        @media (max-width:991.98px) { .supplier-product-edit-grid,.supplier-product-modal-grid,.supplier-edit-tab-grid,.supplier-review-grid { grid-template-columns:1fr; } .supplier-product-form-grid,.supplier-product-readonly-grid,.supplier-product-attribute-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .supplier-review-emphasis { grid-column:auto; } }
+        @media (max-width:575.98px) { #editSupplierProductModal .supplier-product-edit-dialog { width:calc(100vw - 16px); height:calc(100vh - 16px); margin:8px auto; } #editSupplierProductModal .modal-header { padding:14px 14px 0; } #editSupplierProductModal .modal-body { padding:16px 14px 20px; } #editSupplierProductModal .modal-footer { padding:12px 14px; } .supplier-product-form-grid,.supplier-product-readonly-grid,.supplier-product-attribute-grid,.supplier-pricing-grid,.supplier-conversion-primary-row,.supplier-conversion-inner-row { grid-template-columns:1fr; } .supplier-product-form-grid .span-2,.supplier-product-readonly-field.is-wide { grid-column:auto; } .supplier-review-row { grid-template-columns:1fr; gap:3px; } .supplier-review-row dd { text-align:left; } }
         @media (max-width:575.98px) { .supplier-product-toolbar { grid-template-columns:1fr; } }
     </style>
 </head>
@@ -119,7 +196,7 @@
                         <div class="d-flex align-items-center gap-2 flex-wrap"><h5>Supplier Product Catalog</h5><span class="supplier-result-count" id="supplierProductResultCount" aria-live="polite">0 products</span></div>
                         <p>Products assigned to each supplier for purchase orders.</p>
                     </div>
-                    <button class="btn btn-purple" data-bs-toggle="modal" data-bs-target="#assignSupplierProductsModal"><i class="fa-solid fa-plus me-2" aria-hidden="true"></i>Assign Product</button>
+                    <button class="btn btn-purple" id="assignSupplierProductButton" data-bs-toggle="modal" data-bs-target="#assignSupplierProductsModal"><i class="fa-solid fa-plus me-2" aria-hidden="true"></i>Assign Product</button>
                 </div>
                 <div class="supplier-product-toolbar">
                     <div>
@@ -152,16 +229,19 @@
                                 <th class="col-product">Product</th>
                                 <th class="col-specification">Specification</th>
                                 <th class="col-type">Product Type</th>
-                                <th class="col-packaging">Packaging</th>
                                 <th class="col-purchase-unit">Purchase Unit</th>
-                                <th class="col-supplier-cost text-end">Supplier Cost</th>
+                                <th class="col-supplier-cost text-end" data-supplier-cost hidden>Supplier Cost</th>
                                 <th class="col-actions actions-column">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="8" class="text-center text-muted py-4">Loading supplier products...</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted py-4">Loading supplier products...</td></tr>
                         </tbody>
                     </table>
+                </div>
+                <div class="d-flex align-items-center justify-content-between gap-3 px-3 py-2 border-top" id="supplierCatalogPagination" aria-label="Supplier catalog pagination">
+                    <span class="small text-muted" id="supplierCatalogPageStatus">Page 1 of 1</span>
+                    <div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" id="supplierCatalogPrevious" type="button">Previous</button><button class="btn btn-outline-secondary" id="supplierCatalogNext" type="button">Next</button></div>
                 </div>
             </div>
         </section>
@@ -218,56 +298,56 @@
         </div>
         <div class="supplier-product-section-stack">
             <section class="supplier-product-edit-section"><h6>Supplier Purchasing Setup</h6><p>Conversion setup for purchase order receiving only.</p><div class="row g-3">
-                <div class="col-12"><label class="form-label" for="supplierProductPurchaseUnit">Supplier Package / Purchase Unit</label><select class="form-select" id="supplierProductPurchaseUnit" required><option>Box</option><option>Pack</option><option>Bottle</option><option>Carton</option><option>Case</option><option>Can</option><option>Pouch</option><option>Bag</option></select></div>
-                <div class="col-12"><label class="form-label" for="supplierProductInventoryUnitPreview">Inventory Unit</label><input class="form-control" id="supplierProductInventoryUnitPreview" readonly value="pc"></div>
+                <div class="col-12"><label class="form-label" for="supplierProductPurchaseUnit">Supplier Package / Purchase Unit</label><select class="form-select" id="supplierProductPurchaseUnit" required><option value="">Select Purchase Unit...</option></select></div>
+                <div class="col-12"><label class="form-label" for="supplierProductInventoryUnitPreview">Inventory Unit</label><select class="form-select" id="supplierProductInventoryUnitPreview"><option value="">Select Inventory Unit...</option></select></div>
                 <div class="col-12"><label class="form-label" for="supplierProductUnitsPerPurchaseUnit">Units per Purchase Unit</label><input class="form-control" id="supplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" value="1" required placeholder="40"></div>
             </div></section>
             <div class="supplier-product-preview-card" id="addSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="addPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="addPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row"><span>Supplier Cost</span><strong id="addPreviewSupplierCost">₱0.00 per pc</strong></div><div class="supplier-product-preview-row"><span>Estimated Purchase Unit Cost</span><strong id="addPreviewPurchaseCost">₱0.00</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="addPreviewMeaning">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
         </div>
     </div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple"><i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product</button></div></form></div></div></div>
-    <div class="modal fade" id="editSupplierProductModal" tabindex="-1" aria-labelledby="editSupplierProductModalTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered supplier-product-edit-dialog"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="editSupplierProductModalTitle" tabindex="-1">Edit Supplier Product</h5><p class="text-muted small mb-0">Assign product details and supplier purchasing setup.</p></div><button class="btn-close" data-bs-dismiss="modal" aria-label="Close edit supplier product form"></button></div><form id="editSupplierProductForm"><input type="hidden" id="editSupplierProductLinkId"><input type="hidden" id="editSupplierProductId"><input type="hidden" id="editSupplierProductSupplierId"><input type="hidden" id="editSupplierProductCurrentPrice"><div class="modal-body"><div class="supplier-product-modal-grid">
-        <div class="supplier-product-section-stack">
-            <section class="supplier-product-edit-section"><h6>Product Identity</h6><div class="supplier-product-form-grid">
-                <div><label class="form-label" for="editSupplierProductSupplierName">Supplier</label><input class="form-control" id="editSupplierProductSupplierName" readonly></div>
-                <div><label class="form-label" for="editSupplierProductCategory">Category</label><select class="form-select" id="editSupplierProductCategory" required></select></div>
-                <div><label class="form-label" for="editSupplierProductType">Product Type</label><select class="form-select" id="editSupplierProductType" required></select></div>
-                <div><label class="form-label" for="editSupplierProductBrand">Brand Name</label><input class="form-control" id="editSupplierProductBrand" required></div>
-                <div class="span-2"><label class="form-label" for="editSupplierProductName">Product Name</label><input class="form-control" id="editSupplierProductName" required></div>
-            </div></section>
-            <section class="supplier-product-edit-section"><h6>Product Attributes</h6><div class="supplier-product-form-grid">
-                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductGeneric">Generic Name</label><input class="form-control" id="editSupplierProductGeneric"></div>
-                <div class="edit-attribute edit-grocery edit-medical"><label class="form-label" for="editSupplierProductVariant">Flavor / Variant</label><input class="form-control" id="editSupplierProductVariant"></div>
-                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductStrength">Strength Value</label><input class="form-control" id="editSupplierProductStrength" type="number" min="0" step="any" inputmode="decimal"></div>
-                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductStrengthUnit">Strength Unit</label><select class="form-select" id="editSupplierProductStrengthUnit"></select></div>
-                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductDosageForm">Dosage Form</label><input class="form-control" id="editSupplierProductDosageForm"></div>
-                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductNetContentValue">Net Content Value</label><input class="form-control" id="editSupplierProductNetContentValue" type="number" min="0" step="any" inputmode="decimal"></div>
-                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductNetContentUnit">Net Content Unit</label><select class="form-select" id="editSupplierProductNetContentUnit"></select></div>
-                <div class="edit-attribute edit-grocery edit-medical"><label class="form-label" for="editSupplierProductSize">Size</label><input class="form-control" id="editSupplierProductSize"></div>
-                <div class="edit-attribute edit-grocery"><label class="form-label" for="editSupplierProductNetWeight">Net Weight</label><input class="form-control" id="editSupplierProductNetWeight" type="number" min="0" step="any" inputmode="decimal"></div>
-                <div class="edit-attribute edit-medical"><label class="form-label" for="editSupplierProductMaterial">Material</label><input class="form-control" id="editSupplierProductMaterial"></div>
-                <div class="edit-attribute edit-medical"><label class="form-label" for="editSupplierProductSterileStatus">Sterile Status</label><select class="form-select" id="editSupplierProductSterileStatus"><option value="">Not set</option><option>Sterile</option><option>Non-sterile</option></select></div>
-                <div class="edit-attribute edit-grocery edit-medical"><label class="form-label" for="editSupplierProductUnit">Unit</label><select class="form-select" id="editSupplierProductUnit"></select></div>
-                <div class="edit-attribute edit-grocery edit-medical edit-medicine"><label class="form-label" for="editSupplierProductPackaging">Packaging</label><select class="form-select" id="editSupplierProductPackaging"></select></div>
-            </div></section>
-            <section class="supplier-product-edit-section"><h6>Pricing</h6><div class="supplier-product-form-grid">
-                <div><label class="form-label">Selling Price</label><div class="supplier-product-reference-price" id="editSupplierProductSellingPriceText">-</div></div>
-                <div><label class="form-label" for="editSupplierProductSupplierCost">Supplier Cost per Inventory Unit</label><input class="form-control" id="editSupplierProductSupplierCost" type="number" min="0" step=".01" required></div>
-                <div><label class="form-label" for="editSupplierProductBarcode">Barcode</label><input class="form-control" id="editSupplierProductBarcode" readonly></div>
-                <div><label class="form-label" for="editSupplierProductSku">SKU <span class="text-muted">(optional)</span></label><input class="form-control" id="editSupplierProductSku" readonly></div>
-                <div class="span-2"><label class="form-label" for="editSupplierProductImageUrl">Image URL <span class="text-muted">(optional)</span></label><input class="form-control" id="editSupplierProductImageUrl" readonly></div>
-            </div></section>
-        </div>
-        <div class="supplier-product-section-stack">
-            <section class="supplier-product-edit-section"><h6>Supplier Purchasing Setup</h6><p>Conversion setup for purchase order receiving only.</p><div class="row g-3">
-                <div class="col-12"><label class="form-label" for="editSupplierProductPurchaseUnit">Supplier Package / Purchase Unit</label><select class="form-select" id="editSupplierProductPurchaseUnit" required><option>Box</option><option>Pack</option><option>Bottle</option><option>Carton</option><option>Case</option><option>Can</option><option>Pouch</option><option>Bag</option></select></div>
-                <div class="col-12"><label class="form-label" for="editSupplierProductInventoryUnitPreview">Inventory Unit</label><input class="form-control" id="editSupplierProductInventoryUnitPreview" readonly value="pc"></div>
-                <div class="col-12"><label class="form-label" for="editSupplierProductUnitsPerPurchaseUnit">Units per Purchase Unit</label><input class="form-control" id="editSupplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" required></div>
-            </div></section>
-            <div class="supplier-product-preview-card" id="editSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="editPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="editPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row"><span>Supplier Cost</span><strong id="editPreviewSupplierCost">₱0.00 per pc</strong></div><div class="supplier-product-preview-row"><span>Estimated Purchase Unit Cost</span><strong id="editPreviewPurchaseCost">₱0.00</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="editPreviewInventoryReceived">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
-        </div>
-    </div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit"><i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product</button></div></form></div></div></div>
+    <div class="modal fade" id="editSupplierProductModal" tabindex="-1" aria-labelledby="editSupplierProductModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered supplier-product-edit-dialog"><div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title-row"><div><h5 class="modal-title fw-bold" id="editSupplierProductModalTitle" tabindex="-1">Edit Supplier Purchasing Setup</h5><p class="text-muted small mb-0">Product information comes from Product Master. Only supplier purchasing terms are editable here.</p></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close edit supplier purchasing setup"></button></div>
+                <ul class="nav nav-tabs supplier-edit-tabs" id="editSupplierProductTabs" role="tablist">
+                    <li class="nav-item" role="presentation"><button class="nav-link active" id="editSupplierProductSetupTab" data-bs-toggle="tab" data-bs-target="#editSupplierProductSetupPane" type="button" role="tab" aria-controls="editSupplierProductSetupPane" aria-selected="true">1. Product &amp; Supplier Setup</button></li>
+                    <li class="nav-item" role="presentation"><button class="nav-link" id="editSupplierProductReviewTab" data-bs-toggle="tab" data-bs-target="#editSupplierProductReviewPane" type="button" role="tab" aria-controls="editSupplierProductReviewPane" aria-selected="false">2. Purchase Review</button></li>
+                </ul>
+            </div>
+            <form id="editSupplierProductForm" novalidate><input type="hidden" id="editSupplierProductLinkId"><input type="hidden" id="editSupplierProductId"><input type="hidden" id="editSupplierProductSupplierId">
+                <div class="modal-body"><div class="tab-content" id="editSupplierProductTabContent"><div class="tab-pane fade show active supplier-edit-tab-pane" id="editSupplierProductSetupPane" role="tabpanel" aria-labelledby="editSupplierProductSetupTab" tabindex="0">
+                    <div class="supplier-edit-tab-grid">
+                        <section class="supplier-product-edit-section supplier-compact-section"><h6>Product Details</h6><table class="supplier-compact-table" aria-label="Read-only Product Master details"><tbody>
+                            <tr><th>Brand</th><td id="editSupplierProductBrandText">Not set</td><th>Product</th><td id="editSupplierProductNameText">Not set</td></tr>
+                            <tr><th>Category</th><td id="editSupplierProductCategoryText">Not set</td><th>Product Type</th><td id="editSupplierProductTypeText">Not set</td></tr>
+                            <tr><th>Status</th><td id="editSupplierProductStatusText">Not set</td><th>Barcode</th><td id="editSupplierProductBarcodeText">Not set</td></tr>
+                            <tr class="d-none" id="editSupplierProductSkuField"><th>SKU</th><td id="editSupplierProductSkuText">Not set</td><th></th><td></td></tr>
+                        </tbody><tbody id="editSupplierProductAttributes" aria-live="polite"><tr><td colspan="4" class="text-muted text-center">Loading configured product attributes...</td></tr></tbody></table></section>
+                        <section class="supplier-product-edit-section supplier-compact-section"><h6>Purchasing Setup</h6><table class="supplier-compact-table"><tbody>
+                            <tr><th>Supplier</th><td id="editSupplierProductSupplierNameText">Not set</td><th><label for="editSupplierProductPurchaseUnit">Purchase Unit</label></th><td><select class="form-select" id="editSupplierProductPurchaseUnit" required><option value="">Select Purchase Unit...</option></select><div class="invalid-feedback">Invalid legacy unit — please select a valid Purchase Unit.</div></td></tr>
+                            <tr><th><label for="editSupplierProductInventoryUnitPreview">Product Base Unit</label></th><td><select class="form-select" id="editSupplierProductInventoryUnitPreview" required disabled aria-readonly="true"><option value="">Select Product Base Unit...</option></select><div class="invalid-feedback">Invalid legacy unit — please select a valid Product Base Unit.</div></td><th><label for="editSupplierProductSupplierCost" id="editSupplierProductSupplierCostLabel">Supplier Cost</label></th><td><div class="input-group"><span class="input-group-text">₱</span><input class="form-control" id="editSupplierProductSupplierCost" type="number" min="0" step=".01" required><span class="input-group-text" id="editSupplierProductSupplierCostUnit">/ Purchase Unit</span></div></td></tr>
+                        </tbody></table></section>
+                        <section class="supplier-product-edit-section supplier-compact-section"><h6>Packaging Hierarchy</h6><table class="supplier-compact-table supplier-hierarchy-table"><thead><tr><th>From</th><th>To</th><th>Quantity</th><th class="hierarchy-actions"></th></tr></thead><tbody>
+                            <tr><td><span class="supplier-hierarchy-unit" id="editSupplierHierarchyPurchaseFrom">Purchase Unit</span></td><td><span class="supplier-hierarchy-unit" id="editSupplierHierarchyDirectTo">Product Base Unit</span><div class="d-none" id="editSupplierProductInnerUnitField"><select class="form-select" id="editSupplierProductInnerUnit"><option value="">Select next unit...</option></select><div class="invalid-feedback">Select a unique unit above the Product Base Unit.</div></div></td><td><label class="visually-hidden" for="editSupplierProductUnitsPerPurchaseUnit">Quantity</label><input class="form-control" id="editSupplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" required><div class="invalid-feedback">Enter a positive whole number.</div></td><td></td></tr>
+                        </tbody><tbody id="editSupplierProductAdditionalLevels"></tbody><tbody>
+                            <tr class="d-none" id="editSupplierProductInnerUnitRow"><td><span class="supplier-hierarchy-unit" id="editSupplierHierarchyBaseFrom">Intermediate Unit</span></td><td><span class="supplier-hierarchy-unit" id="editSupplierHierarchyBaseTo">Product Base Unit</span></td><td id="editSupplierProductUnitsPerInnerField"><label class="visually-hidden" id="editSupplierProductUnitsPerInnerLabel" for="editSupplierProductUnitsPerInnerUnit">Quantity</label><input class="form-control" id="editSupplierProductUnitsPerInnerUnit" type="number" min="1" step="1" value="1"><div class="invalid-feedback">Enter a positive whole number.</div></td><td></td></tr>
+                        </tbody></table><div class="supplier-hierarchy-toolbar"><button class="btn btn-sm btn-link" id="editSupplierProductToggleInnerUnit" type="button"><i class="fa-solid fa-plus me-1"></i>Add Packaging Level</button><span class="d-none" id="editSupplierProductAddLevelRow"><button class="btn btn-sm btn-link" id="editSupplierProductAddLevel" type="button"><i class="fa-solid fa-plus me-1"></i>Add Packaging Level</button></span></div>
+                            <div class="supplier-compact-conversion" id="editSupplierProductConversionMeaning"><strong>1 Purchase Unit = 1 Product Base Unit</strong></div>
+                        </section>
+                    </div>
+                </div>
+                <div class="tab-pane fade supplier-edit-tab-pane" id="editSupplierProductReviewPane" role="tabpanel" aria-labelledby="editSupplierProductReviewTab" tabindex="0"><div class="supplier-review-grid">
+                    <section class="supplier-review-card"><h6>Product Summary</h6><dl class="supplier-review-list"><div class="supplier-review-row"><dt>Brand</dt><dd data-edit-review="brand">Not set</dd></div><div class="supplier-review-row"><dt>Product</dt><dd data-edit-review="product">Not set</dd></div><div class="supplier-review-row"><dt>Specification</dt><dd data-edit-review="specification">Not set</dd></div></dl></section>
+                    <section class="supplier-review-card"><h6>Purchase Summary</h6><dl class="supplier-review-list"><div class="supplier-review-row"><dt>Supplier</dt><dd data-edit-review="supplier">Not set</dd></div><div class="supplier-review-row"><dt>Purchase Unit</dt><dd id="editPreviewPurchaseUnit">Purchase Unit</dd></div><div class="supplier-review-row"><dt>Base Unit</dt><dd data-edit-review="inventory-unit">Base Unit</dd></div><div class="supplier-review-row"><dt>Supplier Cost</dt><dd id="editPreviewSupplierCost">₱0.00 / Purchase Unit</dd></div><div class="supplier-review-row"><dt>Conversion</dt><dd id="editPreviewInventoryReceived">1 Purchase Unit = 1 Base Unit</dd></div></dl></section>
+                    <div class="supplier-review-impact" data-edit-review="meaning">Receiving 1 Purchase Unit adds 1 Base Unit to Inventory</div>
+                </div></div>
+            </div></div>
+            <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit"><i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product</button></div>
+            </form>
+        </div></div>
+    </div>
     <div class="modal fade" id="addProductTypeModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Add Product Type</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addProductTypeForm"><div class="modal-body"><div class="mb-3"><label class="form-label">Category <span class="text-danger">*</span></label><select class="form-select" id="newProductTypeCategory" required></select></div><div><label class="form-label">New Product Type Name <span class="text-danger">*</span></label><input class="form-control" id="newProductTypeName" required></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple">Save</button></div></form></div></div></div>
     <div class="modal fade" id="addMeasurementUnitModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Add Measurement Unit</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addMeasurementUnitForm"><div class="modal-body"><label class="form-label">New Measurement Unit Name <span class="text-danger">*</span></label><input class="form-control" id="newMeasurementUnitName" required></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple">Save</button></div></form></div></div></div>
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script><script type="module" src="./js/modules/suppliers.js?v=29"></script><script type="module" src="./js/modules/supplier_product_assignment.js?v=3"></script><script type="module">import verifySession from './js/modules/auth.js?v=4'; await verifySession();</script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script><script type="module" src="./js/modules/suppliers.js?v=45"></script><script type="module" src="./js/modules/supplier_product_assignment.js?v=9"></script><script type="module">import verifySession from './js/modules/auth.js?v=8'; await verifySession();</script>
 </body>
 </html>

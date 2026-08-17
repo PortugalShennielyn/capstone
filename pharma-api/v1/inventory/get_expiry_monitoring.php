@@ -10,8 +10,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
-    ensureProductCategorySchema($pdo);
-
     $statement = $pdo->prepare(
         "SELECT
             ib.batch_id,
@@ -23,9 +21,9 @@ try {
             ib.received_date,
             ib.received_qty AS received_quantity,
             ib.storage_qty,
-            ib.shelf_qty,
+            COALESCE(selling.shelf_qty, 0) AS shelf_qty,
             ib.damaged_qty,
-            (ib.storage_qty + ib.shelf_qty) AS available_quantity,
+            (ib.storage_qty + COALESCE(selling.shelf_qty, 0)) AS available_quantity,
             ib.expiry_date,
             COALESCE(pi.expiry_alert_days, 30) AS expiry_alert_days,
             DATEDIFF(ib.expiry_date, CURRENT_DATE) AS days_until_expiry,
@@ -48,6 +46,7 @@ try {
             pc.category_name,
             pt.type_name
          FROM inventory_batches ib
+         LEFT JOIN (SELECT source_batch_id, SUM(quantity_remaining) shelf_qty FROM product_selling_stock GROUP BY source_batch_id) selling ON selling.source_batch_id = ib.batch_id
          INNER JOIN product p ON p.product_id = ib.product_id
          LEFT JOIN product_inventory pi ON pi.inventory_id = ib.legacy_inventory_id
          LEFT JOIN purchase_order_items poi ON poi.po_item_id = ib.po_item_id
@@ -60,7 +59,7 @@ try {
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          WHERE ib.received_qty > 0
             OR ib.storage_qty > 0
-            OR ib.shelf_qty > 0
+            OR COALESCE(selling.shelf_qty, 0) > 0
             OR ib.damaged_qty > 0
          ORDER BY ib.expiry_date IS NULL ASC,
                   ib.expiry_date ASC,

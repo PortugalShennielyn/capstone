@@ -8,9 +8,9 @@ CREATE TABLE IF NOT EXISTS purchase_order_payments (
     remarks TEXT NULL,
     recorded_by CHAR(36) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    idempotency_key VARCHAR(100) NOT NULL,
+    payment_request_key VARCHAR(100) NOT NULL,
     PRIMARY KEY (payment_id),
-    UNIQUE KEY uniq_purchase_order_payments_idempotency (idempotency_key),
+    UNIQUE KEY uniq_purchase_order_payments_idempotency (payment_request_key),
     KEY idx_purchase_order_payments_po_id (po_id),
     KEY idx_purchase_order_payments_payment_date (payment_date),
     CONSTRAINT fk_purchase_order_payments_po_id
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_payments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 INSERT IGNORE INTO purchase_order_payments
-    (payment_id, po_id, amount, payment_method, payment_date, reference_number, remarks, recorded_by, created_at, idempotency_key)
+    (payment_id, po_id, amount, payment_method, payment_date, reference_number, remarks, recorded_by, created_at, payment_request_key)
 SELECT
     UUID(),
     snapshot.po_id,

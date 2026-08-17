@@ -10,8 +10,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
-    ensureProductCategorySchema($pdo);
-
     $productId = cleanId($_GET['product_id'] ?? null);
 
     if ($productId === '') {
@@ -33,7 +31,7 @@ try {
             ib.expiry_date AS expiration_date,
             ib.storage_qty AS quantity_remaining,
             ib.storage_qty,
-            ib.shelf_qty,
+            COALESCE(selling.shelf_qty, 0) AS shelf_qty,
             ib.damaged_qty,
             ib.batch_status,
             CASE
@@ -43,6 +41,7 @@ try {
                 ELSE 'Safe'
             END AS status
          FROM inventory_batches ib
+         LEFT JOIN (SELECT source_batch_id, SUM(quantity_remaining) shelf_qty FROM product_selling_stock GROUP BY source_batch_id) selling ON selling.source_batch_id = ib.batch_id
          LEFT JOIN purchase_orders po ON po.po_id = ib.po_id
          LEFT JOIN suppliers s ON s.supplier_id = ib.supplier_id
          WHERE ib.product_id = :product_id

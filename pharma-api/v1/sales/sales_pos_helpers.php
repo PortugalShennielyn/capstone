@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/../activity_log_helpers.php';
+require_once __DIR__ . '/sales_financials.php';
+require_once __DIR__ . '/../products/product_selling_options.php';
 
 function salesReadJsonBody(): array
 {
@@ -300,6 +302,13 @@ function salesLoadProductsByIds(PDO $pdo, array $productIds): array
         $products[(string) $row['product_id']] = $row;
     }
 
+    foreach ($products as &$product) {
+        $product['selling_units'] = productSellingOptions($pdo, (string) $product['product_id'], true);
+        $defaultOption = productDefaultSellingOption($pdo, (string) $product['product_id']);
+        if ($defaultOption) $product['price'] = $defaultOption['selling_price'];
+    }
+    unset($product);
+
     return $products;
 }
 
@@ -313,6 +322,7 @@ function salesNormalizeCartItems(array $items): array
 
         $productId = trim((string) ($item['product_id'] ?? ''));
         $quantity = (int) ($item['quantity'] ?? 0);
+        $unit = trim((string) ($item['unit'] ?? ''));
         if ($productId === '' || $quantity <= 0) {
             continue;
         }
@@ -321,6 +331,7 @@ function salesNormalizeCartItems(array $items): array
             $normalized[$productId] = [
                 'product_id' => $productId,
                 'quantity' => 0,
+                'unit' => $unit,
             ];
         }
         $normalized[$productId]['quantity'] += $quantity;
@@ -336,17 +347,23 @@ function salesWriteOrderItems(PDO $pdo, int $orderId, array $items, array $produ
 
     $insert = $pdo->prepare(
         'INSERT INTO sales_order_items
-            (order_id, product_id, product_name, brand_name, specification, quantity, unit_price, line_total)
+            (order_id, product_id, product_name, brand_name, specification, selected_quantity, selected_unit, unit_base_quantity, quantity, unit_price, line_total)
          VALUES
-            (:order_id, :product_id, :product_name, :brand_name, :specification, :quantity, :unit_price, :line_total)'
+            (:order_id, :product_id, :product_name, :brand_name, :specification, :selected_quantity, :selected_unit, :unit_base_quantity, :quantity, :unit_price, :line_total)'
     );
 
     $total = 0.0;
     foreach ($items as $item) {
         $product = $products[$item['product_id']];
-        $quantity = (int) $item['quantity'];
-        $unitPrice = round((float) $product['price'], 2);
-        $lineTotal = round($quantity * $unitPrice, 2);
+        $selectedQuantity = (int) $item['quantity'];
+        $requestedUnit = trim((string) ($item['unit'] ?? ''));
+        $sellingUnit = null;
+        foreach ($product['selling_units'] as $candidate) if ($requestedUnit === '' || strcasecmp($candidate['unit'], $requestedUnit) === 0) { $sellingUnit=$candidate; break; }
+        if (!$sellingUnit) throw new InvalidArgumentException('The selected selling unit is not valid for ' . $product['product_name'] . '.');
+        $factor = (int) $sellingUnit['base_quantity'];
+        $quantity = $selectedQuantity * $factor;
+        $unitPrice = round((float) $sellingUnit['selling_price'], 2);
+        $lineTotal = round($selectedQuantity * $unitPrice, 2);
         $total += $lineTotal;
 
         $insert->execute([
@@ -355,6 +372,9 @@ function salesWriteOrderItems(PDO $pdo, int $orderId, array $items, array $produ
             ':product_name' => $product['product_name'],
             ':brand_name' => $product['brand_name'],
             ':specification' => $product['specification'],
+            ':selected_quantity' => $selectedQuantity,
+            ':selected_unit' => $sellingUnit['unit'],
+            ':unit_base_quantity' => $factor,
             ':quantity' => $quantity,
             ':unit_price' => $unitPrice,
             ':line_total' => $lineTotal,
@@ -371,20 +391,17 @@ function salesOrderTotalFromPayload(array $payload, float $subtotal): float
 
 function salesOrderTotalsFromPayload(array $payload, float $subtotal): array
 {
-    $subtotal = round(max(0, $subtotal), 2);
-    $discount = round((float) ($payload['discount'] ?? 0), 2);
-    $discount = min(max($discount, 0), $subtotal);
-    $taxable = max($subtotal - $discount, 0);
-    $vat = round((float) ($payload['vat'] ?? ($taxable * 0.12)), 2);
-    $vat = min(max($vat, 0), round($taxable * 0.12, 2));
-    $computedTotal = round($taxable + $vat, 2);
-    $payloadTotal = round((float) ($payload['total_amount'] ?? $computedTotal), 2);
+    $totals = salesVatInclusiveBreakdown(
+        $subtotal,
+        (float) ($payload['discount'] ?? 0)
+    );
 
     return [
-        'subtotal' => $subtotal,
-        'discount' => $discount,
-        'vat' => $vat,
-        'total_amount' => min(max($payloadTotal, 0), $computedTotal),
+        'subtotal' => $totals['subtotal'],
+        'discount' => $totals['discount_amount'],
+        'vatable_sales' => $totals['vatable_sales'],
+        'vat' => $totals['vat'],
+        'total_amount' => $totals['total_amount'],
     ];
 }
 
@@ -470,7 +487,12 @@ function salesValidateCartStock(array $items, array $products): array
             ];
         }
 
-        if ((int) $item['quantity'] > (int) $product['available_stock']) {
+        $requestedUnit = trim((string) ($item['unit'] ?? ''));
+        $factor = null;
+        foreach (($product['selling_units'] ?? []) as $unit) if ($requestedUnit === '' || strcasecmp($unit['unit'], $requestedUnit) === 0) { $factor=(int)$unit['base_quantity']; break; }
+        if ($factor === null) return [false, 'The selected selling unit is no longer valid for ' . ($product['product_name'] ?? 'the selected product') . '.'];
+        $baseRequested = (int) $item['quantity'] * $factor;
+        if ($baseRequested > (int) $product['available_stock']) {
             return [
                 false,
                 sprintf(

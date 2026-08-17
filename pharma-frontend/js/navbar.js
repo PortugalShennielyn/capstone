@@ -1,12 +1,135 @@
-(async function loadNavbar() {
+(function initNavigationRuntime() {
+    if (window.__drpNavigationRuntime) {
+        window.__drpNavigationRuntime.clear();
+        return;
+    }
+
+    const prefetchedUrls = new Set(
+        Array.from(document.querySelectorAll('link[rel="prefetch"]')).map(link => link.href)
+    );
+    let resetTimer = 0;
+    let removalTimer = 0;
+
+    function applySavedTheme() {
+        try {
+            const theme = localStorage.getItem("drpTheme") === "dark" ? "dark" : "light";
+            document.documentElement.setAttribute("data-bs-theme", theme);
+            document.body?.classList.toggle("dark-mode", theme === "dark");
+        } catch (error) {}
+    }
+
+    function removeLegacyNavbarQueryParameter() {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has("_navbar")) return;
+        url.searchParams.delete("_navbar");
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+
+    function ensureOverlay() {
+        let overlay = document.getElementById("drpNavigationOverlay");
+        if (overlay) return overlay;
+
+        overlay = document.createElement("div");
+        overlay.id = "drpNavigationOverlay";
+        overlay.className = "drp-navigation-overlay";
+        overlay.setAttribute("aria-hidden", "true");
+        overlay.innerHTML = '<span class="drp-navigation-progress"></span>';
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    function clear() {
+        window.__drpNavigationInProgress = false;
+        window.clearTimeout(resetTimer);
+        window.clearTimeout(removalTimer);
+        const overlay = document.getElementById("drpNavigationOverlay");
+        if (!overlay) return;
+        overlay.classList.remove("is-visible");
+        overlay.setAttribute("aria-hidden", "true");
+        removalTimer = window.setTimeout(() => overlay.remove(), 180);
+    }
+
+    function moduleUrl(link) {
+        if (!link || link.hasAttribute("download") || link.dataset.authAction === "logout") return null;
+        if (link.target && link.target.toLowerCase() !== "_self") return null;
+
+        const href = (link.getAttribute("href") || "").trim();
+        if (!href || href === "#" || href.startsWith("#") || href.toLowerCase().startsWith("javascript:")) return null;
+
+        let targetUrl;
+        try {
+            targetUrl = new URL(href, window.location.href);
+        } catch (error) {
+            return null;
+        }
+
+        if (targetUrl.origin !== window.location.origin) return null;
+        if (!targetUrl.pathname.toLowerCase().endsWith(".html")) return null;
+        return targetUrl;
+    }
+
+    function prefetch(link) {
+        const targetUrl = moduleUrl(link);
+        if (!targetUrl || targetUrl.pathname === window.location.pathname || prefetchedUrls.has(targetUrl.href)) return;
+
+        const prefetchLink = document.createElement("link");
+        prefetchLink.rel = "prefetch";
+        prefetchLink.href = targetUrl.href;
+        prefetchLink.as = "document";
+        document.head.appendChild(prefetchLink);
+        prefetchedUrls.add(targetUrl.href);
+    }
+
+    function navigate(targetUrl) {
+        if (window.__drpNavigationInProgress) return false;
+        window.__drpNavigationInProgress = true;
+        window.clearTimeout(removalTimer);
+
+        const overlay = ensureOverlay();
+        overlay.setAttribute("aria-hidden", "false");
+        requestAnimationFrame(() => {
+            overlay.classList.add("is-visible");
+            requestAnimationFrame(() => window.location.assign(targetUrl.href));
+        });
+
+        resetTimer = window.setTimeout(clear, 4000);
+        return true;
+    }
+
+    window.__drpNavigationRuntime = { clear, moduleUrl, navigate, prefetch };
+    applySavedTheme();
+    removeLegacyNavbarQueryParameter();
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", clear, { once: true });
+    } else {
+        clear();
+    }
+    window.addEventListener("pageshow", clear);
+})();
+
+(function startNavbarInitialization() {
     const container = document.getElementById("navbar-container");
     if (!container) return;
+    if (!window.__drpNavbarInitPromise) {
+        window.__drpNavbarInitPromise = initializeNavbar(container);
+    }
+    window.__drpNavbarInitPromise.catch(error => {
+        console.error("Unable to initialize the shared navbar:", error);
+    });
+})();
+
+async function initializeNavbar(container) {
     if (window.__drpNavbarLoaderStarted) {
         enhanceDataTables();
         return;
     }
     window.__drpNavbarLoaderStarted = true;
 
+    const navbarScrollKeys = {
+        expanded: "pharmacyNavbarScrollTopExpanded",
+        collapsed: "pharmacyNavbarScrollTopCollapsed"
+    };
     const savedCollapsed = localStorage.getItem("drpSidebarCollapsed") === "true";
     const mainWrapperBeforeLoad = document.getElementById("mainWrapper");
     document.body.classList.add("navbar-state-booting");
@@ -24,8 +147,8 @@
     const revealFailSafe = window.setTimeout(revealShell, 2500);
 
     try {
-        const rbac = await import("./modules/rbac.js?v=3");
-            const cacheKey = "drpNavbarHtml:v39";
+        const rbac = await import("./modules/rbac.js?v=7");
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v44";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -42,22 +165,48 @@
                 .catch(() => {});
         }
 
-        container.innerHTML = navbarHtml;
+        const cachedMarkupAlreadyMounted = container.dataset.navbarSource === "cache" && Boolean(container.querySelector("#sidebar"));
+        if (!cachedMarkupAlreadyMounted) {
+            container.classList.add("navbar-preparing");
+            const existingScrollContainer = container.querySelector(".sidebar-nav");
+            const existingSidebar = container.querySelector("#sidebar");
+            if (existingScrollContainer) {
+                const isCollapsed = existingSidebar?.classList.contains("collapsed");
+                const hasMeaningfulScroll = existingScrollContainer.scrollHeight > existingScrollContainer.clientHeight + 1;
+                if (!isCollapsed || hasMeaningfulScroll) {
+                    sessionStorage.setItem(
+                        isCollapsed ? navbarScrollKeys.collapsed : navbarScrollKeys.expanded,
+                        String(existingScrollContainer.scrollTop)
+                    );
+                }
+            }
+            container.innerHTML = navbarHtml;
+        }
+        container.dataset.navbarSource = "runtime";
+        container.classList.remove("navbar-skeleton-ready");
         container.classList.add("navbar-ready");
+        window.__drpNavbarBootstrap?.applyImmediateState(container);
+        window.__drpNavbarBootstrap?.revealPreparedNavbar(container);
 
         const sidebar = document.getElementById("sidebar");
         const mainWrapper = document.getElementById("mainWrapper");
         const filename = window.location.pathname.split("/").pop() || "dashboard.html";
+        let isRestoringNavbarScroll = false;
+        let navbarScrollRestoreFrame = 0;
 
         const pageMap = {
             "dashboard.html": "dashboard",
+            "supervisor_dashboard.html": "dashboard",
             "cashier_dashboard.html": "dashboard",
             "products.html": "products",
             "inventory.html": "inventory",
+            "shelf_inventory.html": "shelf-inventory",
             "supplier.html": "supplier",
             "purchase_orders.html": "purchase-orders",
+            "purchase_requests.html": "purchase-requests",
             "inspect_deliveries.html": "inspect-deliveries",
-            "pending_orders.html": "pending-orders",
+            "supervisor_approval.html": "supervisor-approval",
+            "pending_orders.html": "supervisor-approval",
             "arrived_orders.html": "arrived-orders",
             "complete_delivery.html": "complete-delivery",
             "return_damage.html": "return-damage",
@@ -94,42 +243,35 @@
         }
 
         async function loadCurrentSession() {
-            const token = tabToken();
-            if (!token) return null;
-            const controller = new AbortController();
-            const timeoutId = window.setTimeout(() => controller.abort(), 10000);
-            try {
-                const response = await fetch(`${apiBaseUrl()}/auth/check_session.php`, {
-                    credentials: "include",
-                    cache: "no-store",
-                    signal: controller.signal,
-                    headers: { "X-Tab-Token": token }
-                });
-                return response.ok ? await response.json() : null;
-            } catch (error) {
-                return null;
-            } finally {
-                window.clearTimeout(timeoutId);
-            }
-        }
+            if (window.__drpSession) return window.__drpSession;
 
-        function setProfileIdentity(session) {
-            const name = session?.full_name || session?.username || "User";
-            const role = rbac.roleLabel(session);
-            const initials = String(name)
-                .split(/\s+/)
-                .filter(Boolean)
-                .slice(0, 2)
-                .map(part => part.charAt(0).toUpperCase())
-                .join("") || "U";
-            container.querySelectorAll(".profile-name, .sidebar-user-summary strong").forEach(node => {
-                node.textContent = name;
+            return new Promise(resolve => {
+                let settled = false;
+                let timeoutId = 0;
+
+                const finish = session => {
+                    if (settled) return;
+                    settled = true;
+                    window.clearTimeout(timeoutId);
+                    window.removeEventListener("pharma:session-ready", handleSessionReady);
+                    resolve(session && typeof session === "object" ? session : window.__drpSession || null);
+                };
+
+                const handleSessionReady = event => finish(event.detail);
+                const waitForSharedSession = () => {
+                    if (settled) return;
+                    const sharedSessionPromise = window.__drpSessionReadyPromise;
+                    if (sharedSessionPromise && typeof sharedSessionPromise.then === "function") {
+                        sharedSessionPromise.then(finish).catch(() => finish(null));
+                        return;
+                    }
+                    window.setTimeout(waitForSharedSession, 25);
+                };
+
+                window.addEventListener("pharma:session-ready", handleSessionReady, { once: true });
+                timeoutId = window.setTimeout(() => finish(null), 10000);
+                waitForSharedSession();
             });
-            container.querySelectorAll(".avatar-initials").forEach(node => {
-                node.textContent = initials;
-            });
-            const roleNode = container.querySelector(".sidebar-user-summary span");
-            if (roleNode) roleNode.textContent = role;
         }
 
         function ensureProfileModal(session) {
@@ -272,7 +414,11 @@
                             throw new Error(passwordData.message || "Unable to update password.");
                         }
                     }
-                    setProfileIdentity({ ...session, ...profileData, full_name: fullName, email, contact_number: contactNumber });
+                    window.__drpNavbarProfileDisplay?.render(
+                        container,
+                        { ...session, ...profileData, full_name: fullName, email, contact_number: contactNumber },
+                        { cache: true, roleLabel: rbac.roleLabel(session) }
+                    );
                     window.bootstrap?.Modal.getOrCreateInstance(modal)?.hide();
                     if (window.toastr) toastr.success("Profile updated.");
                 } catch (errorMessage) {
@@ -297,6 +443,8 @@
                     ? "sales_clerk_pos.html"
                     : accessRole === "cashier"
                         ? "cashier_pos.html"
+                        : accessRole === "supervisor"
+                            ? "supervisor_dashboard.html"
                         : "dashboard.html";
                 window.location.replace(`${safePage}?access=denied`);
                 return;
@@ -304,12 +452,20 @@
             const allowedPages = rbac.allowedNavigationPages(session);
             const allowAll = allowedPages === "*";
             document.body.dataset.sessionRole = accessRole;
-            setProfileIdentity(session);
+            document.documentElement.classList.add("navbar-role-ready");
+            window.__drpNavbarProfileDisplay?.render(container, session, {
+                accessRole,
+                allowedPages: allowAll ? "*" : Array.from(allowedPages),
+                cache: true,
+                roleLabel: rbac.roleLabel(session)
+            });
             ensureProfileModal(session);
 
             container.querySelectorAll("[data-nav-page]").forEach(link => {
                 const page = link.dataset.navPage || "";
-                const isAllowed = allowAll || allowedPages.has(page);
+                const isAllowed = page === "supervisor-approval"
+                    ? accessRole === "supervisor"
+                    : allowAll || allowedPages.has(page);
                 link.classList.toggle("d-none", !isAllowed);
                 link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
             });
@@ -322,6 +478,14 @@
                     const label = userManagementLink.querySelector(".nav-label");
                     if (label) label.textContent = "User Management";
                 }
+            }
+
+            if (accessRole === "supervisor") {
+                window.__drpNavbarBootstrap?.renderSupervisorNavigation(container);
+                container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
+                    link.classList.add("d-none");
+                    link.setAttribute("aria-hidden", "true");
+                });
             }
 
             container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
@@ -374,7 +538,8 @@
             "dashboard/pos": "pos",
             "dashboard/clerk": "clerk",
             "dashboard/purchase-orders": "purchase-orders",
-            "dashboard/pending-orders": "pending-orders",
+            "dashboard/purchase-requests": "purchase-requests",
+            "dashboard/supervisor-approval": "supervisor-approval",
             "dashboard/arrived-orders": "arrived-orders",
             "dashboard/complete-delivery": "complete-delivery",
             "dashboard/cancelled-purchase-orders": "cancelled-purchase-orders",
@@ -565,13 +730,15 @@
             const pageMap = {
                 "dashboard": "Dashboard",
                 "products": "Products",
-                "inventory": "Inventory",
+                "inventory": "Storage Inventory",
+                "shelf-inventory": "Shelf Inventory",
                 "supplier": "Suppliers",
                 "settings": "Admin Settings",
                 "billing": "Billing",
                 "user-settings": "User Settings",
                 "purchase-orders": "Purchase Orders",
-                "pending-orders": "Owner PO Approval",
+                "purchase-requests": "Purchase Requests",
+                "supervisor-approval": "PR Approvals",
                 "arrived-orders": "Arrived Orders",
                 "complete-delivery": "Complete Delivery",
                 "cancelled-purchase-orders": "Cancelled Purchase Orders",
@@ -596,10 +763,86 @@
             sidebar?.classList.toggle("collapsed", isCollapsed);
             mainWrapper?.classList.toggle("collapsed", isCollapsed);
             document.body.classList.toggle("navbar-sidebar-collapsed", isCollapsed);
+            document.documentElement.classList.toggle("sidebar-collapsed", isCollapsed);
+            document.documentElement.classList.toggle("sidebar-expanded", !isCollapsed);
             localStorage.setItem("drpSidebarCollapsed", String(isCollapsed));
             if (!isCollapsed) {
                 closeSlimFlyout();
             }
+        }
+
+        function getNavbarScrollContainer() {
+            return container.querySelector(".sidebar-nav");
+        }
+
+        function navbarScrollStorageKey() {
+            return sidebar?.classList.contains("collapsed")
+                ? navbarScrollKeys.collapsed
+                : navbarScrollKeys.expanded;
+        }
+
+        function saveNavbarScrollPosition(force = false) {
+            const scrollContainer = getNavbarScrollContainer();
+            if (!scrollContainer || (isRestoringNavbarScroll && !force)) return;
+
+            const isCollapsed = sidebar?.classList.contains("collapsed");
+            const hasMeaningfulScroll = scrollContainer.scrollHeight > scrollContainer.clientHeight + 1;
+            if (isCollapsed && !hasMeaningfulScroll) return;
+
+            try {
+                sessionStorage.setItem(navbarScrollStorageKey(), String(scrollContainer.scrollTop));
+            } catch (error) {}
+        }
+
+        function ensureActiveNavbarItemVisible() {
+            const scrollContainer = getNavbarScrollContainer();
+            const activeItem = scrollContainer?.querySelector(".nav-link-item.active");
+            if (!scrollContainer || !activeItem) return;
+
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const activeRect = activeItem.getBoundingClientRect();
+            const topPadding = 12;
+            const bottomPadding = 12;
+
+            if (activeRect.top < containerRect.top + topPadding) {
+                scrollContainer.scrollTop -= containerRect.top + topPadding - activeRect.top;
+            } else if (activeRect.bottom > containerRect.bottom - bottomPadding) {
+                scrollContainer.scrollTop += activeRect.bottom - (containerRect.bottom - bottomPadding);
+            }
+        }
+
+        function restoreNavbarScrollPosition(ensureActive = true) {
+            const scrollContainer = getNavbarScrollContainer();
+            if (!scrollContainer) return;
+
+            let storedValue = null;
+            try {
+                storedValue = sessionStorage.getItem(navbarScrollStorageKey());
+            } catch (error) {}
+
+            isRestoringNavbarScroll = true;
+            if (storedValue !== null) {
+                const storedScrollTop = Number(storedValue);
+                if (Number.isFinite(storedScrollTop)) {
+                    const maximumScroll = Math.max(scrollContainer.scrollHeight - scrollContainer.clientHeight, 0);
+                    scrollContainer.scrollTop = Math.min(Math.max(storedScrollTop, 0), maximumScroll);
+                }
+            }
+            if (ensureActive) ensureActiveNavbarItemVisible();
+
+            requestAnimationFrame(() => {
+                isRestoringNavbarScroll = false;
+            });
+        }
+
+        function scheduleNavbarScrollRestore(ensureActive = true) {
+            if (navbarScrollRestoreFrame) cancelAnimationFrame(navbarScrollRestoreFrame);
+            navbarScrollRestoreFrame = requestAnimationFrame(() => {
+                navbarScrollRestoreFrame = requestAnimationFrame(() => {
+                    navbarScrollRestoreFrame = 0;
+                    restoreNavbarScrollPosition(ensureActive);
+                });
+            });
         }
 
         function closeSidebarFromOutside(event) {
@@ -608,7 +851,9 @@
             if (event.target.closest("#sidebarToggle")) return;
             if (event.target.closest(".modal, .modal-backdrop, .swal2-container, .toast, .toast-container")) return;
 
+            saveNavbarScrollPosition(true);
             setSidebarState(true);
+            scheduleNavbarScrollRestore(false);
         }
 
         function setCollapseArrow(collapse) {
@@ -621,17 +866,60 @@
             arrow.classList.toggle("fa-angle-down", isOpen);
         }
 
-        function applyActiveNavigation() {
+        function persistExpandedGroup(groupId, isExpanded) {
+            if (!groupId) return;
+            const storageKey = window.__drpNavbarExpandedGroupsKey || "drpNavbarExpandedGroups";
+            try {
+                const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+                const groups = new Set(Array.isArray(stored) ? stored : []);
+                if (isExpanded) groups.add(groupId);
+                else groups.delete(groupId);
+                localStorage.setItem(storageKey, JSON.stringify(Array.from(groups)));
+            } catch (error) {}
+        }
+
+        function saveExpandedGroupsState() {
+            const storageKey = window.__drpNavbarExpandedGroupsKey || "drpNavbarExpandedGroups";
+            const expandedGroupIds = Array.from(container.querySelectorAll(".sidebar-nav .collapse.show"))
+                .map(collapse => collapse.id)
+                .filter(Boolean);
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(expandedGroupIds));
+            } catch (error) {}
+        }
+
+        function restoreExpandedGroupsState() {
+            const storageKey = window.__drpNavbarExpandedGroupsKey || "drpNavbarExpandedGroups";
+            let expandedGroupIds = [];
+            try {
+                const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
+                expandedGroupIds = Array.isArray(stored) ? stored : [];
+            } catch (error) {}
+
+            const expandedGroups = new Set(expandedGroupIds);
+            container.querySelectorAll(".sidebar-nav .collapse").forEach(collapse => {
+                if (expandedGroups.has(collapse.id)) collapse.classList.add("show");
+                setCollapseArrow(collapse);
+            });
+        }
+
+        let activeGroupInitialized = false;
+        function applyActiveNavigation({ expandActiveGroup = false } = {}) {
             setDashboardViewState();
-            container.querySelectorAll("[data-nav-page]").forEach(link => link.classList.remove("active"));
+            container.querySelectorAll(".nav-link-item.active").forEach(link => link.classList.remove("active"));
             const activeLink = container.querySelector(`[data-nav-page="${getActivePage()}"]`);
             activeLink?.classList.add("active");
-            activeLink?.closest(".collapse")?.classList.add("show");
+            if (expandActiveGroup && !activeGroupInitialized) {
+                activeLink?.closest(".collapse")?.classList.add("show");
+                activeGroupInitialized = true;
+            }
             container.querySelectorAll(".collapse").forEach(setCollapseArrow);
         }
 
         function handleSidebarNavigation(event) {
-            const link = event.target.closest("a.nav-link-item[href]");
+            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+
+            const link = event.target.closest("a.nav-link-item[href], a.sidebar-brand[href]");
             if (!link || !container.contains(link)) return;
             if (link.matches("[data-bs-toggle='collapse']")) return;
 
@@ -648,7 +936,8 @@
                 closeSlimFlyout();
             }
 
-            const targetUrl = new URL(link.href, window.location.href);
+            const targetUrl = window.__drpNavigationRuntime.moduleUrl(link);
+            if (!targetUrl) return;
             const isSamePath = targetUrl.pathname === window.location.pathname;
             const isSameHash = targetUrl.hash === window.location.hash || (!targetUrl.hash && !window.location.hash);
             const isActiveModule = link.dataset.navPage && link.dataset.navPage === getActivePage();
@@ -665,31 +954,16 @@
             }
             sessionStorage.setItem("drpLastNavigationTarget", dashboardView || link.dataset.navPage || targetUrl.pathname);
 
-            // Make navigation deterministic even while a module is still finishing
-            // background API work. Native link navigation can otherwise appear stuck
-            // while the current document remains in its loading state.
             event.preventDefault();
-            window.location.assign(targetUrl.href);
+            saveExpandedGroupsState();
+            saveNavbarScrollPosition(true);
+            window.__drpNavigationRuntime.navigate(targetUrl);
         }
 
-        function prefetchNavigationTargets() {
-            const existing = new Set(Array.from(document.querySelectorAll('link[rel="prefetch"]')).map(link => link.href));
-
-            container.querySelectorAll("a.nav-link-item[href]").forEach(link => {
-                const href = link.getAttribute("href") || "";
-                if (!href || href === "#" || href.startsWith("#")) return;
-                const targetUrl = new URL(link.href, window.location.href);
-                if (targetUrl.origin !== window.location.origin) return;
-                if (targetUrl.pathname === window.location.pathname) return;
-                if (existing.has(targetUrl.href)) return;
-
-                const prefetch = document.createElement("link");
-                prefetch.rel = "prefetch";
-                prefetch.href = targetUrl.href;
-                prefetch.as = "document";
-                document.head.appendChild(prefetch);
-                existing.add(targetUrl.href);
-            });
+        function prefetchNavigationTarget(event) {
+            const link = event.target.closest("a.nav-link-item[href], a.sidebar-brand[href]");
+            if (!link || !container.contains(link)) return;
+            window.__drpNavigationRuntime.prefetch(link);
         }
 
         container.addEventListener("click", (event) => {
@@ -702,19 +976,39 @@
 
         container.querySelectorAll(".collapse").forEach(collapse => {
             setCollapseArrow(collapse);
-            collapse.addEventListener("shown.bs.collapse", () => setCollapseArrow(collapse));
-            collapse.addEventListener("hidden.bs.collapse", () => setCollapseArrow(collapse));
+            collapse.addEventListener("show.bs.collapse", () => saveNavbarScrollPosition(true));
+            collapse.addEventListener("hide.bs.collapse", () => saveNavbarScrollPosition(true));
+            collapse.addEventListener("shown.bs.collapse", () => {
+                setCollapseArrow(collapse);
+                persistExpandedGroup(collapse.id, true);
+                scheduleNavbarScrollRestore(false);
+            });
+            collapse.addEventListener("hidden.bs.collapse", () => {
+                setCollapseArrow(collapse);
+                persistExpandedGroup(collapse.id, false);
+                scheduleNavbarScrollRestore(false);
+            });
         });
 
-        applyActiveNavigation();
+        restoreExpandedGroupsState();
+        applyActiveNavigation({ expandActiveGroup: true });
+        initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSession });
         enhanceDataTables();
-        window.addEventListener("hashchange", applyActiveNavigation);
+        window.addEventListener("hashchange", () => {
+            applyActiveNavigation();
+            scheduleNavbarScrollRestore();
+        });
         setSidebarState(savedCollapsed);
         document.getElementById("sidebarToggle")?.addEventListener("click", () => {
+            saveNavbarScrollPosition(true);
             setSidebarState(!sidebar.classList.contains("collapsed"));
+            scheduleNavbarScrollRestore(false);
         });
+        getNavbarScrollContainer()?.addEventListener("scroll", () => saveNavbarScrollPosition(), { passive: true });
         container.addEventListener("click", handleSlimCollapseClick, true);
         container.addEventListener("click", handleSidebarNavigation);
+        container.addEventListener("pointerover", prefetchNavigationTarget);
+        container.addEventListener("focusin", prefetchNavigationTarget);
         container.addEventListener("click", handleUserPopoverClick);
         document.addEventListener("pointerdown", closeSidebarFromOutside);
         document.addEventListener("pointerdown", closeUserPopoverFromOutside);
@@ -724,14 +1018,28 @@
         window.addEventListener("scroll", closeSlimFlyout, true);
         window.addEventListener("load", enhanceDataTables);
         window.addEventListener("drp:tables-updated", enhanceDataTables);
-        // Do not preload every module document. On the local development server this
-        // creates a burst of competing requests and can leave the browser throbber
-        // running while the user is trying to open another module.
-
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", () => {
+                applyActiveNavigation();
+                scheduleNavbarScrollRestore();
+            }, { once: true });
+        } else {
+            scheduleNavbarScrollRestore();
+        }
+        window.addEventListener("pageshow", () => {
+            applyActiveNavigation();
+            scheduleNavbarScrollRestore();
+        });
+        window.addEventListener("pagehide", () => {
+            saveExpandedGroupsState();
+            saveNavbarScrollPosition(true);
+        });
         loadCurrentSession()
             .then(currentSession => {
                 applyRoleNavigation(currentSession);
+                window.dispatchEvent(new CustomEvent("navbar:permissions-ready"));
                 applyActiveNavigation();
+                scheduleNavbarScrollRestore();
             })
             .catch(() => {})
             .finally(() => {
@@ -753,7 +1061,352 @@
         document.documentElement.classList.add("app-ready");
         console.error("Unable to load the shared navbar:", error);
     }
-})();
+}
+
+function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSession }) {
+    const topbar = document.querySelector('#mainWrapper > .topbar, .main-wrapper > .topbar');
+    if (!topbar || topbar.dataset.drpSharedReady === 'true') return;
+    topbar.dataset.drpSharedReady = 'true';
+    topbar.classList.add('drp-shared-topbar');
+
+    const searchPages = new Set(['dashboard.html', 'supervisor_dashboard.html', 'products.html', 'inventory.html', 'shelf_inventory.html', 'supplier.html', 'purchase_requests.html', 'supervisor_approval.html', 'admin_settings.html']);
+    const hasGlobalSearch = searchPages.has(filename);
+    topbar.classList.toggle('has-global-search', hasGlobalSearch);
+
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    if (hasGlobalSearch && !document.getElementById('moduleSearchRoot')) {
+        const search = document.createElement('div');
+        search.className = 'topbar-search';
+        search.id = 'moduleSearchRoot';
+        search.innerHTML = `
+            <div class="module-search-field">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input class="module-search-input" id="moduleSearchInput" type="search" placeholder="Search modules or actions..." autocomplete="off" aria-label="Search modules or actions" aria-expanded="false" aria-controls="moduleSearchPanel">
+                <span class="module-search-shortcut">Ctrl K</span>
+            </div>
+            <div class="module-search-panel" id="moduleSearchPanel">
+                <div class="module-search-results" id="moduleSearchResults" role="listbox" aria-label="Accessible modules"></div>
+            </div>`;
+        const left = topbar.querySelector('.topbar-left');
+        left?.insertAdjacentElement('afterend', search);
+    }
+
+    function setupSearch() {
+        const root = document.getElementById('moduleSearchRoot');
+        const input = document.getElementById('moduleSearchInput');
+        const panel = document.getElementById('moduleSearchPanel');
+        const results = document.getElementById('moduleSearchResults');
+        if (!root || !input || !panel || !results || root.dataset.ready === 'true') return;
+        root.dataset.ready = 'true';
+        let moduleIndex = [];
+        let filtered = [];
+        let activeIndex = 0;
+        const normalize = (value) => String(value || '').trim().toLowerCase();
+        const accessible = (anchor) => {
+            const href = String(anchor.getAttribute('href') || '').trim();
+            return Boolean(href && href !== '#' && !href.startsWith('#')
+                && !anchor.matches("[data-auth-action='logout']")
+                && !anchor.classList.contains('d-none')
+                && !anchor.closest(".d-none,[aria-hidden='true']"));
+        };
+        const groupLabel = (anchor) => {
+            const group = anchor.closest('.collapse');
+            if (!group?.id) return anchor.classList.contains('sidebar-user-action') ? 'Account' : 'Navigation';
+            return document.querySelector(`#navbar-container [href="#${CSS.escape(group.id)}"] .nav-label`)?.textContent?.trim() || 'Navigation';
+        };
+        const rebuild = () => {
+            const seen = new Set();
+            moduleIndex = Array.from(document.querySelectorAll('#navbar-container a[data-nav-page][href]'))
+                .filter(accessible)
+                .map((anchor) => {
+                    const title = anchor.querySelector('.nav-label')?.textContent?.trim()
+                        || anchor.querySelector('span')?.textContent?.trim()
+                        || anchor.title || 'Module';
+                    const href = anchor.getAttribute('href');
+                    const group = groupLabel(anchor);
+                    const iconClass = Array.from(anchor.querySelector('i')?.classList || []).filter(name => name.startsWith('fa-')).join(' ');
+                    return { title, href, group, source: anchor, iconClass: iconClass || 'fa-solid fa-arrow-right', searchText: normalize(`${title} ${group} ${anchor.dataset.navPage || ''} ${href.replace(/[_.?#&=/-]+/g, ' ')}`) };
+                })
+                .filter(item => {
+                    const key = `${item.title}|${item.href}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+            if (document.activeElement === input) render();
+        };
+        const setOpen = (open) => {
+            panel.classList.toggle('is-open', open);
+            input.setAttribute('aria-expanded', String(open));
+        };
+        const render = () => {
+            const query = normalize(input.value);
+            filtered = moduleIndex.filter(item => !query || item.searchText.includes(query)).slice(0, 9);
+            activeIndex = Math.min(activeIndex, Math.max(filtered.length - 1, 0));
+            results.innerHTML = filtered.length
+                ? filtered.map((item, index) => `<button class="module-search-result${index === activeIndex ? ' is-active' : ''}" type="button" role="option" aria-selected="${index === activeIndex}" data-module-result="${index}"><span class="module-search-result-icon"><i class="${escapeHtml(item.iconClass)}"></i></span><span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.group)}</small></span><i class="fa-solid fa-arrow-right module-search-result-arrow"></i></button>`).join('')
+                : '<p class="module-search-empty">No accessible modules match your search.</p>';
+            setOpen(true);
+        };
+        const activate = (index) => {
+            const item = filtered[index];
+            if (!item) return;
+            setOpen(false);
+            input.blur();
+            item.source.click();
+        };
+        input.addEventListener('focus', () => { activeIndex = 0; render(); });
+        input.addEventListener('input', () => { activeIndex = 0; render(); });
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (!filtered.length) return;
+                activeIndex = (activeIndex + (event.key === 'ArrowDown' ? 1 : -1) + filtered.length) % filtered.length;
+                render();
+                results.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
+            } else if (event.key === 'Enter') {
+                event.preventDefault();
+                activate(activeIndex);
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                setOpen(false);
+                input.blur();
+            }
+        });
+        results.addEventListener('mousemove', (event) => {
+            const result = event.target.closest('[data-module-result]');
+            if (!result) return;
+            activeIndex = Number(result.dataset.moduleResult);
+            results.querySelectorAll('.module-search-result').forEach((node, index) => {
+                node.classList.toggle('is-active', index === activeIndex);
+                node.setAttribute('aria-selected', String(index === activeIndex));
+            });
+        });
+        results.addEventListener('click', (event) => {
+            const result = event.target.closest('[data-module-result]');
+            if (result) activate(Number(result.dataset.moduleResult));
+        });
+        document.addEventListener('click', (event) => { if (!root.contains(event.target)) setOpen(false); });
+        document.addEventListener('keydown', (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault();
+                input.focus();
+            }
+        });
+        window.addEventListener('navbar:permissions-ready', rebuild);
+        rebuild();
+    }
+
+    let controls = topbar.querySelector('.topbar-right');
+    if (filename !== 'dashboard.html') {
+        if (!controls) {
+            controls = document.createElement('div');
+            controls.className = 'topbar-right';
+            const actions = topbar.querySelector('.topbar-actions');
+            actions ? topbar.insertBefore(controls, actions) : topbar.appendChild(controls);
+        }
+        controls.classList.add('drp-topbar-controls');
+        controls.querySelectorAll('button').forEach(button => {
+            if (button.id !== 'themeToggle' && button.querySelector('.fa-bell')) button.remove();
+        });
+        let theme = document.getElementById('themeToggle');
+        if (!theme) {
+            theme = document.createElement('button');
+            theme.className = 'icon-btn';
+            theme.id = 'themeToggle';
+            theme.type = 'button';
+            theme.setAttribute('aria-label', 'Toggle dark mode');
+            theme.innerHTML = '<i class="fa-solid fa-moon"></i>';
+            theme.dataset.drpSharedTheme = 'true';
+            theme.addEventListener('click', () => {
+                const next = document.body.classList.contains('dark-mode') ? 'light' : 'dark';
+                document.body.classList.toggle('dark-mode', next === 'dark');
+                document.documentElement.setAttribute('data-bs-theme', next);
+                theme.innerHTML = next === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+                localStorage.setItem('drpTheme', next);
+            });
+            controls.appendChild(theme);
+        }
+        const status = document.createElement('div');
+        status.className = 'topbar-status';
+        status.innerHTML = '<span class="command-chip" id="dashboardStoreStatus">Loading status...</span><span class="command-chip" id="dashboardBusinessHours">Loading hours...</span>';
+        controls.insertBefore(status, controls.firstChild);
+        const notifications = document.createElement('div');
+        notifications.className = 'dashboard-notifications';
+        notifications.innerHTML = `<button class="icon-btn notification-btn" type="button" id="dashboardNotificationButton" aria-label="Notifications" aria-expanded="false" aria-controls="dashboardNotificationMenu"><i class="fa-regular fa-bell"></i><span class="notification-badge is-hidden" id="dashboardNotificationBadge">0</span></button><div class="notification-menu" id="dashboardNotificationMenu" role="menu"><div class="notification-menu-header"><strong>System Alerts</strong><span id="dashboardNotificationSummary">Loading...</span></div><div class="notification-menu-list" id="dashboardNotificationList"><p class="notification-empty">Loading alerts...</p></div></div>`;
+        controls.appendChild(notifications);
+        const clock = document.createElement('div');
+        clock.className = 'topbar-clock';
+        clock.innerHTML = '<span id="dashboardTodayDate" aria-live="off"></span><strong id="dashboardCurrentTime" aria-live="off"></strong>';
+        controls.appendChild(clock);
+    } else {
+        controls?.classList.add('drp-topbar-controls');
+    }
+
+    const readSettings = () => {
+        try { return JSON.parse(localStorage.getItem('drpAdminSettings') || '{}') || {}; }
+        catch (error) { return {}; }
+    };
+    let sharedBusinessSettings = readSettings();
+    let businessHoursState = 'loading';
+    const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const formatTime = (value) => {
+        const [hours = '0', minutes = '00'] = String(value || '').split(':');
+        const hour = Number(hours);
+        if (!Number.isFinite(hour)) return '';
+        return `${hour % 12 || 12}:${String(minutes).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`;
+    };
+    const configuredSchedule = (settings, now) => {
+        const exception = settings.businessExceptions?.[dateKey(now)];
+        if (exception && typeof exception === 'object') return exception;
+        const day = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(now);
+        const dailySchedule = settings.businessSchedule?.[day];
+        if (dailySchedule && typeof dailySchedule === 'object') return dailySchedule;
+        if (settings.businessHours?.open && settings.businessHours?.close) {
+            return { open: true, openTime: settings.businessHours.open, closeTime: settings.businessHours.close };
+        }
+        return null;
+    };
+    const renderBusinessHours = (now) => {
+        const status = document.getElementById('dashboardStoreStatus');
+        const hours = document.getElementById('dashboardBusinessHours');
+        const schedule = configuredSchedule(sharedBusinessSettings, now);
+        if (!schedule) {
+            if (status) {
+                status.textContent = businessHoursState === 'unavailable' ? 'Unavailable' : 'Loading...';
+                status.classList.remove('open', 'closed');
+            }
+            if (hours) hours.textContent = businessHoursState === 'unavailable' ? 'Hours unavailable' : 'Loading hours...';
+            return;
+        }
+        const openTime = schedule.openTime || schedule.openingTime;
+        const closeTime = schedule.closeTime || schedule.closingTime;
+        if (!openTime || !closeTime) {
+            if (status) {
+                status.textContent = schedule.open === false ? 'Closed' : 'Unavailable';
+                status.classList.toggle('closed', schedule.open === false);
+                status.classList.remove('open');
+            }
+            if (hours) hours.textContent = schedule.open === false ? 'Closed today' : 'Hours unavailable';
+            return;
+        }
+        const [openHour, openMinute] = String(openTime).split(':').map(Number);
+        const [closeHour, closeMinute] = String(closeTime).split(':').map(Number);
+        const minutesNow = now.getHours() * 60 + now.getMinutes();
+        const isOpen = schedule.open !== false
+            && minutesNow >= openHour * 60 + openMinute
+            && minutesNow < closeHour * 60 + closeMinute;
+        if (status) {
+            status.textContent = isOpen ? 'Open' : 'Closed';
+            status.classList.toggle('open', isOpen);
+            status.classList.toggle('closed', !isOpen);
+        }
+        if (hours) hours.textContent = schedule.open === false ? 'Closed today' : `${formatTime(openTime)} - ${formatTime(closeTime)}`;
+    };
+    const updateClock = () => {
+        const now = new Date();
+        const date = document.getElementById('dashboardTodayDate');
+        const time = document.getElementById('dashboardCurrentTime');
+        if (date) date.textContent = new Intl.DateTimeFormat('en-PH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }).format(now);
+        if (time) time.textContent = new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(now);
+        renderBusinessHours(now);
+    };
+    updateClock();
+    if (!window.__drpTopbarClockTimer) {
+        window.__drpTopbarClockTimer = window.setInterval(updateClock, 1000);
+    }
+    if (!window.__drpTopbarSettingsListener) {
+        window.__drpTopbarSettingsListener = true;
+        window.addEventListener('drp:admin-settings-updated', (event) => {
+            sharedBusinessSettings = event.detail && typeof event.detail === 'object' ? event.detail : readSettings();
+            businessHoursState = configuredSchedule(sharedBusinessSettings, new Date()) ? 'ready' : businessHoursState;
+            updateClock();
+        });
+    }
+
+    const cachedSchedule = configuredSchedule(sharedBusinessSettings, new Date());
+    if (cachedSchedule) businessHoursState = 'ready';
+    const settingsHeaders = {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Tab-Token': tabToken()
+    };
+    const fetchSharedBusinessHours = () => fetch(`${apiBaseUrl()}/settings/get_admin_settings.php`, { credentials: 'include', headers: settingsHeaders })
+        .then(response => response.ok ? response.json() : Promise.reject(new Error(`Business-hours request failed (${response.status})`)))
+        .then(data => {
+            if (data.status === 'error' || !data.businessSchedule) throw new Error(data.message || 'Business-hours response was incomplete.');
+            sharedBusinessSettings = {
+                ...sharedBusinessSettings,
+                businessSchedule: data.businessSchedule,
+                businessExceptions: data.businessExceptions || {},
+                nextBusinessException: data.nextBusinessException || null
+            };
+            businessHoursState = 'ready';
+            try { localStorage.setItem('drpAdminSettings', JSON.stringify(sharedBusinessSettings)); }
+            catch (error) { console.warn('Unable to cache shared business hours.', error); }
+            updateClock();
+        })
+        .catch(error => {
+            console.error('Unable to load shared business hours.', error);
+            if (!configuredSchedule(sharedBusinessSettings, new Date())) businessHoursState = 'unavailable';
+            updateClock();
+        });
+    Promise.resolve(typeof loadCurrentSession === 'function' ? loadCurrentSession() : null)
+        .catch(() => null)
+        .then(fetchSharedBusinessHours);
+
+    function setupNotifications() {
+        const button = document.getElementById('dashboardNotificationButton');
+        const menu = document.getElementById('dashboardNotificationMenu');
+        if (!button || !menu || button.dataset.ready === 'true') return;
+        button.dataset.ready = 'true';
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const open = menu.classList.toggle('is-open');
+            button.setAttribute('aria-expanded', String(open));
+        });
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('.dashboard-notifications')) {
+                menu.classList.remove('is-open');
+                button.setAttribute('aria-expanded', 'false');
+            }
+        });
+    }
+    setupSearch();
+    setupNotifications();
+
+    if (filename !== 'dashboard.html') {
+        const badge = document.getElementById('dashboardNotificationBadge');
+        const list = document.getElementById('dashboardNotificationList');
+        const summary = document.getElementById('dashboardNotificationSummary');
+        const headers = { 'X-Requested-With': 'XMLHttpRequest', 'X-Tab-Token': tabToken() };
+        fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?period=today`, { credentials: 'include', headers })
+            .then(response => response.ok ? response.json() : Promise.reject(new Error('Unable to load alerts')))
+            .then(data => {
+                const alerts = [
+                    { label: 'Out of Stock', count: Number(data.out_of_stock || 0), href: 'inventory.html?stock_status=out_of_stock', icon: 'fa-box-open' },
+                    { label: 'Low Stock', count: Number(data.low_stock || 0), href: 'inventory.html?stock_status=low_stock', icon: 'fa-triangle-exclamation' },
+                    { label: 'Expiring Soon', count: Number(data.expiring_soon || 0), href: 'inventory.html?stock_status=expiring_soon', icon: 'fa-calendar-xmark' },
+                    { label: 'Pending POs', count: Number(data.pending_po || 0), href: 'purchase_orders.html?status=Pending', icon: 'fa-file-circle-exclamation' }
+                ].filter(alert => alert.count > 0);
+                const total = alerts.reduce((sum, alert) => sum + alert.count, 0);
+                if (badge) { badge.textContent = total > 99 ? '99+' : String(total); badge.classList.toggle('is-hidden', total === 0); }
+                if (summary) summary.textContent = total ? `${total} items need attention` : 'All clear';
+                if (list) list.innerHTML = alerts.length
+                    ? alerts.map(alert => `<a class="notification-menu-item" role="menuitem" href="${alert.href}"><i class="fa-solid ${alert.icon}"></i><span>${escapeHtml(alert.label)}</span><strong>${alert.count}</strong></a>`).join('')
+                    : '<p class="notification-empty">No urgent system alerts.</p>';
+            })
+            .catch(() => {
+                if (summary) summary.textContent = 'Alerts unavailable';
+                if (list) list.innerHTML = '<p class="notification-empty">Unable to load alerts right now.</p>';
+            });
+    }
+}
 
 function initGlobalModalBehavior() {
     if (window.__drpGlobalModalBehaviorInitialized) return;
@@ -1015,13 +1668,6 @@ function ensureNavbarRuntimeStyles() {
         body.navbar-state-booting .navbar-page-content {
             animation: none !important;
             transition: none !important;
-        }
-
-        body.role-loading #navbar-container,
-        body.role-loading #mainWrapper,
-        body.role-loading .main-wrapper,
-        body.role-loading .app-shell {
-            visibility: hidden !important;
         }
 
         #navbar-container .app-sidebar {

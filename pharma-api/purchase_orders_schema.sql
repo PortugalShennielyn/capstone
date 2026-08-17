@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS purchase_order_receiving (
     po_id CHAR(36) NOT NULL,
     received_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     remarks TEXT NULL,
+    inspection_status VARCHAR(40) NOT NULL DEFAULT 'Awaiting Inspection',
+    inspected_by CHAR(36) NULL,
     UNIQUE KEY unique_po_receiving (po_id)
 );
 
@@ -79,18 +81,37 @@ CREATE TABLE IF NOT EXISTS purchase_order_receiving_items (
     receiving_id CHAR(36) NOT NULL,
     po_item_id CHAR(36) NOT NULL,
     received_quantity INT NOT NULL DEFAULT 0,
-    damaged_quantity INT NOT NULL DEFAULT 0,
     UNIQUE KEY unique_receiving_item (receiving_id, po_item_id)
 );
 
-CREATE TABLE IF NOT EXISTS purchase_order_returns (
-    return_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
-    po_id CHAR(36) NOT NULL,
+CREATE TABLE IF NOT EXISTS supplier_claims (
+    claim_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
     po_item_id CHAR(36) NOT NULL,
-    return_quantity INT NOT NULL DEFAULT 0,
+    inventory_batch_id CHAR(36) NULL,
+    damaged_quantity INT NOT NULL DEFAULT 0,
+    damaged_unit_conversion_id CHAR(36) NULL,
+    action_quantity INT NOT NULL DEFAULT 0,
+    action_unit_conversion_id CHAR(36) NULL,
+    affected_quantity INT NOT NULL DEFAULT 0,
+    unit_conversion_id CHAR(36) NOT NULL,
     damage_reason VARCHAR(80) NOT NULL,
+    disposition VARCHAR(40) NULL,
+    resolution_type VARCHAR(40) NULL,
     remarks TEXT NULL,
-    return_status VARCHAR(40) NOT NULL DEFAULT 'Open',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    claim_status VARCHAR(40) NOT NULL DEFAULT 'Awaiting Supplier Resolution',
+    reported_by CHAR(36) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP NULL DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS supplier_claim_damage_lines (
+    damage_line_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+    claim_id CHAR(36) NOT NULL,
+    sequence_no INT NOT NULL,
+    affected_unit_conversion_id CHAR(36) NOT NULL,
+    damaged_quantity INT NOT NULL,
+    damaged_unit_conversion_id CHAR(36) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_supplier_claim_damage_sequence (claim_id, sequence_no)
 );
 

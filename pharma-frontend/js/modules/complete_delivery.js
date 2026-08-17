@@ -6,7 +6,6 @@ const API_BASE_URL = window.location.port
 
 const STATUS_COLORS = {
     'Delivered': '#16a34a',
-    'Delivered with Return/Damage': '#7c3aed'
 };
 let deliveredOrders = [];
 let currentReceiptReport = null;
@@ -94,18 +93,23 @@ async function getPurchaseOrder(poId) {
     return data.purchase_order;
 }
 
-function receiptReportFromOrder(order) {
+function receiptReportFromOrder(order, settings = {}) {
+    const profile = settings.profile || {};
+    const grnSettings = settings.grn || {};
     const items = (order.items || []).map((item) => {
         const receivedQty = Number(item.received_quantity || 0);
+        const conversion = Math.max(1, Number(item.units_per_purchase_unit || 1));
         const damagedQty = Number(item.damaged_quantity || 0);
         const creditQty = Number(item.supplier_credit_quantity || 0);
         const unitCost = Number(item.price || 0);
         return {
             product: item.product_name || '',
             brand: item.brand_name || '',
-            orderedQty: Number(item.inventory_qty_ordered || item.quantity || 0),
+            orderedQty: Number(item.purchase_qty || (Number(item.inventory_qty_ordered || item.quantity || 0) / conversion)),
             unitLabel: item.purchase_unit || item.unit || 'packs',
-            receivedQty,
+            receivedQty: receivedQty / conversion,
+            inventoryEquivalent: receivedQty,
+            inventoryUnit: item.unit || 'unit',
             goodQty: Math.max(0, receivedQty - damagedQty),
             damagedQty,
             damageAction: creditQty > 0 ? 'Return to Supplier' : (damagedQty > 0 ? 'Keep as Damaged' : 'None'),
@@ -122,13 +126,15 @@ function receiptReportFromOrder(order) {
     const receivedDate = order.received_date || order.delivery_date || order.order_date || '';
 
     return {
-        pharmacyName: 'DR. R PHARMACY',
-        pharmacyAddress: 'Pharmacy address not configured',
-        contact: 'Contact number not configured',
+        pharmacyName: profile.name || 'Dr. R Pharmacy',
+        pharmacyAddress: profile.address || '',
+        contact: profile.contactNumber || '',
         grnNo: grnNumber(order.po_number, receivedDate),
         poNo: order.po_number || `PO-${order.po_id}`,
         supplier: order.supplier_name || 'N/A',
-        receivedBy: order.received_by || 'Dr. ADMIN',
+        receivedBy: grnSettings.receivedByName || '',
+        checkedBy: '',
+        approvedBy: grnSettings.approvedByName || '',
         receivedDate: formatDateTime(receivedDate),
         status: order.status || 'Delivered',
         paymentTerms: order.payment_terms || 'Not set',
@@ -171,6 +177,7 @@ function receiptDetailHtml(report) {
                     <strong>${index + 1}. ${escapeHtml(receiptItemName(item))}</strong><br>
                     &nbsp;&nbsp;Ordered: ${item.orderedQty} ${escapeHtml(item.unitLabel)}<br>
                     &nbsp;&nbsp;Received: ${item.receivedQty}<br>
+                    &nbsp;&nbsp;Inventory Equivalent: ${item.inventoryEquivalent} ${escapeHtml(item.inventoryUnit)}<br>
                     &nbsp;&nbsp;Accepted: ${item.goodQty}<br>
                     &nbsp;&nbsp;Damaged: ${item.damagedQty} (${escapeHtml(receiptDamageLabel(item))})<br>
                     &nbsp;&nbsp;Unit Cost: ${peso(item.unitCost)}<br>
@@ -220,6 +227,8 @@ function receiptHtml(report) {
             <div class="signature">Received By:</div>
             <div class="sign-line"></div>
             <div class="signature">Checked By:</div>
+            <div class="sign-line"></div>
+            <div class="signature">Approved By: ${escapeHtml(report.approvedBy || '')}</div>
             <div class="sign-line"></div>
             <div class="dash"></div>
             <div class="center">Thank you.</div>
@@ -290,6 +299,8 @@ function downloadReceiptPdf(report = currentReceiptReport) {
     dash();
     add('Checked By:', { gap: 7 });
     dash();
+    add(`Approved By: ${report.approvedBy || ''}`, { gap: 7 });
+    dash();
     add('Thank you.', { center: true });
     doc.save(`${report.grnNo}.pdf`);
 }
@@ -346,8 +357,11 @@ function openReceiptPreview(report) {
 
 async function openDeliveredReceipt(poId) {
     try {
-        const order = await getPurchaseOrder(poId);
-        openReceiptPreview(receiptReportFromOrder(order));
+        const [order, settings] = await Promise.all([
+            getPurchaseOrder(poId),
+            fetchJson(`${API_BASE_URL}/settings/get_admin_settings.php`)
+        ]);
+        openReceiptPreview(receiptReportFromOrder(order, settings));
     } catch (error) {
         PharmaUtils.toast.error(error.message);
     }
@@ -369,7 +383,7 @@ function renderCompleteDeliveryTable(orders) {
         const itemNames = order.item_names || items.map(item => item.product_name);
         const brandNames = order.brand_names || items.map(item => item.brand_name);
         const orderedQuantities = order.quantities || items.map(item => item.quantity);
-        const receivedQuantities = items.map(item => Number(item.received_quantity || 0));
+        const receivedQuantities = items.map(item => Number(item.received_quantity || 0) / Math.max(1, Number(item.units_per_purchase_unit || 1)));
         const deliveryDate = order.delivery_date || order.received_date || order.expected_delivery_date || order.order_date;
 
         return `
@@ -433,8 +447,8 @@ function openDetails(poId) {
         <tr>
             <td>${escapeHtml(item.product_name || 'N/A')}</td>
             <td>${escapeHtml(item.brand_name || 'N/A')}</td>
-            <td>${escapeHtml(item.quantity || 0)}</td>
-            <td>${escapeHtml(item.received_quantity || 0)}</td>
+            <td>${escapeHtml(item.purchase_qty || item.quantity || 0)} ${escapeHtml(item.purchase_unit || item.unit || '')}</td>
+            <td>${escapeHtml(Number(item.received_quantity || 0) / Math.max(1, Number(item.units_per_purchase_unit || 1)))} ${escapeHtml(item.purchase_unit || '')}<small class="d-block text-muted">${escapeHtml(item.received_quantity || 0)} ${escapeHtml(item.unit || '')} inventory</small></td>
             <td>${escapeHtml(Math.max(Number(item.damaged_quantity || 0), Number(item.returned_quantity || 0)))}</td>
             <td>${peso(item.price)}</td>
             <td>${peso(item.returned_amount)}</td>

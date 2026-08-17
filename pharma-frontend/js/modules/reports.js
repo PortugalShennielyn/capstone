@@ -1,5 +1,5 @@
 import API_BASE_URL from '../config/config.js';
-import { ensurePageTabSession as verifySession } from './auth_guard.js';
+import { ensurePageTabSession as verifySession } from './auth_guard.js?v=21';
 
 const categories={overview:'Overview',sales:'Sales',inventory:'Inventory',purchases:'Purchases',expiry:'Expiry',products:'Product Performance',staff:'Staff Performance'};
 const reportViews={
@@ -25,7 +25,7 @@ const tones={
     purple:'#7c3aed',blue:'#2563eb',teal:'#0f9f92',indigo:'#4f46e5',green:'#16a34a',amber:'#d97706',red:'#dc2626',gray:'#64748b',
     sales:'#2563eb',inventory:'#0f9f92',purchases:'#4f46e5',expiry:'#dc2626'
 };
-const statusColors={Healthy:'green',Completed:'green',Delivered:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal','In transit':'indigo',Arrived:'indigo','Delivered with Return/Damage':'amber',Watch:'amber'};
+const statusColors={Healthy:'green',Completed:'green',Delivered:'green',Paid:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal','In transit':'indigo',Arrived:'indigo',Watch:'amber'};
 const money=new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}),number=new Intl.NumberFormat('en-PH');
 const qs=s=>document.querySelector(s),qsa=s=>[...document.querySelectorAll(s)];
 const state={category:'overview',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity'};
@@ -92,8 +92,9 @@ function buildParams(overrides={}){
 }
 async function loadReport(){
     state.controller?.abort();state.controller=new AbortController();destroyCharts();qs('#reportContent').classList.add('d-none');qs('#reportError').classList.add('d-none');qs('#reportLoading').classList.remove('d-none');
-    try{const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams()}`,{credentials:'include',cache:'no-store',signal:state.controller.signal});const data=await response.json();if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to generate this report.');
-        state.data=data;if(!state.options){populateBaseOptions(data.filters||{});if(state.needsInitialFilterReload){state.needsInitialFilterReload=false;return loadReport();}}if(!data.access.available_categories.includes(state.category)){state.category=data.access.available_categories[0];return loadReport();}renderTabs(data.access.available_categories);renderReport(data);syncUrl();}
+    try{const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams()}`,{credentials:'include',cache:'no-store',signal:state.controller.signal});const data=await response.json();if(response.status===403&&data.access?.available_categories?.length){state.category=data.access.available_categories[0];state.page=1;return loadReport();}if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to generate this report.');
+        state.data=data;if(data.access?.supervisor){categories.overview='Inventory Overview';categories.purchases='Purchase Requests';reportViews.overview=['Inventory Overview'];reportViews.purchases=['Purchase Request Summary'];visibility.purchases=['view','dates'];}
+        if(!state.options){populateBaseOptions(data.filters||{});if(state.needsInitialFilterReload){state.needsInitialFilterReload=false;return loadReport();}}if(!data.access.available_categories.includes(state.category)){state.category=data.access.available_categories[0];return loadReport();}renderTabs(data.access.available_categories);renderReport(data);syncUrl();}
     catch(error){if(error.name==='AbortError')return;qs('#reportLoading').classList.add('d-none');qs('#reportError').classList.remove('d-none');qs('#reportError').textContent=error.message;}
 }
 function syncUrl(){
@@ -147,7 +148,7 @@ function renderOverview(previews){
     const productRows=sortedProducts.length?sortedProducts.map((row,index)=>{const primary=productMode==='revenue'?money.format(row.net_revenue):`${number.format(row.quantity_sold)} sold`,secondary=productMode==='revenue'?`${number.format(row.quantity_sold)} sold`:money.format(row.net_revenue);return `<div class="product-rank" data-product-rank><b>${index+1}</b><div class="product-rank-detail"><strong>${esc(row.brand_name)} — ${esc(row.product_name)}</strong><small title="${esc(row.specification||'')}">${esc(row.specification||'No specification recorded')}</small><div class="compact-bar-track tone-sales"><span style="width:${100*Number(row[productField])/productMax}%"></span></div></div><span><strong>${esc(primary)}</strong><small>${esc(secondary)}</small></span></div>`;}).join(''):'<div class="compact-empty">No completed product sales in the selected period.</div>';
     const healthRows=[['Healthy',inventory.healthy,'green'],['Low Stock',inventory.low_stock,'amber'],['Out of Stock',inventory.out_of_stock,'red'],['Data Issues',inventory.data_issues,'dark-red']],healthTotal=Math.max(1,inventory.total_products);
     const expiryTones={'Expired':'red','Within 7 days':'red-orange','Within 30 days':'amber','Within 60 days':'yellow'},expiryRows=(expiry.chart_rows||[]).map(row=>({...row,tone:expiryTones[row.label]||'amber'}));
-    const poTones={'Pending':'amber','In transit':'indigo','Arrived':'teal','Delivered':'green','Delivered with Return/Damage':'orange','Cancelled':'red'},statusRows=Object.entries(purchase.statuses).map(([label,value])=>({label,value,tone:poTones[label]||'gray'}));
+const poTones={'Pending':'amber','In transit':'indigo','Arrived':'teal','Delivered':'green','Cancelled':'red'},statusRows=Object.entries(purchase.statuses).map(([label,value])=>({label,value,tone:poTones[label]||'gray'}));
     const poBars=compactBars(statusRows,{tooltip:row=>`${row.label}: ${number.format(row.value)} unique purchase order${Number(row.value)===1?'':'s'}`,summaryLabel:'purchase order statuses'});
     const expiryBars=compactBars(expiryRows,{value:'quantity_at_risk',tooltip:row=>`${row.label}: ${number.format(row.batch_count)} active batch${Number(row.batch_count)===1?'':'es'}, ${number.format(row.quantity_at_risk)} units, ${money.format(row.cost_at_risk)} at risk`,summaryLabel:'expiry-risk windows'});
     target.innerHTML=`

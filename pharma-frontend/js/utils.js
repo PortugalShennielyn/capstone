@@ -145,7 +145,8 @@ const PharmaUtils = {
                 if (!response.ok || data.status === 'error') {
                     const error = new Error(data.message || `HTTP Error! Status: ${response.status}`);
                     error.status = response.status;
-                    error.isAuthError = response.status === 401 || response.status === 403;
+                    error.isAuthError = response.status === 401;
+                    error.isAuthorizationError = response.status === 403;
                     throw error;
                 }
 

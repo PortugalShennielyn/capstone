@@ -26,6 +26,7 @@ if ($password === '') sendUserJson(false, 'Temporary Password is required.', nul
 if ($password !== $confirmPassword) sendUserJson(false, 'Password and Confirm Password must match.', null, 422);
 if (!in_array($role, validUserRoles(), true)) sendUserJson(false, 'Role is required.', null, 422);
 assertAssignableUserRole($role);
+assertSingleActiveSupervisor($pdo, $role, $status);
 
 $exists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username');
 $exists->execute([':username' => $username]);

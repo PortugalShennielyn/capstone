@@ -19,9 +19,13 @@
                 <i class="fa-solid fa-boxes"></i>
                 <span class="nav-label">Products</span>
             </a>
-            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" data-dashboard-view="dashboard/inventory" title="Inventory">
+            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" data-dashboard-view="dashboard/inventory" title="Storage Inventory">
                 <i class="fa-solid fa-warehouse"></i>
-                <span class="nav-label">Inventory</span>
+                <span class="nav-label">Storage Inventory</span>
+            </a>
+            <a href="shelf_inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="shelf-inventory" title="Shelf Inventory">
+                <i class="fa-solid fa-store"></i>
+                <span class="nav-label">Shelf Inventory</span>
             </a>
             <a href="supplier.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supplier" data-dashboard-view="dashboard/suppliers" title="Suppliers">
                 <i class="fa-solid fa-handshake-simple"></i>
@@ -67,6 +71,10 @@
             <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
         </a>
         <div class="collapse" id="purchaseOrdersCollapse">
+            <a href="purchase_requests.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="purchase-requests" data-dashboard-view="dashboard/purchase-requests" title="Purchase Requests">
+                <i class="fa-solid fa-file-circle-plus"></i>
+                <span class="nav-label">Purchase Requests</span>
+            </a>
             <a href="purchase_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="purchase-orders" data-dashboard-view="dashboard/purchase-orders" title="Purchase Orders">
                 <i class="fa-solid fa-list-check"></i>
                 <span class="nav-label">Purchase Orders</span>
@@ -75,9 +83,9 @@
                 <i class="fa-solid fa-boxes-packing"></i>
                 <span class="nav-label">Inspect Deliveries</span>
             </a>
-            <a href="pending_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="pending-orders" data-dashboard-view="dashboard/pending-orders" title="Owner PO Approval">
+            <a href="supervisor_approval.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supervisor-approval" data-dashboard-view="dashboard/supervisor-approval" title="CEO PR Approvals">
                 <i class="fa-solid fa-clipboard-check"></i>
-                <span class="nav-label">Owner PO Approval</span>
+                <span class="nav-label">PR Approvals</span>
             </a>
         </div>
 
@@ -116,18 +124,18 @@
 
     <div class="sidebar-profile-footer" role="group" aria-label="User profile">
         <button class="sidebar-user-trigger" type="button" id="sidebarUserMenuButton" aria-expanded="false" aria-controls="sidebarUserPopover" title="User actions">
-            <div class="avatar-initials">DA</div>
-            <span class="profile-name">Dr. ADMIN</span>
+            <div class="avatar-initials" data-navbar-initials></div>
+            <span class="profile-name" data-navbar-display-name></span>
         </button>
         <button class="signout-btn sidebar-user-menu-toggle" type="button" aria-label="Open user actions" title="User actions">
             <i class="fa-solid fa-ellipsis-vertical"></i>
         </button>
         <div class="sidebar-user-popover" id="sidebarUserPopover" role="menu" aria-labelledby="sidebarUserMenuButton">
             <div class="sidebar-user-summary">
-                <div class="avatar-initials">DA</div>
+                <div class="avatar-initials" data-navbar-initials></div>
                 <div>
-                    <strong>Dr. ADMIN</strong>
-                    <span>Admin account</span>
+                    <strong data-navbar-display-name></strong>
+                    <span data-navbar-role-label></span>
                 </div>
             </div>
             <a href="dashboard.html#dashboard/user/settings" class="sidebar-user-action" data-nav-page="user-settings" data-dashboard-view="dashboard/user/settings" role="menuitem">

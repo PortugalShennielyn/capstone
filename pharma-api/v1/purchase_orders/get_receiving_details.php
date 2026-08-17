@@ -4,6 +4,7 @@ require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once __DIR__ . '/purchase_order_receiving_helpers.php';
 require_once __DIR__ . '/../settings/settings_helpers.php';
+require_once __DIR__ . '/purchase_order_receiving_revision_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
@@ -17,6 +18,7 @@ if ($poId === '') {
     exit();
 }
 try {
+    ensurePurchaseOrderReceivingRevisionSchema($pdo);
     $details = buildPurchaseOrderReceivingDetails($pdo, $poId);
     if (!$details) {
         http_response_code(404);
@@ -25,13 +27,17 @@ try {
     }
     $settings = fetchSystemSettings($pdo);
     $details['pharmacy'] = [
-        'name' => $settings['pharmacyName'] ?? 'Dr. R Pharmacy',
+        'name' => $settings['name'] ?? 'Dr. R Pharmacy',
         'address' => $settings['address'] ?? '',
         'contact_number' => $settings['contactNumber'] ?? ''
     ];
+    $details['grn_settings'] = [
+        'received_by_name' => $settings['grnReceivedByName'] ?? '',
+        'approved_by_name' => $settings['grnApprovedByName'] ?? '',
+    ];
+    $details['latest_revision'] = latestPurchaseOrderReceivingRevision($pdo, cleanId($details['receiving_id']));
     echo json_encode(['status' => 'success', 'receiving' => $details], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to load receiving details.', 'error' => $error->getMessage()]);
 }
-
