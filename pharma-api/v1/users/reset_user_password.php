@@ -17,6 +17,7 @@ $confirmPassword = (string) ($payload['confirm_password'] ?? '');
 if ($userId === '') sendUserJson(false, 'User record is missing.', null, 422);
 if ($password === '') sendUserJson(false, 'Temporary Password is required.', null, 422);
 if ($password !== $confirmPassword) sendUserJson(false, 'Password and Confirm Password must match.', null, 422);
+assertCanManageUser($pdo, $userId);
 
 $hash = password_hash($password, PASSWORD_DEFAULT);
 $stmt = $pdo->prepare(

@@ -9,6 +9,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit();
 }
 
+http_response_code(410);
+echo json_encode([
+    'status' => 'error',
+    'message' => 'Purchase-order purchasing edits are retired. Supplier, product, quantity, packaging, conversion, cost, and total are fixed by the approved Purchase Request.',
+]);
+exit();
+
 $payload = json_decode(file_get_contents('php://input'), true);
 
 if (!is_array($payload)) {
@@ -35,29 +42,36 @@ try {
     }
 
     validatePurchaseOrderItems($items);
+    $pdo->beginTransaction();
 
     $currentOrderStatement = $pdo->prepare(
-        'SELECT po_id, supplier_id, approval_status, status
+        'SELECT po_id, pr_id, supplier_id, approval_status, status
          FROM purchase_orders
          WHERE po_id = :po_id
-         LIMIT 1'
+         LIMIT 1
+         FOR UPDATE'
     );
     $currentOrderStatement->execute([':po_id' => $poId]);
     $currentOrder = $currentOrderStatement->fetch(PDO::FETCH_ASSOC);
     if ($currentOrder === false) {
         throw new InvalidArgumentException('Purchase order not found.');
     }
+    if (cleanId($currentOrder['pr_id'] ?? null) !== '') {
+        throw new InvalidArgumentException('Generated purchase-order supplier, packaging, conversion, quantity, and cost snapshots cannot be edited.');
+    }
 
     $approvalStatus = (string) ($currentOrder['approval_status'] ?? 'Pending');
     $currentStatus = (string) ($currentOrder['status'] ?? 'Pending');
-    $lockedStatuses = ['In transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled', 'Rejected'];
+    $lockedStatuses = ['In transit', 'Arrived', 'Delivered', 'Cancelled', 'Rejected'];
     if (in_array($currentStatus, $lockedStatuses, true)) {
         throw new InvalidArgumentException('This purchase order is locked and can no longer be edited.');
     }
 
-    $pdo->beginTransaction();
-    validateProductsForSupplier($pdo, $supplierId, $items);
+    validatePurchaseOrderSupplier($pdo, $supplierId);
+    validateProductsForSupplier($pdo, $supplierId, $items, $poId);
     $items = applySupplierProductSetup($pdo, $supplierId, $items);
+    validatePurchaseOrderItems($items);
+    $validatedTotalAmount = validateSubmittedPurchaseOrderTotals($payload, $items);
 
     $existingCompareStatement = $pdo->prepare(
         'SELECT
@@ -94,7 +108,7 @@ try {
     $majorChanged = cleanId($currentOrder['supplier_id'] ?? null) !== $supplierId
         || $majorSignature($existingCompareRows) !== $majorSignature($items);
     if ($approvalStatus === 'Approved' && $majorChanged) {
-        throw new InvalidArgumentException('Changing supplier, items, quantity, or cost will invalidate the owner approval. Send this PO back for owner approval before making major changes.');
+        throw new InvalidArgumentException('Supplier, item, quantity, and cost changes are locked after an approved purchase request is converted to a purchase order.');
     }
 
     $orderStatement = $pdo->prepare(
@@ -128,6 +142,7 @@ try {
     $existingItemsStatement->execute([':po_id' => $poId]);
     $existingItemIds = array_map('cleanId', $existingItemsStatement->fetchAll(PDO::FETCH_COLUMN));
     $keptItemIds = [];
+    $submittedExistingItemIds = [];
 
     $insertItemStatement = $pdo->prepare(
         'INSERT INTO purchase_order_items (
@@ -214,6 +229,10 @@ try {
             if (!in_array($poItemId, $existingItemIds, true)) {
                 throw new InvalidArgumentException('A purchase-order item does not belong to this order.');
             }
+            if (isset($submittedExistingItemIds[$poItemId])) {
+                throw new InvalidArgumentException('A purchase-order item was submitted more than once.');
+            }
+            $submittedExistingItemIds[$poItemId] = true;
 
             $updateItemStatement->execute(array_merge($params, [':po_item_id' => $poItemId]));
             $keptItemIds[] = $poItemId;
@@ -233,7 +252,7 @@ try {
              FROM (
                 SELECT po_item_id FROM purchase_order_receiving_items WHERE po_item_id IN ({$placeholders})
                 UNION ALL
-                SELECT po_item_id FROM purchase_order_returns WHERE po_item_id IN ({$placeholders})
+                SELECT po_item_id FROM supplier_claims WHERE po_item_id IN ({$placeholders})
              ) linked_items"
         );
         $referenceStatement->execute(array_merge($deleteItemIds, $deleteItemIds));
@@ -246,6 +265,10 @@ try {
         $deleteStatement->execute(array_merge([$poId], $deleteItemIds));
     }
 
+    if (purchaseOrderMoneyCents($totalAmount, 'Purchase-order total is invalid.') !== purchaseOrderMoneyCents($validatedTotalAmount, 'Purchase-order total is invalid.')) {
+        throw new InvalidArgumentException('Purchase-order total changed during validation. Please try again.');
+    }
+
     $totalStatement = $pdo->prepare('UPDATE purchase_orders SET total_amount = :total_amount WHERE po_id = :po_id');
     $totalStatement->execute([
         ':total_amount' => $totalAmount,
@@ -253,7 +276,7 @@ try {
     ]);
 
     if ($approvalStatus === 'Revision Requested') {
-        recordPurchaseOrderApprovalAudit($pdo, $poId, 'Revision Requested', 'Pending', 'resubmit_revision', 'Admin updated and resubmitted the purchase order for owner approval.');
+        recordPurchaseOrderApprovalAudit($pdo, $poId, 'Revision Requested', 'Pending', 'resubmit_revision', 'Legacy purchase order revision was resubmitted.');
     }
 
     $pdo->commit();

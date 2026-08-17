@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Sales Clerk POS drawer viewport fixture</title>
+    <style>
+        html, body { margin: 0; min-width: 1280px; background: #d8dbe2; }
+        iframe { display: block; width: 1280px; border: 0; }
+    </style>
+</head>
+<body>
+    <iframe id="posFrame" title="Sales Clerk POS viewport"></iframe>
+    <script>
+        const requestedHeight = Math.max(400, Number(new URLSearchParams(location.search).get('height') || 720));
+        const frame = document.getElementById('posFrame');
+        frame.height = String(requestedHeight);
+        frame.src = '../pharma-frontend/sales_clerk_pos.html';
+    </script>
+</body>
+</html>

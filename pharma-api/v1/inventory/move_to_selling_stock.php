@@ -1,7 +1,9 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once '../activity_log_helpers.php';
 require_once '../products/product_category_schema.php';
+require_once '../products/product_status_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -18,6 +20,7 @@ if (!is_array($payload)) {
 
 try {
     ensureProductCategorySchema($pdo);
+    ensureProductStatusColumn($pdo);
 
     $productId = cleanId($payload['product_id'] ?? null);
     $requestedBatches = is_array($payload['batches'] ?? null) ? $payload['batches'] : [];
@@ -35,6 +38,11 @@ try {
 
     if ($productId === '') {
         throw new InvalidArgumentException('Product is required.');
+    }
+    $activeProduct = $pdo->prepare("SELECT 1 FROM product WHERE product_id = :product_id AND status = 'Active'");
+    $activeProduct->execute([':product_id' => $productId]);
+    if (!$activeProduct->fetchColumn()) {
+        throw new InvalidArgumentException('Inactive products cannot be moved to selling stock.');
     }
 
     $batchMoves = [];
@@ -69,16 +77,18 @@ try {
     $pdo->beginTransaction();
 
     $batchSql = "SELECT
-            batch_id,
-            legacy_inventory_id AS inventory_id,
-            product_id,
-            COALESCE(po.po_number, legacy_inventory_id, batch_id) AS batch_number,
-            storage_qty,
-            shelf_qty,
-            expiry_date,
-            batch_status
+            ib.batch_id,
+            ib.legacy_inventory_id AS inventory_id,
+            ib.product_id,
+            COALESCE(pi.batch_number, po.po_number, ib.legacy_inventory_id, ib.batch_id) AS batch_number,
+            ib.storage_qty,
+            ib.shelf_qty,
+            ib.expiry_date,
+            ib.batch_status
          FROM inventory_batches ib
-         LEFT JOIN purchase_orders po ON po.po_id = ib.po_id
+         LEFT JOIN purchase_order_items source_item ON source_item.po_item_id = ib.po_item_id
+         LEFT JOIN purchase_orders po ON po.po_id = COALESCE(ib.po_id, source_item.po_id)
+         LEFT JOIN product_inventory pi ON pi.inventory_id = ib.legacy_inventory_id
          WHERE ib.product_id = :product_id
            AND (ib.batch_id = :batch_id OR ib.legacy_inventory_id = :inventory_id)
          LIMIT 1
@@ -89,9 +99,7 @@ try {
     $updateBatch = $pdo->prepare(
         "UPDATE inventory_batches
          SET storage_qty = storage_qty - :quantity,
-             shelf_qty = shelf_qty + :quantity_for_shelf,
              batch_status = CASE
-                WHEN storage_qty - :quantity_for_depleted <= 0 AND shelf_qty + :quantity_for_depleted_shelf <= 0 THEN 'depleted'
                 WHEN expiry_date IS NOT NULL AND expiry_date < CURDATE() THEN 'expired'
                 ELSE 'active'
              END
@@ -135,6 +143,7 @@ try {
     );
 
     $sellingStockIds = [];
+    $movementActivityRows = [];
 
     foreach ($batchMoves as $move) {
         $quantityToMove = (int) $move['quantity'];
@@ -157,9 +166,6 @@ try {
 
         $updateBatch->execute([
             ':quantity' => $quantityToMove,
-            ':quantity_for_shelf' => $quantityToMove,
-            ':quantity_for_depleted' => $quantityToMove,
-            ':quantity_for_depleted_shelf' => $quantityToMove,
             ':quantity_for_guard' => $quantityToMove,
             ':batch_id' => $batch['batch_id']
         ]);
@@ -207,9 +213,27 @@ try {
         }
 
         $sellingStockIds[] = $sellingStockId;
+        $movementActivityRows[] = [
+            'selling_stock_id' => $sellingStockId,
+            'quantity' => $quantityToMove,
+            'batch_number' => $batch['batch_number'],
+        ];
     }
 
     $pdo->commit();
+
+    $productNameStmt = $pdo->prepare('SELECT product_name FROM product WHERE product_id = :product_id LIMIT 1');
+    $productNameStmt->execute([':product_id' => $productId]);
+    $productName = trim((string) $productNameStmt->fetchColumn()) ?: 'product';
+    foreach ($movementActivityRows as $activity) {
+        recordActivityLog(
+            $pdo,
+            'Inventory',
+            'Moved to Shelf',
+            $activity['quantity'] . ' moved to shelf: ' . $productName . ' (Batch ' . $activity['batch_number'] . ')',
+            $activity['selling_stock_id']
+        );
+    }
 
     echo json_encode([
         'status' => 'success',

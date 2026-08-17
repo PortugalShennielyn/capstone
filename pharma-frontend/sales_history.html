@@ -1,43 +1,125 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=5"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Sales History</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <link href="./css/navbar.css?v=20" rel="stylesheet">
+    <script src="./js/navbar.js?v=69" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
-        body { min-height: 100vh; margin: 0; color: #252b37; background: #f4f6fb; font-family: "Inter", sans-serif; letter-spacing: 0; }
-        .topbar { position: sticky; top: 0; z-index: 1020; min-height: 70px; display: flex; align-items: center; gap: 14px; padding: 14px 26px; background: #fff; border-bottom: 1px solid #e8ecf3; }
-        .icon-btn { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; color: #4b5563; background: #f4f6fb; }
-        .page-body { padding: 28px; }
-        .page-header { margin-bottom: 22px; }
-        .page-header h1 { margin: 0; font-size: 26px; font-weight: 800; }
-        .page-header p { margin: 6px 0 0; color: #667085; font-weight: 500; }
-        .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
-        .summary-card, .table-panel { border: 1px solid #e8ecf3; border-radius: 8px; background: #fff; box-shadow: 0 10px 28px rgba(15, 23, 42, .05); }
-        .summary-card { padding: 18px; border-top: 3px solid #d8dee9; }
-        .summary-card:nth-child(1) { border-top-color: #7c3aed; }
-        .summary-card:nth-child(2) { border-top-color: #16a34a; }
-        .summary-card:nth-child(3) { border-top-color: #dc2626; }
-        .summary-card:nth-child(4) { border-top-color: #d97706; }
-        .summary-card span { display: block; color: #667085; font-size: 13px; font-weight: 700; }
-        .summary-card strong { display: block; margin-top: 8px; font-size: 24px; font-weight: 800; }
-        .table-panel { overflow: hidden; }
-        .table-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 18px 20px; border-bottom: 1px solid #e8ecf3; }
-        .table-panel-header h2 { margin: 0; font-size: 18px; font-weight: 800; }
-        .sales-table-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: nowrap; margin-left: auto; }
-        .sales-search { width: clamp(320px, 28vw, 380px); flex: 0 0 auto; }
-        .sales-filter { width: 200px; flex: 0 0 200px; }
-        .sales-table { min-width: 1080px; margin: 0; table-layout: auto !important; }
-        .sales-table th, .sales-table td { text-align: left !important; vertical-align: middle; white-space: nowrap; }
-        .sales-table .empty-row td { padding: 28px 16px !important; color: #667085 !important; text-align: center !important; font-weight: 700; }
-        @media (max-width: 992px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page-body { padding: 22px; } }
-        @media (max-width: 720px) { .summary-grid { grid-template-columns: 1fr; } .sales-table-controls, .sales-search, .sales-filter { width: 100%; flex-basis: 100%; } .sales-table-controls { flex-wrap: wrap; } }
+        :root { --purple:#6d28d9; --ink:#111827; --muted:#667085; --line:#e5eaf3; --soft:#f5f7fb; --green:#15803d; --red:#b91c1c; --amber:#b45309; --blue:#1d4ed8; }
+        * { box-sizing:border-box; }
+        body { min-height:100vh; margin:0; color:var(--ink); background:var(--soft); font-family:"Inter",system-ui,sans-serif; letter-spacing:0; }
+        .topbar { position:sticky; top:0; z-index:1020; min-height:70px; display:flex; align-items:center; gap:14px; padding:14px 26px; background:#fff; border-bottom:1px solid var(--line); }
+        .icon-btn,.page-icon { width:42px; height:42px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:8px; }
+        .icon-btn { color:#475467; background:#eef2f8; }
+        .page-icon { color:var(--purple); background:#eee7ff; }
+        .page-body { width:100%; max-width:none; margin:0; padding:22px 26px; }
+        .page-title-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:14px; }
+        .title-group { display:flex; align-items:center; gap:12px; min-width:0; }
+        .title-group h1 { margin:0; font-size:24px; font-weight:900; color:#0f172a; }
+        .title-group p { margin:4px 0 0; color:var(--muted); font-size:13px; font-weight:700; }
+        .soft-action { min-height:38px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:0 13px; border:1px solid #c4b5fd; border-radius:8px; color:#5b21b6; background:#f5f0ff; font-size:12px; font-weight:900; white-space:nowrap; }
+        .summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:14px; }
+        .summary-card,.history-panel,.drawer-panel,.filter-popover { border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 10px 28px rgba(15,23,42,.05); }
+        .summary-card { min-height:88px; display:flex; align-items:center; gap:12px; padding:14px; border-top:3px solid var(--purple); }
+        .summary-card:nth-child(2) { border-top-color:var(--green); }
+        .summary-card:nth-child(3) { border-top-color:var(--red); }
+        .summary-card:nth-child(4) { border-top-color:var(--blue); }
+        .summary-card i { width:38px; height:38px; flex:0 0 38px; display:inline-flex; align-items:center; justify-content:center; border-radius:8px; color:var(--purple); background:#f1e9ff; }
+        .summary-card:nth-child(2) i { color:var(--green); background:#dcfce7; }
+        .summary-card:nth-child(3) i { color:var(--red); background:#fee2e2; }
+        .summary-card:nth-child(4) i { color:var(--blue); background:#dbeafe; }
+        .summary-card span { display:block; color:var(--muted); font-size:11px; font-weight:900; text-transform:uppercase; }
+        .summary-card strong { display:block; margin-top:5px; font-size:20px; font-weight:900; color:#111827; }
+        .history-panel { overflow:hidden; }
+        .toolbar { position:relative; display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:14px 16px; border-bottom:1px solid var(--line); }
+        .search-wrap { position:relative; width:clamp(360px,36vw,480px); max-width:100%; }
+        .search-wrap input { width:100%; min-height:40px; padding:0 40px 0 12px; border:1px solid var(--line); border-radius:8px; font-size:13px; font-weight:750; }
+        .search-wrap i { position:absolute; right:13px; top:50%; transform:translateY(-50%); color:var(--muted); }
+        .filter-button { min-height:40px; display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:8px; padding:0 13px; color:#253050; background:#fff; font-size:12px; font-weight:900; }
+        .filter-popover { width:min(850px,calc(100vw - 56px)); display:none; position:absolute; left:16px; top:64px; z-index:20; padding:12px; }
+        .filter-popover.show { display:block; }
+        .filter-grid { display:grid; grid-template-columns:240px repeat(4,minmax(150px,1fr)); gap:9px; align-items:end; }
+        .filter-field { min-width:0; }
+        .filter-field label { display:block; margin-bottom:5px; color:var(--muted); font-size:10px; font-weight:900; text-transform:uppercase; }
+        .filter-control { width:100%; min-height:38px; border:1px solid var(--line); border-radius:8px; padding:0 10px; color:var(--ink); background:#fff; font-size:12px; font-weight:800; }
+        .date-range-wrap { position:relative; }
+        .date-range-button { width:100%; display:flex; align-items:center; justify-content:space-between; }
+        .date-picker-popover { display:none; position:absolute; top:43px; left:0; z-index:25; width:315px; padding:12px; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 18px 48px rgba(15,23,42,.16); }
+        .date-picker-popover.show { display:block; }
+        .date-shortcuts { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:9px; }
+        .date-shortcuts button,.pager button { min-height:32px; border:1px solid var(--line); border-radius:8px; color:#253050; background:#f8fafc; font-size:12px; font-weight:850; }
+        .date-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+        .date-fields span { display:block; margin-bottom:4px; color:var(--muted); font-size:10px; font-weight:900; text-transform:uppercase; }
+        .date-fields input { width:100%; min-height:36px; border:1px solid var(--line); border-radius:8px; padding:0 8px; font-size:12px; }
+        .filter-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:10px; }
+        .primary-btn,.secondary-btn { min-height:36px; display:inline-flex; align-items:center; justify-content:center; gap:7px; border:0; border-radius:8px; padding:0 12px; font-size:12px; font-weight:900; white-space:nowrap; }
+        .primary-btn { color:#fff; background:var(--purple); }
+        .secondary-btn { color:#253050; background:#eef2f8; }
+        .chips { display:flex; align-items:center; gap:7px; flex-wrap:wrap; padding:0 16px 12px; }
+        .chip { display:inline-flex; align-items:center; gap:6px; min-height:26px; padding:0 9px; border-radius:999px; color:#344054; background:#f1f5f9; font-size:11px; font-weight:850; }
+        .table-responsive { width:100%; overflow-x:auto; }
+        .history-table { width:100%; min-width:1540px; margin:0; table-layout:auto; border-collapse:separate; border-spacing:0; }
+        .history-table col.col-receipt { width:205px; }
+        .history-table col.col-date { width:180px; }
+        .history-table col.col-order { width:135px; }
+        .history-table col.col-customer { width:165px; }
+        .history-table col.col-staff { width:160px; }
+        .history-table col.col-items { width:90px; }
+        .history-table col.col-money { width:135px; }
+        .history-table col.col-payment { width:110px; }
+        .history-table col.col-status { width:120px; }
+        .history-table col.col-action { width:86px; }
+        .history-table th { padding:13px 12px; color:#596274; background:#f8faff; border-bottom:1px solid var(--line); font-size:11px; font-weight:800; text-align:left; text-transform:uppercase; white-space:nowrap; }
+        .history-table td { padding:13px 12px; border-bottom:1px solid #edf1f7; color:#0f172a; font-size:13px; font-weight:700; vertical-align:top; overflow-wrap:break-word; }
+        .history-table tbody tr:hover td { background:#fbfdff; }
+        .history-table th:last-child,
+        .history-table td:last-child { position:sticky; right:0; z-index:3; min-width:86px; text-align:center; background:#fff; box-shadow:-10px 0 18px rgba(15,23,42,.06); }
+        .history-table th:last-child { z-index:4; background:#f8faff; }
+        .history-table tbody tr:hover td:last-child { background:#fbfdff; }
+        .nowrap { white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+        .receipt-value { font-size:12px; font-weight:650; white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+        .status-pill,.payment-pill { display:inline-flex; align-items:center; min-height:24px; padding:0 9px; border-radius:999px; font-size:11px; font-weight:900; white-space:nowrap; }
+        .status-completed,.payment-cash { color:#166534; background:#dcfce7; }
+        .status-cancelled,.status-rejected { color:#b91c1c; background:#fee2e2; }
+        .status-processing,.status-waiting_cashier { color:#92400e; background:#fef3c7; }
+        .payment-other { color:#1d4ed8; background:#dbeafe; }
+        .icon-action { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:8px; color:#fff; background:var(--purple); }
+        .table-footer { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:12px 16px; color:var(--muted); border-top:1px solid var(--line); font-size:12px; font-weight:800; }
+        .pager { display:inline-flex; align-items:center; gap:8px; }
+        .pager button:disabled { opacity:.45; cursor:not-allowed; }
+        .drawer { position:fixed; inset:0; z-index:2100; display:none; }
+        .drawer.show { display:block; }
+        .drawer-backdrop { position:absolute; inset:0; background:rgba(15,23,42,.42); }
+        .drawer-panel { position:absolute; top:0; right:0; width:min(620px,100vw); height:100%; display:flex; flex-direction:column; border-radius:0; box-shadow:-18px 0 60px rgba(15,23,42,.22); }
+        .drawer-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:16px; border-bottom:1px solid var(--line); }
+        .drawer-head h2 { margin:0; font-size:18px; font-weight:900; }
+        .drawer-body { flex:1 1 auto; overflow:auto; padding:16px; }
+        .drawer-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--line); }
+        .detail-grid,.shift-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:14px; }
+        .detail-item,.shift-item,.info-card { padding:10px; border:1px solid var(--line); border-radius:8px; background:#f8fafc; }
+        .detail-item span,.shift-item span { display:block; color:var(--muted); font-size:10px; font-weight:900; text-transform:uppercase; }
+        .detail-item strong,.shift-item strong { display:block; margin-top:4px; font-size:13px; font-weight:900; overflow-wrap:break-word; }
+        .drawer-table { width:100%; border-collapse:collapse; margin:10px 0 14px; }
+        .drawer-table th,.drawer-table td { padding:9px 7px; border-bottom:1px solid var(--line); font-size:12px; text-align:left; vertical-align:top; }
+        .totals { display:grid; gap:7px; }
+        .total-row { display:flex; justify-content:space-between; gap:12px; font-size:13px; font-weight:800; }
+        .total-row.grand { padding-top:7px; border-top:1px solid var(--line); font-size:15px; font-weight:900; }
+        .empty-row td,.empty-state { padding:28px 16px !important; color:var(--muted); text-align:center !important; font-weight:800; }
+        @media (max-width:1100px) { .page-body { padding:18px; } .summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        @media (max-width:720px) { .topbar,.page-body { padding:14px; } .page-title-row { align-items:flex-start; flex-direction:column; } .summary-grid,.filter-grid,.detail-grid,.shift-grid { grid-template-columns:1fr; } .search-wrap,.soft-action { width:100%; } .filter-popover { left:14px; top:108px; } .drawer-panel { width:100vw; } }
+        @media print {
+            body * { visibility:hidden !important; }
+            #adminPrintArea,#adminPrintArea * { visibility:visible !important; }
+            #adminPrintArea { display:block !important; position:fixed; inset:0 auto auto 0; width:80mm; padding:4mm; background:#fff; color:#000; font-family:Arial,monospace,sans-serif; font-size:11px; }
+        }
     </style>
 </head>
 <body>
@@ -47,115 +129,294 @@
             <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
             <div><strong>Sales History</strong><div class="text-muted small">Sales & Transactions</div></div>
         </header>
+
         <section class="page-body">
-            <div class="page-header"><h1>Sales History</h1><p>Full searchable sales transaction history.</p></div>
-            <div class="summary-grid" aria-label="Sales history summary">
-                <div class="summary-card"><span>Transactions</span><strong id="summaryTransactions">0</strong></div>
-                <div class="summary-card"><span>Completed Today</span><strong id="summaryCompleted">0</strong></div>
-                <div class="summary-card"><span>Cancelled Today</span><strong id="summaryCancelled">0</strong></div>
-                <div class="summary-card"><span>Total Sales Today</span><strong id="summarySales">PHP 0.00</strong></div>
-            </div>
-            <section class="table-panel">
-                <div class="table-panel-header">
-                    <h2>Transaction History</h2>
-                    <div class="sales-table-controls" aria-label="Sales history filters">
-                        <input class="form-control form-control-sm sales-search" id="historySearch" type="search" placeholder="Search order no., customer, or staff...">
-                        <select class="form-select form-select-sm sales-filter" id="historyStatus" aria-label="Filter by status">
-                            <option value="all">All Statuses</option>
-                            <option value="draft">Draft</option>
-                            <option value="waiting_cashier">Waiting for Cashier</option>
-                            <option value="accepted_by_cashier">Accepted by Cashier</option>
-                            <option value="processing_payment">Processing Payment</option>
-                            <option value="completed">Completed</option>
-                            <option value="cancelled">Cancelled</option>
-                            <option value="rejected">Rejected</option>
-                        </select>
+            <div class="page-title-row">
+                <div class="title-group">
+                    <span class="page-icon"><i class="fa-solid fa-receipt"></i></span>
+                    <div>
+                        <h1>Sales History</h1>
+                        <p>Review all completed, cancelled and voided pharmacy transactions.</p>
                     </div>
                 </div>
+                <button class="soft-action" id="openShiftSummary" type="button"><i class="fa-solid fa-calendar-day"></i>View Shift Summary</button>
+            </div>
+
+            <div class="summary-grid" aria-label="Sales history summary">
+                <article class="summary-card"><i class="fa-solid fa-layer-group"></i><div><span>Total Transactions</span><strong id="summaryTransactions">0</strong></div></article>
+                <article class="summary-card"><i class="fa-solid fa-circle-check"></i><div><span>Completed Today</span><strong id="summaryCompleted">0</strong></div></article>
+                <article class="summary-card"><i class="fa-solid fa-ban"></i><div><span>Cancelled/Voided Today</span><strong id="summaryCancelled">0</strong></div></article>
+                <article class="summary-card"><i class="fa-solid fa-peso-sign"></i><div><span>Total Sales Today</span><strong id="summarySales">PHP 0.00</strong></div></article>
+            </div>
+
+            <section class="history-panel">
+                <div class="toolbar">
+                    <div class="search-wrap">
+                        <input id="historySearch" type="search" placeholder="Search receipt, order, customer, sales clerk or cashier">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                    <button class="filter-button" id="toggleFilters" type="button"><i class="fa-solid fa-filter"></i>Filters</button>
+                    <div class="filter-popover" id="filterPanel">
+                        <div class="filter-grid">
+                            <div class="filter-field date-range-wrap">
+                                <label>Date Range</label>
+                                <button class="filter-control date-range-button" id="dateRangeButton" type="button"><span id="dateRangeLabel">Date Range</span><i class="fa-solid fa-calendar-days"></i></button>
+                                <div class="date-picker-popover" id="datePicker">
+                                    <div class="date-shortcuts">
+                                        <button type="button" data-shortcut="today">Today</button>
+                                        <button type="button" data-shortcut="yesterday">Yesterday</button>
+                                        <button type="button" data-shortcut="last7">Last 7 Days</button>
+                                        <button type="button" data-shortcut="month">This Month</button>
+                                    </div>
+                                    <div class="date-fields">
+                                        <label><span>Start</span><input id="dateFrom" type="date"></label>
+                                        <label><span>End</span><input id="dateTo" type="date"></label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="filter-field"><label>Status</label><select class="filter-control" id="historyStatus"><option value="all">All Statuses</option><option value="completed">Completed</option><option value="cancelled">Cancelled / Voided</option></select></div>
+                            <div class="filter-field"><label>Cashier</label><select class="filter-control" id="historyCashier"><option value="all">All Cashiers</option></select></div>
+                            <div class="filter-field"><label>Sales Clerk</label><select class="filter-control" id="historySalesClerk"><option value="all">All Sales Clerks</option></select></div>
+                            <div class="filter-field"><label>Payment</label><select class="filter-control" id="historyPaymentMethod"><option value="all">All Payment Methods</option></select></div>
+                        </div>
+                        <div class="filter-actions">
+                            <button class="secondary-btn" id="clearFilters" type="button">Clear Filters</button>
+                            <button class="primary-btn" id="applyFilters" type="button">Apply Filters</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chips" id="filterChips"></div>
                 <div class="table-responsive">
-                    <table class="table sales-table">
-                        <thead><tr><th>Date</th><th>Order No.</th><th>Customer</th><th>Sales Clerk</th><th>Cashier</th><th>Total Items</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
-                        <tbody id="historyBody"><tr class="empty-row"><td colspan="9">Loading sales orders...</td></tr></tbody>
+                    <table class="history-table">
+                        <colgroup>
+                            <col class="col-receipt"><col class="col-date"><col class="col-order"><col class="col-customer"><col class="col-staff"><col class="col-staff"><col class="col-items"><col class="col-money"><col class="col-payment"><col class="col-status"><col class="col-action">
+                        </colgroup>
+                        <thead><tr><th>Receipt No.</th><th>Completed Date/Time</th><th>Order No.</th><th>Customer</th><th>Sales Clerk</th><th>Cashier</th><th>Items</th><th>Total Amount</th><th>Payment</th><th>Status</th><th>Action</th></tr></thead>
+                        <tbody id="historyBody"><tr class="empty-row"><td colspan="11">Loading sales transactions...</td></tr></tbody>
                     </table>
                 </div>
+                <div class="table-footer" id="historyFooter" hidden></div>
             </section>
         </section>
     </main>
+
+    <section class="drawer" id="transactionDrawer" aria-hidden="true">
+        <div class="drawer-backdrop" data-close-drawer></div>
+        <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="Transaction details">
+            <div class="drawer-head"><h2>Transaction Details</h2><button class="icon-btn" type="button" data-close-drawer><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="drawer-body" id="transactionDrawerBody"><div class="empty-state">Loading transaction...</div></div>
+            <div class="drawer-foot"><button class="secondary-btn" type="button" data-close-drawer>Close</button><button class="primary-btn" id="reprintReceiptBtn" type="button"><i class="fa-solid fa-print"></i>Reprint Receipt</button></div>
+        </aside>
+    </section>
+
+    <section class="drawer" id="shiftDrawer" aria-hidden="true">
+        <div class="drawer-backdrop" data-close-shift></div>
+        <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="Cashier shift summary">
+            <div class="drawer-head"><h2>Cashier Shift Summary</h2><button class="icon-btn" type="button" data-close-shift><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="drawer-body">
+                <div class="filter-grid" style="grid-template-columns:1fr 1fr auto; margin-bottom:12px;">
+                    <div class="filter-field"><label>Date</label><input class="filter-control" id="shiftDate" type="date"></div>
+                    <div class="filter-field"><label>Cashier</label><select class="filter-control" id="shiftCashier"><option value="all">Select cashier</option></select></div>
+                    <button class="primary-btn" id="loadShiftSummary" type="button">Load Summary</button>
+                </div>
+                <div id="shiftSummaryBody"><div class="empty-state">Select a cashier and date to load a summary.</div></div>
+            </div>
+            <div class="drawer-foot"><button class="secondary-btn" type="button" data-close-shift>Close</button><button class="primary-btn" id="applyShiftToHistory" type="button"><i class="fa-solid fa-list"></i>View This Cashier's Transactions</button></div>
+        </aside>
+    </section>
+
+    <section id="adminPrintArea" hidden></section>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module">
         import API_BASE_URL from './js/config/config.js';
-        import verifySession from './js/modules/auth.js';
+        import verifySession from './js/modules/auth.js?v=8';
+        import { savedTransactionTotals } from './js/modules/sales_financials.js?v=1';
 
-        const historyBody = document.getElementById('historyBody');
-        const searchInput = document.getElementById('historySearch');
-        const statusInput = document.getElementById('historyStatus');
-
-        function escapeHtml(value) {
-            return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-        }
-
-        function formatDate(value) {
+        const state = { page: 1, perPage: 10, dateFrom: '', dateTo: '', status: 'all', cashier: 'all', clerk: 'all', payment: 'all', search: '', selectedOrder: null, filters: {} };
+        const els = {
+            body: document.getElementById('historyBody'), footer: document.getElementById('historyFooter'), chips: document.getElementById('filterChips'),
+            search: document.getElementById('historySearch'), filterPanel: document.getElementById('filterPanel'), datePicker: document.getElementById('datePicker'),
+            dateLabel: document.getElementById('dateRangeLabel'), dateFrom: document.getElementById('dateFrom'), dateTo: document.getElementById('dateTo'),
+            status: document.getElementById('historyStatus'), cashier: document.getElementById('historyCashier'), clerk: document.getElementById('historySalesClerk'), payment: document.getElementById('historyPaymentMethod'),
+            drawer: document.getElementById('transactionDrawer'), drawerBody: document.getElementById('transactionDrawerBody'), printArea: document.getElementById('adminPrintArea'),
+            shiftDrawer: document.getElementById('shiftDrawer'), shiftDate: document.getElementById('shiftDate'), shiftCashier: document.getElementById('shiftCashier'), shiftBody: document.getElementById('shiftSummaryBody'),
+        };
+        const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[char]));
+        const money = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const count = (value) => Number(value || 0).toLocaleString('en-PH');
+        const isoDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const formatDate = (value) => {
             if (!value) return '-';
             const date = new Date(String(value).replace(' ', 'T'));
-            return Number.isNaN(date.getTime()) ? value : date.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-        }
-
-        async function apiFetch(path) {
+            return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+        };
+        const formatShortDate = (value) => {
+            if (!value) return '';
+            const date = new Date(`${value}T00:00:00`);
+            return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-PH', { month:'short', day:'numeric', year:'numeric' });
+        };
+        async function api(path) {
             const token = sessionStorage.getItem('pharma_tab_token') || '';
-            const headers = token ? { 'X-Tab-Token': token } : {};
-            const response = await fetch(`${API_BASE_URL}/${path}`, { credentials: 'include', cache: 'no-store', headers });
+            const response = await fetch(`${API_BASE_URL}/${path}`, { credentials:'include', cache:'no-store', headers: token ? { 'X-Tab-Token': token } : {} });
             const data = await response.json().catch(() => ({}));
-            if (!response.ok || data.status === 'error') throw new Error(data.message || 'Request failed.');
+            if (!response.ok || data.status === 'error') throw new Error(data.message || 'Unable to load sales history. Please try again.');
             return data.data;
         }
-
-        function renderRows(orders) {
-            if (!orders.length) {
-                historyBody.innerHTML = '<tr class="empty-row"><td colspan="9">No sales orders found.</td></tr>';
+        function statusClass(status) {
+            const key = String(status || '').toLowerCase();
+            if (key.includes('cancel') || key.includes('reject')) return 'status-cancelled';
+            if (key.includes('complete')) return 'status-completed';
+            return `status-${esc(key || 'processing')}`;
+        }
+        function paymentClass(method) { return String(method || '').toLowerCase() === 'cash' ? 'payment-cash' : 'payment-other'; }
+        function statusLabel(order) {
+            const code = String(order.status_code || '');
+            if (code === 'rejected') return 'Voided';
+            return order.status || '-';
+        }
+        function itemLabel(value) { const n = Number(value || 0); return `${count(n)} ${n === 1 ? 'item' : 'items'}`; }
+        function updateDateLabel() {
+            if (state.dateFrom && state.dateTo) els.dateLabel.textContent = `${formatShortDate(state.dateFrom)} - ${formatShortDate(state.dateTo)}`;
+            else if (state.dateFrom) els.dateLabel.textContent = `From ${formatShortDate(state.dateFrom)}`;
+            else if (state.dateTo) els.dateLabel.textContent = `Until ${formatShortDate(state.dateTo)}`;
+            else els.dateLabel.textContent = 'Date Range';
+        }
+        function setRange(from, to) { state.dateFrom = from || ''; state.dateTo = to || ''; els.dateFrom.value = state.dateFrom; els.dateTo.value = state.dateTo; updateDateLabel(); }
+        function shortcut(kind) {
+            const today = new Date(); let start = new Date(today); let end = new Date(today);
+            if (kind === 'yesterday') { start.setDate(start.getDate() - 1); end.setDate(end.getDate() - 1); }
+            if (kind === 'last7') start.setDate(start.getDate() - 6);
+            if (kind === 'month') start = new Date(today.getFullYear(), today.getMonth(), 1);
+            setRange(isoDate(start), isoDate(end));
+        }
+        function params() {
+            return new URLSearchParams({ page: state.page, per_page: state.perPage, search: state.search, status: state.status, date_from: state.dateFrom, date_to: state.dateTo, cashier_id: state.cashier, sales_clerk_id: state.clerk, payment_method: state.payment });
+        }
+        function renderFilterOptions(filters = {}) {
+            state.filters = filters;
+            const fill = (select, items, allLabel, selected) => {
+                select.innerHTML = `<option value="all">${allLabel}</option>${(items || []).map((item) => `<option value="${esc(item.user_id)}">${esc(item.name || 'Unnamed')}</option>`).join('')}`;
+                select.value = [...select.options].some((option) => option.value === selected) ? selected : 'all';
+            };
+            fill(els.cashier, filters.cashiers, 'All Cashiers', state.cashier);
+            fill(els.clerk, filters.sales_clerks, 'All Sales Clerks', state.clerk);
+            fill(els.shiftCashier, filters.cashiers, 'Select cashier', els.shiftCashier.value || 'all');
+            els.payment.innerHTML = '<option value="all">All Payment Methods</option>' + (filters.payment_methods || ['cash']).map((method) => `<option value="${esc(method)}">${esc(String(method).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))}</option>`).join('');
+            els.payment.value = [...els.payment.options].some((option) => option.value === state.payment) ? state.payment : 'all';
+        }
+        function renderSummary(summary = {}) {
+            document.getElementById('summaryTransactions').textContent = count(summary.total_transactions);
+            document.getElementById('summaryCompleted').textContent = count(summary.completed_today);
+            document.getElementById('summaryCancelled').textContent = count(summary.cancelled_today);
+            document.getElementById('summarySales').textContent = money(summary.total_sales_today);
+        }
+        function renderChips() {
+            const chips = [];
+            if (state.dateFrom || state.dateTo) chips.push(`Date: ${formatShortDate(state.dateFrom) || 'Any'} - ${formatShortDate(state.dateTo) || 'Any'}`);
+            if (state.status !== 'all') chips.push(`Status: ${state.status === 'cancelled' ? 'Cancelled / Voided' : 'Completed'}`);
+            if (state.cashier !== 'all') chips.push(`Cashier: ${els.cashier.options[els.cashier.selectedIndex]?.text || ''}`);
+            if (state.clerk !== 'all') chips.push(`Sales Clerk: ${els.clerk.options[els.clerk.selectedIndex]?.text || ''}`);
+            if (state.payment !== 'all') chips.push(`Payment: ${els.payment.options[els.payment.selectedIndex]?.text || ''}`);
+            els.chips.innerHTML = chips.length ? chips.map((chip) => `<span class="chip">${esc(chip)}</span>`).join('') + '<button class="secondary-btn" id="clearChipFilters" type="button">Clear All</button>' : '';
+            document.getElementById('clearChipFilters')?.addEventListener('click', clearFilters);
+        }
+        function renderRows(rows = []) {
+            const filtered = state.search || state.dateFrom || state.dateTo || state.status !== 'all' || state.cashier !== 'all' || state.clerk !== 'all' || state.payment !== 'all';
+            if (!rows.length) {
+                els.body.innerHTML = `<tr class="empty-row"><td colspan="11">${filtered ? 'No transactions match the selected filters.' : 'No sales transactions found.'}</td></tr>`;
                 return;
             }
-            historyBody.innerHTML = orders.map(order => `
-                <tr>
-                    <td>${escapeHtml(formatDate(order.sent_to_cashier_at || order.created_at))}</td>
-                    <td>${escapeHtml(order.order_no)}</td>
-                    <td>${escapeHtml(order.customer_name || 'Walk-in Customer')}</td>
-                    <td>${escapeHtml(order.sales_clerk_name || 'Unassigned')}</td>
-                    <td>${escapeHtml(order.cashier_name || '-')}</td>
-                    <td>${escapeHtml(order.total_items || 0)}</td>
-                    <td>${escapeHtml(order.total_amount || 'PHP 0.00')}</td>
-                    <td>${escapeHtml(order.status || '-')}</td>
-                    <td><button class="btn btn-sm btn-outline-primary" type="button" data-order-id="${escapeHtml(order.order_id)}">View</button></td>
-                </tr>
-            `).join('');
+            els.body.innerHTML = rows.map((order) => `
+                <tr data-order-id="${esc(order.order_id)}">
+                    <td class="receipt-value">${esc(order.receipt_no || '-')}</td>
+                    <td class="nowrap">${esc(formatDate(order.date))}</td>
+                    <td class="nowrap">${esc(order.order_no)}</td>
+                    <td>${esc(order.customer_name || 'Walk-in Customer')}</td>
+                    <td>${esc(order.sales_clerk_name || 'Unassigned')}</td>
+                    <td>${esc(order.cashier_name || '-')}</td>
+                    <td class="nowrap">${esc(itemLabel(order.total_items))}</td>
+                    <td class="nowrap">${esc(money(order.total_amount))}</td>
+                    <td><span class="payment-pill ${paymentClass(order.payment_method)}">${esc(order.payment_method || '-')}</span></td>
+                    <td><span class="status-pill ${statusClass(order.status_code)}">${esc(statusLabel(order))}</span></td>
+                    <td><button class="icon-action" type="button" data-view-transaction="${esc(order.order_id)}" title="View Transaction" aria-label="View Transaction"><i class="fa-regular fa-eye"></i></button></td>
+                </tr>`).join('');
         }
-
-        function renderSummary(data) {
-            document.getElementById('summaryTransactions').textContent = String(data.orders?.length || 0);
-            document.getElementById('summaryCompleted').textContent = String(data.summary?.completed_today_count || 0);
-            document.getElementById('summaryCancelled').textContent = String(data.summary?.cancelled_today_count || 0);
-            document.getElementById('summarySales').textContent = data.summary?.total_sales_today || 'PHP 0.00';
+        function renderPagination(pagination = {}) {
+            const total = Number(pagination.total || 0);
+            if (!total) { els.footer.hidden = true; els.footer.innerHTML = ''; return; }
+            const page = Number(pagination.page || state.page); const perPage = Number(pagination.per_page || state.perPage); const totalPages = Math.max(1, Math.ceil(total / perPage));
+            const from = (page - 1) * perPage + 1; const to = Math.min(total, page * perPage);
+            els.footer.hidden = false;
+            els.footer.innerHTML = `<span>Showing ${count(from)}-${count(to)} of ${count(total)} transactions</span><div class="pager"><button type="button" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}><i class="fa-solid fa-chevron-left"></i></button><span>Page ${count(page)} of ${count(totalPages)}</span><button type="button" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}><i class="fa-solid fa-chevron-right"></i></button></div>`;
+            els.footer.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => { state.page = Number(button.dataset.page || 1); loadHistory(); }));
         }
-
         async function loadHistory() {
-            historyBody.innerHTML = '<tr class="empty-row"><td colspan="9">Loading sales orders...</td></tr>';
-            const params = new URLSearchParams({ status: statusInput.value, search: searchInput.value.trim() });
-            const data = await apiFetch(`sales/get_sales_clerk_orders.php?${params.toString()}`);
-            renderSummary(data);
-            renderRows(data.orders || []);
+            els.body.innerHTML = '<tr class="empty-row"><td colspan="11">Loading sales transactions...</td></tr>';
+            try {
+                const data = await api(`sales/get_sales_history.php?${params()}`);
+                renderFilterOptions(data.filters || {});
+                renderSummary(data.summary || {});
+                renderRows(data.orders || []);
+                renderPagination(data.pagination || {});
+                renderChips();
+            } catch (error) {
+                els.body.innerHTML = `<tr class="empty-row"><td colspan="11">Unable to load sales history. Please try again.</td></tr>`;
+                els.footer.hidden = true;
+            }
         }
-
-        let searchTimer = null;
-        searchInput.addEventListener('input', () => {
-            clearTimeout(searchTimer);
-            searchTimer = setTimeout(() => loadHistory().catch(error => {
-                historyBody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(error.message)}</td></tr>`;
-            }), 250);
-        });
-        statusInput.addEventListener('change', () => loadHistory().catch(error => {
-            historyBody.innerHTML = `<tr class="empty-row"><td colspan="9">${escapeHtml(error.message)}</td></tr>`;
-        }));
-
+        function applyFilters() {
+            state.status = els.status.value; state.cashier = els.cashier.value; state.clerk = els.clerk.value; state.payment = els.payment.value;
+            state.dateFrom = els.dateFrom.value; state.dateTo = els.dateTo.value; state.page = 1;
+            updateDateLabel(); els.filterPanel.classList.remove('show'); els.datePicker.classList.remove('show'); loadHistory();
+        }
+        function clearFilters() {
+            state.dateFrom = ''; state.dateTo = ''; state.status = 'all'; state.cashier = 'all'; state.clerk = 'all'; state.payment = 'all'; state.page = 1;
+            els.dateFrom.value = ''; els.dateTo.value = ''; els.status.value = 'all'; els.cashier.value = 'all'; els.clerk.value = 'all'; els.payment.value = 'all'; updateDateLabel(); loadHistory();
+        }
+        function receiptSpec(item) { return [item.generic_name, item.strength || item.net_weight || item.specification].map((part) => String(part || '').trim()).filter(Boolean).join(' / '); }
+        function productLine(item) { const brand = String(item.brand_name || '').trim(); const product = String(item.product_name || 'Item').trim(); return brand && brand.toLowerCase() !== product.toLowerCase() ? `${brand} ${product}` : product; }
+        function totals(order) {
+            const saved = savedTransactionTotals(order);
+            return { ...saved, total: saved.finalAmount, paid: saved.cashReceived };
+        }
+        function receiptMarkup(order) {
+            const t = totals(order);
+            return `<div class="detail-grid"><div class="detail-item"><span>Receipt</span><strong>${esc(order.receipt_no || '-')}</strong></div><div class="detail-item"><span>Order</span><strong>${esc(order.order_no || '-')}</strong></div><div class="detail-item"><span>Status</span><strong>${esc(order.status || '-')}</strong></div><div class="detail-item"><span>Date</span><strong>${esc(formatDate(order.completed_at || order.created_at))}</strong></div><div class="detail-item"><span>Customer</span><strong>${esc(order.customer_name || 'Walk-in Customer')}</strong></div><div class="detail-item"><span>Payment</span><strong>${esc(order.payment_method || 'cash')}</strong></div><div class="detail-item"><span>Sales Clerk</span><strong>${esc(order.sales_clerk_name || 'Unassigned')}</strong></div><div class="detail-item"><span>Cashier</span><strong>${esc(order.cashier_name || '-')}</strong></div></div><h3 class="h6 fw-bold">Products</h3><table class="drawer-table"><thead><tr><th>Product</th><th>Variant / Specification</th><th>Qty</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>${(order.items || []).map((item) => `<tr><td>${esc(productLine(item))}</td><td>${esc(receiptSpec(item) || '-')}</td><td>${esc(count(item.quantity))}</td><td class="nowrap">${esc(money(item.unit_price))}</td><td class="nowrap">${esc(money(item.line_total))}</td></tr>`).join('') || '<tr><td colspan="5">No product lines found.</td></tr>'}</tbody></table><h3 class="h6 fw-bold">Payment Summary</h3><div class="totals"><div class="total-row"><span>Subtotal</span><strong>${esc(money(t.subtotal))}</strong></div><div class="total-row"><span>Discount</span><strong>${esc(money(t.discount))}</strong></div><div class="total-row"><span>VATable Sales</span><strong>${esc(money(t.vatableSales))}</strong></div><div class="total-row"><span>VAT (12%)</span><strong>${esc(money(t.vat))}</strong></div><div class="total-row grand"><span>Total</span><strong>${esc(money(t.total))}</strong></div><div class="total-row"><span>Cash Received</span><strong>${esc(money(t.paid))}</strong></div><div class="total-row"><span>Change</span><strong>${esc(money(t.change))}</strong></div></div>`;
+        }
+        async function openTransaction(orderId) {
+            els.drawerBody.innerHTML = '<div class="empty-state">Loading transaction...</div>'; els.drawer.classList.add('show'); els.drawer.setAttribute('aria-hidden', 'false');
+            const order = await api(`cashier/get_cashier_order.php?order_id=${encodeURIComponent(orderId)}`);
+            state.selectedOrder = order; els.drawerBody.innerHTML = receiptMarkup(order); els.printArea.innerHTML = receiptMarkup(order);
+        }
+        function closeTransaction() { els.drawer.classList.remove('show'); els.drawer.setAttribute('aria-hidden', 'true'); }
+        function renderShiftSummary(row) {
+            if (!row) { els.shiftBody.innerHTML = '<div class="empty-state">No cashier activity recorded for this date.</div>'; return; }
+            els.shiftBody.innerHTML = `<div class="shift-grid"><div class="shift-item"><span>Cashier</span><strong>${esc(row.cashier_name)}</strong></div><div class="shift-item"><span>Selected Date</span><strong>${esc(formatShortDate(els.shiftDate.value))}</strong></div><div class="shift-item"><span>Total Completed Sales</span><strong>${esc(money(row.total_sales))}</strong></div><div class="shift-item"><span>Total Cash Received</span><strong>${esc(money(row.cash_received))}</strong></div><div class="shift-item"><span>Total Change Given</span><strong>${esc(money(row.change_given))}</strong></div><div class="shift-item"><span>Completed Transactions</span><strong>${esc(count(row.completed_transactions))}</strong></div><div class="shift-item"><span>Cancelled / Voided</span><strong>${esc(count(row.cancelled_voided_transactions))}</strong></div><div class="shift-item"><span>First / Last Transaction</span><strong>${esc(formatDate(row.first_transaction_time))} - ${esc(formatDate(row.last_transaction_time))}</strong></div></div>`;
+        }
+        async function loadShiftSummary() {
+            if (!els.shiftCashier.value || els.shiftCashier.value === 'all') { els.shiftBody.innerHTML = '<div class="empty-state">Select a cashier and date to load a summary.</div>'; return; }
+            const query = new URLSearchParams({ status:'all', date_from:els.shiftDate.value, date_to:els.shiftDate.value, cashier_id:els.shiftCashier.value, sales_clerk_id:'all', payment_method:'all', page:1, per_page:10 });
+            const data = await api(`sales/get_sales_history.php?${query}`);
+            renderShiftSummary((data.cashier_shift_reports || [])[0]);
+        }
+        function openShiftDrawer() { els.shiftDrawer.classList.add('show'); els.shiftDrawer.setAttribute('aria-hidden', 'false'); if (!els.shiftDate.value) els.shiftDate.value = isoDate(new Date()); }
+        function closeShiftDrawer() { els.shiftDrawer.classList.remove('show'); els.shiftDrawer.setAttribute('aria-hidden', 'true'); }
+        document.getElementById('toggleFilters').addEventListener('click', () => els.filterPanel.classList.toggle('show'));
+        document.getElementById('dateRangeButton').addEventListener('click', () => els.datePicker.classList.toggle('show'));
+        document.querySelectorAll('[data-shortcut]').forEach((button) => button.addEventListener('click', () => shortcut(button.dataset.shortcut)));
+        document.getElementById('applyFilters').addEventListener('click', applyFilters);
+        document.getElementById('clearFilters').addEventListener('click', clearFilters);
+        document.getElementById('openShiftSummary').addEventListener('click', openShiftDrawer);
+        document.getElementById('loadShiftSummary').addEventListener('click', loadShiftSummary);
+        document.getElementById('applyShiftToHistory').addEventListener('click', () => { if (els.shiftCashier.value !== 'all') { setRange(els.shiftDate.value, els.shiftDate.value); els.cashier.value = els.shiftCashier.value; state.cashier = els.shiftCashier.value; state.page = 1; closeShiftDrawer(); loadHistory(); } });
+        document.querySelectorAll('[data-close-drawer]').forEach((node) => node.addEventListener('click', closeTransaction));
+        document.querySelectorAll('[data-close-shift]').forEach((node) => node.addEventListener('click', closeShiftDrawer));
+        document.getElementById('reprintReceiptBtn').addEventListener('click', () => window.print());
+        els.body.addEventListener('click', (event) => { const button = event.target.closest('[data-view-transaction]'); const row = event.target.closest('tr[data-order-id]'); const orderId = button?.dataset.viewTransaction || row?.dataset.orderId; if (orderId) openTransaction(orderId).catch((error) => { els.drawerBody.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`; }); });
+        let searchTimer = 0;
+        els.search.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = els.search.value.trim(); state.page = 1; loadHistory(); }, 250); });
         await verifySession();
+        els.shiftDate.value = isoDate(new Date());
         await loadHistory();
     </script>
 </body>

@@ -1,7 +1,14 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'manager', 'supervisor', 'Admin', 'ro-super-admin', 'ro-admin', 'ro-manager', 'ro-supervisor'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once '../activity_log_helpers.php';
 require_once 'product_category_schema.php';
+require_once 'product_customization_schema.php';
+require_once 'product_status_schema.php';
+require_once 'product_pricing_schema.php';
+require_once '../suppliers/purchasing_conversion.php';
+require_once 'product_selling_options.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -77,6 +84,7 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
         'medical_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
         'pack_content' => cleanSkuField($variation, 'pack_content') ?? joinSkuParts(cleanSkuNumber($variation, 'pack_content_qty'), cleanSkuField($variation, 'pack_content_unit')),
         'barcode' => $barcode,
+        'inventory_unit_id' => cleanId($variation['inventory_unit_id'] ?? null),
         'price' => (float) $price,
         'is_empty_detail' => $categoryName === 'Grocery'
             ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
@@ -87,19 +95,140 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
     ];
 }
 
+function productIdentityExists(
+    PDO $pdo,
+    string $categoryId,
+    string $typeId,
+    string $brandName,
+    string $productName,
+    string $categoryName,
+    array $sku
+): bool {
+    $unbrandedProductName = preg_replace(
+        '/^' . preg_quote($brandName, '/') . '\s+/i',
+        '',
+        trim($productName)
+    ) ?: trim($productName);
+    $params = [
+        ':duplicate_category_id' => $categoryId,
+        ':duplicate_type_id' => $typeId,
+        ':duplicate_brand_name' => $brandName,
+        ':duplicate_product_name' => $productName,
+        ':duplicate_unbranded_product_name' => $unbrandedProductName,
+        ':duplicate_branded_product_name' => trim($brandName . ' ' . $unbrandedProductName)
+    ];
+    $detailJoin = '';
+    $detailWhere = '';
+
+    if ($categoryName === 'Medicine') {
+        $detailJoin = 'INNER JOIN medicine_details detail ON detail.product_id = p.product_id';
+        $detailWhere = 'AND LOWER(TRIM(COALESCE(detail.generic_name, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_generic_name, \'\')))
+            AND detail.strength_value <=> :duplicate_strength_value
+            AND LOWER(TRIM(COALESCE(detail.strength_unit, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_strength_unit, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.dosage_form, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_dosage_form, \'\')))
+            AND detail.net_content_value <=> :duplicate_net_content_value
+            AND LOWER(TRIM(COALESCE(detail.net_content_unit, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_net_content_unit, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.package_type, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_package_type, \'\')))';
+        $params += [
+            ':duplicate_generic_name' => $sku['generic_name'],
+            ':duplicate_strength_value' => $sku['strength_value'],
+            ':duplicate_strength_unit' => $sku['strength_unit'],
+            ':duplicate_dosage_form' => $sku['dosage_form'],
+            ':duplicate_net_content_value' => $sku['net_content_value'],
+            ':duplicate_net_content_unit' => $sku['net_content_unit'],
+            ':duplicate_package_type' => $sku['medicine_package_type']
+        ];
+    } elseif ($categoryName === 'Grocery') {
+        $detailJoin = 'INNER JOIN grocery_details detail ON detail.product_id = p.product_id';
+        $detailWhere = 'AND LOWER(TRIM(COALESCE(detail.variant, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_variant, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.size, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_size, \'\')))
+            AND detail.net_weight <=> :duplicate_net_weight
+            AND LOWER(TRIM(COALESCE(detail.unit, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_unit, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.package_type, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_package_type, \'\')))';
+        $params += [
+            ':duplicate_variant' => $sku['variant'],
+            ':duplicate_size' => $sku['size'],
+            ':duplicate_net_weight' => $sku['net_weight'],
+            ':duplicate_unit' => $sku['grocery_unit'],
+            ':duplicate_package_type' => $sku['grocery_package_type']
+        ];
+    } else {
+        $detailJoin = 'INNER JOIN medical_supply_details detail ON detail.product_id = p.product_id';
+        $detailWhere = 'AND LOWER(TRIM(COALESCE(detail.variant, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_variant, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.size, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_size, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.material, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_material, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.sterile_status, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_sterile_status, \'\')))
+            AND LOWER(TRIM(COALESCE(detail.package_type, \'\'))) = LOWER(TRIM(COALESCE(:duplicate_package_type, \'\')))';
+        $params += [
+            ':duplicate_variant' => $sku['variant'],
+            ':duplicate_size' => $sku['size'],
+            ':duplicate_material' => $sku['material'],
+            ':duplicate_sterile_status' => $sku['sterile_status'],
+            ':duplicate_package_type' => $sku['medical_package_type']
+        ];
+    }
+
+    $statement = $pdo->prepare(
+        "SELECT p.product_id
+         FROM product p
+         {$detailJoin}
+         WHERE p.category_id = :duplicate_category_id
+           AND p.type_id = :duplicate_type_id
+           AND LOWER(TRIM(p.brand_name)) = LOWER(TRIM(:duplicate_brand_name))
+           AND (
+               LOWER(TRIM(p.product_name)) = LOWER(TRIM(:duplicate_product_name))
+               OR LOWER(TRIM(p.product_name)) = LOWER(TRIM(:duplicate_unbranded_product_name))
+               OR LOWER(TRIM(p.product_name)) = LOWER(TRIM(:duplicate_branded_product_name))
+           )
+           {$detailWhere}
+         LIMIT 1"
+    );
+    $statement->execute($params);
+    return (bool) $statement->fetchColumn();
+}
+
 try {
+    ensureProductCustomizationSchema($pdo);
+    ensureProductStatusColumn($pdo);
+    ensureProductPricingSchema($pdo);
+    ensureSupplierPurchasingConversionSchema($pdo);
     $supplierId = cleanId($payload['supplier_id'] ?? null);
+    if (
+        $supplierId !== ''
+        && !currentSessionHasRbacRole('super_admin')
+        && !currentSessionHasRbacRole('ro_super_admin')
+        && !currentSessionHasRbacRole('admin')
+        && !currentSessionHasRbacRole('ro_admin')
+    ) {
+        http_response_code(403);
+        echo json_encode(['status' => 'error', 'message' => 'Only an Admin can create or change supplier purchasing assignments.']);
+        exit();
+    }
     $categoryId = cleanId($payload['category_id'] ?? null);
     $typeId = cleanId($payload['type_id'] ?? null);
     $brandName = requiredProductField($payload, 'brand_name');
     $productName = requiredProductField($payload, 'product_name');
+    $productStatus = normalizeProductStatus($payload['status'] ?? 'Active');
     $fallbackPrice = $payload['price'] ?? '0';
+    $pricingMethod = normalizePricingMethod($payload['pricing_method'] ?? 'manual');
+    $customMarkup = normalizeMarkupPercentage($payload['custom_markup_percentage'] ?? null, true);
+    if ($pricingMethod === 'custom_markup' && $customMarkup === null) {
+        throw new InvalidArgumentException('Custom markup percentage is required for Custom markup pricing.');
+    }
+    if ($pricingMethod !== 'custom_markup') {
+        $customMarkup = null;
+    }
     $supplierCostPrice = $payload['supplier_cost_price'] ?? null;
     $purchaseUnit = cleanSkuField($payload, 'purchase_unit');
-    $unitsPerPurchaseUnit = positiveSkuInteger($payload, 'units_per_purchase_unit');
-
-    if ($supplierId === '') {
-        throw new InvalidArgumentException('A supplier is required.');
+    $unitsPerPurchaseUnit = 1;
+    if ($supplierId !== '') {
+        $unitsPerPurchaseUnit = positiveSkuInteger($payload, 'units_per_purchase_unit');
+        if ($purchaseUnit === null) {
+            throw new InvalidArgumentException('Purchase Unit is required when assigning a supplier.');
+        }
+        if (!is_numeric($supplierCostPrice) || (float) $supplierCostPrice < 0) {
+            throw new InvalidArgumentException('Supplier cost must be a non-negative number.');
+        }
     }
     if ($categoryId === '') {
         throw new InvalidArgumentException('A valid product category is required.');
@@ -114,6 +243,7 @@ try {
     if ($categoryName === '') {
         throw new InvalidArgumentException('A valid product category is required.');
     }
+    $hasDynamicConfiguration = count(getTypeSpecificationConfiguration($pdo, $typeId)) > 0;
 
     $rawVariations = isset($payload['variations']) && is_array($payload['variations']) && count($payload['variations']) > 0
         ? $payload['variations']
@@ -125,18 +255,58 @@ try {
             continue;
         }
         $variation['generic_name'] = cleanSkuField($variation, 'generic_name') ?? cleanSkuField($payload, 'generic_name');
-        $skuRows[] = normalizeSkuVariation($variation, $categoryName, $fallbackPrice);
+        $sku = normalizeSkuVariation($variation, $categoryName, $fallbackPrice);
+        $inventoryUnit = requiredProductInventoryUnit($pdo, $sku['inventory_unit_id']);
+        $sku['inventory_unit_id'] = $inventoryUnit['measurement_unit_id'];
+        $sku['inventory_unit_name'] = $inventoryUnit['unit_name'];
+        $sku['specifications'] = validateAndNormalizeSpecificationValues($pdo, $typeId, is_array($variation['specifications'] ?? null) ? $variation['specifications'] : []);
+        $skuRows[] = $sku;
     }
 
     if (count($skuRows) === 0) {
         throw new InvalidArgumentException('Please add at least one sellable SKU.');
     }
 
+    $submittedCombinations = [];
+    foreach ($skuRows as $sku) {
+        $signature = specificationValueSignature($sku['specifications']);
+        if (isset($submittedCombinations[$signature])) {
+            throw new InvalidArgumentException('Two variants have the same specification combination.');
+        }
+        $submittedCombinations[$signature] = true;
+        if (($hasDynamicConfiguration && dynamicProductIdentityExists($pdo, $categoryId, $typeId, $brandName, $productName, $sku['specifications'])) || (!$hasDynamicConfiguration && productIdentityExists(
+            $pdo,
+            $categoryId,
+            $typeId,
+            $brandName,
+            $productName,
+            $categoryName,
+            $sku
+        ))) {
+            throw new InvalidArgumentException(
+                'This exact product and specification already exists in Product Master. Use the existing product or create a different variant.'
+            );
+        }
+    }
+    $submittedBarcodes = [];
+    $barcodeCheck = $pdo->prepare('SELECT product_id FROM product WHERE LOWER(TRIM(barcode)) = LOWER(TRIM(:barcode)) LIMIT 1');
+    foreach ($skuRows as $sku) {
+        $normalizedBarcode = strtolower(trim((string) $sku['barcode']));
+        if (isset($submittedBarcodes[$normalizedBarcode])) {
+            throw new InvalidArgumentException('Each product variant must have a unique barcode.');
+        }
+        $submittedBarcodes[$normalizedBarcode] = true;
+        $barcodeCheck->execute([':barcode' => $sku['barcode']]);
+        if ($barcodeCheck->fetchColumn()) {
+            throw new InvalidArgumentException('This barcode already belongs to another product variant.');
+        }
+    }
+
     $pdo->beginTransaction();
 
     $productInsert = $pdo->prepare(
-        'INSERT INTO product (product_id, barcode, brand_name, product_name, category_id, type_id, price)
-         VALUES (:product_id, :barcode, :brand_name, :product_name, :category_id, :type_id, :price)'
+        'INSERT INTO product (product_id, barcode, brand_name, product_name, category_id, type_id, inventory_unit_id, price, pricing_method, custom_markup_percentage, status)
+         VALUES (:product_id, :barcode, :brand_name, :product_name, :category_id, :type_id, :inventory_unit_id, :price, :pricing_method, :custom_markup_percentage, :status)'
     );
     $medicineInsert = $pdo->prepare(
         'INSERT INTO medicine_details (medicine_detail_id, product_id, generic_name, strength_value, strength_unit, strength, dosage_form, net_content_value, net_content_unit, package_type)
@@ -151,11 +321,15 @@ try {
          VALUES (:medical_supply_detail_id, :product_id, :variant, :size, :material, :sterile_status, :package_type, :pack_content)'
     );
     $supplierInsert = $pdo->prepare(
-        'INSERT INTO supplier_products (supplier_id, product_id, supplier_cost_price, purchase_unit, units_per_purchase_unit)
-         VALUES (:supplier_id, :product_id, :supplier_cost_price, :purchase_unit, :units_per_purchase_unit)
+        'INSERT INTO supplier_products (supplier_product_id,supplier_id,product_id,supplier_cost_price,supplier_cost_input,supplier_cost_basis,purchase_unit,purchase_unit_contains,inventory_unit,units_per_purchase_unit)
+         VALUES (:supplier_product_id,:supplier_id,:product_id,:supplier_cost_price,:supplier_cost_input,\'purchase\',:purchase_unit,:purchase_unit_contains,:inventory_unit,:units_per_purchase_unit)
          ON DUPLICATE KEY UPDATE
             supplier_cost_price = VALUES(supplier_cost_price),
+            supplier_cost_input = VALUES(supplier_cost_input),
+            supplier_cost_basis = VALUES(supplier_cost_basis),
             purchase_unit = VALUES(purchase_unit),
+            purchase_unit_contains = VALUES(purchase_unit_contains),
+            inventory_unit = VALUES(inventory_unit),
             units_per_purchase_unit = VALUES(units_per_purchase_unit)'
     );
 
@@ -169,10 +343,14 @@ try {
             ':product_name' => $productName,
             ':category_id' => $categoryId,
             ':type_id' => $typeId,
-            ':price' => $sku['price']
+            ':inventory_unit_id' => $sku['inventory_unit_id'],
+            ':price' => $sku['price'],
+            ':pricing_method' => $pricingMethod,
+            ':custom_markup_percentage' => $customMarkup,
+            ':status' => $productStatus
         ]);
 
-        if ($categoryName === 'Medicine') {
+        if (!$hasDynamicConfiguration && $categoryName === 'Medicine') {
             $medicineInsert->execute([
                 ':medicine_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
@@ -185,7 +363,7 @@ try {
                 ':net_content_unit' => $sku['net_content_unit'],
                 ':package_type' => $sku['medicine_package_type']
             ]);
-        } elseif ($categoryName === 'Grocery') {
+        } elseif (!$hasDynamicConfiguration && $categoryName === 'Grocery') {
             $groceryInsert->execute([
                 ':grocery_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
@@ -196,7 +374,7 @@ try {
                 ':package_type' => $sku['grocery_package_type'],
                 ':pack_content' => $sku['pack_content']
             ]);
-        } elseif (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
+        } elseif (!$hasDynamicConfiguration && in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
             $medicalSupplyInsert->execute([
                 ':medical_supply_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
@@ -209,17 +387,36 @@ try {
             ]);
         }
 
-        $supplierInsert->execute([
-            ':supplier_id' => $supplierId,
-            ':product_id' => $productId,
-            ':supplier_cost_price' => is_numeric($supplierCostPrice) ? (float) $supplierCostPrice : null,
-            ':purchase_unit' => $purchaseUnit,
-            ':units_per_purchase_unit' => $unitsPerPurchaseUnit
-        ]);
+        if ($supplierId !== '') {
+            $supplierProductId = newUuid($pdo);
+            $supplierInsert->execute([
+                ':supplier_product_id' => $supplierProductId,
+                ':supplier_id' => $supplierId,
+                ':product_id' => $productId,
+                ':supplier_cost_price' => (float) $supplierCostPrice / $unitsPerPurchaseUnit,
+                ':supplier_cost_input' => (float) $supplierCostPrice,
+                ':purchase_unit' => $purchaseUnit,
+                ':purchase_unit_contains' => $unitsPerPurchaseUnit,
+                ':inventory_unit' => $sku['inventory_unit_name'],
+                ':units_per_purchase_unit' => $unitsPerPurchaseUnit
+            ]);
+            syncSupplierProductUnitConversions($pdo,$supplierProductId,[
+                'purchase_unit'=>$purchaseUnit,
+                'purchase_unit_contains'=>$unitsPerPurchaseUnit,
+                'inventory_unit'=>$sku['inventory_unit_name'],
+                'units_per_purchase_unit'=>$unitsPerPurchaseUnit,
+            ]);
+        }
+        saveProductSpecificationValues($pdo, $productId, $sku['specifications']);
         $createdProductIds[] = $productId;
     }
 
+    ensureProductDefaultSellingOption($pdo, $productId);
     $pdo->commit();
+
+    foreach ($createdProductIds as $createdProductId) {
+        recordActivityLog($pdo, 'Products', 'Added', 'Product added: ' . $productName, $createdProductId);
+    }
 
     http_response_code(201);
     echo json_encode([

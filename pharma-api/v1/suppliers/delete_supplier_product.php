@@ -1,4 +1,5 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'Admin', 'ro-super-admin', 'ro-admin'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
@@ -23,6 +24,54 @@ try {
     $supplierProductId = cleanId($payload['supplier_product_id'] ?? null);
     $supplierId = cleanId($payload['supplier_id'] ?? null);
     $productId = cleanId($payload['product_id'] ?? null);
+
+    if ($supplierProductId !== '') {
+        $linkStatement = $pdo->prepare(
+            'SELECT supplier_id, product_id
+             FROM supplier_products
+             WHERE supplier_product_id = :supplier_product_id
+             LIMIT 1'
+        );
+        $linkStatement->execute([':supplier_product_id' => $supplierProductId]);
+        $link = $linkStatement->fetch();
+        if (!$link) {
+            http_response_code(404);
+            echo json_encode(['status' => 'error', 'message' => 'Supplier product link was not found.']);
+            exit();
+        }
+        $supplierId = cleanId($link['supplier_id'] ?? null);
+        $productId = cleanId($link['product_id'] ?? null);
+    }
+
+    if ($supplierId !== '' && $productId !== '') {
+        $activeOrderStatement = $pdo->prepare(
+            "SELECT COUNT(*)
+             FROM purchase_order_items poi
+             INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+             WHERE po.supplier_id = :supplier_id
+               AND poi.product_id = :product_id
+               AND LOWER(TRIM(po.status)) NOT IN (
+                   'cancelled',
+                   'canceled',
+                   'rejected',
+                   'delivered',
+                   'delivered with return/damage',
+                   'completed'
+               )"
+        );
+        $activeOrderStatement->execute([
+            ':supplier_id' => $supplierId,
+            ':product_id' => $productId
+        ]);
+        if ((int) $activeOrderStatement->fetchColumn() > 0) {
+            http_response_code(409);
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'This assignment is used by an active purchase order and cannot be removed yet.'
+            ]);
+            exit();
+        }
+    }
 
     if ($supplierProductId !== '') {
         $statement = $pdo->prepare('DELETE FROM supplier_products WHERE supplier_product_id = :supplier_product_id');

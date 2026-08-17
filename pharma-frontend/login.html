@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Login</title>
@@ -178,7 +179,7 @@
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-login w-100">
-                    <i class="fa-solid fa-right-to-bracket me-2"></i>Login
+                    <span class="login-button-content"><i class="fa-solid fa-right-to-bracket me-2"></i>Login</span>
                 </button>
             </form>
 
@@ -192,15 +193,27 @@
 
     <script type="module">
         import API_BASE_URL from './js/config/config.js';
-        import { clearTabToken, setTabToken } from './js/modules/auth_guard.js?v=8';
+        import { cacheAuthenticatedProfile, clearTabToken, setTabToken } from './js/modules/auth_guard.js?v=27';
 
         const loginForm = document.getElementById('loginForm');
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const loginMessage = document.getElementById('loginMessage');
         const submitButton = loginForm.querySelector('button[type="submit"]');
+        const submitButtonContent = submitButton.querySelector('.login-button-content');
+        const LOGIN_TIMEOUT_MS = 12000;
+        const apiUrl = new URL(`${API_BASE_URL.replace(/\/+$/, '')}/`);
+        const frontendBaseUrl = new URL('../../pharma-frontend/', apiUrl);
+        const isLocalApi = ['127.0.0.1', 'localhost'].includes(apiUrl.hostname);
+        const mustUseApacheOrigin = isLocalApi && window.location.origin !== apiUrl.origin;
+        let loginInProgress = false;
 
         clearTabToken();
+
+        if (mustUseApacheOrigin) {
+            submitButton.disabled = true;
+            window.location.replace(new URL('login.html', frontendBaseUrl).href);
+        }
 
         toastr.options = {
             closeButton: true,
@@ -219,8 +232,39 @@
             loginMessage.classList.remove('is-visible');
         }
 
+        function setLoginInProgress(isLoading) {
+            loginInProgress = isLoading;
+            submitButton.disabled = isLoading;
+            submitButton.setAttribute('aria-busy', String(isLoading));
+            submitButtonContent.innerHTML = isLoading
+                ? '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Signing in...'
+                : '<i class="fa-solid fa-right-to-bracket me-2"></i>Login';
+        }
+
+        function getFrontendRedirectUrl(redirect) {
+            const page = String(redirect || 'dashboard.html').split('/').pop();
+            const safePage = /^[a-z0-9_-]+\.html$/i.test(page) ? page : 'dashboard.html';
+
+            // Keep the app on Apache after login. VS Code Live Server may stop
+            // responding and is not required for this PHP application.
+            return new URL(safePage, frontendBaseUrl).href;
+        }
+
+        // Back/forward cache can restore a disabled button from a previous submit.
+        window.addEventListener('pageshow', () => setLoginInProgress(false));
+
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+
+            if (loginInProgress) {
+                return;
+            }
+
+            if (mustUseApacheOrigin) {
+                window.location.replace(new URL('login.html', frontendBaseUrl).href);
+                return;
+            }
+
             clearLoginMessage();
 
             const username = usernameInput.value.trim();
@@ -232,14 +276,20 @@
                 return;
             }
 
-            submitButton.disabled = true;
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+            let isRedirecting = false;
+            setLoginInProgress(true);
 
             try {
                 const response = await fetch(`${API_BASE_URL}/auth/login.php`, {
                     method: 'POST',
                     credentials: 'include',
+                    cache: 'no-store',
+                    signal: controller.signal,
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     },
                     body: JSON.stringify({ username, password })
                 });
@@ -265,16 +315,30 @@
                 }
 
                 setTabToken(data.tab_token);
+                cacheAuthenticatedProfile(data.session);
+                sessionStorage.removeItem('drpAccessDeniedMessage');
+                isRedirecting = true;
                 toastr.success('Login successful! Redirecting...');
 
-                setTimeout(() => {
-                    window.location.replace(data.redirect);
-                }, 1500);
+                window.location.replace(getFrontendRedirectUrl(data.redirect));
+                window.setTimeout(() => {
+                    if (!document.hidden) {
+                        isRedirecting = false;
+                        setLoginInProgress(false);
+                        showLoginMessage('Login succeeded, but the next page did not open. Please try again.');
+                    }
+                }, 8000);
             } catch (err) {
-                showLoginMessage(err.message || 'Login failed');
-                toastr.error(err.message || 'Login failed');
+                const message = err.name === 'AbortError'
+                    ? 'The login server took too long to respond. Please check that Apache and MySQL are running, then try again.'
+                    : 'Could not reach the login server. Please check that Apache and MySQL are running, then try again.';
+                showLoginMessage(message);
+                toastr.error(message);
             } finally {
-                submitButton.disabled = false;
+                window.clearTimeout(timeoutId);
+                if (!isRedirecting) {
+                    setLoginInProgress(false);
+                }
             }
         });
     </script>

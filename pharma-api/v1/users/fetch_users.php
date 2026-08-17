@@ -11,6 +11,11 @@ $status = trim((string) ($_GET['status'] ?? ''));
 
 $where = ['COALESCE(is_deleted, 0) = 0'];
 $params = [];
+$actorRole = currentUserManagementRole();
+
+if ($actorRole === 'manager') {
+    $where[] = "role IN ('cashier', 'salesclerk')";
+}
 
 if ($search !== '') {
     $where[] = '(full_name LIKE :search OR username LIKE :search OR role LIKE :search)';
@@ -36,13 +41,17 @@ $users = array_map(static function (array $row): array {
     return $row;
 }, $stmt->fetchAll());
 
+$summaryWhere = ["COALESCE(is_deleted, 0) = 0"];
+if ($actorRole === 'manager') {
+    $summaryWhere[] = "role IN ('cashier', 'salesclerk')";
+}
 $summary = $pdo->query(
     "SELECT
         COUNT(*) AS total_users,
         SUM(CASE WHEN status = 'Active' THEN 1 ELSE 0 END) AS active_users,
         SUM(CASE WHEN status = 'Inactive' THEN 1 ELSE 0 END) AS inactive_users
      FROM users
-     WHERE COALESCE(is_deleted, 0) = 0"
+     WHERE " . implode(' AND ', $summaryWhere)
 )->fetch();
 
 sendUserJson(true, 'Users loaded.', [
@@ -51,6 +60,10 @@ sendUserJson(true, 'Users loaded.', [
         'total_users' => (int) ($summary['total_users'] ?? 0),
         'active_users' => (int) ($summary['active_users'] ?? 0),
         'inactive_users' => (int) ($summary['inactive_users'] ?? 0),
+    ],
+    'permissions' => [
+        'actor_role' => $actorRole,
+        'assignable_roles' => assignableUserRoles(),
     ],
 ]);
 ?>

@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+    <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=5"></script>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Dr. R Pharmacy | Inspect Deliveries</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
+            rel="stylesheet"
+        />
+        <link href="./css/navbar.css?v=20" rel="stylesheet" />
+        <link href="./css/inspect_deliveries.css?v=4" rel="stylesheet" />
+        <link href="./css/purchase_receiving.css?v=5" rel="stylesheet" />
+        <script src="./js/navbar.js?v=69" defer></script>
+        <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    </head>
+    <body data-page="inspect-deliveries">
+        <div id="navbar-container"></div>
+
+        <main class="main-wrapper" id="mainWrapper">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button
+                        class="icon-btn"
+                        type="button"
+                        id="sidebarToggle"
+                        aria-label="Toggle sidebar"
+                    >
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <div class="page-title-mini">
+                        <strong>Inspect Deliveries</strong>
+                        <span>Arrived purchase orders and receiving inspections</span>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <button class="icon-btn" type="button" aria-label="Notifications">
+                        <i class="fa-regular fa-bell"></i>
+                    </button>
+                    <button
+                        class="icon-btn"
+                        type="button"
+                        id="themeToggle"
+                        aria-label="Toggle dark mode"
+                    >
+                        <i class="fa-solid fa-moon"></i>
+                    </button>
+                </div>
+            </header>
+
+            <section class="page-body">
+                <div class="inspection-shell">
+                    <section id="inspectionQueueView">
+                        <div class="page-heading">
+                            <div>
+                                <h1>Inspect Deliveries</h1>
+                                <p>
+                                    Review arrived purchase orders, inspect delivered products,
+                                    record batches and expiry dates, and confirm inventory receipt.
+                                </p>
+                            </div>
+                            <button
+                                class="btn btn-sm btn-outline-secondary"
+                                id="btnRefreshInspectionQueue"
+                                type="button"
+                            >
+                                <i class="fa-solid fa-rotate me-1"></i>Refresh
+                            </button>
+                        </div>
+
+                        <div class="summary-grid" aria-label="Inspection queue summary">
+                            <div class="summary-card">
+                                <span class="summary-icon"
+                                    ><i class="fa-regular fa-clock"></i
+                                ></span>
+                                <div>
+                                    <span>Awaiting Inspection</span
+                                    ><strong id="inspectionCountAwaiting">0</strong>
+                                </div>
+                            </div>
+                            <div class="summary-card">
+                                <span class="summary-icon"
+                                    ><i class="fa-solid fa-list-check"></i
+                                ></span>
+                                <div>
+                                    <span>Inspection in Progress</span
+                                    ><strong id="inspectionCountProgress">0</strong>
+                                </div>
+                            </div>
+                            <div class="summary-card">
+                                <span class="summary-icon"
+                                    ><i class="fa-solid fa-triangle-exclamation"></i
+                                ></span>
+                                <div>
+                                    <span>With Issues</span
+                                    ><strong id="inspectionCountIssues">0</strong>
+                                </div>
+                            </div>
+                            <div class="summary-card">
+                                <span class="summary-icon"
+                                    ><i class="fa-solid fa-circle-check"></i
+                                ></span>
+                                <div>
+                                    <span>Ready to Confirm</span
+                                    ><strong id="inspectionCountReady">0</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel queue-toolbar" aria-label="Inspection filters">
+                            <div class="filter-field filter-search">
+                                <label for="inspectionSearch">Search</label
+                                ><input
+                                    class="filter-control"
+                                    id="inspectionSearch"
+                                    type="search"
+                                    placeholder="PO number or supplier"
+                                />
+                            </div>
+                            <details class="filter-field date-filter" id="inspectionDateFilter">
+                                <summary class="date-filter-summary">
+                                    <span id="inspectionDateSummary">All arrival dates</span
+                                    ><i class="fa-solid fa-calendar-days"></i>
+                                </summary>
+                                <div class="date-filter-panel">
+                                    <div>
+                                        <label for="inspectionDateFrom">From</label
+                                        ><input
+                                            class="filter-control"
+                                            id="inspectionDateFrom"
+                                            type="date"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label for="inspectionDateTo">To</label
+                                        ><input
+                                            class="filter-control"
+                                            id="inspectionDateTo"
+                                            type="date"
+                                        />
+                                    </div>
+                                </div>
+                            </details>
+                            <div class="filter-field filter-select">
+                                <label for="inspectionStatusFilter">Receiving Status</label
+                                ><select class="filter-control" id="inspectionStatusFilter">
+                                    <option value="">All statuses</option>
+                                    <option value="awaiting">Awaiting Inspection</option>
+                                    <option value="in-progress">Inspection in Progress</option>
+                                    <option value="issue-found">With Issues</option>
+                                    <option value="ready">Ready to Confirm</option>
+                                    <option value="completed">Receiving Completed</option>
+                                </select>
+                            </div>
+                            <button
+                                class="btn btn-sm btn-light border"
+                                id="btnClearInspectionFilters"
+                                type="button"
+                            >
+                                <i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear filters
+                            </button>
+                        </div>
+
+                        <div class="panel queue-table-panel">
+                            <div class="queue-table-header">
+                                <h2>Arrived Purchase Orders</h2>
+                                <p>
+                                    Review arrived orders and their physical inspection status.
+                                </p>
+                            </div>
+                            <div class="queue-table-wrap">
+                                <table
+                                    class="table table-hover queue-table"
+                                    aria-label="Arrived purchase orders and completed receiving records"
+                                >
+                                    <thead>
+                                        <tr>
+                                            <th>PO / GRN</th>
+                                            <th>Supplier</th>
+                                            <th>Arrival Date</th>
+                                            <th>Products</th>
+                                            <th>Ordered Units</th>
+                                            <th>Accepted Units</th>
+                                            <th>Affected Units</th>
+                                            <th>Inspection Status</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="inspectionQueueRows">
+                                        <tr>
+                                            <td colspan="9" class="empty-state">
+                                                Loading arrived purchase orders...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section
+                        id="inspectionWorkspaceView"
+                        class="d-none"
+                        aria-labelledby="inspectionWorkspaceTitle"
+                    >
+                        <nav class="workspace-breadcrumb" aria-label="Breadcrumb">
+                            <button type="button" data-inspection-back>Inspect Deliveries</button
+                            ><i class="fa-solid fa-chevron-right"></i
+                            ><span id="inspectionBreadcrumbPo">Purchase Order</span>
+                        </nav>
+                        <div
+                            id="receiveDraftBadge"
+                            class="alert alert-info py-2 px-3 d-none"
+                            role="status"
+                        >
+                            <i class="fa-solid fa-pen-ruler me-2"></i>Inspection in Progress — saved
+                            values were restored.
+                        </div>
+                        <section class="panel po-header">
+                            <div class="po-header-title">
+                                <h1 id="inspectionWorkspaceTitle">Purchase Order Inspection</h1>
+                            </div>
+                            <div class="po-info-grid">
+                                <div class="po-info">
+                                    <span>PO Number</span><strong id="receivePoNumber">-</strong>
+                                </div>
+                                <div class="po-info">
+                                    <span>Supplier</span><strong id="receiveSupplierName">-</strong>
+                                </div>
+                                <div class="po-info">
+                                    <span>Arrival Date</span
+                                    ><strong id="receiveArrivalDate">-</strong>
+                                </div>
+                                <div class="po-info">
+                                    <span>Product</span><strong id="receiveProductCount">-</strong>
+                                </div>
+                                <div class="po-info">
+                                    <span>Ordered Qty</span
+                                    ><strong id="receiveHeaderOrderedQty">0</strong>
+                                </div>
+                                <div class="po-info">
+                                    <span>PO Status</span><strong id="receivePoStatus" class="status-badge status-active">Arrived</strong>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="panel receive-simple-steps" aria-label="Receiving steps">
+                            <div class="receive-simple-step is-active" data-receive-step="inspect"><span>1</span><strong>Inspect Products</strong></div>
+                            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                            <div class="receive-simple-step" data-receive-step="batch"><span>2</span><strong>Batch &amp; Expiry</strong></div>
+                            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                            <div class="receive-simple-step" data-receive-step="confirm"><span>3</span><strong>Confirm Receiving</strong></div>
+                        </section>
+
+                        <div class="receive-workspace-grid">
+                            <aside
+                                class="panel product-navigator"
+                                aria-label="Products in purchase order"
+                            >
+                                <div class="product-navigator-head">
+                                    <strong>Products</strong
+                                    ><span id="receiveOverallProductProgress"
+                                        >0 of 0 products inspected</span
+                                    >
+                                </div>
+                                <div
+                                    id="receiveProductNavigator"
+                                    class="product-navigator-list"
+                                ></div>
+                                <div class="product-navigation-actions">
+                                    <button
+                                        class="btn btn-sm btn-light border"
+                                        id="btnPreviousInspectionProduct"
+                                        type="button"
+                                    >
+                                        <i class="fa-solid fa-chevron-left me-1"></i>Previous
+                                    </button>
+                                    <button
+                                        class="btn btn-sm btn-light border"
+                                        id="btnNextInspectionProduct"
+                                        type="button"
+                                    >
+                                        Next<i class="fa-solid fa-chevron-right ms-1"></i>
+                                    </button>
+                                    <button
+                                        class="btn btn-sm btn-outline-primary next-incomplete"
+                                        id="btnOpenNextInspection"
+                                        type="button"
+                                    >
+                                        Next Incomplete
+                                    </button>
+                                </div>
+                            </aside>
+                            <section aria-label="Current product inspection">
+                                <div
+                                    class="d-flex align-items-center justify-content-between gap-3 mb-2"
+                                >
+                                    <strong class="small">Product Inspection</strong
+                                    ><span
+                                        class="small text-muted"
+                                        id="receiveCurrentProductProgress"
+                                        >Product 0 of 0</span
+                                    >
+                                </div>
+                                <div id="receiveInspectionCards" class="receive-card-stack"></div>
+                            </section>
+                        </div>
+
+                        <div class="receive-lower-grid">
+                            <section class="panel receiving-summary-card receive-scroll-target" aria-labelledby="receiveSummaryHeading">
+                                <div class="section-card-heading">
+                                    <span class="section-card-icon inventory"
+                                        ><i class="fa-solid fa-clipboard-list"></i
+                                    ></span>
+                                    <div>
+                                        <span class="section-eyebrow">Step 3</span>
+                                        <h2 id="receiveSummaryHeading">Final Receiving Review</h2>
+                                    </div>
+                                </div>
+                                <div id="receiveSummaryItems" class="receiving-summary-list"></div>
+                                <div class="receive-final-remarks">
+                                    <label for="receivePoRemarks">Receiving Remarks</label
+                                ><textarea
+                                    id="receivePoRemarks"
+                                    class="form-control"
+                                    rows="3"
+                                    placeholder="Optional notes for the complete receiving transaction..."
+                                ></textarea>
+                                </div>
+                                <div
+                                    id="receiveValidationSummary"
+                                    class="receive-validation d-none"
+                                ></div>
+                            </section>
+                        </div>
+
+                        <footer class="inspection-footer">
+                            <div class="inspection-footer-status" id="receiveFooterStatus">
+                                Complete all inspections before confirming.
+                            </div>
+                            <div class="inspection-footer-actions">
+                                <button
+                                    class="btn btn-light border"
+                                    type="button"
+                                    data-inspection-back
+                                >
+                                    <i class="fa-solid fa-arrow-left me-1"></i>Back</button
+                                ><button
+                                    id="btnSaveReceiveDraft"
+                                    class="btn btn-outline-primary"
+                                    type="button"
+                                >
+                                    <i class="fa-regular fa-floppy-disk me-1"></i>Save Draft</button
+                                ><button
+                                    id="btnConfirmReceivePo"
+                                    class="btn btn-purple"
+                                    type="button"
+                                    disabled
+                                >
+                                    <i class="fa-solid fa-check me-1"></i>Confirm Receiving
+                                </button>
+                            </div>
+                        </footer>
+                    </section>
+                </div>
+            </section>
+        </main>
+
+        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=77"></script>
+    </body>
+</html>

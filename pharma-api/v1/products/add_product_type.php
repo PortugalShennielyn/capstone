@@ -1,7 +1,7 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
-require_once 'product_category_schema.php';
+require_once 'product_customization_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -17,9 +17,10 @@ if (!is_array($payload)) {
 }
 
 try {
-    ensureProductCategorySchema($pdo);
+    ensureProductCustomizationSchema($pdo);
 
     $categoryId = cleanId($payload['category_id'] ?? null);
+    $typeId = cleanId($payload['type_id'] ?? null);
     $typeName = requiredProductField($payload, 'type_name');
 
     if ($categoryId === '') {
@@ -32,25 +33,36 @@ try {
         throw new InvalidArgumentException('A valid category is required.');
     }
 
-    $statement = $pdo->prepare(
-        'INSERT INTO product_types (type_id, category_id, type_name)
-         VALUES (:type_id, :category_id, :type_name)
-         ON DUPLICATE KEY UPDATE category_id = VALUES(category_id), type_name = VALUES(type_name)'
-    );
-    $typeId = newUuid($pdo);
-    $statement->execute([
-        ':type_id' => $typeId,
-        ':category_id' => $categoryId,
-        ':type_name' => $typeName
-    ]);
+    $matchingType = findProductTypeByNormalizedName($pdo, $categoryId, $typeName, $typeId);
+    $reused = false;
+    if ($matchingType && $typeId !== '') {
+        throw new InvalidArgumentException('A Product Type with this name already exists in the selected Category.');
+    }
+    if ($matchingType) {
+        $typeId = $matchingType['type_id'];
+        $typeName = $matchingType['type_name'];
+        $reused = true;
+    }
 
-    $select = $pdo->prepare('SELECT type_id FROM product_types WHERE type_name = :type_name LIMIT 1');
-    $select->execute([':type_name' => $typeName]);
-    $typeId = cleanId($select->fetchColumn()) ?: $typeId;
+    if ($typeId !== '' && !$reused) {
+        $statement = $pdo->prepare('UPDATE product_types SET type_name = :type_name WHERE type_id = :type_id AND category_id = :category_id');
+        $statement->execute([':type_id' => $typeId, ':category_id' => $categoryId, ':type_name' => $typeName]);
+        $exists = $pdo->prepare('SELECT type_id FROM product_types WHERE type_id = :type_id AND category_id = :category_id');
+        $exists->execute([':type_id' => $typeId, ':category_id' => $categoryId]);
+        if (!$exists->fetchColumn()) {
+            throw new InvalidArgumentException('Product Type not found under the selected Category.');
+        }
+    } elseif (!$reused) {
+        $typeId = newUuid($pdo);
+        $statement = $pdo->prepare('INSERT INTO product_types (type_id, category_id, type_name) VALUES (:type_id, :category_id, :type_name)');
+        $statement->execute([':type_id' => $typeId, ':category_id' => $categoryId, ':type_name' => $typeName]);
+    }
+    assignSuggestedProductTypeTemplate($pdo, $typeId);
 
     echo json_encode([
         'status' => 'success',
-        'message' => 'Product type saved successfully.',
+        'message' => $reused ? 'Existing Product Type selected.' : 'Product type saved successfully.',
+        'reused_existing' => $reused,
         'type' => [
             'type_id' => $typeId,
             'category_id' => $categoryId,

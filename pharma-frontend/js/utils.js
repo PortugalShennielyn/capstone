@@ -4,6 +4,35 @@
  */
 const PharmaUtils = {
 
+    productIdentitySeparator: ' \u2022 ',
+
+    normalizeDisplayText(value) {
+        const text = String(value ?? '').trim();
+        if (!text || ['n/a', 'null', 'undefined', 'none'].includes(text.toLowerCase())) {
+            return '';
+        }
+
+        return text
+            .replace(/\u00c3\u00a2\u00e2\u201a\u00ac\u00c2\u00a2|\u00e2\u20ac\u00a2|&bull;|&#8226;/g, this.productIdentitySeparator.trim())
+            .replace(/(\d+(?:\.\d+)?)\s+%/g, '$1%')
+            .replace(/\s+/g, ' ')
+            .trim();
+    },
+
+    formatProductIdentity(parts) {
+        const seen = new Set();
+        return parts
+            .map((part) => this.normalizeDisplayText(part))
+            .filter((part) => {
+                if (!part) return false;
+                const key = part.toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .join(this.productIdentitySeparator);
+    },
+
     // 1. Lightweight Toast Notifications (Perfect for rapid feedback like logins/theme toggles)
     toast: {
         success(message) {
@@ -114,13 +143,11 @@ const PharmaUtils = {
                 }
 
                 if (!response.ok || data.status === 'error') {
-                    if (response.status === 401) {
-                        sessionStorage.removeItem('pharma_tab_token');
-                        if (!window.location.pathname.endsWith('/login.html')) {
-                            window.location.replace('login.html');
-                        }
-                    }
-                    throw new Error(data.message || `HTTP Error! Status: ${response.status}`);
+                    const error = new Error(data.message || `HTTP Error! Status: ${response.status}`);
+                    error.status = response.status;
+                    error.isAuthError = response.status === 401;
+                    error.isAuthorizationError = response.status === 403;
+                    throw error;
                 }
 
                 return data;

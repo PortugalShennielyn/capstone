@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=5"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Cashier Transaction History</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+        rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+        rel="stylesheet">
+<link href="./css/navbar.css?v=20"
+        rel="stylesheet">
+<link href="./css/cashier_workspace.css?v=6"
+        rel="stylesheet">
+
+    <script
+        src="./js/navbar.js?v=69"
+        defer
+    ></script>
+
+    <script
+        type="module"
+        src="./js/modules/auth_guard.js?v=27"
+    ></script>
+</head>
+
+<body data-cashier-page="completed">
+
+    <div id="navbar-container"></div>
+
+    <main class="main-wrapper" id="mainWrapper">
+
+        <header class="cashier-topbar">
+            <button
+                class="icon-btn"
+                id="sidebarToggle"
+                type="button"
+            >
+                <i class="fa-solid fa-bars"></i>
+            </button>
+
+            <span class="brand-tile">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+            </span>
+
+            <div class="title-wrap">
+                <strong>Cashier Transaction History</strong>
+                <span>View your completed transactions and reprint saved receipts.</span>
+            </div>
+        </header>
+        <section class="cashier-page">
+            <section class="panel">
+                <div class="panel-head">
+                    <div>
+                        <h1>Cashier Transaction History</h1>
+                        <p>
+                            View completed transactions and reprint saved cashier receipts.
+                        </p>
+                    </div>
+                </div>
+                <div class="search-row transaction-toolbar">
+                    <input
+                        id="cashierSearch"
+                        type="search"
+                        placeholder="Search receipt, order number, or customer"
+                    >
+                    <div class="date-range-wrap">
+                        <button class="filter-control date-range-button" id="dateRangeButton" type="button">
+                            <span id="dateRangeLabel">Date Range</span>
+                            <i class="fa-solid fa-calendar-days"></i>
+                        </button>
+                        <div class="date-range-popover" id="dateRangePopover" hidden>
+                            <div class="date-shortcuts" aria-label="Date range shortcuts">
+                                <button type="button" data-range-shortcut="today">Today</button>
+                                <button type="button" data-range-shortcut="yesterday">Yesterday</button>
+                                <button type="button" data-range-shortcut="last7">Last 7 Days</button>
+                                <button type="button" data-range-shortcut="month">This Month</button>
+                            </div>
+                            <div class="date-range-fields">
+                                <label>
+                                    <span>Start</span>
+                                    <input id="dateRangeStart" type="date">
+                                </label>
+                                <label>
+                                    <span>End</span>
+                                    <input id="dateRangeEnd" type="date">
+                                </label>
+                            </div>
+                            <div class="date-range-actions">
+                                <button class="secondary-action" id="dateRangeCancel" type="button">Cancel</button>
+                                <button class="action-link" id="dateRangeApply" type="button">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                    <select class="filter-control" id="paymentMethodFilter" aria-label="Payment method">
+                        <option value="">All Payment Methods</option>
+                    </select>
+                    <button class="secondary-action clear-filter-btn" id="clearCashierFilters" type="button">Clear</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="cashier-table">
+                        <colgroup id="reportColumns"></colgroup>
+                        <thead id="reportHead">
+                        </thead>
+                        <tbody id="reportRows">
+                            <tr class="empty-row">
+                                <td colspan="10">
+                                    Loading transactions...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-footer" id="reportPagination" hidden></div>
+            </section>
+        </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module"
+        src="./js/modules/cashier_workspace.js?v=6"
+    ></script>
+</body>
+</html>

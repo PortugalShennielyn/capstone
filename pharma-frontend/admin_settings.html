@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=5"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Admin Settings</title>
@@ -11,9 +13,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <link href="./css/navbar.css?v=20" rel="stylesheet">
+    <script src="./js/navbar.js?v=69" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 
     <style>
         :root {
@@ -795,6 +797,15 @@
             display: grid;
             grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
             gap: 18px;
+        }
+
+        body.manager-user-management-only .settings-shell {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        body.manager-user-management-only .settings-profile-card,
+        body.manager-user-management-only #editTenantIdentityBtn {
+            display: none !important;
         }
 
         .settings-profile-card {
@@ -3192,7 +3203,7 @@
                                             </div>
                                             <div class="admin-setting-item">
                                                 <span class="admin-setting-label">Low Stock Threshold</span>
-                                                <input class="admin-setting-control" type="number" value="10" min="0" aria-label="Low Stock Threshold">
+                                                <input class="admin-setting-control" type="number" value="30" min="0" aria-label="Low Stock Threshold">
                                             </div>
                                             <div class="admin-setting-item">
                                                 <span class="admin-setting-label">Critical Stock Threshold</span>
@@ -3232,8 +3243,8 @@
                                                 <label class="admin-switch" aria-label="Auto Generate PO Number"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Owner Approval Required</span>
-                                                <label class="admin-switch" aria-label="Owner Approval Required"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
+                                                <span class="admin-setting-label">CEO PR Approval Required</span>
+                                                <label class="admin-switch" aria-label="CEO PR Approval Required"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="admin-setting-item">
                                                 <span class="admin-setting-label">Allow PO Edit Before Approval</span>
@@ -3361,7 +3372,8 @@
                                                     <option value="">All Roles</option>
                                                     <option value="super_admin">Super Admin</option>
                                                     <option value="admin">Admin</option>
-                                                    <option value="manager">Manager / Owner</option>
+                                                    <option value="manager">Manager</option>
+                                                    <option value="supervisor">CEO</option>
                                                     <option value="cashier">Cashier</option>
                                                     <option value="salesclerk">Sales Clerk</option>
                                                 </select>
@@ -3389,6 +3401,26 @@
                                                         <tr><td colspan="7">Loading users...</td></tr>
                                                     </tbody>
                                                 </table>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <section class="admin-setting-card">
+                                        <header>
+                                            <h3>Goods Received Note Settings</h3>
+                                            <p>Names printed on the GRN header and final signature footer.</p>
+                                        </header>
+                                        <div class="general-settings-grid">
+                                            <label class="general-setting-field">
+                                                <span class="admin-setting-label">Received By Name</span>
+                                                <input class="admin-setting-control" id="grnReceivedByNameInput" type="text" maxlength="150" autocomplete="off" aria-label="Received By Name">
+                                            </label>
+                                            <label class="general-setting-field">
+                                                <span class="admin-setting-label">Approved By Name</span>
+                                                <input class="admin-setting-control" id="grnApprovedByNameInput" type="text" maxlength="150" autocomplete="off" aria-label="Approved By Name">
+                                            </label>
+                                            <div class="admin-setting-actions general-save-actions">
+                                                <button class="btn btn-purple" type="button" id="saveGrnSettingsBtn">Save GRN Settings</button>
                                             </div>
                                         </div>
                                     </section>
@@ -3426,7 +3458,7 @@
                                                 <label class="admin-switch" aria-label="Admin Backup"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="permission-row">
-                                                <span class="permission-cell role">Owner/Manager</span>
+                                                <span class="permission-cell role">Manager</span>
                                                 <label class="admin-switch" aria-label="Owner Manager Products"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                                 <label class="admin-switch" aria-label="Owner Manager Inventory"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                                 <label class="admin-switch" aria-label="Owner Manager PO"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
@@ -3437,6 +3469,19 @@
                                                 <label class="admin-switch" aria-label="Owner Manager Returns"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                                 <label class="admin-switch" aria-label="Owner Manager Stock Adjustment"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                                 <label class="admin-switch" aria-label="Owner Manager Backup"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
+                                            </div>
+                                            <div class="permission-row">
+                                                <span class="permission-cell role">CEO</span>
+                                                <label class="admin-switch" aria-label="CEO Products"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO Inventory Read Only"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO PO Processing"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO Sales"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO Reports"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO Settings"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO User Management"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO Returns Read Only"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO Stock Adjustment"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
+                                                <label class="admin-switch" aria-label="CEO Backup"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="permission-row">
                                                 <span class="permission-cell role">Sales Clerk</span>
@@ -3490,8 +3535,8 @@
                                                 <label class="admin-switch" aria-label="Expiry Alerts"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="admin-setting-item">
-                                                <span class="admin-setting-label">PO Approval Alerts</span>
-                                                <label class="admin-switch" aria-label="PO Approval Alerts"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
+                                                <span class="admin-setting-label">PR Approval Alerts</span>
+                                                <label class="admin-switch" aria-label="PR Approval Alerts"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="admin-setting-item">
                                                 <span class="admin-setting-label">PO Arrived Alerts</span>
@@ -3905,7 +3950,8 @@
                                     <option value="">Select role</option>
                                     <option value="super_admin">Super Admin</option>
                                     <option value="admin">Admin</option>
-                                    <option value="manager">Manager / Owner</option>
+                                    <option value="manager">Manager</option>
+                                    <option value="supervisor">CEO</option>
                                     <option value="cashier">Cashier</option>
                                     <option value="salesclerk">Sales Clerk</option>
                                 </select>
@@ -4023,7 +4069,14 @@
             positionClass: "toast-bottom-right",
             timeOut: "2600"
         };
-        (function setupOperationalSettings() {
+        (async function setupOperationalSettings() {
+            const authenticatedSession = window.__drpSession || await new Promise(resolve => {
+                window.addEventListener('pharma:session-ready', event => resolve(event.detail), { once: true });
+            });
+            if (authenticatedSession?.access_role === 'manager') {
+                return;
+            }
+
             const storageKey = 'drpAdminSettings';
             const apiBaseUrl = window.location.port
                 ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
@@ -4059,6 +4112,10 @@
                 security: {
                     sessionTimeoutMs: 1800000,
                     autoLogoutEnabled: true
+                },
+                grn: {
+                    receivedByName: '',
+                    approvedByName: ''
                 }
             };
             const profileFields = {
@@ -4072,6 +4129,11 @@
                 logo: document.getElementById('generalLogoUploadInput')
             };
             const saveGeneralInfoBtn = document.getElementById('saveGeneralInfoBtn');
+            const grnFields = {
+                receivedByName: document.getElementById('grnReceivedByNameInput'),
+                approvedByName: document.getElementById('grnApprovedByNameInput')
+            };
+            const saveGrnSettingsBtn = document.getElementById('saveGrnSettingsBtn');
             const businessDayTabs = document.getElementById('businessDayTabs');
             const businessDayEditor = document.getElementById('businessDayEditor');
             const weeklyOverviewBody = document.getElementById('weeklyScheduleOverviewBody');
@@ -4152,6 +4214,11 @@
                         ...defaults.profile,
                         ...(settings.profile || {}),
                         ...(data.profile || {})
+                    },
+                    grn: {
+                        ...defaults.grn,
+                        ...(settings.grn || {}),
+                        ...(data.grn || {})
                     },
                     businessSchedule: data.businessSchedule || settings.businessSchedule || defaults.businessSchedule,
                     businessExceptions: data.businessExceptions || settings.businessExceptions || {},
@@ -4828,6 +4895,25 @@
                 }
             }
 
+            async function saveGrnSettings() {
+                const settings = readSettings();
+                const grn = {
+                    receivedByName: grnFields.receivedByName?.value.trim() || '',
+                    approvedByName: grnFields.approvedByName?.value.trim() || ''
+                };
+                try {
+                    const data = await settingsRequest('save_grn_settings.php', {
+                        method: 'POST',
+                        body: JSON.stringify(grn)
+                    });
+                    settings.grn = { ...grn, ...(data.grn || {}) };
+                    writeSettings(settings);
+                    toastr.success('Goods Received Note settings saved.');
+                } catch (error) {
+                    toastr.error(error.message || 'Unable to save Goods Received Note settings.');
+                }
+            }
+
             function saveSecuritySettings() {
                 const settings = readSettings();
                 settings.security = {
@@ -4850,17 +4936,21 @@
                 const security = { ...defaults.security, ...(settings.security || {}) };
                 const businessSchedule = normalizeSchedule(settings);
                 const profile = profileFromSettings(settings);
+                const grn = { ...defaults.grn, ...(settings.grn || {}) };
                 businessExceptions = settings.businessExceptions || {};
                 nextBusinessException = settings.nextBusinessException || null;
                 if (sessionTimeoutSelect) sessionTimeoutSelect.value = String(security.sessionTimeoutMs);
                 if (autoLogoutToggle) autoLogoutToggle.checked = security.autoLogoutEnabled !== false;
                 applyProfile(profile, businessSchedule);
+                if (grnFields.receivedByName) grnFields.receivedByName.value = grn.receivedByName || '';
+                if (grnFields.approvedByName) grnFields.approvedByName.value = grn.approvedByName || '';
                 updateScheduleSummary(businessSchedule);
                 renderBusinessHours(businessSchedule);
-                writeSettings({ ...settings, profile, businessHours, businessSchedule, security });
+                writeSettings({ ...settings, profile, grn, businessHours, businessSchedule, security });
             }
 
             saveGeneralInfoBtn?.addEventListener('click', saveGeneralInfo);
+            saveGrnSettingsBtn?.addEventListener('click', saveGrnSettings);
             businessHoursTabButtons.forEach(button => {
                 button.addEventListener('click', () => {
                     activeBusinessHoursView = button.dataset.businessHoursTab === 'calendar' ? 'calendar' : 'weekly';
@@ -4901,11 +4991,12 @@
             const apiBaseUrl = window.location.port
                 ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
                 : "../pharma-api/v1";
-            const state = { users: [], editingUser: null };
+            const state = { users: [], editingUser: null, actorRole: '', assignableRoles: [] };
             const roleLabels = {
                 super_admin: 'Super Admin',
                 admin: 'Admin',
-                manager: 'Manager / Owner',
+                manager: 'Manager',
+                supervisor: 'CEO',
                 cashier: 'Cashier',
                 salesclerk: 'Sales Clerk'
             };
@@ -4965,6 +5056,47 @@
                 if (!target) return;
                 target.textContent = message;
                 target.classList.toggle('is-visible', Boolean(message));
+            }
+
+            function configureRoleOptions(permissions = {}) {
+                state.actorRole = permissions.actor_role || '';
+                state.assignableRoles = Array.isArray(permissions.assignable_roles)
+                    ? permissions.assignable_roles
+                    : Object.keys(roleLabels);
+
+                const roleOptions = ['<option value="">Select role</option>']
+                    .concat(state.assignableRoles.map(role => `<option value="${escapeHtml(role)}">${escapeHtml(roleLabels[role] || role)}</option>`));
+                if (els.roleInput) els.roleInput.innerHTML = roleOptions.join('');
+
+                if (state.actorRole !== 'manager') return;
+
+                document.body.classList.add('manager-user-management-only');
+                document.title = 'Dr. R Pharmacy | User Management';
+                const topbarTitle = document.querySelector('.page-title-mini strong');
+                const topbarSubtitle = document.querySelector('.page-title-mini span');
+                if (topbarTitle) topbarTitle.textContent = 'User Management';
+                if (topbarSubtitle) topbarSubtitle.textContent = 'Manage Cashier and Sales Clerk accounts';
+                const introTitle = document.querySelector('.admin-settings-intro h2');
+                const introText = document.querySelector('.admin-settings-intro p');
+                if (introTitle) introTitle.textContent = 'User Management';
+                if (introText) introText.textContent = 'Create and maintain Cashier and Sales Clerk accounts.';
+
+                document.querySelectorAll('[data-admin-section]').forEach(button => {
+                    button.classList.toggle('d-none', button.dataset.adminSection !== 'users');
+                });
+                document.querySelectorAll('.admin-settings-grid > .admin-setting-card').forEach(card => {
+                    const title = card.querySelector('h3')?.textContent?.trim();
+                    card.classList.toggle('d-none', title !== 'Users & Roles');
+                });
+                document.querySelector('[data-admin-section="users"]')?.click();
+
+                if (els.role) {
+                    els.role.innerHTML = [
+                        '<option value="">All Roles</option>',
+                        '<option value="cashier">Cashier</option>',
+                        '<option value="salesclerk">Sales Clerk</option>'
+                    ].join('');
+                }
             }
 
             async function userRequest(path, options = {}) {
@@ -5032,6 +5164,7 @@
                 try {
                     const data = await userRequest('fetch_users.php');
                     state.users = data.data?.users || [];
+                    configureRoleOptions(data.data?.permissions || {});
                     const summary = data.data?.summary || {};
                     if (els.total) els.total.textContent = summary.total_users ?? state.users.length;
                     if (els.active) els.active.textContent = summary.active_users ?? state.users.filter(user => user.status === 'Active').length;
@@ -5057,6 +5190,12 @@
                 els.statusInput.value = user?.status || 'Active';
                 els.email.value = user?.email || '';
                 els.contact.value = user?.contact_number || '';
+                const activeSupervisor = state.users.find(candidate => candidate.role === 'supervisor' && candidate.status === 'Active' && candidate.user_id !== user?.user_id);
+                const supervisorOption = els.roleInput?.querySelector('option[value="supervisor"]');
+                if (supervisorOption) {
+                    supervisorOption.disabled = Boolean(activeSupervisor);
+                    supervisorOption.textContent = activeSupervisor ? 'CEO (active account already exists)' : 'CEO';
+                }
                 document.querySelectorAll('.password-field').forEach(field => field.classList.toggle('d-none', Boolean(user)));
                 if (els.formTitle) els.formTitle.textContent = user ? 'Edit User' : 'Add User';
                 modals.form?.show();
@@ -5132,6 +5271,10 @@
                 if (!payload.full_name) return setError(els.error, 'Full Name is required.');
                 if (!payload.username) return setError(els.error, 'Username is required.');
                 if (!payload.role) return setError(els.error, 'Role is required.');
+                const anotherActiveSupervisor = state.users.some(user => user.role === 'supervisor' && user.status === 'Active' && user.user_id !== payload.user_id);
+                if (payload.role === 'supervisor' && payload.status === 'Active' && anotherActiveSupervisor) {
+                    return setError(els.error, 'Only one active CEO account is allowed.');
+                }
                 if (!isEdit && payload.password !== payload.confirm_password) return setError(els.error, 'Password and Confirm Password must match.');
                 try {
                     await userRequest(isEdit ? 'update_user.php' : 'add_user.php', {
@@ -5167,7 +5310,22 @@
                 }
             });
 
-            loadUsers();
+            function handleUserManagementUrlAction() {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('section') !== 'users') return;
+
+                document.querySelector('[data-admin-section="users"]')?.click();
+                document.querySelector('.user-management-card')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+
+                if (params.get('action') === 'add') {
+                    window.setTimeout(() => openUserForm(), 250);
+                }
+            }
+
+            loadUsers().then(handleUserManagementUrlAction);
         })();
         (function setupAdminSettingsSections() {
             const buttons = Array.from(document.querySelectorAll('[data-admin-section]'));
@@ -5179,6 +5337,7 @@
                 'Business Hours': 'business-hours',
                 'Inventory': 'inventory',
                 'Purchase Orders': 'purchase-orders',
+                'Goods Received Note Settings': 'purchase-orders',
                 'Sales': 'sales',
                 'Receipt Settings': 'receipt',
                 'Users & Roles': 'users',
@@ -5216,7 +5375,8 @@
                 button.addEventListener('click', () => activate(button.dataset.adminSection));
             });
 
-            activate('general');
+            const params = new URLSearchParams(window.location.search);
+            activate(params.get('section') === 'users' ? 'users' : 'general');
         })();
         (function setupAdminSettingsActionModals() {
             const actionModalEl = document.getElementById('settingsActionModal');

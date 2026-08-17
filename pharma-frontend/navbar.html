@@ -19,9 +19,13 @@
                 <i class="fa-solid fa-boxes"></i>
                 <span class="nav-label">Products</span>
             </a>
-            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" data-dashboard-view="dashboard/inventory" title="Inventory">
+            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" data-dashboard-view="dashboard/inventory" title="Storage Inventory">
                 <i class="fa-solid fa-warehouse"></i>
-                <span class="nav-label">Inventory</span>
+                <span class="nav-label">Storage Inventory</span>
+            </a>
+            <a href="shelf_inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="shelf-inventory" title="Shelf Inventory">
+                <i class="fa-solid fa-store"></i>
+                <span class="nav-label">Shelf Inventory</span>
             </a>
             <a href="supplier.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supplier" data-dashboard-view="dashboard/suppliers" title="Suppliers">
                 <i class="fa-solid fa-handshake-simple"></i>
@@ -35,29 +39,25 @@
             <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
         </a>
         <div class="collapse" id="salesTransactionsCollapse">
-            <a href="sales_clerk_pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-clerk-pos" data-dashboard-view="dashboard/sales-clerk-pos" title="Sales Clerk Transaction / POS">
+            <a href="sales_clerk_pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-clerk-pos" data-dashboard-view="dashboard/sales-clerk-pos" title="Sales Clerk POS">
                 <i class="fa-solid fa-cash-register"></i>
-                <span class="nav-label">Sales Clerk Transaction / POS</span>
+                <span class="nav-label">Sales Clerk POS</span>
             </a>
-            <a href="sales_clerk_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-clerk-orders" data-dashboard-view="dashboard/sales-clerk-orders" title="Sales Clerk Orders">
+            <a href="sales_clerk_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-clerk-orders" data-dashboard-view="dashboard/sales-clerk-orders" title="My Orders">
                 <i class="fa-solid fa-clipboard-list"></i>
-                <span class="nav-label">Sales Clerk Orders</span>
+                <span class="nav-label">Clerk Transactions</span>
             </a>
-            <a href="sales_clerk_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-clerk-history" data-dashboard-view="dashboard/sales-clerk-history" title="Transaction History">
+            <a href="cashier_pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cashier-pos" data-dashboard-view="dashboard/cashier-pos" title="Cashier POS">
+                <i class="fa-solid fa-hand-holding-dollar"></i>
+                <span class="nav-label">Cashier POS</span>
+            </a>
+            <a href="cashier_transaction_history.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cashier-history" data-dashboard-view="dashboard/cashier-history" title="Cashier Transaction History">
                 <i class="fa-solid fa-clock-rotate-left"></i>
-                <span class="nav-label">Transaction History</span>
+                <span class="nav-label">Cashier Transaction </span>
             </a>
-            <a href="cashier_queue.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cashier-queue" data-dashboard-view="dashboard/cashier-queue" title="Cashier Queue">
-                <i class="fa-solid fa-receipt"></i>
-                <span class="nav-label">Cashier Queue</span>
-            </a>
-            <a href="completed_sales.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="completed-sales" data-dashboard-view="dashboard/completed-sales" title="Completed Sales">
-                <i class="fa-solid fa-circle-check"></i>
-                <span class="nav-label">Completed Sales</span>
-            </a>
-            <a href="cancelled_sales.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cancelled-sales" data-dashboard-view="dashboard/cancelled-sales" title="Cancelled Sales">
-                <i class="fa-solid fa-ban"></i>
-                <span class="nav-label">Cancelled Sales</span>
+            <a href="cashier_shift_summary.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cashier-shift" data-dashboard-view="dashboard/cashier-shift" title="Shift Summary">
+                <i class="fa-solid fa-calendar-day"></i>
+                <span class="nav-label">Shift Summary</span>
             </a>
             <a href="sales_history.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-history" data-dashboard-view="dashboard/sales-history" title="Sales History">
                 <i class="fa-solid fa-user-tie"></i>
@@ -71,9 +71,21 @@
             <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
         </a>
         <div class="collapse" id="purchaseOrdersCollapse">
+            <a href="purchase_requests.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="purchase-requests" data-dashboard-view="dashboard/purchase-requests" title="Purchase Requests">
+                <i class="fa-solid fa-file-circle-plus"></i>
+                <span class="nav-label">Purchase Requests</span>
+            </a>
             <a href="purchase_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="purchase-orders" data-dashboard-view="dashboard/purchase-orders" title="Purchase Orders">
                 <i class="fa-solid fa-list-check"></i>
                 <span class="nav-label">Purchase Orders</span>
+            </a>
+            <a href="inspect_deliveries.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inspect-deliveries" data-dashboard-view="dashboard/inspect-deliveries" title="Inspect Deliveries">
+                <i class="fa-solid fa-boxes-packing"></i>
+                <span class="nav-label">Inspect Deliveries</span>
+            </a>
+            <a href="supervisor_approval.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supervisor-approval" data-dashboard-view="dashboard/supervisor-approval" title="CEO PR Approvals">
+                <i class="fa-solid fa-clipboard-check"></i>
+                <span class="nav-label">PR Approvals</span>
             </a>
         </div>
 
@@ -90,6 +102,10 @@
             <a href="expiry_monitoring.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="expiry-monitoring" data-dashboard-view="dashboard/expiry-monitoring" title="Expiry Monitoring">
                 <i class="fa-solid fa-hourglass-half"></i>
                 <span class="nav-label">Expiry Monitoring</span>
+            </a>
+            <a href="reports.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="reports" data-dashboard-view="dashboard/reports" title="Reports">
+                <i class="fa-solid fa-chart-column"></i>
+                <span class="nav-label">Reports</span>
             </a>
         </div>
 
@@ -108,18 +124,18 @@
 
     <div class="sidebar-profile-footer" role="group" aria-label="User profile">
         <button class="sidebar-user-trigger" type="button" id="sidebarUserMenuButton" aria-expanded="false" aria-controls="sidebarUserPopover" title="User actions">
-            <div class="avatar-initials">DA</div>
-            <span class="profile-name">Dr. ADMIN</span>
+            <div class="avatar-initials" data-navbar-initials></div>
+            <span class="profile-name" data-navbar-display-name></span>
         </button>
         <button class="signout-btn sidebar-user-menu-toggle" type="button" aria-label="Open user actions" title="User actions">
             <i class="fa-solid fa-ellipsis-vertical"></i>
         </button>
         <div class="sidebar-user-popover" id="sidebarUserPopover" role="menu" aria-labelledby="sidebarUserMenuButton">
             <div class="sidebar-user-summary">
-                <div class="avatar-initials">DA</div>
+                <div class="avatar-initials" data-navbar-initials></div>
                 <div>
-                    <strong>Dr. ADMIN</strong>
-                    <span>Admin account</span>
+                    <strong data-navbar-display-name></strong>
+                    <span data-navbar-role-label></span>
                 </div>
             </div>
             <a href="dashboard.html#dashboard/user/settings" class="sidebar-user-action" data-nav-page="user-settings" data-dashboard-view="dashboard/user/settings" role="menuitem">

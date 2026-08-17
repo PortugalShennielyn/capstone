@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="light">
 <head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=7"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Return/Damage</title>
@@ -11,9 +13,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=15" rel="stylesheet">
-    <script src="./js/navbar.js?v=35" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=8"></script>
+    <link href="./css/navbar.css?v=20" rel="stylesheet">
+    <script src="./js/navbar.js?v=72" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 
     <style>
         :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
@@ -63,6 +65,13 @@
         .detail-box strong { display:block; margin-top:4px; color:var(--text-main); font-size:.95rem; font-weight:800; }
         body.dark-mode .return-table th { background:#202b3d; color:#cbd5e1; }
         body.dark-mode .detail-box { background:#182131; }
+        .replacement-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+        .replacement-summary > div { padding:11px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
+        .replacement-summary span { display:block; color:#7b8494; font-size:.72rem; font-weight:800; text-transform:uppercase; }
+        .replacement-summary strong { display:block; margin-top:3px; overflow-wrap:anywhere; }
+        .replacement-batch-row { display:grid; grid-template-columns:1fr .6fr .8fr auto; gap:8px; align-items:end; margin-top:8px; }
+        body.dark-mode .replacement-summary > div { background:#182131; }
+        @media (max-width:767px) { .replacement-summary { grid-template-columns:1fr 1fr; } .replacement-batch-row { grid-template-columns:1fr 1fr; } }
         @media (max-width:991.98px) { .page-body { padding:20px 14px; } .workspace { max-width:100%; padding-inline:0; } }
     </style>
 </head>
@@ -100,9 +109,7 @@
                             <h1 class="section-title mb-1">Return/Damage Records</h1>
                             <p class="text-muted small mb-0">Review damaged and returned items without adding them to inventory.</p>
                         </div>
-                        <button class="btn btn-purple" type="button" id="btnRefreshReturnDamage">
-                            <i class="fa-solid fa-rotate me-2"></i>Refresh
-                        </button>
+                        <div class="d-flex gap-2"><button class="btn btn-purple" type="button" id="btnNewSupplierClaim"><i class="fa-solid fa-plus me-2"></i>Report Damage</button><button class="btn btn-outline-secondary" type="button" id="btnRefreshReturnDamage"><i class="fa-solid fa-rotate me-2"></i>Refresh</button></div>
                     </div>
                     <div class="table-responsive">
                         <table id="table-return-damage" class="table table-hover align-middle return-table">
@@ -147,8 +154,36 @@
                     <div id="viewReturnDamageDetails" class="detail-grid"></div>
                 </div>
                 <div class="modal-footer">
+                    <button id="btnOpenReplacementArrival" class="btn btn-purple me-auto d-none" type="button"><i class="fa-solid fa-truck-ramp-box me-1"></i>Record Replacement Arrival</button>
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="replacementArrivalModal" tabindex="-1" aria-labelledby="replacementArrivalModalLabel" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div><h2 class="modal-title fs-5 fw-bold" id="replacementArrivalModalLabel">Record Replacement Arrival</h2><p id="replacementArrivalSubtitle" class="text-muted small mb-0 mt-1"></p></div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="replacement-summary">
+                        <div><span>Original PO</span><strong id="replacementPoNumber">-</strong></div>
+                        <div><span>Supplier</span><strong id="replacementSupplier">-</strong></div>
+                        <div><span>Product</span><strong id="replacementProduct">-</strong></div>
+                        <div><span>Outstanding Qty</span><strong id="replacementOutstanding">0</strong></div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4"><label class="form-label fw-semibold" for="replacementDeliveredQty">Replacement Delivered Qty</label><input id="replacementDeliveredQty" class="form-control" type="number" min="1" step="1"></div>
+                        <div class="col-md-4"><label class="form-label fw-semibold" for="replacementDamagedQty">Damaged Qty</label><input id="replacementDamagedQty" class="form-control" type="number" min="0" step="1" value="0"></div>
+                        <div class="col-md-4"><label class="form-label fw-semibold">Good Qty</label><div id="replacementGoodQty" class="form-control bg-light">0</div></div>
+                        <div id="replacementIssueWrap" class="col-12 d-none"><div class="row g-3"><div class="col-md-5"><label class="form-label fw-semibold" for="replacementIssueType">Issue Type</label><select id="replacementIssueType" class="form-select"><option value="">Select issue...</option><option>Expired</option><option>Broken package</option><option>Wrong item delivered</option><option>Incorrect quantity</option><option>Damaged during delivery</option><option>Other</option></select></div><div class="col-md-7"><label class="form-label fw-semibold" for="replacementRemarks">Remarks</label><textarea id="replacementRemarks" class="form-control" rows="2"></textarea></div></div></div>
+                        <div class="col-12"><div class="d-flex justify-content-between align-items-center"><div><strong>Accepted Replacement Batches</strong><div id="replacementAllocationState" class="text-muted small">Allocated 0 of 0</div></div><button id="btnAddReplacementBatch" class="btn btn-sm btn-outline-primary" type="button"><i class="fa-solid fa-plus me-1"></i>Add Batch</button></div><div id="replacementBatchList"></div></div>
+                    </div>
+                </div>
+                <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button id="btnSaveReplacementArrival" class="btn btn-purple" type="button">Save Replacement Arrival</button></div>
             </div>
         </div>
     </div>
@@ -182,6 +217,8 @@
                                 <option value="Other">Other</option>
                             </select>
                         </div>
+                        <div class="col-md-6"><label class="form-label fw-semibold" for="edit-claim-disposition">Physical Disposition</label><select id="edit-claim-disposition" class="form-select"><option>Hold/Quarantine</option><option>Return to Supplier</option><option>Dispose</option></select></div>
+                        <div class="col-md-6"><label class="form-label fw-semibold" for="edit-claim-resolution">Supplier Resolution</label><select id="edit-claim-resolution" class="form-select"><option value="">Awaiting Supplier Decision</option><option>Replacement</option><option>Current PO Credit</option><option>Next PO Credit</option></select></div>
                         <div class="col-12">
                             <label class="form-label fw-semibold" for="edit-return-remarks">Remarks</label>
                             <textarea id="edit-return-remarks" class="form-control" rows="4"></textarea>
@@ -196,13 +233,29 @@
         </div>
     </div>
 
+    <div class="modal fade" id="newSupplierClaimModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+            <div class="modal-header"><div><h2 class="modal-title fs-5 fw-bold">Report Damage After Delivery</h2><p class="text-muted small mb-0 mt-1">Select the original inventory batch and affected package level.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-body"><div class="row g-3">
+                <div class="col-12"><label class="form-label fw-semibold" for="claimSourceBatch">Original PO Item / Batch</label><select id="claimSourceBatch" class="form-select"><option value="">Select delivered stock...</option></select><div id="claimSourceAvailability" class="form-text"></div></div>
+                <div class="col-md-4"><label class="form-label fw-semibold" for="claimAffectedQuantity">Affected Quantity</label><input id="claimAffectedQuantity" class="form-control" type="number" min="1" step="1" value="1"></div>
+                <div class="col-md-4"><label class="form-label fw-semibold" for="claimUnitConversion">Package Level</label><select id="claimUnitConversion" class="form-select"></select></div>
+                <div class="col-md-4"><label class="form-label fw-semibold" for="claimDamageReason">Damage Reason</label><select id="claimDamageReason" class="form-select"><option>Expired</option><option>Broken package</option><option>Wrong item delivered</option><option>Incorrect quantity</option><option>Damaged during delivery</option><option>Other</option></select></div>
+                <div class="col-md-6"><label class="form-label fw-semibold" for="claimDisposition">Physical Disposition</label><select id="claimDisposition" class="form-select"><option>Hold/Quarantine</option><option>Return to Supplier</option><option>Dispose</option></select></div>
+                <div class="col-md-6"><label class="form-label fw-semibold" for="claimResolution">Supplier Resolution</label><select id="claimResolution" class="form-select"><option value="">Awaiting Supplier Decision</option><option>Replacement</option><option>Current PO Credit</option><option>Next PO Credit</option></select></div>
+                <div class="col-12"><label class="form-label fw-semibold" for="claimRemarks">Remarks</label><textarea id="claimRemarks" class="form-control" rows="3"></textarea></div>
+            </div></div>
+            <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button id="btnSaveSupplierClaim" class="btn btn-purple" type="button">Save Claim</button></div>
+        </div></div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/return_damage.js?v=4"></script>
+    <script type="module" src="./js/modules/return_damage.js?v=6"></script>
     <script type="module">
-        import verifySession from './js/modules/auth.js';
+        import verifySession from './js/modules/auth.js?v=8';
         await verifySession();
     </script>
 </body>

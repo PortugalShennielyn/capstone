@@ -15,6 +15,7 @@ const REASON_META = {
 };
 
 let activeReturnDamage = null;
+let supplierClaimSources = [];
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -50,7 +51,8 @@ function setTheme(theme) {
 
 function statusBadge(record) {
     const status = record.return_status || record.purchase_order_status || 'Open';
-    const color = status === 'Resolved' ? '#16a34a' : '#ef4444';
+    const color = ['Resolved', 'Replacement received', 'Replacement Received / Resolved'].includes(status) ? '#16a34a'
+        : (status === 'Cancelled' ? '#64748b' : (['Replacement partially received', 'Replacement Partially Received'].includes(status) ? '#2563eb' : '#f97316'));
     return `<span class="badge text-white" style="background:${color}">${escapeHtml(status)}</span>`;
 }
 
@@ -122,6 +124,53 @@ async function loadReturnDamageRecords() {
     }
 }
 
+function renderClaimSourceSelection() {
+    const sourceSelect = document.getElementById('claimSourceBatch');
+    if (!sourceSelect) return;
+    sourceSelect.innerHTML = '<option value="">Select delivered stock...</option>' + supplierClaimSources.map((source, index) => `<option value="${index}">${escapeHtml(source.po_number)} · ${escapeHtml([source.brand_name, source.product_name].filter(Boolean).join(' — '))} · Batch ${escapeHtml(source.batch_number)} · ${Number(source.usable_quantity)} usable</option>`).join('');
+    document.getElementById('claimUnitConversion').innerHTML = '';
+    document.getElementById('claimSourceAvailability').textContent = '';
+}
+
+function updateClaimSource() {
+    const selectedIndex = document.getElementById('claimSourceBatch')?.value ?? '';
+    const source = selectedIndex === '' ? null : supplierClaimSources[Number(selectedIndex)];
+    const conversionSelect = document.getElementById('claimUnitConversion');
+    if (!source || !conversionSelect) { if (conversionSelect) conversionSelect.innerHTML = ''; return; }
+    conversionSelect.innerHTML = (source.package_conversions || []).map((conversion) => `<option value="${escapeHtml(conversion.conversion_id)}" data-base-quantity="${Number(conversion.base_quantity || 1)}">${escapeHtml(conversion.unit_name)} (${Number(conversion.base_quantity || 1)} base units)</option>`).join('');
+    document.getElementById('claimSourceAvailability').textContent = `${source.usable_quantity} usable base units: ${source.storage_qty} storage, ${source.shelf_qty} shelf.`;
+}
+
+async function openNewSupplierClaim() {
+    try {
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_supplier_claim_sources.php`);
+        supplierClaimSources = data.sources || [];
+        renderClaimSourceSelection();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('newSupplierClaimModal')).show();
+    } catch (error) { PharmaUtils.toast.error(error.message); }
+}
+
+async function saveNewSupplierClaim() {
+    const selectedIndex = document.getElementById('claimSourceBatch')?.value ?? '';
+    const source = selectedIndex === '' ? null : supplierClaimSources[Number(selectedIndex)];
+    const quantity = Number(document.getElementById('claimAffectedQuantity')?.value || 0);
+    const conversionSelect = document.getElementById('claimUnitConversion');
+    const baseQuantity = Number(conversionSelect?.selectedOptions?.[0]?.dataset.baseQuantity || 0);
+    if (!source) return PharmaUtils.toast.error('Select the original delivered batch.');
+    if (!Number.isInteger(quantity) || quantity <= 0) return PharmaUtils.toast.error('Affected quantity must be a positive whole number.');
+    if (!conversionSelect?.value || quantity * baseQuantity > Number(source.usable_quantity)) return PharmaUtils.toast.error('Affected package quantity exceeds usable stock in this batch.');
+    const button = document.getElementById('btnSaveSupplierClaim');
+    try {
+        button.disabled = true;
+        const payload = { po_id: source.po_id, returns: [{ po_item_id: source.po_item_id, inventory_batch_id: source.inventory_batch_id, affected_quantity: quantity, unit_conversion_id: conversionSelect.value, damage_reason: document.getElementById('claimDamageReason').value, disposition: document.getElementById('claimDisposition').value, resolution_type: document.getElementById('claimResolution').value, remarks: document.getElementById('claimRemarks').value.trim() }] };
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/save_purchase_order_return.php`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+        bootstrap.Modal.getInstance(document.getElementById('newSupplierClaimModal'))?.hide();
+        PharmaUtils.toast.success(data.message);
+        await loadReturnDamageRecords();
+    } catch (error) { PharmaUtils.modal.error('Failed to save supplier claim', error.message); }
+    finally { button.disabled = false; }
+}
+
 function detailGrid(record) {
     const isMedicine = record.category_name === 'Medicine';
     const isLiquid = /\b(liquid|syrup|solution|suspension|drops|betadine|povidone)\b/.test(
@@ -135,6 +184,11 @@ function detailGrid(record) {
         ? `${record.weight_volume_value} ${record.weight_volume_unit || ''}`.trim()
         : 'N/A';
 
+    const resolutionLabels = {
+        return_for_credit: 'Return for supplier credit', return_for_replacement: 'Return for replacement',
+        keep_with_discount: 'Keep with supplier discount', keep_damaged: 'Keep as damaged stock',
+        reject_without_replacement: 'Reject without replacement', replacement_damage_event: 'Replacement arrived damaged'
+    };
     return `
         <div class="detail-box"><span>Date</span><strong>${formatDate(record.return_date)}</strong></div>
         <div class="detail-box"><span>PO Number</span><strong>${escapeHtml(record.po_number)}</strong></div>
@@ -148,8 +202,12 @@ function detailGrid(record) {
         <div class="detail-box"><span>Ordered Quantity</span><strong>${escapeHtml(record.ordered_quantity)}</strong></div>
         <div class="detail-box"><span>Received Quantity</span><strong>${escapeHtml(record.received_quantity)}</strong></div>
         <div class="detail-box"><span>Damaged Quantity</span><strong>${escapeHtml(record.damaged_quantity)}</strong></div>
+        ${record.affected_unit_name ? `<div class="detail-box"><span>Affected Package Level</span><strong>${escapeHtml(record.affected_quantity)} ${escapeHtml(record.affected_unit_name)}</strong></div>` : ''}
         <div class="detail-box"><span>Return Quantity</span><strong>${escapeHtml(record.return_quantity)}</strong></div>
         <div class="detail-box"><span>Damage Reason</span><strong>${escapeHtml(record.damage_reason)}</strong></div>
+        ${record.resolution ? `<div class="detail-box"><span>Resolution</span><strong>${escapeHtml(resolutionLabels[record.resolution] || record.resolution)}</strong></div>` : ''}
+        ${Number(record.supplier_adjustment || 0) > 0 ? `<div class="detail-box"><span>Supplier Adjustment</span><strong>₱${Number(record.supplier_adjustment).toFixed(2)}</strong></div>` : ''}
+        ${Number(record.replacement_expected_qty || 0) > 0 ? `<div class="detail-box"><span>Replacement Progress</span><strong>${escapeHtml(record.replacement_received_qty)} of ${escapeHtml(record.replacement_expected_qty)} received · ${escapeHtml(record.replacement_outstanding_qty)} outstanding</strong></div>` : ''}
         <div class="detail-box"><span>Remarks</span><strong>${escapeHtml(record.remarks || 'None')}</strong></div>
         <div class="detail-box"><span>Status</span><strong>${escapeHtml(record.return_status || record.purchase_order_status || 'Open')}</strong></div>
     `;
@@ -163,8 +221,10 @@ async function getReturnDamageDetails(returnId) {
 async function openViewModal(returnId) {
     try {
         const record = await getReturnDamageDetails(returnId);
+        activeReturnDamage = record;
         document.getElementById('viewReturnDamageSubtitle').textContent = `${record.po_number} · ${record.supplier_name}`;
         document.getElementById('viewReturnDamageDetails').innerHTML = detailGrid(record);
+        document.getElementById('btnOpenReplacementArrival')?.classList.toggle('d-none', record.resolution !== 'return_for_replacement' || Number(record.replacement_outstanding_qty || 0) <= 0);
         bootstrap.Modal.getOrCreateInstance(document.getElementById('viewReturnDamageModal')).show();
     } catch (error) {
         PharmaUtils.toast.error(error.message);
@@ -179,6 +239,8 @@ async function openEditModal(returnId) {
         document.getElementById('editReturnDamageDetails').innerHTML = detailGrid(activeReturnDamage);
         document.getElementById('edit-return-quantity').value = activeReturnDamage.return_quantity || 1;
         document.getElementById('edit-damage-reason').value = activeReturnDamage.damage_reason || 'Other';
+        document.getElementById('edit-claim-disposition').value = activeReturnDamage.disposition || 'Hold/Quarantine';
+        document.getElementById('edit-claim-resolution').value = activeReturnDamage.resolution_type || '';
         document.getElementById('edit-return-remarks').value = activeReturnDamage.remarks || '';
         bootstrap.Modal.getOrCreateInstance(document.getElementById('editReturnDamageModal')).show();
     } catch (error) {
@@ -193,6 +255,8 @@ async function saveReturnDamageEdit() {
             return_id: returnId,
             return_quantity: Number(document.getElementById('edit-return-quantity')?.value || 0),
             damage_reason: document.getElementById('edit-damage-reason')?.value || '',
+            disposition: document.getElementById('edit-claim-disposition')?.value || '',
+            resolution_type: document.getElementById('edit-claim-resolution')?.value || '',
             remarks: document.getElementById('edit-return-remarks')?.value || ''
         };
 
@@ -243,6 +307,74 @@ async function markResolved(returnId) {
     }
 }
 
+function replacementBatchRow(batch = {}) {
+    const requiresExpiry = String(activeReturnDamage?.category_name || '').toLowerCase() === 'medicine';
+    const noExpiry = !requiresExpiry && !batch.expiry_date;
+    return `<div class="replacement-batch-row">
+        <div><label class="form-label small fw-semibold">Batch Identifier</label><input class="form-control form-control-sm replacement-batch-id" maxlength="50" value="${escapeHtml(batch.batch_identifier || '')}" placeholder="Optional"></div>
+        <div><label class="form-label small fw-semibold">Good Qty</label><input class="form-control form-control-sm replacement-batch-qty" type="number" min="1" step="1" value="${escapeHtml(batch.quantity || '')}"></div>
+        <div><label class="form-label small fw-semibold">Expiry Date${requiresExpiry ? ' *' : ''}</label><input class="form-control form-control-sm replacement-batch-expiry" type="date" value="${escapeHtml(batch.expiry_date || '')}" ${noExpiry ? 'disabled' : ''}>${requiresExpiry ? '' : `<label class="small mt-1"><input class="form-check-input replacement-no-expiry" type="checkbox" ${noExpiry ? 'checked' : ''}> No Expiry</label>`}</div>
+        <button class="btn btn-sm btn-outline-danger replacement-remove-batch" type="button" title="Remove batch"><i class="fa-solid fa-trash"></i></button>
+    </div>`;
+}
+
+function replacementFormState() {
+    const outstanding = Number(activeReturnDamage?.replacement_outstanding_qty || 0);
+    const delivered = Number(document.getElementById('replacementDeliveredQty')?.value || 0);
+    const damaged = Number(document.getElementById('replacementDamagedQty')?.value || 0);
+    const good = Math.max(0, delivered - damaged);
+    const batches = [];
+    let allocated = 0;
+    document.querySelectorAll('#replacementBatchList .replacement-batch-row').forEach((row) => {
+        const quantity = Number(row.querySelector('.replacement-batch-qty')?.value || 0);
+        allocated += Number.isFinite(quantity) ? Math.max(0, quantity) : 0;
+        batches.push({ batch_identifier: row.querySelector('.replacement-batch-id')?.value.trim() || '', quantity, expiry_date: row.querySelector('.replacement-batch-expiry')?.value || '', no_expiry: row.querySelector('.replacement-no-expiry')?.checked === true });
+    });
+    document.getElementById('replacementGoodQty').textContent = String(good);
+    document.getElementById('replacementIssueWrap')?.classList.toggle('d-none', damaged <= 0);
+    document.getElementById('replacementAllocationState').textContent = `Allocated ${allocated} of ${good} · ${Math.max(0, outstanding - good)} outstanding after acceptance`;
+    return { return_id: activeReturnDamage?.return_id, delivered_quantity: delivered, damaged_quantity: damaged, issue_type: document.getElementById('replacementIssueType')?.value || '', remarks: document.getElementById('replacementRemarks')?.value.trim() || '', batches, good, allocated, outstanding };
+}
+
+function openReplacementArrival() {
+    if (!activeReturnDamage) return;
+    bootstrap.Modal.getInstance(document.getElementById('viewReturnDamageModal'))?.hide();
+    document.getElementById('replacementPoNumber').textContent = activeReturnDamage.po_number;
+    document.getElementById('replacementSupplier').textContent = activeReturnDamage.supplier_name;
+    document.getElementById('replacementProduct').textContent = [activeReturnDamage.brand_name, activeReturnDamage.product_name].filter(Boolean).join(' — ');
+    document.getElementById('replacementOutstanding').textContent = String(activeReturnDamage.replacement_outstanding_qty || 0);
+    document.getElementById('replacementArrivalSubtitle').textContent = `${activeReturnDamage.po_number} · ${activeReturnDamage.supplier_name}`;
+    document.getElementById('replacementDeliveredQty').value = activeReturnDamage.replacement_outstanding_qty || 0;
+    document.getElementById('replacementDamagedQty').value = '0';
+    document.getElementById('replacementIssueType').value = '';
+    document.getElementById('replacementRemarks').value = '';
+    document.getElementById('replacementBatchList').innerHTML = replacementBatchRow({ quantity: activeReturnDamage.replacement_outstanding_qty || 0 });
+    replacementFormState();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('replacementArrivalModal')).show();
+}
+
+async function saveReplacementArrival() {
+    const payload = replacementFormState();
+    if (!Number.isInteger(payload.delivered_quantity) || payload.delivered_quantity <= 0 || payload.delivered_quantity > payload.outstanding) return PharmaUtils.toast.error('Replacement delivered quantity must be within the outstanding quantity.');
+    if (!Number.isInteger(payload.damaged_quantity) || payload.damaged_quantity < 0 || payload.damaged_quantity > payload.delivered_quantity) return PharmaUtils.toast.error('Damaged quantity is invalid.');
+    if (payload.allocated !== payload.good) return PharmaUtils.toast.error('Batch quantities must equal the accepted good quantity.');
+    if (payload.damaged_quantity > 0 && (!payload.issue_type || !payload.remarks)) return PharmaUtils.toast.error('Issue type and remarks are required for damaged replacement stock.');
+    const button = document.getElementById('btnSaveReplacementArrival');
+    try {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/record_replacement_arrival.php`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        bootstrap.Modal.getInstance(document.getElementById('replacementArrivalModal'))?.hide();
+        PharmaUtils.toast.success(data.message);
+        await loadReturnDamageRecords();
+    } catch (error) {
+        PharmaUtils.modal.error('Failed to record replacement arrival', error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Save Replacement Arrival';
+    }
+}
+
 function initReturnDamage() {
     setTheme(localStorage.getItem('drpTheme') || 'light');
 
@@ -250,7 +382,28 @@ function initReturnDamage() {
         setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
     });
     document.getElementById('btnRefreshReturnDamage')?.addEventListener('click', loadReturnDamageRecords);
+    document.getElementById('btnNewSupplierClaim')?.addEventListener('click', openNewSupplierClaim);
+    document.getElementById('claimSourceBatch')?.addEventListener('change', updateClaimSource);
+    document.getElementById('btnSaveSupplierClaim')?.addEventListener('click', saveNewSupplierClaim);
     document.getElementById('btnSaveReturnDamageEdit')?.addEventListener('click', saveReturnDamageEdit);
+    document.getElementById('btnOpenReplacementArrival')?.addEventListener('click', openReplacementArrival);
+    document.getElementById('btnSaveReplacementArrival')?.addEventListener('click', saveReplacementArrival);
+    document.getElementById('btnAddReplacementBatch')?.addEventListener('click', () => {
+        document.getElementById('replacementBatchList')?.insertAdjacentHTML('beforeend', replacementBatchRow());
+        replacementFormState();
+    });
+    document.getElementById('replacementArrivalModal')?.addEventListener('input', replacementFormState);
+    document.getElementById('replacementArrivalModal')?.addEventListener('change', (event) => {
+        if (event.target.matches('.replacement-no-expiry')) {
+            const expiry = event.target.closest('.replacement-batch-row')?.querySelector('.replacement-batch-expiry');
+            if (expiry) { expiry.disabled = event.target.checked; if (event.target.checked) expiry.value = ''; }
+        }
+        replacementFormState();
+    });
+    document.getElementById('replacementBatchList')?.addEventListener('click', (event) => {
+        event.target.closest('.replacement-remove-batch')?.closest('.replacement-batch-row')?.remove();
+        replacementFormState();
+    });
     document.getElementById('table-return-damage')?.addEventListener('click', (event) => {
         const viewButton = event.target.closest('.view-return-btn');
         const editButton = event.target.closest('.edit-return-btn');

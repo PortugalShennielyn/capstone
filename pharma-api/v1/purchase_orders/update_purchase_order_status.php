@@ -18,6 +18,7 @@ if (!is_array($payload)) {
 
 try {
     ensurePurchaseOrderSchema($pdo);
+    ensureActivityLogSchema($pdo);
 
     $poId = cleanId($payload['po_id'] ?? null);
     $status = trim((string) ($payload['status'] ?? ''));
@@ -48,10 +49,6 @@ try {
 
     if (!in_array($status, $allowedTransitions[$currentStatus] ?? [], true)) {
         throw new InvalidArgumentException('Invalid purchase order status transition.');
-    }
-
-    if ($status !== 'Cancelled' && $approvalStatus !== 'Approved') {
-        throw new InvalidArgumentException('Owner approval is required before this purchase order can move forward.');
     }
 
     if ($status === 'Cancelled') {

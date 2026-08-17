@@ -3,6 +3,10 @@ require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 
+http_response_code(410);
+echo json_encode(['status' => 'error', 'message' => 'Purchase Order revision approval was retired. Request revision on the Purchase Request instead.']);
+exit();
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['status' => 'error', 'message' => 'Only POST requests are allowed.']);

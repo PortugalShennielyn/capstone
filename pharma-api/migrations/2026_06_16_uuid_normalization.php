@@ -308,7 +308,7 @@ $lookupSeed = $pdo->prepare(
      ON DUPLICATE KEY UPDATE lookup_label = VALUES(lookup_label), sort_order = VALUES(sort_order), is_active = 1'
 );
 $lookupGroups = [
-    'purchase_order_status' => ['Pending', 'Approved by the owner', 'In transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled'],
+        'purchase_order_status' => ['Pending', 'Approved by the owner', 'In transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled'],
     'payment_terms' => ['Cash', 'GCash', 'Bank Transfer'],
     'return_reason' => ['Expired', 'Broken package', 'Wrong item delivered', 'Incorrect quantity', 'Damaged during delivery', 'Other'],
     'stock_status' => ['Available', 'Low Stock', 'Out of Stock', 'Expired'],

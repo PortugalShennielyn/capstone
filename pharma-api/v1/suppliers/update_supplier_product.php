@@ -1,7 +1,10 @@
 <?php
+$allowedRoles = ['super_admin', 'admin', 'Admin', 'ro-super-admin', 'ro-admin'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
+require_once '../products/product_pricing_schema.php';
+require_once 'supplier_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -59,6 +62,7 @@ function supplierProductJoin(?string ...$parts): ?string
 }
 
 try {
+    ensureProductPricingSchema($pdo);
     $supplierProductId = cleanId($payload['supplier_product_id'] ?? null);
     $supplierId = cleanId($payload['supplier_id'] ?? null);
     $productId = cleanId($payload['product_id'] ?? null);
@@ -69,6 +73,16 @@ try {
     $supplierCost = supplierProductNumberOrNull($payload, 'supplier_cost_price');
     $purchaseUnit = supplierProductText($payload, 'purchase_unit');
     $unitsPerPurchaseUnit = supplierProductPositiveInt($payload, 'units_per_purchase_unit');
+
+    if ($supplierCost === null) {
+        throw new InvalidArgumentException('Supplier cost must be a non-negative number.');
+    }
+    if ($purchaseUnit === null) {
+        throw new InvalidArgumentException('Purchase Unit is required.');
+    }
+    ensureSupplierProductInventoryUnitColumn($pdo);
+    ensureSupplierPurchasingConversionSchema($pdo);
+    $inventoryUnit = productInventoryUnitForSupplier($pdo,$productId)['unit_name'];
 
     if ($supplierProductId === '' || $supplierId === '' || $productId === '') {
         throw new InvalidArgumentException('A valid supplier product link is required.');
@@ -88,7 +102,7 @@ try {
     }
 
     $linkCheck = $pdo->prepare(
-        'SELECT COUNT(*)
+        'SELECT purchase_unit, inner_unit, inventory_unit
          FROM supplier_products
          WHERE supplier_product_id = :supplier_product_id
            AND supplier_id = :supplier_id
@@ -99,9 +113,15 @@ try {
         ':supplier_id' => $supplierId,
         ':product_id' => $productId
     ]);
-    if ((int) $linkCheck->fetchColumn() !== 1) {
+    $savedHierarchy = $linkCheck->fetch(PDO::FETCH_ASSOC);
+    if (!$savedHierarchy) {
         throw new InvalidArgumentException('Supplier product link was not found.');
     }
+    validateSupplierPurchasingHierarchyUnits($pdo, [
+        'purchase_unit' => (string) $purchaseUnit,
+        'inventory_unit' => (string) $inventoryUnit,
+        'units_per_purchase_unit' => $unitsPerPurchaseUnit,
+    ], $savedHierarchy);
 
     $unit = supplierProductText($payload, 'unit');
     $packaging = supplierProductText($payload, 'packaging');
@@ -282,26 +302,48 @@ try {
     $supplierStatement = $pdo->prepare(
         'UPDATE supplier_products
          SET supplier_cost_price = :supplier_cost_price,
+             supplier_cost_input = :supplier_cost_input,
+             supplier_cost_basis = :supplier_cost_basis,
              purchase_unit = :purchase_unit,
+             purchase_unit_contains = :purchase_unit_contains,
+             inner_unit = NULL,
+             units_per_inner_unit = NULL,
+             inventory_unit = :inventory_unit,
              units_per_purchase_unit = :units_per_purchase_unit
          WHERE supplier_product_id = :supplier_product_id
            AND supplier_id = :supplier_id
            AND product_id = :product_id'
     );
     $supplierStatement->execute([
-        ':supplier_cost_price' => $supplierCost,
+        ':supplier_cost_price' => $supplierCost / $unitsPerPurchaseUnit,
+        ':supplier_cost_input' => $supplierCost,
+        ':supplier_cost_basis' => 'purchase',
         ':purchase_unit' => $purchaseUnit,
+        ':purchase_unit_contains' => $unitsPerPurchaseUnit,
+        ':inventory_unit' => $inventoryUnit,
         ':units_per_purchase_unit' => $unitsPerPurchaseUnit,
         ':supplier_product_id' => $supplierProductId,
         ':supplier_id' => $supplierId,
         ':product_id' => $productId
+    ]);
+    syncSupplierProductUnitConversions($pdo,$supplierProductId,[
+        'purchase_unit'=>$purchaseUnit,
+        'purchase_unit_contains'=>$unitsPerPurchaseUnit,
+        'inventory_unit'=>$inventoryUnit,
+        'units_per_purchase_unit'=>$unitsPerPurchaseUnit,
     ]);
 
     $pdo->commit();
 
     echo json_encode([
         'status' => 'success',
-        'message' => 'Supplier product updated successfully.'
+        'message' => 'Supplier quotation updated. Active selling price was not changed.',
+        'pricing' => productPricingSnapshot($pdo, $productId),
+        'quotation_preview' => [
+            'supplier_cost_per_inventory_unit' => round($supplierCost / $unitsPerPurchaseUnit, 4),
+            'estimated_purchase_unit_cost' => round($supplierCost, 2),
+            'calculated_selling_price' => calculatedSellingPrice($supplierCost / $unitsPerPurchaseUnit, productPricingSnapshot($pdo, $productId)['applied_markup_percentage']),
+        ]
     ]);
 } catch (InvalidArgumentException $e) {
     if ($pdo->inTransaction()) {

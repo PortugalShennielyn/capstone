@@ -2375,7 +2375,7 @@ require_once __DIR__ . '/auth_page_guard.php';
                 return;
             }
 
-            const statusOrder = ['Pending', 'In Transit', 'Arrived', 'Delivered', 'Delivered with Return/Damage', 'Cancelled'];
+            const statusOrder = ['Pending', 'In Transit', 'Arrived', 'Delivered', 'Return/Damage', 'Cancelled'];
             const rowMap = new Map(rows.map(row => [String(row.status || '').toLowerCase(), row]));
             const orderedRows = statusOrder.map(status => rowMap.get(status.toLowerCase()) || { status, count: 0 });
             target.innerHTML = orderedRows.map(row => {
