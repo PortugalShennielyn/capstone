@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=5"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -13,8 +13,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=20" rel="stylesheet">
-    <script src="./js/navbar.js?v=69" defer></script>
+    <link href="./css/navbar.css?v=36" rel="stylesheet">
+    <script src="./js/navbar.js?v=83" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root {
@@ -79,6 +79,7 @@
         .card-foot { min-height: 64px; display: flex; align-items: end; justify-content: space-between; gap: 10px; padding-top: 8px; }
         .commerce-meta { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
         .product-price { display: block; color: #4c1d95; font-size: 16px; font-weight: 900; line-height: 1.1; font-variant-numeric: tabular-nums; }
+        .product-price small { font-size:10px; font-weight:800; color:#64748b; }
         .product-price.is-unavailable { color:#b91c1c; font-size:12px; }
         .stock strong { display: block; color: var(--green); font-size: 14px; font-weight: 900; line-height: 1; }
         .stock span { display: block; margin-top: 3px; color: #53627d; font-size: 10px; font-weight: 800; }
@@ -95,6 +96,7 @@
         .filter-skeleton span:nth-child(2) { width: 112px; }
         .filter-skeleton span:nth-child(3) { width: 128px; }
         .product-card-skeleton { pointer-events: none; }
+        .order-unit { display:inline-flex; margin-top:5px; padding:3px 7px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:10px; font-weight:850; }
         .pos-skeleton-block { display: block; border-radius: 8px; background: #edf0f6; animation: pos-skeleton-pulse 1.1s ease-in-out infinite alternate; }
         .pos-skeleton-image { width: 100%; height: 110px; }
         .pos-skeleton-brand { width: 42%; height: 14px; margin-top: 14px; }
@@ -246,13 +248,12 @@
         <header class="topbar">
             <div class="topbar-left">
                 <button class="icon-btn" type="button" id="sidebarToggle" data-sidebar-toggle aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
-                <div class="brand-tile"><i class="fa-solid fa-cash-register"></i></div>
-                <div class="page-title">
+                <div class="page-title-mini">
                     <strong>Sales Clerk POS</strong>
-                    <span>Create customer orders and send them to cashier queue.</span>
+                    <span>Sales Clerk POS</span>
                 </div>
             </div>
-            <div class="topbar-right"><div class="date-pill" id="currentDateTime"><span></span><i class="fa-regular fa-calendar"></i></div></div>
+            <div class="topbar-right"></div>
         </header>
 
         <section class="page-body">
@@ -261,7 +262,7 @@
                     <div class="catalog-head">
                         <div class="search-control">
                             <i class="fa-solid fa-magnifying-glass"></i>
-                            <input id="productSearch" type="search" placeholder="Search brand, product, or specification">
+                            <input id="productSearch" name="product_search_query" type="search" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="Search brand, product, or specification">
                             <i class="fa-solid fa-barcode"></i>
                         </div>
                     </div>
@@ -399,6 +400,7 @@
         import API_BASE_URL from './js/config/config.js';
         import verifySession from './js/modules/auth.js?v=8';
         import { transactionDiscount, vatInclusiveBreakdown, savedTransactionTotals } from './js/modules/sales_financials.js?v=1';
+        import { createLiveSync, publishDataUpdate } from './js/modules/live_data.js?v=1';
 
         const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
         const countFormat = new Intl.NumberFormat('en-PH');
@@ -544,7 +546,13 @@
         function productSpecificationParts(product) {
             const apiSpecification = cleanSpecPart(product.specification);
             if (apiSpecification) {
-                return uniqueParts(apiSpecification.split(/\s*[•/]\s*/).map(cleanSpecPart).filter(Boolean));
+                const inventoryUnit = canonicalUnitLabel(product.inventory_unit || product.selling_units?.[0]?.unit || 'Unit');
+                return uniqueParts(apiSpecification.split(/\s*[•/]\s*/).map(cleanSpecPart).filter(Boolean).map((part) => {
+                    const content = part.match(/^(\d+(?:\.\d+)?)\s*(?:pc|pcs|piece|pieces)$/i);
+                    return content && !/^pieces?$/i.test(inventoryUnit)
+                        ? `${content[1]} Pieces per ${inventoryUnit}`
+                        : part;
+                }));
             }
 
             const category = cleanSpecPart(product.category_name).toLowerCase();
@@ -611,6 +619,21 @@
                 return null;
             }
             return numericPrice;
+        }
+
+        function canonicalUnitLabel(value, quantity = 1) {
+            const raw = cleanSpecPart(value) || 'Unit';
+            const normalized = raw.toLowerCase().replaceAll('.', '');
+            const singular = ['pc', 'pcs', 'piece', 'pieces', 'each'].includes(normalized)
+                ? 'Piece'
+                : raw.split(/\s+/).map(word => word ? word[0].toUpperCase() + word.slice(1).toLowerCase() : '').join(' ');
+            if (Number(quantity) === 1 || /s$/i.test(singular)) return singular;
+            if (/(?:x|z|ch|sh)$/i.test(singular)) return `${singular}es`;
+            return `${singular}s`;
+        }
+
+        function posInventoryUnit(product) {
+            return product.selling_units?.find(unit => Number(unit.base_quantity) === 1)?.unit || product.inventory_unit || 'Unit';
         }
 
         function orderShortSpecification(item) {
@@ -711,9 +734,10 @@
                 const specificationMarkup = productSpecificationMarkup(product);
                 const fullSpecification = buildPosSpecification(product) || 'No specification available';
                 const sellingPrice = posSellingPrice(product);
+                const inventoryUnit = posInventoryUnit(product);
                 const priceMarkup = sellingPrice === null
                     ? '<span class="product-price is-unavailable">Price unavailable</span>'
-                    : `<span class="product-price">${escapeHtml(peso.format(sellingPrice))}</span>`;
+                    : `<span class="product-price">${escapeHtml(peso.format(sellingPrice))} <small>/ ${escapeHtml(canonicalUnitLabel(inventoryUnit))}</small></span>`;
                 return `
                 <article class="product-card" data-category-id="${escapeHtml(product.category_id || '')}" data-category-name="${escapeHtml(product.category_name || '')}" data-type-id="${escapeHtml(product.type_id || '')}" data-type-name="${escapeHtml(product.type_name || '')}">
                     <button class="barcode-mark" type="button" data-barcode-product="${escapeHtml(product.product_id)}" title="${escapeHtml(product.barcode || 'Barcode')}" aria-label="Open barcode"><i class="fa-solid fa-barcode"></i></button>
@@ -726,7 +750,7 @@
                     <div class="card-foot">
                         <div class="commerce-meta">
                             ${priceMarkup}
-                            <span class="stock"><strong>${countFormat.format(Number(product.available_stock || 0))}</strong><span>available</span></span>
+                            <span class="stock"><strong>${countFormat.format(Number(product.available_stock || 0))}</strong><span>${escapeHtml(canonicalUnitLabel(inventoryUnit, Number(product.available_stock || 0)))} available</span></span>
                         </div>
                         <button class="cart-btn" type="button" data-add-product="${escapeHtml(product.product_id)}" aria-label="Add to order"><i class="fa-solid fa-cart-shopping"></i></button>
                     </div>
@@ -854,7 +878,7 @@
                             <div class="order-product">
                                 <strong>${escapeHtml(receiptProductName(item))}</strong>
                                 ${orderShortSpecification(item) ? `<span class="order-spec">${escapeHtml(orderShortSpecification(item))}</span>` : ''}
-                                <select class="form-select form-select-sm mt-1" data-selling-unit-product="${escapeHtml(item.product_id)}" aria-label="Selling unit">${sellingUnits.map(unit => `<option value="${escapeHtml(unit.unit)}" data-factor="${Number(unit.base_quantity || 1)}" data-price="${Number(unit.selling_price || 0)}" ${String(unit.unit) === String(item.selected_unit) ? 'selected' : ''}>${escapeHtml(unit.unit)} (${Number(unit.base_quantity || 1)} base)</option>`).join('')}</select>
+                                <span class="order-unit">${escapeHtml(canonicalUnitLabel(item.selected_unit || sellingUnits[0]?.unit || 'Unit', Number(item.quantity || 1)))}</span>
                             </div>
                             <div class="order-action">
                                 <button class="remove-btn" type="button" data-remove-product="${escapeHtml(item.product_id)}" aria-label="Remove item"><i class="fa-solid fa-xmark"></i></button>
@@ -907,7 +931,7 @@
             bootstrap.Modal.getOrCreateInstance(document.getElementById('posBarcodeModal')).show();
         }
 
-        async function searchProducts() {
+        async function searchProducts({ silent = false } = {}) {
             const term = searchInput.value.trim();
             const params = new URLSearchParams();
             if (term) params.set('search', term);
@@ -919,12 +943,14 @@
             else if (categoryName && categoryName !== 'All Items') params.set('category_name', categoryName);
             if (typeId) params.set('type_id', typeId);
             else if (typeName && typeName !== 'All Product Types') params.set('type_name', typeName);
-            productsGrid.innerHTML = productLoadingSkeletons();
+            if (!silent) productsGrid.innerHTML = productLoadingSkeletons();
             try {
-                state.products = await apiFetch(`sales/sales_products_search.php?${params.toString()}`);
-                renderProducts();
+                const nextProducts = await apiFetch(`sales/sales_products_search.php?${params.toString()}`);
+                const changed = JSON.stringify(nextProducts) !== JSON.stringify(state.products);
+                state.products = nextProducts;
+                if (changed || !silent) renderProducts();
             } catch (error) {
-                productsGrid.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+                if (!silent) productsGrid.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
             }
         }
 
@@ -1070,6 +1096,7 @@
             try {
                 if (!state.orderId) await saveDraft();
                 const data = await apiFetch('sales/sales_order_send_to_cashier.php', { method: 'POST', body: JSON.stringify(cartPayload()) });
+                publishDataUpdate('order-created', { orderId: data.order_id || data.order?.order_id || null });
                 latestSentOrder = data;
                 renderOrderSentSummary(latestSentOrder);
                 bootstrap.Modal.getOrCreateInstance(document.getElementById('sendConfirmModal')).hide();
@@ -1089,7 +1116,9 @@
         }
 
         function updateClock() {
-            document.getElementById('currentDateTime').firstElementChild.textContent = new Date().toLocaleString('en-PH', {
+            const clock = document.getElementById('currentDateTime')?.firstElementChild;
+            if (!clock) return;
+            clock.textContent = new Date().toLocaleString('en-PH', {
                 month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
             });
         }
@@ -1234,6 +1263,7 @@
         updateClock();
         setInterval(updateClock, 60000);
         await searchProducts();
+        createLiveSync({ interval: 2000, events: ['shelf-updated', 'storage-updated', 'payment-completed', 'product-updated'], sync: () => searchProducts({ silent: true }) });
     </script>
 </body>
 </html>

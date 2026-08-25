@@ -66,18 +66,19 @@ try {
         $prItemId = newUuid($pdo);
         $conversion = (int) $row['units_per_purchase_unit'];
         $requestedQty = $conversion + 1;
+        $approvedQty = ($conversion * 3) + 1;
         $pdo->prepare(
             'INSERT INTO purchase_request_items
-                (pr_item_id, pr_id, product_id, stock_qty_at_request, requested_qty, unit_label_at_request)
-             VALUES (:pr_item_id, :pr_id, :product_id, 0, :requested_qty, :unit)'
+                (pr_item_id, pr_id, product_id, stock_qty_at_request, requested_qty, approved_qty, unit_label_at_request)
+             VALUES (:pr_item_id, :pr_id, :product_id, 0, :requested_qty, :approved_qty, :unit)'
         )->execute([
             ':pr_item_id' => $prItemId, ':pr_id' => $prId, ':product_id' => $row['product_id'],
-            ':requested_qty' => $requestedQty, ':unit' => 'base units',
+            ':requested_qty' => $requestedQty, ':approved_qty' => $approvedQty, ':unit' => 'base units',
         ]);
         $assignments[] = [
             'pr_item_id' => $prItemId,
             'supplier_product_id' => $row['supplier_product_id'],
-            'order_qty' => 2,
+            'order_qty' => 99,
         ];
         $supplierProductByPrItem[$prItemId] = $row['supplier_product_id'];
     }
@@ -95,9 +96,9 @@ try {
     automaticPoAssert($paymentTerms->fetchAll(PDO::FETCH_COLUMN) === ['Cash'], 'Every generated supplier PO must automatically use Cash.');
 
     $stmt = $pdo->prepare(
-        'SELECT po.pr_id, poi.purchase_qty, poi.units_per_purchase_unit_snapshot,
+        'SELECT po.pr_id, po.status, po.total_amount, poi.purchase_qty, poi.units_per_purchase_unit_snapshot,
                 poi.inventory_qty_ordered, poi.unit_price_snapshot, poi.line_total,
-                poi.pr_item_id
+                poi.pr_item_id, pri.approved_qty
          FROM purchase_orders po
          INNER JOIN purchase_order_items poi ON poi.po_id = po.po_id
          INNER JOIN purchase_request_items pri ON pri.pr_item_id = poi.pr_item_id
@@ -111,20 +112,24 @@ try {
         $supplierProductId = $supplierProductByPrItem[$item['pr_item_id']] ?? '';
         automaticPoAssert($supplierProductId !== '', 'The test supplier assignment was not retained in memory.');
         automaticPoAssert($item['pr_id'] === $prId, 'Generated PO must retain its originating PR reference.');
+        automaticPoAssert($item['status'] === 'Draft', 'Every automatically generated PO must start as Draft.');
+        automaticPoAssert($item['total_amount'] === null, 'A Draft PO must not have a confirmed total amount.');
+        automaticPoAssert((int) $item['purchase_qty'] === (int) ceil((float) $item['approved_qty'] / (float) $item['units_per_purchase_unit_snapshot']), 'PO quantity must be derived from the approved requirement.');
+        automaticPoAssert((int) $item['purchase_qty'] !== 99, 'A browser-supplied order quantity must be ignored.');
         automaticPoAssert((int) $item['inventory_qty_ordered'] === (int) $item['purchase_qty'] * (int) $item['units_per_purchase_unit_snapshot'], 'Expected base quantity snapshot is incorrect.');
-        automaticPoAssert(abs((float) $item['line_total'] - ((int) $item['inventory_qty_ordered'] * (float) $item['unit_price_snapshot'])) < 0.001, 'Line total must be expected base quantity times supplier cost per base inventory unit.');
+        automaticPoAssert($item['unit_price_snapshot'] === null, 'Supplier reference cost must not become a Draft PO item cost.');
+        automaticPoAssert($item['line_total'] === null, 'Draft PO line totals must remain unknown.');
 
-        $oldCost = (float) $item['unit_price_snapshot'];
         $pdo->prepare('UPDATE supplier_products SET supplier_cost_price = supplier_cost_price + 7.25 WHERE supplier_product_id = :id')
             ->execute([':id' => $supplierProductId]);
         $changedSupplierProducts[] = $supplierProductId;
         $snapshot = $pdo->prepare('SELECT unit_price_snapshot FROM purchase_order_items WHERE pr_item_id = :pr_item_id');
         $snapshot->execute([':pr_item_id' => $item['pr_item_id']]);
-        automaticPoAssert(abs((float) $snapshot->fetchColumn() - $oldCost) < 0.001, 'Changing supplier master cost altered a historical PO snapshot.');
+        automaticPoAssert($snapshot->fetchColumn() === null, 'Changing supplier reference cost must not populate a Draft PO item cost.');
     }
 
     automaticPoAssert((int) $pdo->query('SELECT COUNT(*) FROM inventory_batches')->fetchColumn() === $inventoryBefore, 'PO generation must not add inventory.');
-    echo "Automatic PO grouping and snapshot tests passed.\n";
+    echo "Automatic PO approved-quantity, Draft lifecycle, and cost-decoupling tests passed.\n";
 } finally {
     foreach (array_unique($changedSupplierProducts) as $supplierProductId) {
         $pdo->prepare('UPDATE supplier_products SET supplier_cost_price = supplier_cost_price - 7.25 WHERE supplier_product_id = :id')

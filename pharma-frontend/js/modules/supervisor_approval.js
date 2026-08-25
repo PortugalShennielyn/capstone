@@ -11,6 +11,7 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '
 const peso = value => Number(value || 0).toLocaleString('en-PH', { style:'currency', currency:'PHP' });
 const formatDateTime = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString('en-PH', { year:'numeric', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : '-';
 const formatDate = value => value ? new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' }) : '-';
+const quantityStep = unit => /^(kg|g|l|ml|kilogram|gram|liter|litre|milliliter|millilitre)s?$/i.test(String(unit || '').trim()) ? '0.01' : '1';
 
 async function requestJson(path, options = {}) {
     const response = await fetch(`${API_BASE_URL}/purchase_requests/${path}`, { credentials:'include', cache:'no-store', ...options });
@@ -75,7 +76,7 @@ function actionMenu() {
     menu.id = 'quickActionMenu';
     menu.className = 'quick-action-menu';
     menu.hidden = true;
-    menu.innerHTML = '<button class="approve" type="button" data-quick-decision="approve"><i class="fa-solid fa-check"></i> Approve PR</button><button class="revision" type="button" data-quick-decision="revision"><i class="fa-solid fa-rotate-left"></i> Request Revision</button><button class="reject" type="button" data-quick-decision="reject"><i class="fa-solid fa-xmark"></i> Reject</button>';
+    menu.innerHTML = '<button class="approve" type="button" data-quick-decision="approve"><i class="fa-solid fa-check"></i> Review & Approve</button><button class="reject" type="button" data-quick-decision="reject"><i class="fa-solid fa-xmark"></i> Reject</button>';
     document.body.appendChild(menu);
     return menu;
 }
@@ -107,6 +108,14 @@ function renderReview(request) {
         ['PR Number', request.pr_number], ['Requested By', request.requested_by_name],
         ['Request Date', formatDate(request.request_date)], ['Status', request.status]
     ].map(([label, value]) => `<div class="meta-box"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '-')}</strong></div>`).join('');
+    const pending = request.status === 'Pending Supervisor Approval';
+    $('#quantityApprovalRows').innerHTML = (request.items || []).map(item => {
+        const requested = Number(item.requested_qty || 0);
+        const approved = item.approved_qty == null ? requested : Number(item.approved_qty);
+        const unit = item.unit || 'units';
+        const delta = approved - requested;
+        return `<tr data-approval-item="${escapeHtml(item.pr_item_id)}" data-requested-qty="${escapeHtml(requested)}"><td><strong>${escapeHtml(item.product_name || 'Product')}</strong><span>${escapeHtml(item.brand_name || '')}</span></td><td><strong>${requested.toLocaleString()} ${escapeHtml(unit)}</strong></td><td><div class="approved-qty-control"><input class="form-control form-control-sm" type="number" min="${quantityStep(unit)}" step="${quantityStep(unit)}" value="${escapeHtml(approved)}" data-approved-qty ${pending ? '' : 'disabled'} aria-label="Approved quantity for ${escapeHtml(item.product_name || 'product')}"><span>${escapeHtml(unit)}</span></div></td><td><span class="quantity-delta ${delta < 0 ? 'is-reduced' : delta > 0 ? 'is-increased' : 'is-unchanged'}" data-quantity-delta>${delta === 0 ? 'No change' : `${delta > 0 ? '+' : ''}${delta.toLocaleString()} ${escapeHtml(unit)}`}</span></td></tr>`;
+    }).join('');
     const frame = $('#ceoRequestPreviewFrame');
     frame.dataset.contentHeight = '1123';
     frame.src = `purchase_request_print.html?pr_id=${encodeURIComponent(request.pr_id)}&embed=1&ui=final2`;
@@ -116,9 +125,8 @@ function renderReview(request) {
     const purchaseOrders = request.purchase_orders || [];
     $('#ceoGeneratedPoSection').hidden = purchaseOrders.length === 0;
     $('#ceoGeneratedPoList').innerHTML = purchaseOrders.map(po => `<article><div><strong>${escapeHtml(po.po_number)}</strong><span>${escapeHtml(po.supplier_name || 'Supplier')} · ETA: ${escapeHtml(formatDate(po.expected_delivery_date))} · Mode: ${escapeHtml(po.payment_terms || 'Not set')} · ${peso(po.total_amount)}</span></div><div><a class="btn btn-sm btn-outline-primary" href="purchase_orders.html?tab=active&po_id=${encodeURIComponent(po.po_id)}">View PO</a></div></article>`).join('');
-    const pending = request.status === 'Pending Supervisor Approval';
     $('#modalActions').innerHTML = pending
-        ? '<button class="btn btn-outline-danger" type="button" data-modal-decision="reject">Reject</button><button class="btn btn-outline-warning" type="button" data-modal-decision="revision">Request Revision</button><button class="btn btn-success ms-auto" type="button" data-modal-decision="approve"><i class="fa-solid fa-check"></i> Approve PR</button>'
+        ? '<button class="btn btn-outline-danger" type="button" data-modal-decision="reject">Reject</button><button class="btn btn-success ms-auto" type="button" data-modal-decision="approve"><i class="fa-solid fa-check"></i> Approve Quantities & PR</button>'
         : '<button class="btn btn-light ms-auto" data-bs-dismiss="modal">Close</button>';
 }
 
@@ -152,10 +160,12 @@ function openPurchaseRequestPrint(request) {
 async function decide(request, decision, { openReview = false } = {}) {
     if (request.status !== 'Pending Supervisor Approval') throw new Error('This purchase request has already been processed.');
     if (openReview) { showRequest(request); return; }
-    const title = { approve:'Approve Purchase Request?', revision:'Request Revision', reject:'Reject Purchase Request' }[decision];
-    const result = await Swal.fire({ title, text:decision === 'approve' ? 'Approve this Purchase Request? No purchase orders will be created by this approval.' : undefined, icon:decision === 'approve' ? 'question' : 'warning', showCancelButton:true, confirmButtonColor:{ approve:'#16a34a', revision:'#d97706', reject:'#dc2626' }[decision], confirmButtonText:{ approve:'Approve PR', revision:'Request Revision', reject:'Reject' }[decision] });
+    const approvedQuantities = decision === 'approve' ? [...document.querySelectorAll('[data-approval-item]')].map(row => ({ pr_item_id:row.dataset.approvalItem, approved_qty:Number(row.querySelector('[data-approved-qty]')?.value) })) : [];
+    if (decision === 'approve' && approvedQuantities.some(item => !Number.isFinite(item.approved_qty) || item.approved_qty <= 0)) throw new Error('Enter a positive approved quantity for every product.');
+    const title = { approve:'Approve Purchase Request?', reject:'Reject Purchase Request' }[decision];
+    const result = await Swal.fire({ title, text:decision === 'approve' ? 'Save these approved quantities and approve the request? The quantities are locked after approval.' : undefined, icon:decision === 'approve' ? 'question' : 'warning', showCancelButton:true, confirmButtonColor:{ approve:'#16a34a', reject:'#dc2626' }[decision], confirmButtonText:{ approve:'Approve Quantities & PR', reject:'Reject' }[decision] });
     if (!result.isConfirmed) return;
-    const response = await requestJson('decide_purchase_request.php', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ pr_id:request.pr_id, decision }) });
+    const response = await requestJson('decide_purchase_request.php', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ pr_id:request.pr_id, decision, approved_quantities:approvedQuantities }) });
     await loadRequests(false);
     closeActionMenu();
     modal?.hide();
@@ -191,6 +201,15 @@ $('#requestRows').addEventListener('click', event => {
     if (toggle) { event.stopPropagation(); toggleActionMenu(toggle); }
 });
 $('#modalActions').addEventListener('click', event => { const button=event.target.closest('[data-modal-decision]'); if (button && activeRequest) decide(activeRequest, button.dataset.modalDecision).catch(error => toastr.error(error.message)); });
+$('#quantityApprovalRows').addEventListener('input', event => {
+    if (!event.target.matches('[data-approved-qty]')) return;
+    const row = event.target.closest('[data-approval-item]');
+    const deltaElement = row.querySelector('[data-quantity-delta]');
+    const delta = Number(event.target.value || 0) - Number(row.dataset.requestedQty || 0);
+    const unit = event.target.parentElement.querySelector('span')?.textContent || 'units';
+    deltaElement.className = `quantity-delta ${delta < 0 ? 'is-reduced' : delta > 0 ? 'is-increased' : 'is-unchanged'}`;
+    deltaElement.textContent = delta === 0 ? 'No change' : `${delta > 0 ? '+' : ''}${delta.toLocaleString()} ${unit}`;
+});
 $('#printRequest').addEventListener('click', () => { try { if (activeRequest) openPurchaseRequestPrint(activeRequest); } catch (error) { toastr.error(error.message); } });
 document.addEventListener('click', event => {
     const decisionButton = event.target.closest('[data-quick-decision]');

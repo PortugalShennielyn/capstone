@@ -108,6 +108,29 @@ function unit(value) {
     return { ml: 'mL', l: 'L', mg: 'mg', mcg: 'mcg', g: 'g', kg: 'kg', iu: 'IU', '%': '%' }[text.toLowerCase()] || text;
 }
 
+const SELLABLE_CONTAINER_UNITS = new Set([
+    'bag', 'blister pack', 'bottle', 'box', 'bundle', 'can', 'carton', 'case',
+    'jar', 'pack', 'pouch', 'roll', 'sachet', 'strip', 'tray', 'tube', 'vial'
+]);
+
+function productInventoryUnit(product = {}) {
+    return clean(product.inventory_unit_symbol) || clean(product.inventory_unit_name);
+}
+
+function formatPackContent(product, value, measurementUnit = '') {
+    const content = measurementUnit ? formatMeasurement(value, measurementUnit) : normalizedDisplay(value);
+    if (!content || content.includes('/')) return content;
+
+    const sellingUnit = productInventoryUnit(product);
+    const normalizedSellingUnit = normalizedKey(sellingUnit);
+    const inferredContentUnit = clean(measurementUnit) || clean(String(content).replace(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)\s*/, ''));
+    const normalizedContentUnit = normalizedKey(inferredContentUnit);
+    if (!SELLABLE_CONTAINER_UNITS.has(normalizedSellingUnit) || normalizedSellingUnit === normalizedContentUnit) {
+        return content;
+    }
+    return `${content}/${sellingUnit.toLowerCase()}`;
+}
+
 export function formatMeasurement(value, measurementUnit = '') {
     const displayAmount = formatMeasurementValue(value);
     const displayUnit = unit(measurementUnit);
@@ -133,9 +156,13 @@ export function formatProductSpecification(product = {}, empty = '-') {
     const parts = [];
     if (Array.isArray(product.specifications) && product.specifications.length) {
         product.specifications.forEach(specification => {
-            addUnique(parts, specification.value_number !== null && specification.value_number !== undefined && specification.value_number !== ''
-                ? formatMeasurement(specification.value_number, specification.unit_symbol)
-                : specification.value_text);
+            const isPackContent = normalizedKey(specification.specification_name || specification.display_name) === 'pack content';
+            const value = specification.value_number !== null && specification.value_number !== undefined && specification.value_number !== ''
+                ? (isPackContent
+                    ? formatPackContent(product, specification.value_number, specification.unit_symbol || specification.unit_name)
+                    : formatMeasurement(specification.value_number, specification.unit_symbol || specification.unit_name))
+                : (isPackContent ? formatPackContent(product, specification.value_text) : specification.value_text);
+            addUnique(parts, value);
         });
     } else if (category === 'medicine') {
         addUnique(parts, product.generic_name);
@@ -151,6 +178,7 @@ export function formatProductSpecification(product = {}, empty = '-') {
         addUnique(parts, product.variant_flavor ?? product.variant);
         addUnique(parts, product.display_size ?? product.size_value ?? product.size);
         addUnique(parts, formatMeasurement(product.net_weight ?? product.weight_volume_value, product.grocery_unit ?? product.weight_volume_unit ?? product.unit));
+        addUnique(parts, formatPackContent(product, product.pack_content));
         if (type === 'beverage') addUnique(parts, product.package_type);
     }
     return parts.join(' \u2022 ') || empty;

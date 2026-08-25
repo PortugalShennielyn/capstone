@@ -13,19 +13,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $payload = json_decode(file_get_contents('php://input'), true);
 $supplierProductId = cleanId($payload['supplier_product_id'] ?? null);
-$supplierCost = $payload['supplier_cost_price'] ?? null;
 $purchaseUnit = trim((string) ($payload['purchase_unit'] ?? ''));
 $contains = $payload['purchase_unit_contains'] ?? ($payload['units_per_purchase_unit'] ?? null);
-$innerUnit = trim((string) ($payload['inner_unit'] ?? ''));
-$unitsPerInner = $innerUnit !== '' ? ($payload['units_per_inner_unit'] ?? null) : null;
-$costBasis = 'purchase';
-$hierarchyLevels = isset($payload['hierarchy_levels']) && is_array($payload['hierarchy_levels']) ? $payload['hierarchy_levels'] : [];
+$innerUnit = '';
+$unitsPerInner = null;
 
-if ($supplierProductId === '' || !is_numeric($supplierCost) || (float) $supplierCost < 0 || $purchaseUnit === ''
+if ($supplierProductId === '' || $purchaseUnit === ''
     || !is_numeric($contains) || (int) $contains < 1 || (float)$contains !== (float)(int)$contains
     || ($innerUnit !== '' && (!is_numeric($unitsPerInner) || (int) $unitsPerInner < 1 || (float)$unitsPerInner !== (float)(int)$unitsPerInner))) {
     http_response_code(422);
-    echo json_encode(['status' => 'error', 'message' => 'Valid purchasing hierarchy and supplier cost are required.']);
+    echo json_encode(['status' => 'error', 'message' => 'A valid final purchase-unit conversion is required.']);
     exit();
 }
 
@@ -51,22 +48,14 @@ try {
         'inventory_unit' => $inventoryUnit,
         'units_per_purchase_unit' => (int) $contains,
     ];
-    if ($hierarchyLevels) $conversionSetup['hierarchy_levels'] = $hierarchyLevels;
     $conversion = supplierPurchasingConversion($conversionSetup);
     foreach (array_slice($conversion['hierarchy_levels'], 1, -1) as $level) {
         validateSupplierPurchasingUnit($pdo, (string)$level['unit'], 'Packaging Unit', null, 'inner');
     }
-    $cost = supplierPurchasingCost([
-        'supplier_cost_input' => (float) $supplierCost,
-        'supplier_cost_basis' => $costBasis,
-    ], $conversion);
     $pdo->beginTransaction();
     $statement = $pdo->prepare(
         'UPDATE supplier_products
-         SET supplier_cost_price = :supplier_cost_price,
-             supplier_cost_input = :supplier_cost_input,
-             supplier_cost_basis = :supplier_cost_basis,
-             purchase_unit = :purchase_unit,
+         SET purchase_unit = :purchase_unit,
              purchase_unit_contains = :purchase_unit_contains,
              inner_unit = :inner_unit,
              units_per_inner_unit = :units_per_inner_unit,
@@ -75,9 +64,6 @@ try {
          WHERE supplier_product_id = :supplier_product_id'
     );
     $statement->execute([
-        ':supplier_cost_price' => $cost['supplier_cost_per_inventory_unit'],
-        ':supplier_cost_input' => (float) $supplierCost,
-        ':supplier_cost_basis' => $costBasis,
         ':purchase_unit' => $purchaseUnit,
         ':purchase_unit_contains' => (int) $conversion['contains'],
         ':inner_unit' => !empty($conversion['inner_unit']) ? $conversion['inner_unit'] : null,
@@ -106,7 +92,7 @@ try {
         }
     }
     $pdo->commit();
-    echo json_encode(['status' => 'success', 'message' => 'Supplier purchasing setup updated successfully.', 'conversion' => $conversion, 'cost' => $cost]);
+    echo json_encode(['status' => 'success', 'message' => 'Supplier purchasing setup updated successfully.', 'conversion' => $conversion]);
 } catch (InvalidArgumentException $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     http_response_code(422);

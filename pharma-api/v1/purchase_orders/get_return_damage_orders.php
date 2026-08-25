@@ -28,6 +28,16 @@ try {
             por.resolution_type,
             por.remarks,
             por.return_status,
+            original_receiving.receiving_id,
+            original_item.receiving_item_id,
+            original_receiving.delivery_receipt_no,
+            original_receiving.received_date AS inspection_date,
+            original_item.accepted_quantity,
+            credit.credit_id,
+            credit.credit_amount,
+            credit.credit_status,
+            credit.amount_applied AS credit_applied,
+            GREATEST(0, COALESCE(credit.credit_amount, 0) - COALESCE(credit.amount_applied, 0)) AS credit_remaining,
             po.po_id,
             po.po_number,
             po.status AS purchase_order_status,
@@ -51,8 +61,8 @@ try {
             COALESCE(NULLIF(poi.unit_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS unit,
             COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS packaging,
             poi.quantity AS ordered_quantity,
-            COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
-            COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity
+            COALESCE(original_item.received_quantity, SUM(pori.received_quantity), 0) AS received_quantity,
+            COALESCE(original_item.damaged_quantity, SUM(pori.damaged_quantity), 0) AS damaged_quantity
          FROM supplier_claim_legacy_projection por
          INNER JOIN purchase_orders po ON po.po_id = por.po_id
          INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
@@ -62,6 +72,10 @@ try {
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
+         LEFT JOIN (SELECT claim_id, MIN(receiving_item_id) AS receiving_item_id FROM supplier_claim_damage_lines WHERE receiving_item_id IS NOT NULL GROUP BY claim_id) claim_receiving ON claim_receiving.claim_id = por.return_id
+         LEFT JOIN purchase_order_receiving_items original_item ON original_item.receiving_item_id = claim_receiving.receiving_item_id
+         LEFT JOIN purchase_order_receiving original_receiving ON original_receiving.receiving_id = original_item.receiving_id
+         LEFT JOIN (SELECT cr.credit_id, cr.claim_id, cr.credit_amount, cr.credit_status, COALESCE(SUM(app.amount_applied),0) AS amount_applied FROM supplier_credits cr LEFT JOIN supplier_credit_applications app ON app.credit_id=cr.credit_id GROUP BY cr.credit_id,cr.claim_id,cr.credit_amount,cr.credit_status) credit ON credit.claim_id=por.return_id
          LEFT JOIN purchase_order_receiving_item_summary pori ON pori.po_item_id = poi.po_item_id
          GROUP BY
             por.return_id,
@@ -77,6 +91,17 @@ try {
             por.resolution_type,
             por.remarks,
             por.return_status,
+            original_receiving.receiving_id,
+            original_item.receiving_item_id,
+            original_receiving.delivery_receipt_no,
+            original_receiving.received_date,
+            original_item.accepted_quantity,
+            original_item.received_quantity,
+            original_item.damaged_quantity,
+            credit.credit_id,
+            credit.credit_amount,
+            credit.credit_status,
+            credit.amount_applied,
             po.po_id,
             po.po_number,
             po.status,

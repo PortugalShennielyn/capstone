@@ -1,7 +1,7 @@
 (function bootstrapNavbarShell() {
     if (window.__drpNavbarBootstrap) return;
 
-    const cacheKey = "drpNavbarHtml:v44";
+    const cacheKey = "drpNavbarHtml:v47";
     const expandedGroupsKey = "drpNavbarExpandedGroups";
     const supervisorNavigation = Object.freeze([
         ["supervisor_dashboard.html", "dashboard", "fa-gauge-high", "Dashboard"],
@@ -28,7 +28,7 @@
     }
 
     function applyVisualState() {
-        const collapsed = readStorage(localStorage, "drpSidebarCollapsed") === "true";
+        const collapsed = true;
         const dark = readStorage(localStorage, "drpTheme") === "dark";
         document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
         document.documentElement.classList.toggle("sidebar-expanded", !collapsed);
@@ -36,6 +36,7 @@
 
         if (document.body) {
             document.body.classList.toggle("navbar-sidebar-collapsed", collapsed);
+            document.body.classList.toggle("sidebar-open", !collapsed);
             document.body.classList.toggle("dark-mode", dark);
         }
     }
@@ -110,6 +111,7 @@
         const collapsed = document.documentElement.classList.contains("sidebar-collapsed");
         const sidebar = container.querySelector("#sidebar");
         sidebar?.classList.toggle("collapsed", collapsed);
+        sidebar?.classList.toggle("is-expanded", !collapsed);
 
         const filename = currentFilename();
         let activeLink = null;

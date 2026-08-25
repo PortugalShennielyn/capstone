@@ -189,7 +189,7 @@ $printHtml = (string) file_get_contents(__DIR__ . '/../pharma-frontend/purchase_
 $printJs = (string) file_get_contents(__DIR__ . '/../pharma-frontend/js/modules/purchase_request_print.js');
 $documentRenderer = (string) file_get_contents(__DIR__ . '/../pharma-frontend/js/modules/pr_document_renderer.js');
 inventoryPrAssert(str_contains($printJs, 'drpPrPreview:'), 'Unsaved Print Preview is not routed through the saved PR print renderer.');
-inventoryPrAssert(str_contains($documentRenderer, '<th>No.</th><th>Product Description</th><th>Unit / Packing</th><th>Shelf</th><th>Storage</th><th>On Hand</th><th>Requested Qty</th>'), 'The A4 PR renderer does not use the required seven columns.');
+inventoryPrAssert(str_contains($documentRenderer, '<th>No.</th><th>Product Description</th><th>Unit / Packing</th><th>Shelf</th><th>Storage</th><th>On Hand</th><th>Requested / Approved Qty</th>'), 'The A4 PR renderer does not use the required seven-column audit layout.');
 inventoryPrAssert(!str_contains($printHtml, 'Supplier Cost') && !str_contains($printHtml, 'Mode Payment') && !str_contains($printHtml, 'PO Total'), 'PO-only fields leaked into the PR print template.');
 
 $createPoPhp = (string) file_get_contents(__DIR__ . '/../pharma-api/v1/purchase_orders/create_po.php');

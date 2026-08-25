@@ -1,7 +1,7 @@
 import API_BASE_URL from '../config/config.js';
 import { ensurePageTabSession, tabToken } from './auth_guard.js?v=27';
 import { primaryAccessRole } from './rbac.js';
-import { formatProductSpecification as productSpecification } from './product_specification.js?v=2';
+import { formatProductSpecification as productSpecification } from './product_specification.js?v=8';
 
 let products = [];
 let requests = [];
@@ -402,6 +402,13 @@ function poStatusClass(status) {
     return 'is-pending';
 }
 
+function purchaseOrderTotalText(order = {}) {
+    if (order.total_amount === null || order.total_amount === undefined || order.total_amount === '') {
+        return order.status === 'Pending' ? 'Waiting for receipt' : 'Not entered';
+    }
+    return peso(order.total_amount);
+}
+
 function renderRelatedPurchaseOrders(orders) {
     const body = document.getElementById('relatedPurchaseOrderRows');
     const empty = document.getElementById('relatedPurchaseOrdersEmpty');
@@ -421,7 +428,7 @@ function renderRelatedPurchaseOrders(orders) {
             <td><strong class="related-po-number">${esc(order.po_number || '-')}</strong></td>
             <td><span class="related-po-supplier">${esc(order.supplier_name || 'Unknown supplier')}</span></td>
             <td><div class="related-po-items"><strong>${count} ${count === 1 ? 'product' : 'products'}</strong><span title="${esc(order.item_names || '')}">${esc(order.item_names || 'No products')}</span></div></td>
-            <td class="text-end fw-bold">${peso(order.total_amount)}</td>
+            <td class="text-end fw-bold">${esc(purchaseOrderTotalText(order))}</td>
             <td>${order.expected_delivery_date ? esc(formatRequestDate(order.expected_delivery_date)) : '-'}</td>
             <td><span class="pr-status ${poStatusClass(order.status)}">${esc(order.status || 'Pending')}</span></td>
             <td class="related-po-action"><button type="button" class="btn btn-sm btn-outline-secondary" data-related-po-view="${esc(order.po_id)}" title="View ${esc(order.po_number)}" aria-label="View ${esc(order.po_number)}"><i class="fa-regular fa-eye"></i><span>View</span></button></td>
@@ -479,15 +486,17 @@ function selectedProcurementOption(item) {
     return (item.supplier_options || []).find(option => String(option.supplier_product_id) === String(selectedId)) || null;
 }
 
+function approvedRequirement(item) {
+    return Number(item.approved_qty || 0);
+}
+
 function procurementCalculation(item) {
     const option = selectedProcurementOption(item);
     const conversion = Number(option?.base_qty_per_purchase_unit || option?.units_per_purchase_unit || 0);
-    const orderQty = Number(procurementSelections[item.pr_item_id]?.order_qty || 0);
-    const minimum = conversion > 0 ? Math.ceil(Number(item.requested_qty || 0) / conversion) : 0;
+    const minimum = conversion > 0 ? Math.ceil(approvedRequirement(item) / conversion) : 0;
+    const orderQty = minimum;
     const expected = orderQty * conversion;
-    const purchaseUnitCost = Number(option?.estimated_purchase_unit_cost || 0);
-    const baseCost = Number(option?.supplier_cost_per_inventory_unit || 0);
-    return { option, conversion, orderQty, minimum, expected, excess:expected - Number(item.requested_qty || 0), purchaseUnitCost, baseCost, total:orderQty * purchaseUnitCost };
+    return { option, conversion, orderQty, minimum, expected, excess:expected - approvedRequirement(item) };
 }
 
 function initializePoGeneration(request) {
@@ -499,7 +508,6 @@ function initializePoGeneration(request) {
         const conversion = Number(initial?.base_qty_per_purchase_unit || initial?.units_per_purchase_unit || 0);
         procurementSelections[item.pr_item_id] = {
             supplier_product_id:initial?.supplier_product_id || '',
-            order_qty:initial && conversion > 0 ? Math.ceil(Number(item.requested_qty || 0) / conversion) : 0,
         };
     });
 }
@@ -510,8 +518,8 @@ function procurementErrors(request) {
         const calc = procurementCalculation(item);
         if (!(item.supplier_options || []).length) errors.push(`Cannot generate PO for ${item.product_name} because no active supplier purchasing setup is assigned.`);
         else if (!calc.option) errors.push(`${item.product_name}: select a supplier purchasing setup.`);
-        else if (!calc.option.purchase_unit || !calc.option.inventory_unit || calc.conversion <= 0 || calc.purchaseUnitCost <= 0) errors.push(`${item.product_name}: the selected supplier setup needs a valid purchase unit, conversion, and supplier cost.`);
-        else if (!Number.isInteger(calc.orderQty) || calc.orderQty < calc.minimum) errors.push(`${item.product_name}: order at least ${calc.minimum} ${purchaseUnitLabel(calc.option.purchase_unit, calc.minimum)}.`);
+        else if (!calc.option.purchase_unit || !calc.option.inventory_unit || calc.conversion <= 0) errors.push(`${item.product_name}: the selected supplier setup needs a valid purchase unit and packaging conversion.`);
+        else if (approvedRequirement(item) <= 0) errors.push(`${item.product_name}: the Supervisor-approved quantity is missing.`);
     });
     return errors;
 }
@@ -521,11 +529,10 @@ function renderManagerPurchasingSetup(request) {
         const calc = procurementCalculation(item);
         const options = item.supplier_options || [];
         const optionMarkup = options.map(option => {
-            const purchaseCost = Number(option.estimated_purchase_unit_cost || 0);
             const summary = option.summary || `${option.units_per_purchase_unit || 0} ${option.inventory_unit || 'units'} per ${option.purchase_unit || 'Unit'}`;
-            return `<option value="${esc(option.supplier_product_id)}" ${String(option.supplier_product_id) === String(calc.option?.supplier_product_id) ? 'selected' : ''}>${esc(option.supplier_name)} — ${esc(option.purchase_unit || 'Unit')} — ${esc(summary)} — ${peso(purchaseCost)}</option>`;
+            return `<option value="${esc(option.supplier_product_id)}" ${String(option.supplier_product_id) === String(calc.option?.supplier_product_id) ? 'selected' : ''}>${esc(option.supplier_name)}</option>`;
         }).join('');
-        return `<tr data-manager-pr-item="${esc(item.pr_item_id)}"><td class="setup-product"><strong>${esc(item.product_name || '-')}</strong><span>${esc(poProductSpecification(item))}</span></td><td><strong>${Number(item.requested_qty || 0).toLocaleString()} ${esc(item.unit || 'units')}</strong></td><td><select class="form-select form-select-sm" data-manager-supplier ${options.length ? '' : 'disabled'}><option value="">${options.length ? 'Select supplier' : 'No active supplier setup'}</option>${optionMarkup}</select></td><td><strong>${esc(calc.option?.purchase_unit || '-')}</strong></td><td>${calc.option ? esc(calc.option.summary || `${calc.conversion} ${calc.option.inventory_unit} per ${calc.option.purchase_unit}`) : '-'}</td><td class="setup-cost"><strong>${calc.option ? `${peso(calc.purchaseUnitCost)} / ${esc(calc.option.purchase_unit)}` : '-'}</strong><small>${calc.option ? `Equivalent: ${peso(calc.baseCost)} / ${esc(calc.option.inventory_unit)}` : ''}</small></td><td><div class="order-qty-control"><input class="form-control form-control-sm setup-qty" data-manager-order-qty type="number" min="1" step="1" value="${calc.orderQty || ''}" ${calc.option ? '' : 'disabled'}><strong>${calc.option ? esc(purchaseUnitLabel(calc.option.purchase_unit, calc.orderQty)) : ''}</strong></div><small>${calc.option ? `Recommended: ${calc.minimum}` : ''}</small></td><td class="expected-qty"><strong>${calc.option ? `${calc.expected.toLocaleString()} ${esc(calc.option.inventory_unit)}` : '-'}</strong><small>${calc.option ? `Packaging excess: ${Math.max(0, calc.excess).toLocaleString()} ${esc(calc.option.inventory_unit)}` : ''}</small></td><td class="setup-total"><strong>${calc.option ? peso(calc.total) : '-'}</strong></td></tr>`;
+        return `<tr data-manager-pr-item="${esc(item.pr_item_id)}"><td class="setup-product"><strong>${esc(item.product_name || '-')}</strong><span>${esc(poProductSpecification(item))}</span></td><td><strong>${approvedRequirement(item).toLocaleString()} ${esc(item.unit || 'units')}</strong></td><td><select class="form-select form-select-sm" data-manager-supplier ${options.length ? '' : 'disabled'}><option value="">${options.length ? 'Select supplier' : 'No active supplier setup'}</option>${optionMarkup}</select></td><td><strong>${esc(calc.option?.purchase_unit || '-')}</strong></td><td>${calc.option ? esc(calc.option.summary || `${calc.conversion} ${calc.option.inventory_unit} per ${calc.option.purchase_unit}`) : '-'}</td><td><strong>${calc.option ? `${calc.orderQty.toLocaleString()} ${esc(purchaseUnitLabel(calc.option.purchase_unit, calc.orderQty))}` : '-'}</strong></td><td class="expected-qty"><strong>${calc.option ? `${calc.expected.toLocaleString()} ${esc(calc.option.inventory_unit)}` : '-'}</strong><small>${calc.option ? `Excess: ${Math.max(0, calc.excess).toLocaleString()} ${esc(calc.option.inventory_unit)}` : ''}</small></td></tr>`;
     }).join('');
     const errors = procurementErrors(request);
     const box = document.getElementById('managerSetupValidation');
@@ -546,11 +553,9 @@ function managerSupplierGroups(request) {
             phone:calc.option.supplier_phone || '',
             email:calc.option.supplier_email || '',
             items:[],
-            total:0,
         });
         const group = groups.get(id);
         group.items.push({ item, ...calc });
-        group.total += calc.total;
     });
     return [...groups.values()];
 }
@@ -604,8 +609,8 @@ function previewErrors(request) {
 function renderManagerPoPreview(request) {
     const groups = managerSupplierGroups(request);
     document.getElementById('managerPoPreviewCount').textContent = `${groups.length} ${groups.length === 1 ? 'PO' : 'POs'} to generate`;
-    document.getElementById('managerPoPreviewSummary').innerHTML = `<div><span>Suppliers</span><strong>${groups.length}</strong></div><div><span>Products</span><strong>${(request.items || []).length}</strong></div><div><span>Estimated Total</span><strong>${peso(groups.reduce((sum, group) => sum + group.total, 0))}</strong></div>`;
-    document.getElementById('managerSupplierPoPreview').innerHTML = groups.map((group, index) => `<article class="supplier-po-card"><header><div class="supplier-po-order"><span>Purchase Order ${index + 1}</span></div><div class="supplier-po-identity"><h4>${esc(group.name)}</h4>${supplierContactMarkup(group)}</div><div class="supplier-po-fields"><label><span>ETA</span><input class="form-control form-control-sm" type="date" data-manager-eta="${esc(group.id)}" value="${esc(supplierEtas[group.id] || '')}"></label></div></header><div class="supplier-po-table-wrap"><table><thead><tr><th>Product / Description</th><th>Purchase Unit</th><th>Order Qty</th><th>Supplier Cost</th><th>Line Total</th></tr></thead><tbody>${group.items.map(row => { const packaging = supplierPackagingDescription(row.option); return `<tr><td><strong>${esc(row.item.product_name)}</strong><span>${esc(poProductSpecification(row.item))}</span>${packaging ? `<small>Packaging: ${esc(packaging)}</small>` : ''}</td><td>${esc(row.option.purchase_unit)}</td><td>${row.orderQty.toLocaleString()}</td><td>${peso(row.purchaseUnitCost)}</td><td><strong>${peso(row.total)}</strong></td></tr>`; }).join('')}</tbody><tfoot><tr><td colspan="4">Supplier Total</td><td>${peso(group.total)}</td></tr></tfoot></table></div></article>`).join('');
+    document.getElementById('managerPoPreviewSummary').innerHTML = `<div><span>Suppliers</span><strong>${groups.length}</strong></div><div><span>Products</span><strong>${(request.items || []).length}</strong></div><div><span>Purchase Orders</span><strong>${groups.length}</strong></div>`;
+    document.getElementById('managerSupplierPoPreview').innerHTML = groups.map((group, index) => `<article class="supplier-po-card"><header><div class="supplier-po-order"><span>Purchase Order ${index + 1}</span></div><div class="supplier-po-identity"><h4>${esc(group.name)}</h4>${supplierContactMarkup(group)}</div><div class="supplier-po-fields"><label><span>ETA</span><input class="form-control form-control-sm" type="date" data-manager-eta="${esc(group.id)}" value="${esc(supplierEtas[group.id] || '')}"></label></div></header><div class="supplier-po-table-wrap"><table><thead><tr><th>Product / Description</th><th>Approved Requirement</th><th>PO Qty</th><th>Purchase Unit</th><th>Contents / Packaging</th></tr></thead><tbody>${group.items.map(row => { const packaging = row.option.summary || supplierPackagingDescription(row.option) || `${row.conversion.toLocaleString()} ${row.option.inventory_unit} per ${row.option.purchase_unit}`; return `<tr><td><strong>${esc(row.item.product_name)}</strong><span>${esc(poProductSpecification(row.item))}</span></td><td>${approvedRequirement(row.item).toLocaleString()} ${esc(row.item.unit || row.option.inventory_unit)}</td><td>${row.orderQty.toLocaleString()}</td><td>${esc(row.option.purchase_unit)}</td><td>${esc(packaging)}</td></tr>`; }).join('')}</tbody></table></div></article>`).join('');
     const errors = previewErrors(request);
     const box = document.getElementById('managerPoPreviewValidation');
     box.className = `setup-validation ${errors.length ? 'has-errors' : 'is-ready'}`;
@@ -658,7 +663,7 @@ async function generatePurchaseOrders() {
     try {
         const payload = {
             pr_id:generatingRequest.pr_id,
-            items:(generatingRequest.items || []).map(item => ({ pr_item_id:item.pr_item_id, supplier_product_id:selectedProcurementOption(item).supplier_product_id, order_qty:Number(procurementSelections[item.pr_item_id].order_qty) })),
+            items:(generatingRequest.items || []).map(item => ({ pr_item_id:item.pr_item_id, supplier_product_id:selectedProcurementOption(item).supplier_product_id })),
             supplier_etas:supplierEtas,
         };
         const result = await json(`${API_BASE_URL}/purchase_requests/generate_purchase_orders.php`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
@@ -674,7 +679,8 @@ async function generatePurchaseOrders() {
 function actionButtons(request) {
     const buttons = [`<button type="button" class="btn btn-outline-secondary pr-view-btn" data-pr-action="view" data-pr-id="${esc(request.pr_id)}" title="View" aria-label="View ${esc(request.pr_number)}"><i class="fa-regular fa-eye"></i></button>`];
     if (request.status === 'Approved') buttons.push(`<button type="button" class="btn btn-outline-dark pr-print-btn" data-pr-action="print" data-pr-id="${esc(request.pr_id)}" title="Print" aria-label="Print ${esc(request.pr_number)}"><i class="fa-solid fa-print"></i></button>`);
-    buttons.push(`<button type="button" class="btn btn-outline-primary" data-pr-action="related-pos" data-pr-id="${esc(request.pr_id)}" title="View Related POs" aria-label="View related Purchase Orders for ${esc(request.pr_number)}"><i class="fa-solid fa-file-invoice"></i></button>`);
+    const relatedPoCount = Math.max(0, Number(request.po_generated_count || 0));
+    if (relatedPoCount > 0) buttons.push(`<button type="button" class="btn btn-outline-primary" data-pr-action="related-pos" data-pr-id="${esc(request.pr_id)}" title="View Related POs" aria-label="View ${relatedPoCount} related Purchase Order${relatedPoCount === 1 ? '' : 's'} for ${esc(request.pr_number)}"><i class="fa-solid fa-file-invoice"></i></button>`);
     if (canCreatePurchaseRequests() && isRequestOwner(request) && ['Draft', 'Revision Requested'].includes(request.status)) {
         buttons.push(`<button class="btn btn-outline-primary" data-pr-action="edit" data-pr-id="${esc(request.pr_id)}" title="Edit"><i class="fa-regular fa-pen-to-square"></i></button>`);
     }
@@ -769,7 +775,7 @@ function showDetails(request) {
     frame.src = `purchase_request_print.html?pr_id=${encodeURIComponent(request.pr_id)}&embed=1&ui=final2`;
     const purchaseOrders = request.purchase_orders || [];
     document.getElementById('generatedPoSection').hidden = purchaseOrders.length === 0;
-    document.getElementById('generatedPoList').innerHTML = purchaseOrders.map(po => `<article class="generated-po-card"><div><strong>${esc(po.po_number)}</strong><span>${esc(po.supplier_name || 'Supplier')} · ETA: ${esc(formatRequestDate(po.expected_delivery_date))} · Mode: ${esc(po.payment_terms || 'Not set')} · ${peso(po.total_amount)}</span></div><div class="generated-po-actions"><a class="btn btn-sm btn-outline-primary" href="purchase_orders.html?tab=active&po_id=${encodeURIComponent(po.po_id)}">View</a><a class="btn btn-sm btn-outline-dark" href="purchase_order_print.html?po_id=${encodeURIComponent(po.po_id)}" data-po-print-id="${esc(po.po_id)}">Print</a></div></article>`).join('');
+    document.getElementById('generatedPoList').innerHTML = purchaseOrders.map(po => `<article class="generated-po-card"><div><strong>${esc(po.po_number)}</strong><span>${esc(po.supplier_name || 'Supplier')} · ETA: ${esc(formatRequestDate(po.expected_delivery_date))} · Mode: ${esc(po.payment_terms || 'Not set')} · ${esc(purchaseOrderTotalText(po))}</span></div><div class="generated-po-actions"><a class="btn btn-sm btn-outline-primary" href="purchase_orders.html?tab=active&po_id=${encodeURIComponent(po.po_id)}">View</a><a class="btn btn-sm btn-outline-dark" href="purchase_order_print.html?po_id=${encodeURIComponent(po.po_id)}" data-po-print-id="${esc(po.po_id)}">Print</a></div></article>`).join('');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('requestDetailsModal')).show();
 }
 
@@ -1020,22 +1026,9 @@ document.getElementById('managerProcurementAssignments')?.addEventListener('chan
     const item = (generatingRequest.items || []).find(candidate => String(candidate.pr_item_id) === String(row?.dataset.managerPrItem));
     if (!item) return;
     if (event.target.matches('[data-manager-supplier]')) {
-        const option = (item.supplier_options || []).find(candidate => String(candidate.supplier_product_id) === String(event.target.value));
-        const conversion = Number(option?.base_qty_per_purchase_unit || option?.units_per_purchase_unit || 0);
-        procurementSelections[item.pr_item_id] = { supplier_product_id:event.target.value, order_qty:option && conversion > 0 ? Math.ceil(Number(item.requested_qty || 0) / conversion) : 0 };
-    } else if (event.target.matches('[data-manager-order-qty]')) {
-        procurementSelections[item.pr_item_id].order_qty = Number(event.target.value || 0);
+        procurementSelections[item.pr_item_id] = { supplier_product_id:event.target.value };
     }
     renderManagerPurchasingSetup(generatingRequest);
-    renderGenerationActions();
-});
-document.getElementById('managerProcurementAssignments')?.addEventListener('input', event => {
-    if (!event.target.matches('[data-manager-order-qty]') || !generatingRequest) return;
-    const row = event.target.closest('[data-manager-pr-item]');
-    procurementSelections[row.dataset.managerPrItem].order_qty = Number(event.target.value || 0);
-    const calc = procurementCalculation((generatingRequest.items || []).find(item => String(item.pr_item_id) === String(row.dataset.managerPrItem)));
-    row.querySelector('.expected-qty').innerHTML = `<strong>${calc.expected.toLocaleString()} ${esc(calc.option?.inventory_unit || 'units')}</strong><small>Packaging excess: ${Math.max(0, calc.excess).toLocaleString()} ${esc(calc.option?.inventory_unit || 'units')}</small>`;
-    row.querySelector('.setup-total').innerHTML = `<strong>${peso(calc.total)}</strong>`;
     renderGenerationActions();
 });
 document.getElementById('managerSupplierPoPreview')?.addEventListener('change', event => {

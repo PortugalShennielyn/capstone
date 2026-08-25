@@ -221,14 +221,14 @@ function purchasesReport(PDO $pdo,array $f): array
     if($f['search']!==''){$where[]='(po.po_number LIKE :po_search OR s.supplier_name LIKE :supplier_search)';$params[':po_search']=$params[':supplier_search']='%'.$f['search'].'%';}
     $whereSql=implode(' AND ',$where);$joins=purchaseAggregateSql();
     $summary=reportRow($pdo,"SELECT COUNT(*) total_orders,
-      COALESCE(SUM(CASE WHEN po.status IN ('Pending','In transit') THEN COALESCE(NULLIF(po.total_amount,0),item.item_total,0) ELSE 0 END),0) open_commitments,
-            COALESCE(SUM(CASE WHEN po.status='Delivered' THEN COALESCE(NULLIF(po.total_amount,0),item.item_total,0) ELSE 0 END),0) received_cost,
-            COALESCE(SUM(CASE WHEN po.status='Delivered' THEN GREATEST(COALESCE(rec.received_qty,0)-COALESCE(ret.returned_qty,0)-COALESCE(ret.rejected_qty,0),0)*COALESCE(COALESCE(NULLIF(po.total_amount,0),item.item_total,0)/NULLIF(item.ordered_qty,0),0) ELSE 0 END),0) accepted_cost,
+      COALESCE(SUM(CASE WHEN po.status IN ('Draft','Pending') THEN COALESCE(po.total_amount,0) ELSE 0 END),0) open_commitments,
+            COALESCE(SUM(CASE WHEN po.status='Delivered' THEN COALESCE(po.total_amount,0) ELSE 0 END),0) received_cost,
+            COALESCE(SUM(CASE WHEN po.status='Delivered' THEN COALESCE(NULLIF(po.final_payment,0),po.total_amount,0) ELSE 0 END),0) accepted_cost,
             COALESCE(SUM(CASE WHEN po.status='Delivered' THEN po.final_payment ELSE 0 END),0) final_payable,
             COALESCE(SUM(CASE WHEN po.status='Delivered' THEN COALESCE(pay.amount_paid,0) ELSE 0 END),0) amount_paid,
             COALESCE(SUM(CASE WHEN po.status='Delivered' THEN GREATEST(po.final_payment-COALESCE(pay.amount_paid,0),0) ELSE 0 END),0) outstanding,
-            COALESCE(SUM(CASE WHEN po.status='Delivered' THEN GREATEST(COALESCE(NULLIF(po.total_amount,0),item.item_total,0)-po.final_payment,0) ELSE 0 END),0) return_damage_value,
-      COALESCE(SUM(CASE WHEN po.status='Cancelled' THEN COALESCE(NULLIF(po.total_amount,0),item.item_total,0) ELSE 0 END),0) cancelled_value
+            COALESCE(SUM(CASE WHEN po.status='Delivered' THEN GREATEST(COALESCE(po.total_amount,0)-po.final_payment,0) ELSE 0 END),0) return_damage_value,
+      COALESCE(SUM(CASE WHEN po.status='Cancelled' THEN COALESCE(po.total_amount,0) ELSE 0 END),0) cancelled_value
       FROM purchase_orders po JOIN suppliers s ON s.supplier_id=po.supplier_id {$joins} WHERE {$whereSql}",$params);
     $statuses=reportRows($pdo,"SELECT po.status label,COUNT(*) value FROM purchase_orders po JOIN suppliers s ON s.supplier_id=po.supplier_id {$joins} WHERE {$whereSql} GROUP BY po.status ORDER BY value DESC",$params);
     $supplierPerformance=reportRows($pdo,"SELECT s.supplier_name,
@@ -238,7 +238,7 @@ function purchasesReport(PDO $pdo,array $f): array
       ROUND(100*SUM(GREATEST(COALESCE(rec.received_qty,0)-COALESCE(ret.returned_qty,0)-COALESCE(ret.rejected_qty,0),0))/NULLIF(SUM(rec.received_qty),0),1) accepted_rate,
       ROUND(100*SUM(COALESCE(ret.returned_qty,0)+COALESCE(ret.rejected_qty,0))/NULLIF(SUM(rec.received_qty),0),1) return_damage_rate,
       ROUND(AVG(GREATEST(DATEDIFF(rec.received_date,po.expected_delivery_date),0)),1) average_delay_days,
-      ROUND(SUM(GREATEST(COALESCE(rec.received_qty,0)-COALESCE(ret.returned_qty,0)-COALESCE(ret.rejected_qty,0),0)*COALESCE(COALESCE(NULLIF(po.total_amount,0),item.item_total,0)/NULLIF(item.ordered_qty,0),0)),2) accepted_value
+      ROUND(SUM(COALESCE(NULLIF(po.final_payment,0),po.total_amount,0)),2) accepted_value
       FROM purchase_orders po JOIN suppliers s ON s.supplier_id=po.supplier_id {$joins}
             WHERE {$whereSql} AND po.status='Delivered'
       GROUP BY s.supplier_id,s.supplier_name ORDER BY accepted_value DESC",$params);
@@ -247,8 +247,8 @@ function purchasesReport(PDO $pdo,array $f): array
     $sort=$sortMap[$f['sort']]??'po.created_at';$params[':limit']=$f['page_size'];$params[':offset']=$f['offset'];
     $rows=reportRows($pdo,"SELECT po.po_number,DATE(po.created_at) order_date,s.supplier_name,COALESCE(item.ordered_qty,0) ordered_qty,
       COALESCE(rec.received_qty,0) received_qty,GREATEST(COALESCE(rec.received_qty,0)-COALESCE(ret.returned_qty,0)-COALESCE(ret.rejected_qty,0),0) accepted_qty,
-      COALESCE(ret.returned_qty,0) returned_qty,COALESCE(rec.damaged_qty,0) damaged_qty,COALESCE(NULLIF(po.total_amount,0),item.item_total,0) original_total,
-      GREATEST(COALESCE(rec.received_qty,0)-COALESCE(ret.returned_qty,0)-COALESCE(ret.rejected_qty,0),0)*COALESCE(COALESCE(NULLIF(po.total_amount,0),item.item_total,0)/NULLIF(item.ordered_qty,0),0) accepted_value,
+      COALESCE(ret.returned_qty,0) returned_qty,COALESCE(rec.damaged_qty,0) damaged_qty,po.total_amount original_total,
+      CASE WHEN po.status='Delivered' THEN COALESCE(NULLIF(po.final_payment,0),po.total_amount,0) ELSE 0 END accepted_value,
                 CASE WHEN po.status='Delivered' THEN po.final_payment ELSE 0 END final_payable,
       COALESCE(pay.amount_paid,0) amount_paid,
                 CASE WHEN po.status='Delivered' THEN GREATEST(po.final_payment-COALESCE(pay.amount_paid,0),0) ELSE 0 END remaining_balance,
@@ -271,9 +271,9 @@ function purchasesReport(PDO $pdo,array $f): array
         'numeric_columns'=>['ordered_qty','received_qty','accepted_qty','returned_qty','damaged_qty'],'currency_columns'=>['original_total','accepted_value','final_payable','amount_paid','remaining_balance'],
         'rows'=>$rows,'pagination'=>reportPagination((int)($count['total']??0),$f),
         'notes'=>[
-            'Open Purchase Commitments = original value of Pending and In Transit POs. These are not yet payables.',
-            'Original PO value uses purchase_orders.total_amount, falling back to summed purchase_order_items.line_total only when the header total is zero. For delivered POs, purchase_orders.final_payment is the authoritative inspected payable. Outstanding Payables = max(final_payment − valid recorded PO payments, 0). Cancelled POs are excluded.',
-            'Accepted Qty = received quantity − quantities returned for credit/replacement − rejected quantities. Kept damaged stock remains accepted because that matches the existing receiving workflow. Accepted Value uses the PO unit cost; Return / Damage Value uses original total − final payable.',
+            'Draft and Pending POs do not have a monetary commitment until the actual supplier receipt total is entered at arrival.',
+            'Original PO value uses purchase_orders.total_amount only. It never falls back to supplier reference costs or item line totals. For delivered POs, purchase_orders.final_payment remains the authoritative adjusted payable when present.',
+            'Accepted Qty = received quantity − quantities returned for credit/replacement − rejected quantities. Accepted Value uses the adjusted PO payable without allocating the overall receipt total across items.',
             'Supplier performance includes only Delivered POs. On-time = received by expected date; fulfillment = received ÷ ordered; accepted = accepted ÷ received; return/damage = returned or rejected ÷ received; delay counts days after expected delivery.',
             'Amount Paid is retained in the response and detail table; Final Payable and Outstanding Payables are emphasized as management liabilities.'
         ]];
@@ -481,7 +481,7 @@ function overviewReport(PDO $pdo,array $f,array $role): array
       ORDER BY MIN(b.expiry_date)");
 
     $poStatuses=[];
-        foreach(['Pending','In transit','Arrived','Delivered','Cancelled'] as $status)$poStatuses[$status]=0;
+        foreach(['Draft','Pending','Arrived','Delivered','Cancelled'] as $status)$poStatuses[$status]=0;
     foreach($purchases['charts'][0]['rows']??[] as $row)if(array_key_exists($row['label'],$poStatuses))$poStatuses[$row['label']]=(int)$row['value'];
     $arrived=(int)(reportRow($pdo,"SELECT COUNT(DISTINCT po_id) total FROM purchase_orders WHERE status='Arrived'")['total']??0);
 

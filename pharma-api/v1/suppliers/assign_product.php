@@ -15,7 +15,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $payload = json_decode(file_get_contents('php://input'), true);
 $supplierId = cleanId($payload['supplier_id'] ?? null);
 $productId = cleanId($payload['product_id'] ?? null);
-$supplierCostPrice = $payload['supplier_cost_price'] ?? null;
 $purchaseUnit = trim((string) ($payload['purchase_unit'] ?? ''));
 $unitsPerPurchaseUnitRaw = $payload['units_per_purchase_unit'] ?? null;
 
@@ -24,21 +23,6 @@ if ($purchaseUnit === '') {
     echo json_encode(['status' => 'error', 'message' => 'Purchase Unit is required.']);
     exit();
 }
-if (!is_numeric($supplierCostPrice) || (float) $supplierCostPrice < 0) {
-    http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Supplier cost must be a non-negative number.']);
-    exit();
-}
-
-if (!is_numeric($unitsPerPurchaseUnitRaw) || (float) $unitsPerPurchaseUnitRaw <= 0
-    || (float)$unitsPerPurchaseUnitRaw !== (float)(int)$unitsPerPurchaseUnitRaw) {
-    http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => 'Units per Purchase Unit must be a positive whole number.']);
-    exit();
-}
-
-$unitsPerPurchaseUnit = (int) $unitsPerPurchaseUnitRaw;
-
 if ($supplierId === '' || $productId === '') {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'A valid supplier and product are required.']);
@@ -51,6 +35,14 @@ try {
     ensureSupplierProductInventoryUnitColumn($pdo);
     ensureSupplierPurchasingConversionSchema($pdo);
     $inventoryUnit = productInventoryUnitForSupplier($pdo,$productId)['unit_name'];
+    if (strcasecmp($purchaseUnit, $inventoryUnit) === 0) {
+        $unitsPerPurchaseUnit = 1;
+    } elseif (!is_numeric($unitsPerPurchaseUnitRaw) || (float) $unitsPerPurchaseUnitRaw <= 0
+        || (float)$unitsPerPurchaseUnitRaw !== (float)(int)$unitsPerPurchaseUnitRaw) {
+        throw new InvalidArgumentException("Contents per {$purchaseUnit} must be a positive whole number.");
+    } else {
+        $unitsPerPurchaseUnit = (int) $unitsPerPurchaseUnitRaw;
+    }
     validateSupplierPurchasingHierarchyUnits($pdo, [
         'purchase_unit' => $purchaseUnit,
         'inventory_unit' => $inventoryUnit,
@@ -90,15 +82,12 @@ try {
     }
 
     $statement = $pdo->prepare(
-        'INSERT INTO supplier_products (supplier_id, product_id, supplier_cost_price, supplier_cost_input, supplier_cost_basis, purchase_unit, purchase_unit_contains, inventory_unit, units_per_purchase_unit)
-         VALUES (:supplier_id, :product_id, :supplier_cost_price, :supplier_cost_input, :supplier_cost_basis, :purchase_unit, :purchase_unit_contains, :inventory_unit, :units_per_purchase_unit)'
+        'INSERT INTO supplier_products (supplier_id, product_id, purchase_unit, purchase_unit_contains, inventory_unit, units_per_purchase_unit)
+         VALUES (:supplier_id, :product_id, :purchase_unit, :purchase_unit_contains, :inventory_unit, :units_per_purchase_unit)'
     );
     $statement->execute([
         ':supplier_id' => $supplierId,
         ':product_id' => $productId,
-        ':supplier_cost_price' => (float) $supplierCostPrice / $unitsPerPurchaseUnit,
-        ':supplier_cost_input' => (float) $supplierCostPrice,
-        ':supplier_cost_basis' => 'purchase',
         ':purchase_unit' => $purchaseUnit !== '' ? $purchaseUnit : null,
         ':purchase_unit_contains' => $unitsPerPurchaseUnit,
         ':inventory_unit' => $inventoryUnit,

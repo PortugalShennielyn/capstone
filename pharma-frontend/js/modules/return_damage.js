@@ -4,18 +4,26 @@ const API_BASE_URL = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
     : '../pharma-api/v1';
 
-const REASON_META = {
-    'Total Return/Damage': '#7c3aed',
-    'Expired': '#dc2626',
-    'Broken package': '#f97316',
-    'Wrong item delivered': '#eab308',
-    'Incorrect quantity': '#06b6d4',
-    'Damaged during delivery': '#ef4444',
-    'Other': '#64748b'
-};
+const REASON_META = [
+    { key:'all', label:'Total Return/Damage', color:'#7c3aed', aliases:[] },
+    { key:'expired', label:'Expired', color:'#c2414b', aliases:['expired','expiry','expired product'] },
+    { key:'broken_package', label:'Broken Package', color:'#c97939', aliases:['broken package','broken packaging','packaging damaged','damaged packaging'] },
+    { key:'wrong_item', label:'Wrong Item', color:'#b68a24', aliases:['wrong item delivered','wrong item','incorrect item'] },
+    { key:'quantity_issue', label:'Quantity Issue', color:'#2f8f9d', aliases:['incorrect quantity','quantity issue','shortage','missing quantity','overage'] },
+    { key:'delivery_damage', label:'Delivery Damage', color:'#b95757', aliases:['damaged during delivery','damaged product','delivery damage','damaged','product damage'] },
+    { key:'other', label:'Other', color:'#64748b', aliases:['other'] }
+];
+
+const RESOLUTION_LABELS = { 'Replacement':'Replacement', 'Current PO Credit':'Current PO Adjustment', 'Next PO Credit':'Credit Next PO' };
 
 let activeReturnDamage = null;
-let supplierClaimSources = [];
+let replacementReceivingRequestKey = '';
+let returnRecords = [];
+let activeReason = 'all';
+let currentPage = 1;
+let pageSize = 10;
+let searchTimer = null;
+let lastEditTrigger = null;
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -33,7 +41,55 @@ async function fetchJson(url, options = {}) {
 function formatDate(value) {
     if (!value) return 'Not set';
     const date = new Date(String(value).replace(' ', 'T'));
-    return Number.isNaN(date.getTime()) ? escapeHtml(value) : date.toLocaleDateString();
+    return Number.isNaN(date.getTime()) ? escapeHtml(value) : date.toLocaleDateString('en-US',{ month:'short', day:'numeric', year:'numeric' });
+}
+
+function normalizeReason(value) {
+    const normalized = String(value || '').trim().toLowerCase().replace(/[\/_-]+/g,' ').replace(/\s+/g,' ');
+    return REASON_META.find((item) => item.key !== 'all' && item.aliases.includes(normalized))?.key || 'other';
+}
+
+function displayReason(value) {
+    const key = normalizeReason(value);
+    return REASON_META.find((item) => item.key === key)?.label || 'Other';
+}
+
+function recordStatus(record) { return String(record.return_status || record.purchase_order_status || 'Awaiting supplier action'); }
+
+function statusPresentation(record) {
+    const raw = recordStatus(record);
+    const value = raw.toLowerCase();
+    const creditRemaining = Number(record.credit_remaining || 0);
+    if (record.resolution_type === 'Next PO Credit' && creditRemaining > 0) return { label:'Credit available', tone:'info' };
+    if (record.resolution_type === 'Next PO Credit' && record.credit_status === 'Partially Applied') return { label:'Credit partly used', tone:'info' };
+    if (value.includes('credit applied')) return { label:'Credit applied', tone:'success' };
+    if (value.includes('resolved') || value.includes('received') && !value.includes('partially')) return { label:'Resolved', tone:'success' };
+    if (value.includes('credit') && value.includes('available')) return { label:'Credit available', tone:'info' };
+    if (value.includes('replac')) return { label:value.includes('partial') ? 'Replacement partly received' : 'Awaiting replacement', tone:'waiting' };
+    if (value.includes('cancel')) return { label:'Cancelled', tone:'problem' };
+    if (value.includes('credit')) return { label:'Credit pending', tone:'waiting' };
+    return { label:raw === 'Open' ? 'Awaiting supplier action' : raw, tone:'waiting' };
+}
+
+function resolutionLabel(record) { return RESOLUTION_LABELS[record.resolution_type] || (record.resolution_type ? record.resolution_type : 'Awaiting decision'); }
+
+function productSpecification(record) {
+    return [record.brand_name, record.variant_flavor, record.unit].filter((value) => value && !['N/A','None'].includes(String(value))).join(' • ') || 'Product specification unavailable';
+}
+
+function quantityUnit(record) { return record.affected_unit_name || record.unit || 'unit'; }
+
+function requestedResolutionLabel(record) {
+    const value = record.requested_resolution_type || record.resolution_type || '';
+    return RESOLUTION_LABELS[value] || value || 'Not recorded';
+}
+
+function money(value) { return `₱${Number(value || 0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+
+function formatDateTime(value) {
+    if (!value) return '';
+    const date = new Date(String(value).replace(' ','T'));
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
 }
 
 function setTheme(theme) {
@@ -49,168 +105,100 @@ function setTheme(theme) {
     localStorage.setItem('drpTheme', theme);
 }
 
-function statusBadge(record) {
-    const status = record.return_status || record.purchase_order_status || 'Open';
-    const color = ['Resolved', 'Replacement received', 'Replacement Received / Resolved'].includes(status) ? '#16a34a'
-        : (status === 'Cancelled' ? '#64748b' : (['Replacement partially received', 'Replacement Partially Received'].includes(status) ? '#2563eb' : '#f97316'));
-    return `<span class="badge text-white" style="background:${color}">${escapeHtml(status)}</span>`;
+function filteredRecords() {
+    const search = document.getElementById('returnSearch')?.value.trim().toLowerCase() || '';
+    const status = document.getElementById('returnStatusFilter')?.value || '';
+    const reason = document.getElementById('returnReasonFilter')?.value || activeReason;
+    return returnRecords.filter((record) => {
+        const haystack = [record.po_number,record.supplier_name,record.product_name,record.brand_name].join(' ').toLowerCase();
+        return (!search || haystack.includes(search)) && (!status || recordStatus(record) === status) && (!reason || reason === 'all' || normalizeReason(record.damage_reason) === reason);
+    });
 }
 
-function renderSummary(summary = {}) {
-    const container = document.getElementById('return-summary');
-    if (!container) return;
-
-    container.innerHTML = Object.entries(REASON_META).map(([label, color]) => `
-        <div class="summary-card" style="--summary-color:${color}">
-            <strong>${Number(summary[label] || 0)}</strong>
-            <p>${escapeHtml(label)}</p>
-        </div>
-    `).join('');
-}
-
-function renderReturnDamageRecords(records = []) {
+function renderReturnDamageRecords() {
     const body = document.querySelector('#table-return-damage tbody');
     if (!body) return;
-
-    if (records.length === 0) {
-        body.innerHTML = '<tr><td colspan="13" class="empty-row">No return/damage records found.</td></tr>';
+    const filtered = filteredRecords();
+    const pages = Math.max(1,Math.ceil(filtered.length / pageSize));
+    currentPage = Math.min(currentPage,pages);
+    const start = (currentPage - 1) * pageSize;
+    const records = filtered.slice(start,start + pageSize);
+    if (!records.length) {
+        body.innerHTML = '<tr><td colspan="7" class="empty-row">No return/damage records match the current filters.</td></tr>';
+        updatePagination(filtered.length,0,0);
         return;
     }
 
     body.innerHTML = records.map((record) => {
-        const resolvedButton = record.return_status === 'Resolved'
-            ? ''
-            : `<button class="btn btn-sm btn-outline-success resolve-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="Mark Resolved"><i class="fa-solid fa-check"></i></button>`;
+        const status = statusPresentation(record);
+        const unit = quantityUnit(record);
+        const isResolved = status.label === 'Resolved' || status.label === 'Credit applied';
+        const manageAction = isResolved ? '' : `<button class="btn btn-sm btn-outline-secondary edit-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="Manage return/damage" aria-label="Manage return/damage"><i class="fa-solid fa-sliders"></i></button>`;
+        const replacementAction = record.resolution_type === 'Replacement' && Number(record.replacement_outstanding_qty || 0) > 0
+            ? `<button class="btn btn-sm btn-outline-success replacement-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="Receive replacement" aria-label="Receive replacement"><i class="fa-solid fa-box-open"></i></button>` : '';
 
         return `
         <tr>
-            <td>${formatDate(record.return_date)}</td>
-            <td>${escapeHtml(record.po_number)}</td>
-            <td>${escapeHtml(record.supplier_name)}</td>
-            <td>${escapeHtml(record.product_name)}</td>
-            <td>${escapeHtml(record.brand_name)}</td>
-            <td>${escapeHtml(record.ordered_quantity)}</td>
-            <td>${escapeHtml(record.received_quantity)}</td>
-            <td>${escapeHtml(record.damaged_quantity)}</td>
-            <td>${escapeHtml(record.return_quantity)}</td>
-            <td>${escapeHtml(record.damage_reason)}</td>
-            <td>${escapeHtml(record.remarks || 'None')}</td>
-            <td>${statusBadge(record)}</td>
-            <td>
+            <td data-label="Reference"><div class="cell-primary">${escapeHtml(record.po_number)}</div><div class="cell-secondary">${formatDate(record.return_date)}</div></td>
+            <td data-label="Supplier"><div class="cell-primary">${escapeHtml(record.supplier_name)}</div></td>
+            <td data-label="Product"><div class="cell-primary">${escapeHtml(record.product_name)}</div><div class="cell-secondary">${escapeHtml(productSpecification(record))}</div></td>
+            <td data-label="Quantity"><div class="quantity-grid"><span>Ordered <strong>${escapeHtml(record.ordered_quantity)}</strong></span><span>Received <strong>${escapeHtml(record.received_quantity)}</strong></span><span>Accepted <strong>${escapeHtml(record.accepted_quantity ?? '—')}</strong></span><span>Affected <strong>${escapeHtml(record.affected_quantity || record.damaged_quantity)} ${escapeHtml(unit)}</strong></span><span>Returned <strong>${escapeHtml(record.return_quantity)} ${escapeHtml(unit)}</strong></span></div></td>
+            <td data-label="Issue"><div class="cell-primary">${escapeHtml(displayReason(record.damage_reason))}</div>${record.remarks ? `<div class="cell-secondary">${escapeHtml(record.remarks)}</div>` : ''}</td>
+            <td data-label="Resolution"><div class="cell-primary">${escapeHtml(resolutionLabel(record))}</div><span class="status-pill status-${status.tone}">${escapeHtml(status.label)}</span></td>
+            <td data-label="Actions">
                 <div class="return-actions">
-                    <button class="btn btn-sm btn-outline-primary view-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="View">
+                    <button class="btn btn-sm btn-outline-primary view-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="View details" aria-label="View details">
                         <i class="fa-regular fa-eye"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-secondary edit-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="Edit">
-                        <i class="fa-solid fa-pen"></i>
-                    </button>
-                    ${resolvedButton}
+                    ${manageAction}
+                    ${replacementAction}
                 </div>
             </td>
         </tr>
     `;
     }).join('');
+    updatePagination(filtered.length,start + 1,start + records.length);
+}
+
+function updatePagination(total,first,last) {
+    document.getElementById('returnPageSummary').textContent = total ? `${first}–${last} of ${total} records` : '0 records';
+    document.getElementById('returnPrevPage').disabled = currentPage <= 1;
+    document.getElementById('returnNextPage').disabled = currentPage * pageSize >= total;
+}
+
+function populateFilters() {
+    const statuses = [...new Set(returnRecords.map(recordStatus))].sort();
+    const statusSelect = document.getElementById('returnStatusFilter');
+    const selected = statusSelect.value;
+    statusSelect.innerHTML = '<option value="">All statuses</option>' + statuses.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('');
+    statusSelect.value = selected;
+    document.getElementById('returnReasonFilter').innerHTML = '<option value="">All reasons</option>' + REASON_META.filter(item => item.key !== 'all').map((item) => `<option value="${item.key}">${escapeHtml(item.label)}</option>`).join('');
 }
 
 async function loadReturnDamageRecords() {
     try {
         const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_return_damage_orders.php`);
-        renderSummary(data.summary || {});
-        renderReturnDamageRecords(data.returns || []);
+        returnRecords = data.returns || [];
+        populateFilters();
+        renderReturnDamageRecords();
     } catch (error) {
-        renderSummary({});
-        renderReturnDamageRecords([]);
+        returnRecords = [];
+        renderReturnDamageRecords();
         PharmaUtils.toast.error(error.message);
     }
 }
 
-function renderClaimSourceSelection() {
-    const sourceSelect = document.getElementById('claimSourceBatch');
-    if (!sourceSelect) return;
-    sourceSelect.innerHTML = '<option value="">Select delivered stock...</option>' + supplierClaimSources.map((source, index) => `<option value="${index}">${escapeHtml(source.po_number)} · ${escapeHtml([source.brand_name, source.product_name].filter(Boolean).join(' — '))} · Batch ${escapeHtml(source.batch_number)} · ${Number(source.usable_quantity)} usable</option>`).join('');
-    document.getElementById('claimUnitConversion').innerHTML = '';
-    document.getElementById('claimSourceAvailability').textContent = '';
-}
-
-function updateClaimSource() {
-    const selectedIndex = document.getElementById('claimSourceBatch')?.value ?? '';
-    const source = selectedIndex === '' ? null : supplierClaimSources[Number(selectedIndex)];
-    const conversionSelect = document.getElementById('claimUnitConversion');
-    if (!source || !conversionSelect) { if (conversionSelect) conversionSelect.innerHTML = ''; return; }
-    conversionSelect.innerHTML = (source.package_conversions || []).map((conversion) => `<option value="${escapeHtml(conversion.conversion_id)}" data-base-quantity="${Number(conversion.base_quantity || 1)}">${escapeHtml(conversion.unit_name)} (${Number(conversion.base_quantity || 1)} base units)</option>`).join('');
-    document.getElementById('claimSourceAvailability').textContent = `${source.usable_quantity} usable base units: ${source.storage_qty} storage, ${source.shelf_qty} shelf.`;
-}
-
-async function openNewSupplierClaim() {
-    try {
-        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_supplier_claim_sources.php`);
-        supplierClaimSources = data.sources || [];
-        renderClaimSourceSelection();
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('newSupplierClaimModal')).show();
-    } catch (error) { PharmaUtils.toast.error(error.message); }
-}
-
-async function saveNewSupplierClaim() {
-    const selectedIndex = document.getElementById('claimSourceBatch')?.value ?? '';
-    const source = selectedIndex === '' ? null : supplierClaimSources[Number(selectedIndex)];
-    const quantity = Number(document.getElementById('claimAffectedQuantity')?.value || 0);
-    const conversionSelect = document.getElementById('claimUnitConversion');
-    const baseQuantity = Number(conversionSelect?.selectedOptions?.[0]?.dataset.baseQuantity || 0);
-    if (!source) return PharmaUtils.toast.error('Select the original delivered batch.');
-    if (!Number.isInteger(quantity) || quantity <= 0) return PharmaUtils.toast.error('Affected quantity must be a positive whole number.');
-    if (!conversionSelect?.value || quantity * baseQuantity > Number(source.usable_quantity)) return PharmaUtils.toast.error('Affected package quantity exceeds usable stock in this batch.');
-    const button = document.getElementById('btnSaveSupplierClaim');
-    try {
-        button.disabled = true;
-        const payload = { po_id: source.po_id, returns: [{ po_item_id: source.po_item_id, inventory_batch_id: source.inventory_batch_id, affected_quantity: quantity, unit_conversion_id: conversionSelect.value, damage_reason: document.getElementById('claimDamageReason').value, disposition: document.getElementById('claimDisposition').value, resolution_type: document.getElementById('claimResolution').value, remarks: document.getElementById('claimRemarks').value.trim() }] };
-        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/save_purchase_order_return.php`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-        bootstrap.Modal.getInstance(document.getElementById('newSupplierClaimModal'))?.hide();
-        PharmaUtils.toast.success(data.message);
-        await loadReturnDamageRecords();
-    } catch (error) { PharmaUtils.modal.error('Failed to save supplier claim', error.message); }
-    finally { button.disabled = false; }
-}
-
-function detailGrid(record) {
-    const isMedicine = record.category_name === 'Medicine';
-    const isLiquid = /\b(liquid|syrup|solution|suspension|drops|betadine|povidone)\b/.test(
-        `${record.product_name || ''} ${record.brand_name || ''} ${record.type_name || ''}`.toLowerCase()
-    );
-    const medicineAmount = isLiquid && record.volume_value
-        ? `${record.volume_value} ${record.volume_unit || ''}`.trim()
-        : (record.strength || 'N/A');
-    const medicineLabel = isLiquid ? 'Volume' : 'Strength';
-    const groceryAmount = record.weight_volume_value
-        ? `${record.weight_volume_value} ${record.weight_volume_unit || ''}`.trim()
-        : 'N/A';
-
-    const resolutionLabels = {
-        return_for_credit: 'Return for supplier credit', return_for_replacement: 'Return for replacement',
-        keep_with_discount: 'Keep with supplier discount', keep_damaged: 'Keep as damaged stock',
-        reject_without_replacement: 'Reject without replacement', replacement_damage_event: 'Replacement arrived damaged'
-    };
-    return `
-        <div class="detail-box"><span>Date</span><strong>${formatDate(record.return_date)}</strong></div>
-        <div class="detail-box"><span>PO Number</span><strong>${escapeHtml(record.po_number)}</strong></div>
-        <div class="detail-box"><span>Supplier Name</span><strong>${escapeHtml(record.supplier_name)}</strong></div>
-        <div class="detail-box"><span>Product Name</span><strong>${escapeHtml(record.product_name)}</strong></div>
-        <div class="detail-box"><span>Brand Name</span><strong>${escapeHtml(record.brand_name)}</strong></div>
-        <div class="detail-box"><span>Category</span><strong>${escapeHtml(record.category_name || 'N/A')} / ${escapeHtml(record.type_name || 'N/A')}</strong></div>
-        ${isMedicine
-            ? `<div class="detail-box"><span>Generic Name</span><strong>${escapeHtml(record.generic_name || 'N/A')}</strong></div><div class="detail-box"><span>${medicineLabel}</span><strong>${escapeHtml(medicineAmount)}</strong></div><div class="detail-box"><span>Unit</span><strong>${escapeHtml(record.unit || 'N/A')}</strong></div><div class="detail-box"><span>Packaging</span><strong>${escapeHtml(record.packaging || 'N/A')}</strong></div>`
-            : `<div class="detail-box"><span>Variant / Flavor</span><strong>${escapeHtml(record.variant_flavor || 'N/A')}</strong></div><div class="detail-box"><span>Size</span><strong>${escapeHtml(record.size_value || 'N/A')}</strong></div><div class="detail-box"><span>Weight/Volume</span><strong>${escapeHtml(groceryAmount)}</strong></div><div class="detail-box"><span>Unit</span><strong>${escapeHtml(record.unit || 'N/A')}</strong></div><div class="detail-box"><span>Packaging</span><strong>${escapeHtml(record.packaging || 'N/A')}</strong></div>`}
-        <div class="detail-box"><span>Ordered Quantity</span><strong>${escapeHtml(record.ordered_quantity)}</strong></div>
-        <div class="detail-box"><span>Received Quantity</span><strong>${escapeHtml(record.received_quantity)}</strong></div>
-        <div class="detail-box"><span>Damaged Quantity</span><strong>${escapeHtml(record.damaged_quantity)}</strong></div>
-        ${record.affected_unit_name ? `<div class="detail-box"><span>Affected Package Level</span><strong>${escapeHtml(record.affected_quantity)} ${escapeHtml(record.affected_unit_name)}</strong></div>` : ''}
-        <div class="detail-box"><span>Return Quantity</span><strong>${escapeHtml(record.return_quantity)}</strong></div>
-        <div class="detail-box"><span>Damage Reason</span><strong>${escapeHtml(record.damage_reason)}</strong></div>
-        ${record.resolution ? `<div class="detail-box"><span>Resolution</span><strong>${escapeHtml(resolutionLabels[record.resolution] || record.resolution)}</strong></div>` : ''}
-        ${Number(record.supplier_adjustment || 0) > 0 ? `<div class="detail-box"><span>Supplier Adjustment</span><strong>₱${Number(record.supplier_adjustment).toFixed(2)}</strong></div>` : ''}
-        ${Number(record.replacement_expected_qty || 0) > 0 ? `<div class="detail-box"><span>Replacement Progress</span><strong>${escapeHtml(record.replacement_received_qty)} of ${escapeHtml(record.replacement_expected_qty)} received · ${escapeHtml(record.replacement_outstanding_qty)} outstanding</strong></div>` : ''}
-        <div class="detail-box"><span>Remarks</span><strong>${escapeHtml(record.remarks || 'None')}</strong></div>
-        <div class="detail-box"><span>Status</span><strong>${escapeHtml(record.return_status || record.purchase_order_status || 'Open')}</strong></div>
-    `;
+function updateClaimConfirmedAmountUi(resolutionId, wrapperId) {
+    const resolution = document.getElementById(resolutionId)?.value || '';
+    const wrapper = document.getElementById(wrapperId);
+    wrapper?.classList.toggle('d-none', !['Current PO Credit', 'Next PO Credit'].includes(resolution));
+    if (resolutionId === 'edit-claim-resolution') {
+        const isNextPo = resolution === 'Next PO Credit';
+        document.getElementById('editConfirmedAmountLabel').textContent = isNextPo ? 'Confirmed Credit Amount' : 'Confirmed Discount Amount';
+        document.getElementById('editConfirmedAmountHelp').textContent = isNextPo
+            ? 'Amount confirmed by the supplier. This credit will be available for a future PO.'
+            : 'Amount confirmed by the supplier for adjustment against the current PO.';
+    }
 }
 
 async function getReturnDamageDetails(returnId) {
@@ -222,9 +210,16 @@ async function openViewModal(returnId) {
     try {
         const record = await getReturnDamageDetails(returnId);
         activeReturnDamage = record;
-        document.getElementById('viewReturnDamageSubtitle').textContent = `${record.po_number} · ${record.supplier_name}`;
-        document.getElementById('viewReturnDamageDetails').innerHTML = detailGrid(record);
-        document.getElementById('btnOpenReplacementArrival')?.classList.toggle('d-none', record.resolution !== 'return_for_replacement' || Number(record.replacement_outstanding_qty || 0) <= 0);
+        const status = statusPresentation(record);
+        const unit = quantityUnit(record);
+        document.getElementById('viewReturnDamageSubtitle').textContent = `${record.po_number} • ${record.supplier_name} • ${formatDate(record.return_date)}${record.delivery_receipt_no ? ` • DR No. ${record.delivery_receipt_no}` : ''}`;
+        const activities = Array.isArray(record.activities) ? record.activities : [];
+        document.getElementById('viewReturnDamageDetails').innerHTML = `
+            <section class="issue-section"><div class="issue-product-row"><div><h3>Product &amp; Inspection</h3><div class="issue-product-name">${escapeHtml(record.product_name)}</div><div class="cell-secondary">${escapeHtml(productSpecification(record))}</div></div><span class="status-pill status-${status.tone}">${escapeHtml(status.label)}</span></div>
+                <div class="issue-quantity-row"><div><span>Ordered</span><strong>${escapeHtml(record.ordered_quantity)} ${escapeHtml(record.unit || unit)}</strong></div><div><span>Received</span><strong>${escapeHtml(record.received_quantity)} ${escapeHtml(record.unit || unit)}</strong></div><div><span>Accepted</span><strong>${escapeHtml(record.accepted_quantity ?? '—')} ${escapeHtml(record.unit || unit)}</strong></div><div><span>Affected</span><strong>${escapeHtml(record.affected_quantity)} ${escapeHtml(unit)}</strong></div><div><span>Returned</span><strong>${escapeHtml(record.return_quantity)} ${escapeHtml(unit)}</strong></div></div></section>
+            <section class="issue-section"><h3>Issue</h3><dl class="definition-grid"><div><dt>Reason</dt><dd>${escapeHtml(displayReason(record.damage_reason))}</dd></div><div><dt>Physical Disposition</dt><dd>${escapeHtml(record.disposition || 'Not recorded')}</dd></div><div><dt>Requested Resolution</dt><dd>${escapeHtml(requestedResolutionLabel(record))}</dd></div><div><dt>Delivery Receipt</dt><dd>${escapeHtml(record.delivery_receipt_no || '—')}</dd></div><div class="wide"><dt>Inspection Remarks</dt><dd>${escapeHtml(record.inspection_remarks || record.remarks || '—')}</dd></div></dl></section>
+            <section class="issue-section"><h3>Supplier Resolution</h3><dl class="definition-grid"><div><dt>Supplier Confirmed</dt><dd>${escapeHtml(resolutionLabel(record))}</dd></div><div><dt>Status</dt><dd><span class="status-pill status-${status.tone}">${escapeHtml(status.label)}</span></dd></div>${Number(record.credit_amount || record.supplier_adjustment || 0) > 0 ? `<div><dt>Confirmed Amount</dt><dd>${money(record.credit_amount || record.supplier_adjustment)}</dd></div><div><dt>Remaining Credit</dt><dd>${money(record.credit_remaining)}</dd></div>` : ''}${record.management_remarks ? `<div class="wide"><dt>Management Notes</dt><dd>${escapeHtml(record.management_remarks)}</dd></div>` : ''}</dl></section>
+            ${activities.length ? `<section class="issue-section"><h3>Activity</h3><ol class="activity-timeline">${activities.map(event => `<li><strong>${escapeHtml(formatDateTime(event.created_at))}</strong> — ${escapeHtml(event.description)}</li>`).join('')}</ol></section>` : ''}`;
         bootstrap.Modal.getOrCreateInstance(document.getElementById('viewReturnDamageModal')).show();
     } catch (error) {
         PharmaUtils.toast.error(error.message);
@@ -235,13 +230,21 @@ async function openEditModal(returnId) {
     try {
         activeReturnDamage = await getReturnDamageDetails(returnId);
         document.getElementById('edit-return-id').value = activeReturnDamage.return_id;
-        document.getElementById('editReturnDamageSubtitle').textContent = `${activeReturnDamage.po_number} · ${activeReturnDamage.supplier_name}`;
-        document.getElementById('editReturnDamageDetails').innerHTML = detailGrid(activeReturnDamage);
-        document.getElementById('edit-return-quantity').value = activeReturnDamage.return_quantity || 1;
-        document.getElementById('edit-damage-reason').value = activeReturnDamage.damage_reason || 'Other';
-        document.getElementById('edit-claim-disposition').value = activeReturnDamage.disposition || 'Hold/Quarantine';
+        document.getElementById('editReturnDamageSubtitle').textContent = `${activeReturnDamage.po_number} • ${activeReturnDamage.supplier_name} • ${formatDate(activeReturnDamage.return_date)}`;
+        const unit = quantityUnit(activeReturnDamage);
+        document.getElementById('manageInspectionEvidence').innerHTML = `
+            <div class="wide"><dt>Product</dt><dd>${escapeHtml(activeReturnDamage.product_name)}<div class="cell-secondary">${escapeHtml(productSpecification(activeReturnDamage))}</div></dd></div>
+            <div><dt>PO</dt><dd>${escapeHtml(activeReturnDamage.po_number)}</dd></div><div><dt>Delivery Receipt</dt><dd>${escapeHtml(activeReturnDamage.delivery_receipt_no || '—')}</dd></div>
+            <div><dt>Ordered</dt><dd>${escapeHtml(activeReturnDamage.ordered_quantity)} ${escapeHtml(activeReturnDamage.unit || unit)}</dd></div><div><dt>Received</dt><dd>${escapeHtml(activeReturnDamage.received_quantity)} ${escapeHtml(activeReturnDamage.unit || unit)}</dd></div>
+            <div><dt>Accepted</dt><dd>${escapeHtml(activeReturnDamage.accepted_quantity ?? '—')} ${escapeHtml(activeReturnDamage.unit || unit)}</dd></div><div><dt>Affected</dt><dd>${escapeHtml(activeReturnDamage.affected_quantity)} ${escapeHtml(unit)}</dd></div>
+            <div><dt>Returned</dt><dd>${escapeHtml(activeReturnDamage.return_quantity)} ${escapeHtml(unit)}</dd></div><div><dt>Issue</dt><dd>${escapeHtml(displayReason(activeReturnDamage.damage_reason))}</dd></div>
+            <div><dt>Disposition</dt><dd>${escapeHtml(activeReturnDamage.disposition || 'Not recorded')}</dd></div><div class="wide"><dt>Inspection Remarks</dt><dd>${escapeHtml(activeReturnDamage.inspection_remarks || activeReturnDamage.remarks || '—')}</dd></div>`;
+        document.getElementById('manageRequestedResolution').textContent = requestedResolutionLabel(activeReturnDamage);
+        document.getElementById('editWorkflowStatus').innerHTML = `<span class="status-pill status-${statusPresentation(activeReturnDamage).tone}">${escapeHtml(statusPresentation(activeReturnDamage).label)}</span>`;
         document.getElementById('edit-claim-resolution').value = activeReturnDamage.resolution_type || '';
-        document.getElementById('edit-return-remarks').value = activeReturnDamage.remarks || '';
+        document.getElementById('edit-claim-confirmed-amount').value = Number(activeReturnDamage.supplier_adjustment || 0) > 0 ? Number(activeReturnDamage.supplier_adjustment).toFixed(2) : '';
+        updateClaimConfirmedAmountUi('edit-claim-resolution', 'editClaimConfirmedAmountWrap');
+        document.getElementById('edit-return-remarks').value = activeReturnDamage.management_remarks || '';
         bootstrap.Modal.getOrCreateInstance(document.getElementById('editReturnDamageModal')).show();
     } catch (error) {
         PharmaUtils.toast.error(error.message);
@@ -249,61 +252,32 @@ async function openEditModal(returnId) {
 }
 
 async function saveReturnDamageEdit() {
+    const button = document.getElementById('btnSaveReturnDamageEdit');
     try {
         const returnId = document.getElementById('edit-return-id')?.value;
         const payload = {
             return_id: returnId,
-            return_quantity: Number(document.getElementById('edit-return-quantity')?.value || 0),
-            damage_reason: document.getElementById('edit-damage-reason')?.value || '',
-            disposition: document.getElementById('edit-claim-disposition')?.value || '',
             resolution_type: document.getElementById('edit-claim-resolution')?.value || '',
-            remarks: document.getElementById('edit-return-remarks')?.value || ''
+            confirmed_amount: Number(document.getElementById('edit-claim-confirmed-amount')?.value || 0),
+            management_remarks: document.getElementById('edit-return-remarks')?.value || ''
         };
 
-        PharmaUtils.modal.loading('Updating Return/Damage...');
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Saving...';
         const data = await fetchJson(`${API_BASE_URL}/purchase_orders/update_purchase_order_return.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
 
-        PharmaUtils.modal.close();
         bootstrap.Modal.getInstance(document.getElementById('editReturnDamageModal'))?.hide();
         PharmaUtils.toast.success(data.message);
         await loadReturnDamageRecords();
     } catch (error) {
-        PharmaUtils.modal.close();
         PharmaUtils.modal.error('Failed to update return/damage', error.message);
-    }
-}
-
-async function markResolved(returnId) {
-    try {
-        if (window.Swal) {
-            const result = await Swal.fire({
-                title: 'Mark as resolved?',
-                text: 'This will mark the return/damage record as resolved.',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonText: 'Mark Resolved',
-                confirmButtonColor: '#16a34a'
-            });
-
-            if (!result.isConfirmed) return;
-        } else if (!confirm('Mark this return/damage record as resolved?')) {
-            return;
-        }
-
-        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/update_purchase_order_return.php`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ return_id: returnId, action: 'resolve' })
-        });
-
-        PharmaUtils.toast.success(data.message);
-        await loadReturnDamageRecords();
-    } catch (error) {
-        PharmaUtils.toast.error(error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Save Changes';
     }
 }
 
@@ -333,16 +307,18 @@ function replacementFormState() {
     document.getElementById('replacementGoodQty').textContent = String(good);
     document.getElementById('replacementIssueWrap')?.classList.toggle('d-none', damaged <= 0);
     document.getElementById('replacementAllocationState').textContent = `Allocated ${allocated} of ${good} · ${Math.max(0, outstanding - good)} outstanding after acceptance`;
-    return { return_id: activeReturnDamage?.return_id, delivered_quantity: delivered, damaged_quantity: damaged, issue_type: document.getElementById('replacementIssueType')?.value || '', remarks: document.getElementById('replacementRemarks')?.value.trim() || '', batches, good, allocated, outstanding };
+    return { return_id: activeReturnDamage?.return_id, receiving_request_key: replacementReceivingRequestKey, delivery_receipt_no: document.getElementById('replacementDeliveryReceiptNo')?.value.trim() || '', delivered_quantity: delivered, damaged_quantity: damaged, issue_type: document.getElementById('replacementIssueType')?.value || '', remarks: document.getElementById('replacementRemarks')?.value.trim() || '', batches, good, allocated, outstanding };
 }
 
 function openReplacementArrival() {
     if (!activeReturnDamage) return;
+    replacementReceivingRequestKey = globalThis.crypto?.randomUUID?.() || `replacement-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     bootstrap.Modal.getInstance(document.getElementById('viewReturnDamageModal'))?.hide();
     document.getElementById('replacementPoNumber').textContent = activeReturnDamage.po_number;
     document.getElementById('replacementSupplier').textContent = activeReturnDamage.supplier_name;
     document.getElementById('replacementProduct').textContent = [activeReturnDamage.brand_name, activeReturnDamage.product_name].filter(Boolean).join(' — ');
     document.getElementById('replacementOutstanding').textContent = String(activeReturnDamage.replacement_outstanding_qty || 0);
+    document.getElementById('replacementDeliveryReceiptNo').value = '';
     document.getElementById('replacementArrivalSubtitle').textContent = `${activeReturnDamage.po_number} · ${activeReturnDamage.supplier_name}`;
     document.getElementById('replacementDeliveredQty').value = activeReturnDamage.replacement_outstanding_qty || 0;
     document.getElementById('replacementDamagedQty').value = '0';
@@ -365,13 +341,14 @@ async function saveReplacementArrival() {
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
         const data = await fetchJson(`${API_BASE_URL}/purchase_orders/record_replacement_arrival.php`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         bootstrap.Modal.getInstance(document.getElementById('replacementArrivalModal'))?.hide();
+        replacementReceivingRequestKey = '';
         PharmaUtils.toast.success(data.message);
         await loadReturnDamageRecords();
     } catch (error) {
         PharmaUtils.modal.error('Failed to record replacement arrival', error.message);
     } finally {
         button.disabled = false;
-        button.textContent = 'Save Replacement Arrival';
+        button.textContent = 'Complete Replacement Receiving';
     }
 }
 
@@ -381,12 +358,17 @@ function initReturnDamage() {
     document.getElementById('themeToggle')?.addEventListener('click', () => {
         setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
     });
-    document.getElementById('btnRefreshReturnDamage')?.addEventListener('click', loadReturnDamageRecords);
-    document.getElementById('btnNewSupplierClaim')?.addEventListener('click', openNewSupplierClaim);
-    document.getElementById('claimSourceBatch')?.addEventListener('change', updateClaimSource);
-    document.getElementById('btnSaveSupplierClaim')?.addEventListener('click', saveNewSupplierClaim);
+    document.getElementById('returnSearch')?.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => { currentPage = 1; renderReturnDamageRecords(); },300);
+    });
+    document.getElementById('returnStatusFilter')?.addEventListener('change', () => { currentPage = 1; renderReturnDamageRecords(); });
+    document.getElementById('returnReasonFilter')?.addEventListener('change', (event) => { activeReason = event.target.value || 'all'; currentPage = 1; renderReturnDamageRecords(); });
+    document.getElementById('returnPageSize')?.addEventListener('change', (event) => { pageSize = Number(event.target.value || 10); currentPage = 1; renderReturnDamageRecords(); });
+    document.getElementById('returnPrevPage')?.addEventListener('click', () => { if (currentPage > 1) { currentPage -= 1; renderReturnDamageRecords(); } });
+    document.getElementById('returnNextPage')?.addEventListener('click', () => { if (currentPage * pageSize < filteredRecords().length) { currentPage += 1; renderReturnDamageRecords(); } });
     document.getElementById('btnSaveReturnDamageEdit')?.addEventListener('click', saveReturnDamageEdit);
-    document.getElementById('btnOpenReplacementArrival')?.addEventListener('click', openReplacementArrival);
+    document.getElementById('edit-claim-resolution')?.addEventListener('change', () => updateClaimConfirmedAmountUi('edit-claim-resolution', 'editClaimConfirmedAmountWrap'));
     document.getElementById('btnSaveReplacementArrival')?.addEventListener('click', saveReplacementArrival);
     document.getElementById('btnAddReplacementBatch')?.addEventListener('click', () => {
         document.getElementById('replacementBatchList')?.insertAdjacentHTML('beforeend', replacementBatchRow());
@@ -407,14 +389,16 @@ function initReturnDamage() {
     document.getElementById('table-return-damage')?.addEventListener('click', (event) => {
         const viewButton = event.target.closest('.view-return-btn');
         const editButton = event.target.closest('.edit-return-btn');
-        const resolveButton = event.target.closest('.resolve-return-btn');
+        const replacementButton = event.target.closest('.replacement-return-btn');
 
         if (viewButton) openViewModal(viewButton.dataset.returnId);
-        if (editButton) openEditModal(editButton.dataset.returnId);
-        if (resolveButton) markResolved(resolveButton.dataset.returnId);
+        if (editButton) { lastEditTrigger = editButton; openEditModal(editButton.dataset.returnId); }
+        if (replacementButton) getReturnDamageDetails(replacementButton.dataset.returnId).then((record) => { activeReturnDamage = record; openReplacementArrival(); }).catch((error) => PharmaUtils.toast.error(error.message));
     });
+    document.getElementById('editReturnDamageModal')?.addEventListener('hidden.bs.modal', () => lastEditTrigger?.focus());
 
     loadReturnDamageRecords();
+    window.setInterval(() => { if (!document.hidden && !document.querySelector('.modal.show')) loadReturnDamageRecords(); },30000);
 }
 
 initReturnDamage();

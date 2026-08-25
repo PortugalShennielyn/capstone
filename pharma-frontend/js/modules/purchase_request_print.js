@@ -1,5 +1,5 @@
 import API_BASE_URL from '../config/config.js';
-import { renderPurchaseRequestDocument } from './pr_document_renderer.js?v=1';
+import { renderPurchaseRequestDocument } from './pr_document_renderer.js?v=8';
 
 const pageParams = new URLSearchParams(window.location.search);
 const embeddedPreview = pageParams.get('embed') === '1';
@@ -39,13 +39,15 @@ async function loadPurchaseRequest() {
     if (!prId && !previewToken) throw new Error('A purchase request reference is required.');
     const previewPayload = previewToken ? loadPreviewPayload(previewToken) : null;
     let request = previewPayload?.request || null;
-    const [prPayload, productPayload, inventoryPayload] = await Promise.all([
+    const [prPayload, productPayload, inventoryPayload, settingsPayload] = await Promise.all([
         prId ? json(`${API_BASE_URL}/purchase_requests/get_purchase_requests.php?pr_id=${encodeURIComponent(prId)}&t=${Date.now()}`) : Promise.resolve(null),
         previewPayload?.products ? Promise.resolve({ data:previewPayload.products }) : json(`${API_BASE_URL}/products/get_products.php?t=${Date.now()}`),
         previewPayload?.inventory ? Promise.resolve({ data:previewPayload.inventory }) : json(`${API_BASE_URL}/inventory/get_inventory.php?t=${Date.now()}`),
+        previewPayload ? json(`${API_BASE_URL}/settings/get_admin_settings.php?t=${Date.now()}`) : Promise.resolve(null),
     ]);
     if (prId) request = (prPayload.data?.requests || []).find(row => String(row.pr_id) === prId);
     if (!request) throw new Error('The requested Purchase Request was not found.');
+    request.print_roles = settingsPayload?.procurementDocumentSettings || prPayload?.data?.procurementDocumentSettings || {};
     const productById = new Map((productPayload.data || []).map(product => [String(product.product_id), product]));
     const inventoryById = new Map((inventoryPayload.data || []).map(row => [String(row.product_id), row]));
     renderDocument(request, productById, inventoryById);

@@ -33,6 +33,18 @@ function ensurePurchaseRequestSchema(PDO $pdo): void
         $pdo->exec($statement);
     }
 
+    $approvedQtyCheck = $pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_request_items' AND COLUMN_NAME = 'approved_qty'");
+    if ((int) $approvedQtyCheck->fetchColumn() === 0) {
+        $pdo->exec('ALTER TABLE purchase_request_items ADD COLUMN approved_qty DECIMAL(12,2) NULL AFTER requested_qty');
+    }
+    $pdo->exec(
+        "UPDATE purchase_request_items pri
+         INNER JOIN purchase_requests pr ON pr.pr_id = pri.pr_id
+         SET pri.approved_qty = pri.requested_qty
+         WHERE pr.status IN ('Approved', 'Partially Ordered', 'Ordered')
+           AND pri.approved_qty IS NULL"
+    );
+
     purchaseRequestEnsureIndex($pdo, 'purchase_orders', 'idx_purchase_orders_pr', ['pr_id']);
     purchaseRequestEnsureForeignKey($pdo, 'purchase_orders', 'fk_purchase_orders_pr', 'pr_id', 'purchase_requests', 'pr_id');
 }
@@ -206,7 +218,8 @@ function purchaseRequestItems(PDO $pdo, string $prId): array
     $stmt->execute([':pr_id' => $prId]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($items as &$item) {
-        $item['remaining_qty'] = max(0, (float) $item['requested_qty'] - (float) $item['ordered_qty']);
+        $authorizedQty = $item['approved_qty'] !== null ? (float) $item['approved_qty'] : (float) $item['requested_qty'];
+        $item['remaining_qty'] = max(0, $authorizedQty - (float) $item['ordered_qty']);
     }
     unset($item);
     return $items;

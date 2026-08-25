@@ -1,14 +1,221 @@
 :root {
-    --sidebar-width: 260px;
-    --sidebar-collapsed-width: 70px;
-    --sidebar-bg: #1f2530;
-    --sidebar-bg-deep: #171c25;
+    --sidebar-collapsed-width: 72px !important;
+    --sidebar-expanded-width: 315px !important;
+    --sidebar-width: var(--sidebar-expanded-width) !important;
+    --sidebar-bg: #1e293b;
+    --sidebar-bg-deep: #172033;
     --sidebar-text: #c6ccd8;
     --sidebar-muted: #8790a1;
-    --purple: #7c3aed;
-    --topbar-height: 70px;
+    --purple: #4f46e5;
+    --app-header-height: 70px !important;
+    --topbar-height: var(--app-header-height) !important;
     --transition: all .3s ease;
-    --drp-page-background: #f4f6fb;
+    --drp-page-background: #f6f8fc;
+}
+
+/* The collapsed rail owns the page offset. Expanding is a fixed drawer overlay,
+   so every module keeps exactly the same usable width and chart/table geometry. */
+#mainWrapper,
+.main-wrapper,
+.navbar-page-content,
+.app-main,
+html.sidebar-collapsed #mainWrapper,
+html.sidebar-collapsed .main-wrapper,
+html.sidebar-collapsed .navbar-page-content,
+html.sidebar-collapsed .app-main {
+    width: calc(100% - var(--sidebar-collapsed-width)) !important;
+    margin-left: var(--sidebar-collapsed-width) !important;
+    transition: none !important;
+}
+
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1998;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(15, 23, 42, .25);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    transition: opacity 220ms ease, visibility 0s linear 220ms;
+}
+
+body.sidebar-open .sidebar-backdrop {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 220ms ease;
+}
+
+#navbar-container .app-sidebar { z-index: 2000 !important; }
+
+#navbar-container .sidebar-header {
+    flex: 0 0 var(--app-header-height);
+    height: var(--app-header-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    background: var(--sidebar-bg-deep);
+    border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+
+#navbar-container .sidebar-header .sidebar-brand {
+    min-width: 0;
+    flex: 0 0 auto;
+    height: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0;
+    background: transparent;
+}
+
+#navbar-container .sidebar-header .brand-text {
+    overflow: hidden;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar-toggle {
+    position: relative;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .06);
+    color: #fff;
+    cursor: pointer;
+    transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.sidebar-toggle:hover { background: rgba(255, 255, 255, .13); }
+.sidebar-toggle:focus-visible { outline: 3px solid rgba(167, 139, 250, .5); outline-offset: 2px; }
+
+.sidebar-tooltip {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + 10px);
+    z-index: 2100;
+    width: max-content;
+    max-width: 150px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    background: #111827;
+    color: #fff;
+    font: 700 11px/1.2 Inter, sans-serif;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate(3px, -50%);
+    transition: opacity 150ms ease, transform 150ms ease, visibility 0s linear 150ms;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .24);
+}
+
+.sidebar-toggle:hover .sidebar-tooltip,
+.sidebar-toggle:focus-visible .sidebar-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(0, -50%);
+    transition: opacity 150ms ease, transform 150ms ease;
+}
+
+#navbar-container .app-sidebar.collapsed .sidebar-header {
+    flex: 0 0 var(--app-header-height);
+    height: var(--app-header-height);
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 3px;
+}
+
+#navbar-container .app-sidebar.collapsed .brand-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+#navbar-container .app-sidebar.collapsed .sidebar-toggle {
+    display: none;
+}
+
+.drp-shared-topbar .drp-sidebar-open-toggle {
+    position: relative;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    flex: 0 0 32px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px;
+    color: #fff;
+    background: rgba(255,255,255,.06);
+    font-size: 13px;
+}
+
+body.sidebar-open .drp-shared-topbar .drp-sidebar-open-toggle { display: none !important; }
+.drp-shared-topbar .drp-sidebar-open-toggle .sidebar-tooltip {
+    top: calc(100% + 9px);
+    right: auto;
+    left: 0;
+    transform: translateY(-3px);
+}
+.drp-shared-topbar .drp-sidebar-open-toggle:hover .sidebar-tooltip,
+.drp-shared-topbar .drp-sidebar-open-toggle:focus-visible .sidebar-tooltip { transform: translateY(0); }
+
+/* Application dialogs and full-screen viewers share the permanent rail boundary.
+   Bootstrap can re-parent a shown modal, so this must not rely on a direct-child
+   selector. The named overlays are the app's non-Bootstrap full-screen dialogs. */
+body .modal,
+body .receiving-ui-backdrop,
+body .grn-modal,
+body .supplier-payment-dialog,
+body .shift-modal,
+body .receipt-modal {
+    left: var(--sidebar-collapsed-width) !important;
+    right: 0 !important;
+    width: auto !important;
+}
+
+/* Page modules may size large Bootstrap dialogs in viewport units. Constrain
+   those dialogs to the modal's rail-adjusted containing block so neither edge
+   can be clipped. Smaller dialogs retain their module-defined width. */
+body .modal > .modal-dialog {
+    max-width: calc(100vw - var(--sidebar-collapsed-width) - 24px) !important;
+}
+
+#navbar-container .app-sidebar.collapsed .sidebar-tooltip {
+    right: auto;
+    left: calc(100% + 10px);
+    transform: translate(-3px, -50%);
+}
+
+#navbar-container .app-sidebar.collapsed .sidebar-toggle:hover .sidebar-tooltip,
+#navbar-container .app-sidebar.collapsed .sidebar-toggle:focus-visible .sidebar-tooltip {
+    transform: translate(0, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar-backdrop,
+    .sidebar-toggle,
+    .sidebar-tooltip { transition: none !important; }
 }
 
 /* Shared application header. The dashboard and every module reuse the sidebar's
@@ -19,8 +226,8 @@ body .main-wrapper > .topbar.drp-shared-topbar {
     top: 0 !important;
     z-index: 1020 !important;
     width: 100% !important;
-    height: var(--topbar-height) !important;
-    min-height: var(--topbar-height) !important;
+    height: var(--app-header-height) !important;
+    min-height: var(--app-header-height) !important;
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
@@ -78,7 +285,7 @@ body .main-wrapper > .topbar.drp-shared-topbar {
     outline: none; background: #fff !important; color: #1f2937 !important; font-size: 12px; font-weight: 650;
 }
 .drp-shared-topbar .module-search-input::placeholder { color: #6b7280 !important; opacity: 1; }
-.drp-shared-topbar .module-search-input:focus { border-color: #8b5cf6 !important; box-shadow: 0 0 0 3px rgba(124,58,237,.2) !important; }
+.drp-shared-topbar .module-search-input:focus { border-color: #4f46e5 !important; box-shadow: 0 0 0 3px rgba(79,70,229,.14) !important; }
 .drp-shared-topbar .module-search-shortcut { position: absolute; right: 11px; color: #6b7280 !important; font-size: 9px; font-weight: 800; pointer-events: none; }
 .drp-shared-topbar .module-search-panel {
     position: absolute; top: calc(100% + 9px); left: 0; right: 0; z-index: 1080; display: none; overflow: hidden;
@@ -88,8 +295,8 @@ body .main-wrapper > .topbar.drp-shared-topbar {
 .drp-shared-topbar .module-search-results { display: grid; max-height: 370px; overflow-y: auto; padding: 6px; }
 .drp-shared-topbar .module-search-result { width: 100%; display: grid; grid-template-columns: 30px 1fr 18px; align-items: center; gap: 9px; padding: 9px; border: 0; border-radius: 7px; background: transparent; color: #1f2937; text-align: left; }
 .drp-shared-topbar .module-search-result:hover,
-.drp-shared-topbar .module-search-result.is-active { background: #f3efff; color: #5b21b6; }
-.drp-shared-topbar .module-search-result-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: #ede9fe; color: #7c3aed; }
+.drp-shared-topbar .module-search-result.is-active { background: #eef2ff; color: #4338ca; }
+.drp-shared-topbar .module-search-result-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; background: #eef2ff; color: #4f46e5; }
 .drp-shared-topbar .module-search-result strong { display: block; color: inherit; font-size: 12px; font-weight: 800; }
 .drp-shared-topbar .module-search-result small { display: block; margin-top: 2px; color: #6b7280; font-size: 10px; }
 .drp-shared-topbar .module-search-result-arrow { color: #94a3b8; font-size: 10px; }
@@ -100,7 +307,7 @@ body .main-wrapper > .topbar.drp-shared-topbar {
 .drp-shared-topbar .command-chip.open { border-color: #86efac; background: #dcfce7; color: #15803d !important; }
 .drp-shared-topbar .command-chip.closed { border-color: #fecaca; background: #fee2e2; color: #b91c1c !important; }
 .drp-shared-topbar .dashboard-notifications { position: relative; }
-.drp-shared-topbar .notification-badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--sidebar-bg); border-radius: 999px; background: #7c3aed !important; color: #fff !important; font-size: 9px; font-weight: 850; }
+.drp-shared-topbar .notification-badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--sidebar-bg); border-radius: 999px; background: #4f46e5 !important; color: #fff !important; font-size: 9px; font-weight: 850; }
 .drp-shared-topbar .notification-badge.is-hidden { display: none; }
 .drp-shared-topbar .notification-menu { position: absolute; top: calc(100% + 10px); right: 0; z-index: 1080; width: min(340px, calc(100vw - 28px)); display: none; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; color: #1f2937; box-shadow: 0 18px 45px rgba(15,23,42,.22); }
 .drp-shared-topbar .notification-menu.is-open { display: block; }
@@ -462,6 +669,10 @@ th.icon-column {
     background: linear-gradient(135deg, var(--purple), #a855f7);
 }
 
+.brand-text {
+    display: inline-block;
+}
+
 .sidebar-nav {
     flex: 1 1 auto;
     min-height: 0;
@@ -482,7 +693,7 @@ th.icon-column {
     min-height: 46px;
     display: flex;
     align-items: center;
-    gap: 14px;
+    column-gap: 16px;
     margin: 4px 0;
     padding: 0 16px;
     color: var(--sidebar-text);
@@ -499,7 +710,52 @@ th.icon-column {
     background: var(--purple);
 }
 
-.nav-link-item i { width: 22px; text-align: center; }
+.nav-link-item > i:first-child {
+    width: 24px;
+    min-width: 24px;
+    flex: 0 0 24px;
+    text-align: center;
+}
+
+.nav-link-item .nav-label {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.nav-link-item .collapse-arrow {
+    width: 16px;
+    min-width: 16px;
+    flex: 0 0 16px;
+    margin-left: auto !important;
+}
+
+.nav-sublink {
+    column-gap: 16px;
+}
+
+/* Page-level legacy navbar blocks load after this stylesheet on some modules.
+   Keep the shared icon column and spacing authoritative everywhere. */
+#navbar-container .sidebar-nav .nav-link-item {
+    column-gap: 16px !important;
+}
+
+#navbar-container .sidebar-nav .nav-link-item > i:first-child {
+    width: 24px !important;
+    min-width: 24px !important;
+    flex-basis: 24px !important;
+}
+
+#navbar-container .sidebar-nav .nav-link-item .nav-label {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+}
+
+#navbar-container .sidebar-nav .nav-link-item .collapse-arrow {
+    width: 16px !important;
+    min-width: 16px !important;
+    flex: 0 0 16px !important;
+    margin-left: auto !important;
+}
 .sidebar-profile-footer {
     position: relative;
     flex: 0 0 auto;
@@ -561,7 +817,7 @@ html:not(.navbar-role-ready) #navbar-container .sidebar-profile-footer {
     min-width: 0;
     display: inline-flex;
     align-items: center;
-    gap: 9px;
+    gap: 12px;
     flex: 1 1 auto;
     padding: 0;
     border: 0;
@@ -761,7 +1017,14 @@ html:not(.navbar-role-ready) #navbar-container .sidebar-profile-footer {
 
 .app-sidebar.collapsed .sidebar-brand,
 .app-sidebar.collapsed .nav-link-item { justify-content: center; padding-inline: 0; }
+.app-sidebar.collapsed .nav-link-item {
+    width: 44px;
+    min-height: 44px;
+    margin-right: auto !important;
+    margin-left: auto !important;
+}
 .app-sidebar.collapsed .nav-label,
+.app-sidebar.collapsed .brand-text,
 .app-sidebar.collapsed .collapse-arrow,
 .app-sidebar.collapsed .profile-name,
 .app-sidebar.collapsed .signout-btn { display: none; }
@@ -779,8 +1042,9 @@ html:not(.navbar-role-ready) #navbar-container .sidebar-profile-footer {
 .app-sidebar.collapsed .sidebar-user-popover { width: 230px; }
 .main-wrapper,
 .navbar-page-content {
-    margin-left: var(--sidebar-width);
-    transition: var(--transition);
+    margin-left: var(--sidebar-collapsed-width);
+    width: calc(100% - var(--sidebar-collapsed-width));
+    transition: none;
 }
 .main-wrapper.collapsed,
 .navbar-sidebar-collapsed .navbar-page-content { margin-left: var(--sidebar-collapsed-width); }

@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
     <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=5"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Dr. R Pharmacy | Inspect Deliveries</title>
@@ -24,10 +24,10 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
             rel="stylesheet"
         />
-        <link href="./css/navbar.css?v=20" rel="stylesheet" />
-        <link href="./css/inspect_deliveries.css?v=4" rel="stylesheet" />
-        <link href="./css/purchase_receiving.css?v=5" rel="stylesheet" />
-        <script src="./js/navbar.js?v=69" defer></script>
+        <link href="./css/navbar.css?v=36" rel="stylesheet" />
+        <link href="./css/inspect_deliveries.css?v=8" rel="stylesheet" />
+        <link href="./css/purchase_receiving.css?v=7" rel="stylesheet" />
+        <script src="./js/navbar.js?v=83" defer></script>
         <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     </head>
     <body data-page="inspect-deliveries">
@@ -52,14 +52,6 @@
                 <div class="topbar-right">
                     <button class="icon-btn" type="button" aria-label="Notifications">
                         <i class="fa-regular fa-bell"></i>
-                    </button>
-                    <button
-                        class="icon-btn"
-                        type="button"
-                        id="themeToggle"
-                        aria-label="Toggle dark mode"
-                    >
-                        <i class="fa-solid fa-moon"></i>
                     </button>
                 </div>
             </header>
@@ -268,6 +260,18 @@
                             <div class="receive-simple-step" data-receive-step="confirm"><span>3</span><strong>Confirm Receiving</strong></div>
                         </section>
 
+                        <section class="panel receive-delivery-information" aria-labelledby="receiveDeliveryInformationHeading">
+                            <div class="section-card-heading">
+                                <span class="section-card-icon inspection"><i class="fa-solid fa-truck"></i></span>
+                                <div><span class="section-eyebrow">Delivery</span><h2 id="receiveDeliveryInformationHeading">Delivery Information</h2></div>
+                            </div>
+                            <div class="receive-delivery-information-grid">
+                                <div class="receive-field"><label for="receiveDeliveredByName">Delivered By / Driver *</label><input id="receiveDeliveredByName" class="form-control" maxlength="150" autocomplete="off" placeholder="Supplier representative or driver name" required></div>
+                                <div class="receive-field"><label for="receiveDeliveryReceiptNo">Supplier Delivery Receipt No. *</label><input id="receiveDeliveryReceiptNo" class="form-control" maxlength="100" autocomplete="off" placeholder="e.g. DR-000123" required></div>
+                                <div class="receive-field"><label for="receiveReceivedDateTime">Received Date &amp; Time</label><input id="receiveReceivedDateTime" class="form-control receive-readonly-field" type="text" readonly aria-readonly="true" value="Recorded automatically"></div>
+                            </div>
+                        </section>
+
                         <div class="receive-workspace-grid">
                             <aside
                                 class="panel product-navigator"
@@ -388,6 +392,6 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/purchase_orders.js?v=77"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=86"></script>
     </body>
 </html>

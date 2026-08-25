@@ -100,8 +100,8 @@ try {
         ':po_id' => $poId,
         ':po_number' => 'TEST-RECEIVE-' . substr(str_replace('-', '', $poId), 0, 12),
         ':supplier_id' => $fixture['supplier_id'],
-        ':final_payment' => (int) $fixture['units_per_purchase_unit_snapshot'] * (float) $fixture['unit_price_snapshot'],
-        ':total_amount' => (int) $fixture['units_per_purchase_unit_snapshot'] * (float) $fixture['unit_price_snapshot'],
+        ':final_payment' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'] * (float) $fixture['unit_price_snapshot'],
+        ':total_amount' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'] * (float) $fixture['unit_price_snapshot'],
     ]);
 
     $pdo->prepare(
@@ -118,15 +118,15 @@ try {
              :size_value, :unit_name, :packaging, :unit_price, :line_total)"
     )->execute([
         ':po_item_id' => $poItemId, ':po_id' => $poId, ':product_id' => $fixture['product_id'],
-        ':quantity' => $fixture['units_per_purchase_unit_snapshot'], ':purchase_qty' => 1,
+        ':quantity' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'], ':purchase_qty' => 5,
         ':purchase_unit' => $fixture['purchase_unit_snapshot'], ':units_per_purchase_unit' => $fixture['units_per_purchase_unit_snapshot'],
-        ':inventory_qty_ordered' => $fixture['units_per_purchase_unit_snapshot'], ':product_name' => $fixture['product_name_snapshot'],
+        ':inventory_qty_ordered' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'], ':product_name' => $fixture['product_name_snapshot'],
         ':brand_name' => $fixture['brand_name_snapshot'], ':category_name' => $fixture['category_name_snapshot'],
         ':type_name' => $fixture['type_name_snapshot'], ':generic_name' => $fixture['generic_name_snapshot'],
         ':variant_flavor' => $fixture['variant_flavor_snapshot'], ':strength' => $fixture['strength_snapshot'],
         ':size_value' => $fixture['size_value_snapshot'], ':unit_name' => $fixture['unit_snapshot'],
         ':packaging' => $fixture['packaging_snapshot'], ':unit_price' => $fixture['unit_price_snapshot'],
-        ':line_total' => (int) $fixture['units_per_purchase_unit_snapshot'] * (float) $fixture['unit_price_snapshot'],
+        ':line_total' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'] * (float) $fixture['unit_price_snapshot'],
     ]);
 
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
@@ -145,12 +145,12 @@ try {
          VALUES (:id,:php,:user,:token,DATE_ADD(NOW(),INTERVAL 10 MINUTE),'127.0.0.1','Codex receiving test')"
     )->execute([':id' => $authSessionId, ':php' => $phpSessionId, ':user' => $user['user_id'], ':token' => hash('sha256', $tabToken)]);
 
-    $receivedPurchaseQuantity = 1;
-    $receivedInventoryQuantity = (int) $fixture['units_per_purchase_unit_snapshot'];
+    $receivedPurchaseQuantity = 5;
+    $receivedInventoryQuantity = 5 * (int) $fixture['units_per_purchase_unit_snapshot'];
     $damagedQuantity = 3;
-    $actionQuantity = 2;
-    $actionBaseQuantity = (int) $fixture['action_base_quantity'];
-    $removedBaseQuantity = $actionQuantity * $actionBaseQuantity;
+    $actionQuantity = $damagedQuantity;
+    $actionBaseQuantity = 1;
+    $removedBaseQuantity = $damagedQuantity;
     $acceptedInventoryQuantity = $receivedInventoryQuantity - $removedBaseQuantity;
     $item = [
         'po_item_id' => $poItemId,
@@ -163,11 +163,11 @@ try {
         'damaged_quantity' => $damagedQuantity,
         'damaged_unit_conversion_id' => $fixture['conversion_id'],
         'damage_lines' => [
-            ['sequence_no' => 1, 'affected_unit_conversion_id' => $fixture['action_conversion_id'], 'damaged_quantity' => 1, 'damaged_unit_conversion_id' => $fixture['conversion_id']],
-            ['sequence_no' => 2, 'affected_unit_conversion_id' => $fixture['action_conversion_id'], 'damaged_quantity' => 2, 'damaged_unit_conversion_id' => $fixture['conversion_id']],
+            ['package_sequence' => 3, 'damaged_quantity' => 1, 'damaged_unit_conversion_id' => $fixture['conversion_id'], 'batch_index' => 0],
+            ['package_sequence' => 5, 'damaged_quantity' => 2, 'damaged_unit_conversion_id' => $fixture['conversion_id'], 'batch_index' => 0],
         ],
         'action_quantity' => $actionQuantity,
-        'action_unit_conversion_id' => $fixture['action_conversion_id'],
+        'action_unit_conversion_id' => $fixture['conversion_id'],
         'returned_quantity' => $removedBaseQuantity,
         'disposed_quantity' => 0,
         'disposition' => 'return_to_supplier',
@@ -186,7 +186,7 @@ try {
     ];
 
     $draft = receivingPost('purchase_orders/receive_purchase_order.php', [
-        'po_id' => $poId, 'mode' => 'draft', 'remarks' => 'Draft receiving test', 'items' => [$item],
+        'po_id' => $poId, 'mode' => 'draft', 'delivered_by_name' => 'Test Driver', 'delivery_receipt_no' => 'DR-TEST-001', 'remarks' => 'Draft receiving test', 'items' => [$item],
     ], $phpSessionId, $tabToken);
     receivingAssert($draft['status'] === 200 && ($draft['body']['success'] ?? false), 'Save Draft failed: ' . json_encode($draft));
     receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM purchase_order_receiving WHERE po_id='{$poId}'")->fetchColumn() === 1, 'Draft receiving header was not saved.');
@@ -195,51 +195,81 @@ try {
 
     $impossibleDamageItem = $item;
     $impossibleDamageItem['damage_lines'] = [[
-        'sequence_no' => 1,
-        'affected_unit_conversion_id' => $fixture['action_conversion_id'],
-        'damaged_quantity' => $actionBaseQuantity + 1,
+        'package_sequence' => 3,
+        'damaged_quantity' => (int) $fixture['units_per_purchase_unit_snapshot'] + 1,
         'damaged_unit_conversion_id' => $fixture['conversion_id'],
     ]];
     $impossibleDamage = receivingPost('purchase_orders/receive_purchase_order.php', [
-        'po_id' => $poId, 'remarks' => '', 'items' => [$impossibleDamageItem],
+        'po_id' => $poId, 'delivered_by_name' => 'Test Driver', 'delivery_receipt_no' => 'DR-TEST-001', 'remarks' => '', 'items' => [$impossibleDamageItem],
     ], $phpSessionId, $tabToken);
-    receivingAssert($impossibleDamage['status'] === 400 && str_contains((string) ($impossibleDamage['body']['message'] ?? ''), 'Damage cannot exceed'), 'Per-package damage above the configured conversion was not blocked.');
+    receivingAssert($impossibleDamage['status'] === 400 && str_contains((string) ($impossibleDamage['body']['message'] ?? ''), 'Damaged contents cannot exceed'), 'Per-package damage above the configured conversion was not blocked.');
     receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claims WHERE po_item_id='{$poItemId}'")->fetchColumn() === 0, 'Impossible damage created a supplier claim.');
+
+    $duplicatePackageItem = $item;
+    $duplicatePackageItem['damage_lines'][1]['package_sequence'] = 3;
+    $duplicatePackage = receivingPost('purchase_orders/receive_purchase_order.php', [
+        'po_id' => $poId, 'delivered_by_name' => 'Test Driver', 'delivery_receipt_no' => 'DR-TEST-001', 'remarks' => '', 'items' => [$duplicatePackageItem],
+    ], $phpSessionId, $tabToken);
+    receivingAssert($duplicatePackage['status'] === 400 && str_contains((string) ($duplicatePackage['body']['message'] ?? ''), 'same physical package'), 'A duplicate physical package sequence was not blocked.');
 
     $invalidOtherItem = $item;
     $invalidOtherItem['issue_type'] = 'Other';
     $invalidOtherItem['issue_detail'] = '';
     $invalidOther = receivingPost('purchase_orders/receive_purchase_order.php', [
-        'po_id' => $poId, 'remarks' => '', 'items' => [$invalidOtherItem],
+        'po_id' => $poId, 'delivered_by_name' => 'Test Driver', 'delivery_receipt_no' => 'DR-TEST-001', 'remarks' => '', 'items' => [$invalidOtherItem],
     ], $phpSessionId, $tabToken);
     receivingAssert($invalidOther['status'] === 400 && !($invalidOther['body']['success'] ?? true), 'Other issue was accepted without a required description.');
     receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claims WHERE po_item_id='{$poItemId}'")->fetchColumn() === 0, 'Invalid Other issue created a supplier claim.');
 
     $confirm = receivingPost('purchase_orders/receive_purchase_order.php', [
-        'po_id' => $poId, 'remarks' => 'Confirmed receiving test', 'items' => [$item],
+        'po_id' => $poId, 'delivered_by_name' => 'Test Driver', 'delivery_receipt_no' => 'DR-TEST-001', 'remarks' => 'Confirmed receiving test', 'items' => [$item],
     ], $phpSessionId, $tabToken);
     receivingAssert($confirm['status'] === 200 && ($confirm['body']['success'] ?? false), 'Confirm Receiving failed: ' . json_encode($confirm));
 receivingAssert((string) $pdo->query("SELECT status FROM purchase_orders WHERE po_id='{$poId}'")->fetchColumn() === 'Delivered', 'Completed issue receiving did not keep the PO in the Delivered lifecycle state.');
     receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM purchase_order_receiving_items WHERE po_item_id='{$poItemId}' AND received_quantity={$receivedInventoryQuantity}")->fetchColumn() === 1, 'Received quantity was not preserved.');
     receivingAssert((int) $pdo->query("SELECT COALESCE(SUM(storage_qty),0) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === $acceptedInventoryQuantity, 'Only accepted stock was posted to inventory.');
     receivingAssert((int) $pdo->query("SELECT COALESCE(SUM(damaged_qty+returned_qty),0) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === 0, 'Affected or missing stock leaked into accepted inventory batches.');
-    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claims WHERE po_item_id='{$poItemId}' AND damaged_quantity={$damagedQuantity} AND damaged_unit_conversion_id='{$fixture['conversion_id']}' AND action_quantity={$actionQuantity} AND action_unit_conversion_id='{$fixture['action_conversion_id']}' AND affected_quantity={$actionQuantity} AND unit_conversion_id='{$fixture['action_conversion_id']}' AND resolution_type='Replacement' AND claim_status='Awaiting Replacement'")->fetchColumn() === 1, 'The claim did not preserve separate damaged and action quantities.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claims WHERE po_item_id='{$poItemId}' AND damaged_quantity={$damagedQuantity} AND damaged_unit_conversion_id='{$fixture['conversion_id']}' AND action_quantity={$actionQuantity} AND action_unit_conversion_id='{$fixture['conversion_id']}' AND affected_quantity={$actionQuantity} AND unit_conversion_id='{$fixture['conversion_id']}' AND resolution_type='Replacement' AND claim_status='Awaiting Replacement'")->fetchColumn() === 1, 'The claim did not preserve the damaged base quantity.');
     $poListing = receivingGet('purchase_orders/get_purchase_orders.php?scope=all', $phpSessionId, $tabToken);
     receivingAssert($poListing['status'] === 200 && ($poListing['body']['status'] ?? '') === 'success', 'PO listing failed after issue receiving.');
     $listedOrder = array_values(array_filter($poListing['body']['purchase_orders'] ?? [], static fn(array $row): bool => ($row['po_id'] ?? '') === $poId))[0] ?? null;
     receivingAssert(is_array($listedOrder) && ($listedOrder['status'] ?? '') === 'Delivered', 'PO listing mixed the supplier claim into the PO lifecycle status.');
-    receivingAssert(($listedOrder['open_claim_badge'] ?? '') === 'Replacement Pending', 'PO listing did not expose the replacement-pending secondary badge.');
+    receivingAssert(($listedOrder['open_claim_badge'] ?? '') === 'Replacement Pending - ' . $removedBaseQuantity . ' pcs', 'PO listing did not expose the replacement-pending quantity as a secondary badge: ' . json_encode($listedOrder['open_claim_badge'] ?? null));
     receivingAssert((int) ($listedOrder['open_claim_count'] ?? 0) === 1, 'PO listing did not aggregate its open supplier claim.');
-    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claim_damage_lines dl INNER JOIN supplier_claims sc ON sc.claim_id=dl.claim_id WHERE sc.po_item_id='{$poItemId}'")->fetchColumn() === 2, 'The per-package damage breakdown was not normalized into two child rows.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claim_damage_lines dl INNER JOIN supplier_claims sc ON sc.claim_id=dl.claim_id WHERE sc.po_item_id='{$poItemId}'")->fetchColumn() === 2, 'The affected-goods breakdown was not normalized into two physical-package rows.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claim_damage_lines dl INNER JOIN supplier_claims sc ON sc.claim_id=dl.claim_id WHERE sc.po_item_id='{$poItemId}' AND dl.sequence_no IN (3,5)")->fetchColumn() === 2, 'The exact physical package sequences were not preserved.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claim_damage_lines dl INNER JOIN supplier_claims sc ON sc.claim_id=dl.claim_id WHERE sc.po_item_id='{$poItemId}' AND dl.receiving_item_id IS NOT NULL AND dl.inventory_batch_id IS NOT NULL")->fetchColumn() === 2, 'Affected goods rows were not linked to the receiving item and existing batch.');
     receivingAssert((int) $pdo->query("SELECT COALESCE(SUM(dl.damaged_quantity*c.base_quantity),0) FROM supplier_claim_damage_lines dl INNER JOIN supplier_claims sc ON sc.claim_id=dl.claim_id INNER JOIN supplier_product_unit_conversions c ON c.conversion_id=dl.damaged_unit_conversion_id WHERE sc.po_item_id='{$poItemId}'")->fetchColumn() === $damagedQuantity, 'The normalized damage lines did not preserve three physically damaged pieces.');
     $receivingDetails = buildPurchaseOrderReceivingDetails($pdo, $poId);
+    receivingAssert(($receivingDetails['delivered_by_name'] ?? '') === 'Test Driver' && ($receivingDetails['delivery_receipt_no'] ?? '') === 'DR-TEST-001', 'Receiving history did not preserve delivery information.');
+    $specificationStatement = $pdo->prepare(
+        "SELECT psv.value_text, psv.value_number, COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name, '') AS unit_symbol
+         FROM product_specification_values psv
+         INNER JOIN product p ON p.product_id=psv.product_id
+         INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
+         LEFT JOIN product_type_specifications pts ON pts.type_id=p.type_id AND pts.specification_id=psv.specification_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id=psv.measurement_unit_id
+         WHERE psv.product_id=:product_id
+         ORDER BY COALESCE(pts.sort_order,2147483647),ps.specification_name"
+    );
+    $specificationStatement->execute([':product_id' => $productId]);
+    $expectedSpecification = [];
+    foreach ($specificationStatement->fetchAll(PDO::FETCH_ASSOC) as $specification) {
+        $value = trim((string) ($specification['value_text'] ?? ''));
+        if ($value === '' && $specification['value_number'] !== null && $specification['value_number'] !== '') {
+            $number = rtrim(rtrim((string) $specification['value_number'], '0'), '.');
+            $value = trim(($number === '' ? '0' : $number) . ' ' . (string) ($specification['unit_symbol'] ?? ''));
+        }
+        if ($value !== '') $expectedSpecification[] = $value;
+    }
+    if ($expectedSpecification) receivingAssert(($receivingDetails['items'][0]['specification'] ?? '') === implode(' • ', array_values(array_unique($expectedSpecification))), 'Receiving documents did not reuse the normalized Product Master specification.');
     receivingAssert((int) ($receivingDetails['items'][0]['damaged_quantity'] ?? -1) === $damagedQuantity, 'Receiving history did not preserve physical damage.');
     receivingAssert((int) ($receivingDetails['items'][0]['returned_quantity'] ?? -1) === $removedBaseQuantity, 'Receiving history did not preserve returned action quantity.');
     receivingAssert((int) ($receivingDetails['items'][0]['accepted_quantity'] ?? -1) === $acceptedInventoryQuantity, 'Receiving history did not calculate accepted inventory from Action Qty.');
     receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_credits sc INNER JOIN supplier_claims c ON c.claim_id=sc.claim_id WHERE c.po_item_id='{$poItemId}'")->fetchColumn() === 0, 'A peso credit was created before supplier confirmation.');
 
     $duplicate = receivingPost('purchase_orders/receive_purchase_order.php', [
-        'po_id' => $poId, 'remarks' => 'Duplicate receiving test', 'items' => [$item],
+        'po_id' => $poId, 'delivered_by_name' => 'Test Driver', 'delivery_receipt_no' => 'DR-TEST-001', 'remarks' => 'Duplicate receiving test', 'items' => [$item],
     ], $phpSessionId, $tabToken);
     receivingAssert($duplicate['status'] === 400, 'A duplicate confirmation was not rejected.');
     receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM supplier_claims WHERE po_item_id='{$poItemId}'")->fetchColumn() === 1, 'Duplicate confirmation created another claim.');
@@ -252,15 +282,15 @@ receivingAssert((string) $pdo->query("SELECT status FROM purchase_orders WHERE p
     $editItem = [
         'po_item_id' => $poItemId,
         'received_quantity' => $receivedInventoryQuantity,
-        'damaged_quantity' => $damagedQuantity,
+        'damaged_quantity' => $correctedActionQuantity,
         'damaged_unit_conversion_id' => $fixture['conversion_id'],
         'action_quantity' => $correctedActionQuantity,
-        'action_unit_conversion_id' => $fixture['action_conversion_id'],
+        'action_unit_conversion_id' => $fixture['conversion_id'],
         'issue_type' => 'Broken Package',
         'disposition' => 'return_to_supplier',
         'resolution' => 'replacement',
         'remarks' => 'Corrected after supplier recount.',
-        'damage_lines' => $item['damage_lines'],
+        'damage_lines' => [$item['damage_lines'][0]],
         'batches' => [[
             'batch_id' => $batchId,
             'quantity' => $correctedAcceptedQuantity,
@@ -281,6 +311,8 @@ receivingAssert((string) $pdo->query("SELECT status FROM purchase_orders WHERE p
     receivingAssert((int) ($editedDetails['items'][0]['accepted_quantity'] ?? -1) === $correctedAcceptedQuantity, 'Corrected receiving details did not refresh the accepted quantity.');
 
     $editItem['action_quantity'] = $actionQuantity;
+    $editItem['damaged_quantity'] = $damagedQuantity;
+    $editItem['damage_lines'] = $item['damage_lines'];
     $editItem['remarks'] = '';
     $editItem['batches'][0]['quantity'] = $acceptedInventoryQuantity;
     $restore = receivingPost('purchase_orders/update_receiving_grn.php', [
@@ -299,22 +331,70 @@ receivingAssert((string) $pdo->query("SELECT status FROM purchase_orders WHERE p
 
     $claimId = (string) $pdo->query("SELECT claim_id FROM supplier_claims WHERE po_item_id='{$poItemId}' AND resolution_type='Replacement' LIMIT 1")->fetchColumn();
     $stockBeforeReplacement = (int) $pdo->query("SELECT COALESCE(SUM(storage_qty+shelf_qty),0) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn();
-    $replacement = receivingPost('purchase_orders/record_replacement_arrival.php', [
+    $partialReplacementQuantity = $removedBaseQuantity - 1;
+    $replacementRequestKey = 'replacement-test-' . str_replace('-', '', newUuid($pdo));
+    $replacementPayload = [
         'return_id' => $claimId,
-        'delivered_quantity' => $removedBaseQuantity,
+        'receiving_request_key' => $replacementRequestKey,
+        'delivered_quantity' => $partialReplacementQuantity,
         'damaged_quantity' => 0,
         'batches' => [[
             'batch_identifier' => 'TEST-REPLACEMENT-BATCH',
-            'quantity' => $removedBaseQuantity,
+            'quantity' => $partialReplacementQuantity,
             'expiry_date' => '2031-12-31',
             'no_expiry' => false,
         ]],
         'remarks' => 'Verified replacement test',
-    ], $phpSessionId, $tabToken);
+    ];
+    $replacement = receivingPost('purchase_orders/record_replacement_arrival.php', $replacementPayload, $phpSessionId, $tabToken);
     receivingAssert($replacement['status'] === 200 && ($replacement['body']['success'] ?? false), 'Replacement arrival failed: ' . json_encode($replacement));
-    receivingAssert((int) $pdo->query("SELECT COALESCE(SUM(storage_qty+shelf_qty),0) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === $stockBeforeReplacement + $removedBaseQuantity, 'Replacement arrival did not add only the accepted replacement quantity.');
+    receivingAssert((int) $pdo->query("SELECT COALESCE(SUM(storage_qty+shelf_qty),0) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === $stockBeforeReplacement + $partialReplacementQuantity, 'Partial replacement arrival did not add only the accepted replacement quantity.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM purchase_order_receiving WHERE po_id='{$poId}' AND receiving_type='Replacement' AND parent_receiving_id='{$receivingId}' AND claim_id='{$claimId}'")->fetchColumn() === 1, 'Replacement did not create a separate receiving event linked to the original and the claim.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM purchase_order_receiving_items replacement_item INNER JOIN purchase_order_receiving_items original_item ON original_item.receiving_item_id=replacement_item.parent_receiving_item_id WHERE replacement_item.receiving_id='{$replacement['body']['receiving_id']}' AND original_item.receiving_id='{$receivingId}' AND replacement_item.po_item_id='{$poItemId}'")->fetchColumn() === 1, 'Replacement receiving item was not directly linked to the original receiving item.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM inventory_receiving_transactions WHERE claim_id='{$claimId}' AND transaction_type='Replacement Receiving'")->fetchColumn() === 1, 'Replacement inventory movement was not recorded in the audit table.');
+    receivingAssert((int) $pdo->query("SELECT received_quantity FROM purchase_order_receiving_items WHERE receiving_id='{$receivingId}' AND po_item_id='{$poItemId}'")->fetchColumn() === $receivedInventoryQuantity, 'Replacement receiving rewrote the original receiving item.');
+    receivingAssert((string) $pdo->query("SELECT claim_status FROM supplier_claims WHERE claim_id='{$claimId}'")->fetchColumn() === 'Partially Replaced', 'Partial replacement prematurely resolved the claim.');
+    $partialListing = receivingGet('purchase_orders/get_purchase_orders.php?scope=all', $phpSessionId, $tabToken);
+    $partialOrder = array_values(array_filter($partialListing['body']['purchase_orders'] ?? [], static fn(array $row): bool => ($row['po_id'] ?? '') === $poId))[0] ?? null;
+    receivingAssert(is_array($partialOrder) && ($partialOrder['open_claim_badge'] ?? '') === 'Replacement Pending - 1 pcs', 'Partial replacement did not retain the one-piece pending badge.');
+    $duplicateReplacement = receivingPost('purchase_orders/record_replacement_arrival.php', $replacementPayload, $phpSessionId, $tabToken);
+    receivingAssert($duplicateReplacement['status'] === 409, 'Duplicate replacement request key was not rejected idempotently.');
+    receivingAssert((int) $pdo->query("SELECT COALESCE(SUM(storage_qty+shelf_qty),0) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === $stockBeforeReplacement + $partialReplacementQuantity, 'Duplicate replacement request posted inventory twice.');
+    $differentBatchCount = (int) $pdo->query("SELECT COUNT(*) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn();
+    $finalReplacement = receivingPost('purchase_orders/record_replacement_arrival.php', [
+        'return_id' => $claimId,
+        'receiving_request_key' => 'replacement-final-' . str_replace('-', '', newUuid($pdo)),
+        'delivered_quantity' => 1,
+        'damaged_quantity' => 0,
+        'batches' => [['batch_identifier' => 'TEST-REPLACEMENT-BATCH', 'quantity' => 1, 'expiry_date' => '2031-12-31', 'no_expiry' => false]],
+        'remarks' => 'Completed partial replacement test',
+    ], $phpSessionId, $tabToken);
+    receivingAssert($finalReplacement['status'] === 200 && ($finalReplacement['body']['success'] ?? false), 'Final partial replacement failed: ' . json_encode($finalReplacement));
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === $differentBatchCount, 'A repeated replacement lot/expiry created a duplicate batch.');
+    receivingAssert((int) $pdo->query("SELECT COALESCE(SUM(storage_qty+shelf_qty),0) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === $stockBeforeReplacement + $removedBaseQuantity, 'Cumulative accepted replacements did not restore the expected stock total.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM purchase_order_receiving WHERE po_id='{$poId}' AND receiving_type='Replacement' AND parent_receiving_id='{$receivingId}' AND claim_id='{$claimId}'")->fetchColumn() === 2, 'Each partial replacement did not retain its own receiving event.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM inventory_receiving_transactions WHERE claim_id='{$claimId}' AND transaction_type='Replacement Receiving'")->fetchColumn() === 2, 'Each partial replacement did not retain its own inventory audit event.');
     receivingAssert((string) $pdo->query("SELECT claim_status FROM supplier_claims WHERE claim_id='{$claimId}'")->fetchColumn() === 'Resolved', 'Fully received replacement did not resolve the existing claim.');
     receivingAssert((string) $pdo->query("SELECT status FROM purchase_orders WHERE po_id='{$poId}'")->fetchColumn() === 'Delivered', 'Replacement arrival changed the PO lifecycle status.');
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM purchase_order_payments WHERE po_id='{$poId}'")->fetchColumn() === 0, 'Replacement receiving created an unauthorized second payment.');
+
+    $sameBatchClaimId = newUuid($pdo);
+    $sameBatchConversionId = supplierClaimDefaultConversion($pdo, $poItemId);
+    $sameBatchMetadata = ['version' => 1, 'resolution' => 'return_for_replacement', 'delivered_quantity' => 0, 'damaged_quantity' => 1, 'missing_quantity' => 0, 'supplier_adjustment' => 0, 'replacement_expected_qty' => 1, 'replacement_received_qty' => 0, 'parent_return_id' => null];
+    $pdo->prepare("INSERT INTO supplier_claims (claim_id,po_item_id,affected_quantity,unit_conversion_id,damage_reason,disposition,resolution_type,claim_status,reported_by,remarks) VALUES (:id,:po_item_id,1,:conversion_id,'Same batch regression','Return to Supplier','Replacement','Awaiting Replacement',:reported_by,:remarks)")->execute([':id' => $sameBatchClaimId, ':po_item_id' => $poItemId, ':conversion_id' => $sameBatchConversionId, ':reported_by' => $user['user_id'], ':remarks' => buildPurchaseOrderReturnRemarks($sameBatchMetadata, 'Same-batch replacement test')]);
+    $batchCountBeforeMerge = (int) $pdo->query("SELECT COUNT(*) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn();
+    $sameBatchStorageBefore = (int) $pdo->query("SELECT storage_qty FROM inventory_batches ib INNER JOIN product_inventory pi ON pi.inventory_id=ib.legacy_inventory_id WHERE ib.po_item_id='{$poItemId}' AND pi.batch_number='TEST-ACCEPTED-BATCH' AND ib.expiry_date='2030-12-31'")->fetchColumn();
+    $sameBatchReplacement = receivingPost('purchase_orders/record_replacement_arrival.php', [
+        'return_id' => $sameBatchClaimId,
+        'receiving_request_key' => 'replacement-same-batch-' . str_replace('-', '', newUuid($pdo)),
+        'delivered_quantity' => 1,
+        'damaged_quantity' => 0,
+        'batches' => [['batch_identifier' => 'TEST-ACCEPTED-BATCH', 'quantity' => 1, 'expiry_date' => '2030-12-31', 'no_expiry' => false]],
+        'remarks' => 'Same-batch replacement regression',
+    ], $phpSessionId, $tabToken);
+    receivingAssert($sameBatchReplacement['status'] === 200 && ($sameBatchReplacement['body']['success'] ?? false), 'Same-batch replacement failed: ' . json_encode($sameBatchReplacement));
+    receivingAssert((int) $pdo->query("SELECT COUNT(*) FROM inventory_batches WHERE po_item_id='{$poItemId}'")->fetchColumn() === $batchCountBeforeMerge, 'Same product, supplier, batch identifier, and expiry created a duplicate inventory batch.');
+    receivingAssert((int) $pdo->query("SELECT storage_qty FROM inventory_batches ib INNER JOIN product_inventory pi ON pi.inventory_id=ib.legacy_inventory_id WHERE ib.po_item_id='{$poItemId}' AND pi.batch_number='TEST-ACCEPTED-BATCH' AND ib.expiry_date='2030-12-31'")->fetchColumn() === $sameBatchStorageBefore + 1, 'Same-batch replacement did not increment the existing stock record.');
     $resolvedListing = receivingGet('purchase_orders/get_purchase_orders.php?scope=all', $phpSessionId, $tabToken);
     $resolvedOrder = array_values(array_filter($resolvedListing['body']['purchase_orders'] ?? [], static fn(array $row): bool => ($row['po_id'] ?? '') === $poId))[0] ?? null;
     receivingAssert(is_array($resolvedOrder) && empty($resolvedOrder['open_claim_badge']) && (int) ($resolvedOrder['open_claim_count'] ?? 0) === 0, 'Resolved replacement claim still appears as pending on the PO row.');
@@ -326,10 +406,13 @@ receivingAssert((string) $pdo->query("SELECT status FROM purchase_orders WHERE p
     $pdo->prepare('DELETE FROM supplier_credit_applications WHERE credit_id IN (SELECT credit_id FROM supplier_credits WHERE claim_id IN (SELECT claim_id FROM supplier_claims WHERE po_item_id=:po_item_id))')->execute([':po_item_id' => $poItemId]);
     $pdo->prepare('DELETE FROM supplier_credits WHERE claim_id IN (SELECT claim_id FROM supplier_claims WHERE po_item_id=:po_item_id)')->execute([':po_item_id' => $poItemId]);
     $pdo->prepare('DELETE FROM activity_logs WHERE reference_id IN (SELECT claim_id FROM supplier_claims WHERE po_item_id=:po_item_id)')->execute([':po_item_id' => $poItemId]);
+    $pdo->prepare('DELETE FROM inventory_receiving_transactions WHERE po_item_id=:po_item_id')->execute([':po_item_id' => $poItemId]);
+    $pdo->prepare("DELETE FROM purchase_order_receiving WHERE po_id=:po_id AND receiving_type='Replacement'")->execute([':po_id' => $poId]);
     $pdo->prepare('DELETE FROM supplier_claims WHERE po_item_id=:po_item_id')->execute([':po_item_id' => $poItemId]);
     $pdo->prepare('DELETE FROM inventory_batches WHERE po_item_id=:po_item_id')->execute([':po_item_id' => $poItemId]);
     foreach ($inventoryIds as $inventoryId) {
         $pdo->prepare('DELETE FROM activity_logs WHERE reference_id=:reference_id')->execute([':reference_id' => $inventoryId]);
+        $pdo->prepare('DELETE FROM product_inventory WHERE inventory_id=:inventory_id')->execute([':inventory_id' => $inventoryId]);
     }
     if ($receivingId !== '') {
         $pdo->prepare('DELETE FROM product_inventory WHERE receiving_id=:receiving_id')->execute([':receiving_id' => $receivingId]);

@@ -41,16 +41,22 @@ try {
     $duplicate = $pdo->prepare('SELECT payment_id FROM purchase_order_payments WHERE payment_request_key = :key LIMIT 1');
     $duplicate->execute([':key' => $paymentRequestKey]);
     if ($duplicate->fetchColumn()) paymentError('This payment submission was already recorded.', 409);
-    $orderStatement = $pdo->prepare("SELECT po_id, po_number, final_payment, status FROM purchase_orders WHERE po_id = :po_id LIMIT 1 FOR UPDATE");
+    $orderStatement = $pdo->prepare(
+        "SELECT po.po_id, po.po_number, po.status, invoice.invoice_id,
+                invoice.supplier_invoice_total
+         FROM purchase_orders po
+         LEFT JOIN purchase_order_invoices invoice ON invoice.po_id = po.po_id
+         WHERE po.po_id = :po_id
+         LIMIT 1 FOR UPDATE"
+    );
     $orderStatement->execute([':po_id' => $poId]);
     $order = $orderStatement->fetch(PDO::FETCH_ASSOC);
     if (!$order) paymentError('Purchase order not found.', 404);
-if ($order['status'] !== 'Delivered') paymentError('Supplier payments can only be recorded for completed receiving records.', 422);
-    $effectivePayable = purchaseOrderEffectivePayable($pdo, $poId, (float) $order['final_payment']);
-    if ((float) $order['final_payment'] <= 0 && $effectivePayable > 0) {
-        $pdo->prepare('UPDATE purchase_orders SET final_payment = :payable WHERE po_id = :po_id')
-            ->execute([':payable' => $effectivePayable, ':po_id' => $poId]);
+    if (!in_array($order['status'], ['Pending','Arrived','Delivered'], true)) paymentError('Supplier payments can only be recorded for Pending, Arrived, or Delivered purchase orders.', 422);
+    if (empty($order['invoice_id']) || (float) $order['supplier_invoice_total'] <= 0) {
+        paymentError('Record the supplier invoice before recording a payment.', 422);
     }
+    $effectivePayable = (float) $order['supplier_invoice_total'];
     $before = purchaseOrderPaymentSummary($pdo, $poId, $effectivePayable);
     if ($before['remaining_balance'] <= 0) paymentError('This purchase order is already fully paid.', 409);
     if ($expectedRemaining !== null && abs($expectedRemaining - $before['remaining_balance']) >= 0.01) {
@@ -84,7 +90,8 @@ if ($order['status'] !== 'Delivered') paymentError('Supplier payments can only b
     echo json_encode([
         'status' => 'success', 'message' => 'Supplier payment recorded.', 'payment_id' => $paymentId,
         'payment_recorded' => $amount, 'total_paid' => $summary['total_paid'],
-        'remaining_balance' => $summary['remaining_balance'], 'payment_status' => $summary['payment_status']
+        'remaining_balance' => $summary['remaining_balance'], 'payment_status' => $summary['payment_status'],
+        'payment_timing' => $order['status'] === 'Pending' ? 'Prepaid' : 'Standard'
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (PDOException $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();

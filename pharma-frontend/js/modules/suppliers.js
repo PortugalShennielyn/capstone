@@ -1,4 +1,5 @@
 import PharmaUtils from '../utils.js';
+import { createLiveSync, publishDataUpdate } from './live_data.js?v=1';
 import {
     datalist,
     getVariationRule,
@@ -7,7 +8,7 @@ import {
 import {
     formatProductSpecification,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=4';
+} from './product_specification.js?v=8';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits as loadSharedMeasurementUnits, measurementUnitsForContext, upsertMeasurementUnitCache } from './measurement_units.js?v=2';
@@ -27,7 +28,6 @@ let pendingConfirmation = null;
 let productTypeLoadToken = 0;
 let editProductTypeLoadToken = 0;
 let activeSupplierProductEdit = null;
-let supplierInnerUnitOptions = [];
 
 function supplierCatalogCanModify() {
     return ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
@@ -516,7 +516,6 @@ function renderSupplierProducts(rows) {
                 <td class="col-specification">${esc(variantStrengthSize(product))}</td>
                 <td class="col-type">${esc(displayOrNotSet(product.type_name))}</td>
                 <td class="col-purchase-unit"><div class="supplier-purchase-unit-display"><strong>${esc(displayOrNotSet(product.purchase_unit))}</strong><small>${esc(supplierContainsLabel(product))}</small></div></td>
-                ${supplierCatalogCanViewCost() ? `<td class="col-supplier-cost text-end"><div class="supplier-cost-display"><strong>${peso(product.supplier_cost_input ?? product.estimated_purchase_unit_cost)}</strong><small>per ${esc(displayOrNotSet(product.purchase_unit))}</small></div></td>` : ''}
                 <td class="col-actions actions-column">
                     ${supplierCatalogCanModify() ? `<div class="supplier-product-actions">
                         <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" title="Edit supplier product" aria-label="Edit supplier product">
@@ -529,7 +528,7 @@ function renderSupplierProducts(rows) {
                 </td>
             </tr>
         `).join('')
-        : `<tr><td colspan="${supplierCatalogCanViewCost() ? 7 : 6}" class="text-center text-muted py-4">No supplier products found.</td></tr>`;
+        : '<tr><td colspan="6" class="text-center text-muted py-4">No supplier products found.</td></tr>';
 }
 
 function setSupplierEditText(id, value) {
@@ -627,75 +626,6 @@ function renderSupplierProductMasterDetails(product, configuredSpecifications = 
     }
 }
 
-function setSupplierInnerUnitEnabled(enabled) {
-    const innerRow = document.getElementById('editSupplierProductInnerUnitRow');
-    const innerField = document.getElementById('editSupplierProductInnerUnitField');
-    const quantityField = document.getElementById('editSupplierProductUnitsPerInnerField');
-    const innerInput = document.getElementById('editSupplierProductInnerUnit');
-    innerRow?.classList.toggle('d-none', !enabled);
-    innerField?.classList.toggle('d-none', !enabled);
-    document.getElementById('editSupplierHierarchyDirectTo')?.classList.toggle('d-none', enabled);
-    quantityField?.classList.toggle('d-none', !enabled);
-    if (!enabled) {
-        if (innerInput) innerInput.value = '';
-    }
-    const toggle = document.getElementById('editSupplierProductToggleInnerUnit');
-    if (toggle) toggle.innerHTML = enabled
-        ? '<i class="fa-solid fa-minus me-1"></i>Remove Packaging Level'
-        : '<i class="fa-solid fa-plus me-1"></i>Add Packaging Level';
-    document.getElementById('editSupplierProductAddLevelRow')?.classList.toggle('d-none', !enabled);
-    if (!enabled) document.getElementById('editSupplierProductAdditionalLevels').innerHTML = '';
-}
-
-function addSupplierPackagingLevel(level = {}) {
-    const container = document.getElementById('editSupplierProductAdditionalLevels');
-    if (!container) return;
-    const options = supplierInnerUnitOptions.map(unit => `<option value="${esc(unit.unit_name)}" ${normalizedSupplierUnit(unit.unit_name) === normalizedSupplierUnit(level.unit) ? 'selected' : ''}>${esc(supplierUnitOptionLabel(unit))}</option>`).join('');
-    container.insertAdjacentHTML('beforeend', `<tr class="supplier-additional-level"><td><span class="supplier-hierarchy-unit supplier-additional-level-from">Previous Unit</span></td><td><select class="form-select supplier-additional-level-unit" required><option value="">Select next unit...</option>${options}</select><div class="invalid-feedback">Select a unique unit above the Product Base Unit.</div></td><td><input class="form-control supplier-additional-level-quantity" type="number" min="1" step="1" required value="${esc(level.quantity || 1)}" aria-label="Child units per parent unit"><div class="invalid-feedback">Enter a positive whole number.</div></td><td class="hierarchy-actions"><button class="btn btn-sm btn-outline-danger supplier-remove-level" type="button" aria-label="Remove packaging level"><i class="fa-solid fa-trash"></i></button></td></tr>`);
-}
-
-function hierarchyThroughProductBase(levels, baseUnit) {
-    const baseKey = normalizedSupplierUnit(baseUnit);
-    const normalized = Array.isArray(levels) ? levels.filter(level => cleanText(level?.unit)) : [];
-    const baseIndex = normalized.findIndex(level => normalizedSupplierUnit(level.unit) === baseKey);
-    const throughBase = baseIndex >= 0 ? normalized.slice(0, baseIndex + 1) : [];
-    const unitKeys = throughBase.map(level => normalizedSupplierUnit(level.unit));
-    if (throughBase.some(level => /^\d+(?:\.\d+)?$/.test(cleanText(level.unit))) || new Set(unitKeys).size !== unitKeys.length) return [];
-    return throughBase;
-}
-
-function applySupplierHierarchyLevels(levels, baseUnit, fallbackContains = 1) {
-    const trimmed = hierarchyThroughProductBase(levels, baseUnit);
-    const purchaseUnit = document.getElementById('editSupplierProductPurchaseUnit')?.value || '';
-    const sameUnit = normalizedSupplierUnit(purchaseUnit) === normalizedSupplierUnit(baseUnit);
-    const effective = sameUnit ? [{ unit: baseUnit, quantity: 1 }] : (trimmed.length ? trimmed : [{ unit: baseUnit, quantity: Math.max(1, Number(fallbackContains || 1)) }]);
-    document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = effective[0].quantity;
-    document.getElementById('editSupplierProductAdditionalLevels').innerHTML = '';
-    if (effective.length > 1) {
-        document.getElementById('editSupplierProductInnerUnit').value = effective[0].unit;
-        document.getElementById('editSupplierProductUnitsPerInnerUnit').value = effective[effective.length - 1].quantity;
-        setSupplierInnerUnitEnabled(true);
-        effective.slice(1, -1).forEach(addSupplierPackagingLevel);
-    } else {
-        setSupplierInnerUnitEnabled(false);
-        document.getElementById('editSupplierProductUnitsPerInnerUnit').value = 1;
-    }
-}
-
-function collectSupplierHierarchyLevels() {
-    const inventoryUnit = document.getElementById('editSupplierProductInventoryUnitPreview')?.value.trim() || '';
-    const innerEnabled = !document.getElementById('editSupplierProductInnerUnitRow')?.classList.contains('d-none');
-    const contains = Number(document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.value);
-    if (!innerEnabled) return [{ unit: inventoryUnit, quantity: contains }];
-    const levels = [{ unit: document.getElementById('editSupplierProductInnerUnit')?.value.trim() || '', quantity: contains }];
-    document.querySelectorAll('#editSupplierProductAdditionalLevels .supplier-additional-level').forEach(row => levels.push({
-        unit: row.querySelector('.supplier-additional-level-unit')?.value.trim() || '',
-        quantity: Number(row.querySelector('.supplier-additional-level-quantity')?.value)
-    }));
-    levels.push({ unit: inventoryUnit, quantity: Number(document.getElementById('editSupplierProductUnitsPerInnerUnit')?.value) });
-    return levels;
-}
-
 function normalizedSupplierUnit(value) {
     return cleanText(value).toLowerCase();
 }
@@ -739,8 +669,6 @@ async function loadSupplierPurchasingUnitSelectors(saved = {}) {
     const purchaseUnits = sorted('purchase').filter(unit => ['box', 'carton'].includes(normalizedSupplierUnit(unit.unit_name)));
     const savedPurchaseUnit = ['box', 'carton'].includes(normalizedSupplierUnit(saved.purchaseUnit)) ? saved.purchaseUnit : '';
     populateSupplierUnitSelect('editSupplierProductPurchaseUnit', purchaseUnits, savedPurchaseUnit, 'Select Box or Carton...');
-    supplierInnerUnitOptions = sorted('inner');
-    populateSupplierUnitSelect('editSupplierProductInnerUnit', supplierInnerUnitOptions, saved.innerUnit, 'Select Inner Unit...');
     populateSupplierUnitSelect('editSupplierProductInventoryUnitPreview', sorted('inventory'), saved.inventoryUnit, 'Select Inventory / Base Unit...');
     const inventoryUnit = document.getElementById('editSupplierProductInventoryUnitPreview');
     if (inventoryUnit) {
@@ -779,142 +707,48 @@ function setHierarchyControlValidity(control, valid, message = '') {
     control.setCustomValidity(valid ? '' : message);
 }
 
-function validateHierarchyDraft(purchaseUnit, inventoryUnit) {
-    const quantityControls = [
-        document.getElementById('editSupplierProductUnitsPerPurchaseUnit'),
-        ...document.querySelectorAll('#editSupplierProductAdditionalLevels .supplier-additional-level-quantity'),
-        ...(!document.getElementById('editSupplierProductInnerUnitRow')?.classList.contains('d-none')
-            ? [document.getElementById('editSupplierProductUnitsPerInnerUnit')]
-            : [])
-    ].filter(Boolean);
-    let valid = true;
-    quantityControls.forEach(control => {
-        const number = Number(control.value);
-        const quantityIsValid = control.value.trim() !== '' && Number.isInteger(number) && number > 0;
-        setHierarchyControlValidity(control, quantityIsValid, 'Enter a positive whole-number package quantity.');
-        valid = valid && quantityIsValid;
-    });
-    const unitControls = [
-        ...(!document.getElementById('editSupplierProductInnerUnitField')?.classList.contains('d-none')
-            ? [document.getElementById('editSupplierProductInnerUnit')]
-            : []),
-        ...document.querySelectorAll('#editSupplierProductAdditionalLevels .supplier-additional-level-unit')
-    ].filter(Boolean);
-    const unitKeys = [normalizedSupplierUnit(purchaseUnit)];
-    unitControls.forEach(control => {
-        const key = normalizedSupplierUnit(control.value);
-        const unitIsValid = Boolean(key) && key !== normalizedSupplierUnit(inventoryUnit) && !unitKeys.includes(key);
-        setHierarchyControlValidity(control, unitIsValid, 'Select a unique packaging unit above the Product Base Unit.');
-        if (unitIsValid) unitKeys.push(key);
-        valid = valid && unitIsValid;
-    });
-    return valid;
-}
-
-function updateSupplierHierarchyLabels(purchaseUnit, innerUnit, inventoryUnit) {
-    const purchaseFrom = document.getElementById('editSupplierHierarchyPurchaseFrom');
-    const directTo = document.getElementById('editSupplierHierarchyDirectTo');
-    const baseTo = document.getElementById('editSupplierHierarchyBaseTo');
-    if (purchaseFrom) purchaseFrom.textContent = purchaseUnit || 'Purchase Unit';
-    if (directTo) directTo.textContent = inventoryUnit || 'Product Base Unit';
-    if (baseTo) baseTo.textContent = inventoryUnit || 'Product Base Unit';
-    const innerLabel = document.getElementById('editSupplierProductUnitsPerInnerLabel');
-    if (innerLabel) innerLabel.textContent = `Quantity of ${inventoryUnit || 'base units'} per parent unit`;
-}
-
-function updateAdditionalHierarchyLabels(purchaseUnit, innerUnit, inventoryUnit) {
-    let parent = innerUnit || purchaseUnit;
-    document.querySelectorAll('#editSupplierProductAdditionalLevels .supplier-additional-level').forEach(row => {
-        const child = row.querySelector('.supplier-additional-level-unit')?.value || 'Units';
-        const from = row.querySelector('.supplier-additional-level-from');
-        if (from) from.textContent = parent || 'Previous Unit';
-        parent = child || parent;
-    });
-    const finalFrom = document.getElementById('editSupplierHierarchyBaseFrom');
-    if (finalFrom) finalFrom.textContent = parent || 'Intermediate Unit';
-}
-
-function refreshHierarchyUnitOptions(purchaseUnit, inventoryUnit) {
-    const blocked = new Set([normalizedSupplierUnit(purchaseUnit), normalizedSupplierUnit(inventoryUnit)]);
-    const selectors = Array.from(document.querySelectorAll('#editSupplierProductInnerUnit, #editSupplierProductAdditionalLevels .supplier-additional-level-unit'));
-    const selected = selectors.map(select => normalizedSupplierUnit(select.value)).filter(Boolean);
-    selectors.forEach(select => {
-        const own = normalizedSupplierUnit(select.value);
-        Array.from(select.options).forEach(option => {
-            const key = normalizedSupplierUnit(option.value);
-            option.disabled = Boolean(key && (blocked.has(key) || (key !== own && selected.includes(key))));
-        });
-    });
-    const addButton = document.getElementById('editSupplierProductAddLevel');
-    if (addButton) addButton.disabled = supplierInnerUnitOptions.every(unit => {
-        const key = normalizedSupplierUnit(unit.unit_name);
-        return blocked.has(key) || selected.includes(key);
-    });
-}
-
-function alignHierarchyWithPurchaseUnit() {
-    const purchaseUnit = document.getElementById('editSupplierProductPurchaseUnit')?.value || '';
-    const baseUnit = document.getElementById('editSupplierProductInventoryUnitPreview')?.value || '';
-    const levels = collectSupplierHierarchyLevels();
-    if (levels.length > 1 && normalizedSupplierUnit(levels[0].unit) === normalizedSupplierUnit(purchaseUnit)) {
-        applySupplierHierarchyLevels(levels.slice(1), baseUnit, 1);
-    }
-    updateSupplierProductConversionPreview();
-}
-
 function updateSupplierProductConversionPreview() {
     const supplierProductId = document.getElementById('editSupplierProductLinkId')?.value || '';
     const product = activeSupplierProductEdit || supplierProductRows.find((row) => String(row.supplier_product_id) === String(supplierProductId)) || {};
     const purchaseUnit = document.getElementById('editSupplierProductPurchaseUnit')?.value || '';
     let contains = Math.max(1, Number(document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.value || 1));
-    let innerUnit = document.getElementById('editSupplierProductInnerUnit')?.value.trim() || '';
-    let unitsPerInner = Math.max(1, Number(document.getElementById('editSupplierProductUnitsPerInnerUnit')?.value || 1));
     const inventoryUnit = document.getElementById('editSupplierProductInventoryUnitPreview')?.value || '';
-    let hierarchyLevels = collectSupplierHierarchyLevels();
     const sameUnit = normalizedSupplierUnit(purchaseUnit) === normalizedSupplierUnit(inventoryUnit);
     if (sameUnit) {
         document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = 1;
         document.getElementById('editSupplierProductUnitsPerPurchaseUnit').disabled = true;
-        setSupplierInnerUnitEnabled(false);
     } else {
         document.getElementById('editSupplierProductUnitsPerPurchaseUnit').disabled = false;
     }
     contains = Math.max(1, Number(document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.value || 1));
-    innerUnit = document.getElementById('editSupplierProductInnerUnit')?.value.trim() || '';
-    unitsPerInner = Math.max(1, Number(document.getElementById('editSupplierProductUnitsPerInnerUnit')?.value || 1));
-    hierarchyLevels = collectSupplierHierarchyLevels();
-    refreshHierarchyUnitOptions(purchaseUnit, inventoryUnit);
-    document.getElementById('editSupplierProductToggleInnerUnit')?.classList.toggle('d-none', sameUnit);
-    updateSupplierHierarchyLabels(purchaseUnit, innerUnit, inventoryUnit);
-    updateAdditionalHierarchyLabels(purchaseUnit, innerUnit, inventoryUnit);
+    const purchaseLabel = document.getElementById('editSupplierDirectPurchaseUnit');
+    const baseLabel = document.getElementById('editSupplierDirectBaseUnit');
+    if (purchaseLabel) purchaseLabel.textContent = purchaseUnit || 'Purchase Unit';
+    if (baseLabel) baseLabel.textContent = quantityUnit(inventoryUnit || 'Product Base Unit', contains);
     const purchaseUnitAllowed = ['box', 'carton'].includes(normalizedSupplierUnit(purchaseUnit));
-    const draftValid = validateHierarchyDraft(purchaseUnit, inventoryUnit);
+    const quantityInput = document.getElementById('editSupplierProductUnitsPerPurchaseUnit');
+    const draftValid = Number.isInteger(Number(quantityInput?.value)) && Number(quantityInput?.value) > 0;
+    setHierarchyControlValidity(quantityInput, draftValid, 'Enter a positive whole-number contents quantity.');
     if (!purchaseUnitAllowed || !inventoryUnit || !draftValid) {
         const conversionMeaning = document.getElementById('editSupplierProductConversionMeaning');
-        if (conversionMeaning) conversionMeaning.innerHTML = `<strong>${purchaseUnitAllowed && inventoryUnit ? 'Complete the packaging hierarchy using positive whole-number quantities.' : 'Select Box or Carton and a valid Product Base Unit.'}</strong>`;
+        if (conversionMeaning) conversionMeaning.innerHTML = `<strong>${purchaseUnitAllowed && inventoryUnit ? 'Enter the final number of Product Base Units in one Purchase Unit.' : 'Select Box or Carton and a valid Product Base Unit.'}</strong>`;
         document.getElementById('editPreviewPurchaseUnit').textContent = purchaseUnit || 'Select Box or Carton';
-        document.getElementById('editPreviewInventoryReceived').textContent = 'Complete the packaging hierarchy';
+        document.getElementById('editPreviewInventoryReceived').textContent = 'Complete the final contents conversion';
         return;
     }
     const preview = supplierPreviewDetails({
         ...product,
         purchase_unit: purchaseUnit,
         purchase_unit_contains: contains,
-        inner_unit: innerUnit,
-        units_per_inner_unit: innerUnit ? unitsPerInner : null,
-        units_per_purchase_unit: contains * (innerUnit ? unitsPerInner : 1),
+        inner_unit: '',
+        units_per_inner_unit: null,
+        units_per_purchase_unit: contains,
         inventory_unit: inventoryUnit,
-        hierarchy_levels: hierarchyLevels
+        hierarchy_levels: []
     });
 
     document.getElementById('editPreviewPurchaseUnit').textContent = preview.purchaseUnit;
     document.getElementById('editPreviewInventoryReceived').textContent = preview.conversion.summary;
-    const supplierCostInput = Math.max(0, Number(document.getElementById('editSupplierProductSupplierCost')?.value || 0));
-    document.getElementById('editPreviewSupplierCost').textContent = `${peso(supplierCostInput)} / ${preview.purchaseUnit}`;
-    const costLabel = document.getElementById('editSupplierProductSupplierCostLabel');
-    if (costLabel) costLabel.textContent = 'Supplier Cost';
-    const supplierCostUnit = document.getElementById('editSupplierProductSupplierCostUnit');
-    if (supplierCostUnit) supplierCostUnit.textContent = `/ ${preview.purchaseUnit}`;
     const conversionMeaning = document.getElementById('editSupplierProductConversionMeaning');
     if (conversionMeaning) conversionMeaning.innerHTML = `<strong>${esc(preview.conversion.summary)}</strong>`;
     setSupplierEditGroup('inventory-unit', preview.inventoryUnit);
@@ -957,9 +791,6 @@ function updateAddSupplierProductConversionPreview() {
     document.getElementById('addPreviewPurchaseUnit').textContent = preview.purchaseUnit;
     document.getElementById('addPreviewContains').textContent = preview.containsLine;
     document.getElementById('addPreviewMeaning').textContent = preview.meaning;
-    const supplierCost = Math.max(0, Number(document.getElementById('supplierProductSupplierCost')?.value || 0));
-    document.getElementById('addPreviewSupplierCost').textContent = `${peso(supplierCost)} per ${singularInventoryUnit(preview.inventoryUnit)}`;
-    document.getElementById('addPreviewPurchaseCost').textContent = `${peso(supplierCost * contains)} per ${preview.purchaseUnit}`;
     document.getElementById('addSupplierProductConversionPreview')?.classList.toggle('is-warning', preview.isWarning);
 }
 
@@ -1013,6 +844,8 @@ async function loadSuppliers() {
             const element = document.getElementById(id);
             if (element) element.textContent = Number(value || 0).toLocaleString('en-PH');
         });
+        const directoryCount = document.getElementById('supplierDirectoryCount');
+        if (directoryCount) directoryCount.textContent = Number(summary.total_suppliers || suppliers.length || 0).toLocaleString('en-PH');
 
         if (supplierSelect) {
             supplierSelect.innerHTML = '<option value="" disabled selected>Select supplier...</option>';
@@ -1282,11 +1115,7 @@ function openSupplierProductDetails(supplierProductId) {
     if (!product) return;
     const comparisons = supplierProductRows.filter((row) => String(row.product_id) === String(product.product_id));
     const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
-    const supplierCost = Math.max(0, Number(product.supplier_cost_price || 0));
     const sellingPrice = Math.max(0, Number(product.price || 0));
-    const marginAmount = sellingPrice - supplierCost;
-    const marginPercent = sellingPrice > 0 ? (marginAmount / sellingPrice) * 100 : null;
-    const canViewCost = supplierCatalogCanViewCost();
     const inventoryUnit = singularInventoryUnit(supplierInventoryUnit(product, 1));
     document.getElementById('supplierProductDetailsTitle').textContent = productDisplayName(product);
     document.getElementById('supplierProductDetailsBody').innerHTML = `
@@ -1311,15 +1140,6 @@ function openSupplierProductDetails(supplierProductId) {
                     <dt>Units per Purchase Unit</dt><dd>${esc(supplierContainsLabel(product))}</dd>
                 </dl>
             </section>
-            ${canViewCost ? `<section class="supplier-detail-section">
-                <h6>Pricing</h6>
-                <dl class="supplier-detail-list">
-                    <dt>Supplier Cost</dt><dd>${esc(peso(supplierCost))} per ${esc(inventoryUnit)}</dd>
-                    <dt>Purchase Unit Cost</dt><dd>${esc(peso(supplierCost))}</dd>
-                    <dt>Selling Price</dt><dd>${esc(peso(sellingPrice))}</dd>
-                    <dt>Estimated Margin</dt><dd>${esc(peso(marginAmount))}${marginPercent === null ? '' : ` (${esc(marginPercent.toFixed(1))}%)`}</dd>
-                </dl>
-            </section>` : ''}
             <section class="supplier-detail-section">
                 <h6>Purchasing Information</h6>
                 <dl class="supplier-detail-list">
@@ -1332,7 +1152,7 @@ function openSupplierProductDetails(supplierProductId) {
             </section>
             <section class="supplier-detail-section full-width">
                 <h6>Supplier Comparison</h6>
-                ${comparisons.length > 1 ? `<div class="table-responsive"><table class="table table-sm supplier-comparison-table"><thead><tr><th>Supplier</th>${canViewCost ? '<th>Supplier Cost</th>' : ''}<th>Purchase Unit</th><th>Units per Purchase Unit</th></tr></thead><tbody>${comparisons.map((row) => `<tr><td>${esc(displayOrNotSet(row.supplier_name))}</td>${canViewCost ? `<td>${esc(peso(row.supplier_cost_price))}</td>` : ''}<td>${esc(displayOrNotSet(row.purchase_unit))}</td><td>${esc(supplierContainsLabel(row))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-muted mb-0">No alternative supplier assignment is currently available for this exact product record.</p>'}
+                ${comparisons.length > 1 ? `<div class="table-responsive"><table class="table table-sm supplier-comparison-table"><thead><tr><th>Supplier</th><th>Purchase Unit</th><th>Units per Purchase Unit</th></tr></thead><tbody>${comparisons.map((row) => `<tr><td>${esc(displayOrNotSet(row.supplier_name))}</td><td>${esc(displayOrNotSet(row.purchase_unit))}</td><td>${esc(supplierContainsLabel(row))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-muted mb-0">No alternative supplier assignment is currently available for this exact product record.</p>'}
             </section>
         </div>`;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('supplierProductDetailsModal')).show();
@@ -1593,7 +1413,6 @@ async function submitProduct(event) {
         price: document.getElementById('supplierProductBasePrice')?.value || document.getElementById('supplierProductPrice')?.value || '0',
         image_url: document.getElementById('supplierProductImageUrl')?.value.trim() || '',
         category_id: selectedCategory?.value || '',
-        supplier_cost_price: document.getElementById('supplierProductSupplierCost')?.value || '0',
         purchase_unit: document.getElementById('supplierProductPurchaseUnit')?.value || 'Box',
         inventory_unit: document.getElementById('supplierProductInventoryUnitPreview')?.value.trim() || 'pc',
         units_per_purchase_unit: document.getElementById('supplierProductUnitsPerPurchaseUnit')?.value || '1',
@@ -1680,15 +1499,14 @@ async function submitProduct(event) {
         }];
     }
 
-    const supplierCost = Number(payload.supplier_cost_price);
     const sellingPrice = Number(payload.price);
     const unitsPerPurchaseUnit = Number(payload.units_per_purchase_unit);
     if (!payload.purchase_unit || !Number.isFinite(unitsPerPurchaseUnit) || unitsPerPurchaseUnit <= 0) {
         PharmaUtils.toast.error('Select a purchase unit and enter units per purchase unit greater than zero.');
         return;
     }
-    if (!Number.isFinite(supplierCost) || supplierCost < 0 || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
-        PharmaUtils.toast.error('Supplier cost and selling price must be non-negative numbers.');
+    if (!Number.isFinite(sellingPrice) || sellingPrice < 0) {
+        PharmaUtils.toast.error('Selling price must be a non-negative number.');
         return;
     }
 
@@ -1739,12 +1557,9 @@ async function openEditSupplierProduct(supplierProductId) {
     if (!product) return;
 
     activeSupplierProductEdit = { ...product };
-    const initialLevels = Array.isArray(product.hierarchy_levels) ? product.hierarchy_levels : [];
-    const initialInnerUnit = initialLevels.length > 1 ? initialLevels[0].unit : (product.inner_unit || '');
     try {
         await loadSupplierPurchasingUnitSelectors({
             purchaseUnit: product.purchase_unit || '',
-            innerUnit: initialInnerUnit,
             inventoryUnit: product.inventory_unit || supplierInventoryUnit(product, 1)
         });
     } catch (error) {
@@ -1755,14 +1570,7 @@ async function openEditSupplierProduct(supplierProductId) {
     document.getElementById('editSupplierProductId').value = product.product_id || '';
     document.getElementById('editSupplierProductSupplierId').value = product.supplier_id || '';
     setSupplierEditText('editSupplierProductSupplierNameText', product.supplier_name);
-    document.getElementById('editSupplierProductSupplierCost').value = product.supplier_cost_price || '0';
-    const savedLevels = initialLevels;
-    const innerUnit = initialInnerUnit;
-    applySupplierHierarchyLevels(savedLevels, product.inventory_unit || supplierInventoryUnit(product, 1), product.purchase_unit_contains || product.units_per_purchase_unit || 1);
-    const savedConversion = purchasingConversion(product);
-    const purchaseUnitCost = product.estimated_purchase_unit_cost
-        ?? (Number(product.supplier_cost_price || 0) * savedConversion.baseQtyPerPurchaseUnit);
-    document.getElementById('editSupplierProductSupplierCost').value = purchaseUnitCost;
+    document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = Math.max(1, Number(product.units_per_purchase_unit || product.purchase_unit_contains || 1));
     renderSupplierProductMasterDetails(product, [], product.specifications || []);
     updateSupplierProductConversionPreview();
 
@@ -1799,7 +1607,7 @@ async function openEditSupplierProduct(supplierProductId) {
         const matchingOption = Array.from(productBaseUnitSelect.options).find(option => normalizedSupplierUnit(option.value) === normalizedSupplierUnit(productBaseUnit));
         if (matchingOption) productBaseUnitSelect.value = matchingOption.value;
     }
-    applySupplierHierarchyLevels(savedLevels, productBaseUnit || product.inventory_unit || '', product.purchase_unit_contains || product.units_per_purchase_unit || 1);
+    document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = Math.max(1, Number(product.units_per_purchase_unit || product.purchase_unit_contains || 1));
     const savedSpecifications = Array.isArray(details.specifications) && details.specifications.length
         ? details.specifications
         : (product.specifications || []);
@@ -1819,27 +1627,16 @@ async function submitEditSupplierProduct(event) {
     }
     const payload = {
         supplier_product_id: document.getElementById('editSupplierProductLinkId').value,
-        supplier_cost_price: document.getElementById('editSupplierProductSupplierCost').value,
-        supplier_cost_basis: 'purchase',
         purchase_unit: document.getElementById('editSupplierProductPurchaseUnit').value,
         inventory_unit: document.getElementById('editSupplierProductInventoryUnitPreview').value.trim(),
         purchase_unit_contains: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value,
-        inner_unit: document.getElementById('editSupplierProductInnerUnit').value.trim(),
-        units_per_inner_unit: document.getElementById('editSupplierProductUnitsPerInnerUnit').value,
-        hierarchy_levels: collectSupplierHierarchyLevels()
+        units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value
     };
 
-    const supplierCost = Number(payload.supplier_cost_price);
     const unitsPerPurchaseUnit = Number(payload.purchase_unit_contains);
-    const unitsPerInnerUnit = Number(payload.units_per_inner_unit);
-    const innerUnitEnabled = !document.getElementById('editSupplierProductInnerUnitRow')?.classList.contains('d-none');
     if (!['box', 'carton'].includes(normalizedSupplierUnit(payload.purchase_unit))) {
         document.getElementById('editSupplierProductPurchaseUnit')?.classList.add('is-invalid');
         PharmaUtils.toast.error('Purchase Unit must be Box or Carton.');
-        return;
-    }
-    if (!validateHierarchyDraft(payload.purchase_unit, payload.inventory_unit)) {
-        PharmaUtils.toast.error('Complete the packaging hierarchy using unique units and positive whole-number quantities.');
         return;
     }
     if (!validSupplierUnitSelection('editSupplierProductPurchaseUnit')) {
@@ -1850,34 +1647,14 @@ async function submitEditSupplierProduct(event) {
         PharmaUtils.toast.error('Inventory/Base Unit must be selected from the available unit list.');
         return;
     }
-    if (innerUnitEnabled && !validSupplierUnitSelection('editSupplierProductInnerUnit')) {
-        PharmaUtils.toast.error('Please select a valid Inner Unit.');
-        return;
-    }
-    const hierarchyUnits = [payload.purchase_unit, ...payload.hierarchy_levels.map(level => level.unit)].filter(Boolean).map(normalizedSupplierUnit);
-    const directSingleUnit = !payload.inner_unit && unitsPerPurchaseUnit === 1
-        && normalizedSupplierUnit(payload.purchase_unit) === normalizedSupplierUnit(payload.inventory_unit);
-    if (new Set(hierarchyUnits).size !== hierarchyUnits.length && !directSingleUnit) {
-        PharmaUtils.toast.error('Each purchasing hierarchy unit must be unique. A unit cannot be its own child or appear below the Product Base Unit.');
-        return;
-    }
-    if (normalizedSupplierUnit(payload.hierarchy_levels.at(-1)?.unit) !== normalizedSupplierUnit(payload.inventory_unit)) {
-        PharmaUtils.toast.error('The purchasing hierarchy must end at the Product Base Unit.');
-        return;
-    }
     if (
         !payload.supplier_product_id
         || !payload.purchase_unit
         || !payload.inventory_unit
-        || payload.supplier_cost_price === ''
-        || !Number.isFinite(supplierCost)
-        || supplierCost < 0
         || !Number.isInteger(unitsPerPurchaseUnit)
         || unitsPerPurchaseUnit < 1
-        || (innerUnitEnabled && (!Number.isInteger(unitsPerInnerUnit) || unitsPerInnerUnit < 1))
-        || payload.hierarchy_levels.some(level => !level.unit || !Number.isInteger(level.quantity) || level.quantity < 1)
     ) {
-        PharmaUtils.toast.error('Enter valid supplier cost, purchase unit, and units per purchase unit.');
+        PharmaUtils.toast.error('Enter a valid Purchase Unit and final contents quantity.');
         return;
     }
 
@@ -1997,7 +1774,6 @@ document.getElementById('addSupplierProductForm')?.addEventListener('submit', su
     'supplierProductPurchaseUnit',
     'supplierProductInventoryUnitPreview',
     'supplierProductUnitsPerPurchaseUnit',
-    'supplierProductSupplierCost',
     'supplierProductDosageForm',
     'supplierProductStrengthUnit',
     'supplierProductNetContentValue',
@@ -2022,7 +1798,7 @@ document.getElementById('btnOpenAddMeasurementUnit')?.addEventListener('click', 
 document.getElementById('addProductTypeForm')?.addEventListener('submit', submitProductType);
 document.getElementById('addMeasurementUnitForm')?.addEventListener('submit', submitMeasurementUnit);
 document.getElementById('editSupplierProductForm')?.addEventListener('submit', submitEditSupplierProduct);
-['editSupplierProductInventoryUnitPreview', 'editSupplierProductInnerUnit'].forEach(id => {
+['editSupplierProductInventoryUnitPreview'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', event => {
         event.target.classList.remove('is-invalid');
         updateSupplierProductConversionPreview();
@@ -2030,28 +1806,9 @@ document.getElementById('editSupplierProductForm')?.addEventListener('submit', s
 });
 document.getElementById('editSupplierProductPurchaseUnit')?.addEventListener('change', event => {
     event.target.classList.remove('is-invalid');
-    alignHierarchyWithPurchaseUnit();
+    updateSupplierProductConversionPreview();
 });
 document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.addEventListener('input', updateSupplierProductConversionPreview);
-document.getElementById('editSupplierProductSupplierCost')?.addEventListener('input', updateSupplierProductConversionPreview);
-document.getElementById('editSupplierProductUnitsPerInnerUnit')?.addEventListener('input', updateSupplierProductConversionPreview);
-document.getElementById('editSupplierProductToggleInnerUnit')?.addEventListener('click', () => {
-    const enabled = document.getElementById('editSupplierProductInnerUnitField')?.classList.contains('d-none');
-    setSupplierInnerUnitEnabled(enabled);
-    updateSupplierProductConversionPreview();
-});
-document.getElementById('editSupplierProductAddLevel')?.addEventListener('click', () => {
-    addSupplierPackagingLevel();
-    updateSupplierProductConversionPreview();
-});
-document.getElementById('editSupplierProductAdditionalLevels')?.addEventListener('input', updateSupplierProductConversionPreview);
-document.getElementById('editSupplierProductAdditionalLevels')?.addEventListener('change', updateSupplierProductConversionPreview);
-document.getElementById('editSupplierProductAdditionalLevels')?.addEventListener('click', event => {
-    const remove = event.target.closest('.supplier-remove-level');
-    if (!remove) return;
-    remove.closest('.supplier-additional-level')?.remove();
-    updateSupplierProductConversionPreview();
-});
 document.getElementById('editSupplierProductUnit')?.addEventListener('change', updateSupplierProductConversionPreview);
 document.getElementById('editSupplierProductPackaging')?.addEventListener('change', updateSupplierProductConversionPreview);
 document.getElementById('supplierProductSearch')?.addEventListener('input', () => {
@@ -2139,6 +1896,18 @@ document.getElementById('table-suppliers')?.addEventListener('click', (event) =>
     if (activateButton) activateSupplier(activateButton.dataset.id);
 });
 document.getElementById('supplierStatusFilter')?.addEventListener('change', loadSuppliers);
+document.getElementById('supplierDirectoryToggle')?.addEventListener('click', (event) => {
+    const button = event.currentTarget;
+    const body = document.getElementById('supplierDirectoryBody');
+    if (!body) return;
+    const expanded = button.getAttribute('aria-expanded') !== 'true';
+    button.setAttribute('aria-expanded', String(expanded));
+    button.title = expanded ? 'Collapse Supplier Directory' : 'Expand Supplier Directory';
+    body.hidden = !expanded;
+    button.querySelector('i')?.classList.toggle('fa-chevron-down', !expanded);
+    button.querySelector('i')?.classList.toggle('fa-chevron-up', expanded);
+    try { sessionStorage.setItem('supplierDirectoryExpanded', expanded ? '1' : '0'); } catch (error) {}
+});
 document.getElementById('table-supplier-products')?.addEventListener('click', (event) => {
     const editButton = event.target.closest('.edit-supplier-product-btn');
     const deleteButton = event.target.closest('.delete-supplier-product-btn');
@@ -2164,6 +1933,9 @@ async function initializeSupplierWorkspace() {
         assignButton.setAttribute('aria-hidden', supplierCatalogCanModify() ? 'false' : 'true');
     }
     document.querySelectorAll('[data-supplier-cost]').forEach((element) => { element.hidden = !supplierCatalogCanViewCost(); });
+    try {
+        if (sessionStorage.getItem('supplierDirectoryExpanded') === '1') document.getElementById('supplierDirectoryToggle')?.click();
+    } catch (error) {}
     loadSuppliers();
     loadProductCategories();
     updateDependentProductSelectors();
@@ -2171,3 +1943,5 @@ async function initializeSupplierWorkspace() {
 }
 
 initializeSupplierWorkspace();
+window.addEventListener('products:changed', (event) => publishDataUpdate('supplier-updated', event.detail || {}));
+createLiveSync({ interval: 5000, events: ['supplier-updated', 'product-updated'], sync: () => Promise.all([loadSuppliers(), loadSupplierProducts()]) });

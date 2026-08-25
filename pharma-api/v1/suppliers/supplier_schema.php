@@ -98,7 +98,8 @@ function validateSupplierPurchasingHierarchyUnits(PDO $pdo, array $submitted, ar
     $purchase = trim((string) ($submitted['purchase_unit'] ?? ''));
     $inner = trim((string) ($submitted['inner_unit'] ?? ''));
     $inventory = trim((string) ($submitted['inventory_unit'] ?? ''));
-    validateSupplierPurchasingUnit($pdo, $purchase, 'Purchase Unit', $saved['purchase_unit'] ?? null, 'purchase');
+    $sameDirectUnit = $inner === '' && normalizedSupplierPurchasingUnit($purchase) === normalizedSupplierPurchasingUnit($inventory);
+    validateSupplierPurchasingUnit($pdo, $purchase, 'Purchase Unit', $saved['purchase_unit'] ?? null, $sameDirectUnit ? 'inventory' : 'purchase');
     validateSupplierPurchasingUnit($pdo, $inventory, 'Inventory/Base Unit', $saved['inventory_unit'] ?? null, 'inventory');
     if ($inner !== '') validateSupplierPurchasingUnit($pdo, $inner, 'Inner Unit', $saved['inner_unit'] ?? null, 'inner');
 

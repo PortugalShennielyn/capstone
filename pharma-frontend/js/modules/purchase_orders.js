@@ -1,8 +1,8 @@
 import PharmaUtils from '../utils.js';
-import { formatProductIdentity, formatProductSpecification } from './product_specification.js';
+import { formatProductIdentity, formatProductSpecification } from './product_specification.js?v=8';
 import { purchasingConversion, inventoryQuantityFromPurchase } from './purchasing_conversion.js?v=1';
 
-const PURCHASE_ORDER_RUNTIME_VERSION = '70-po-total-column';
+const PURCHASE_ORDER_RUNTIME_VERSION = '72-supplier-invoice-ui';
 document.documentElement.dataset.purchaseOrderRuntime = PURCHASE_ORDER_RUNTIME_VERSION;
 
 const API_BASE_URL = window.location.port
@@ -10,18 +10,12 @@ const API_BASE_URL = window.location.port
     : '../pharma-api/v1';
 
 const STATUS_META = {
+    'Draft': '#64748b',
     'Pending': '#f59e0b',
-    'In transit': '#06b6d4',
     'Arrived': '#8b5cf6',
-    'Delivered': '#16a34a',
-    'Cancelled': '#64748b'
+    'Delivered': '#16a34a'
 };
-
-const OPEN_CLAIMS_META = { label: 'Open Claims', color: '#ef4444' };
-
-const STATUS_LABELS = {
-    'In transit': 'In Transit'
-};
+const STATUS_LABELS = {};
 
 const createDraftItems = [];
 const editDraftItems = [];
@@ -43,6 +37,10 @@ let editDraftClientSequence = 0;
 let editItemActionBusy = false;
 let inspectionQueueOrders = [];
 let activeInspectionProductIndex = 0;
+const purchaseOrderViewRequests = new Map();
+const purchaseOrderPaymentRequests = new Map();
+let lastPurchaseOrderError = { message: '', shownAt: 0 };
+window.__purchaseOrderPreviewCache = window.__purchaseOrderPreviewCache || new Map();
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -55,6 +53,26 @@ function escapeHtml(value) {
 
 async function fetchJson(url, options = {}) {
     return PharmaUtils.safeFetch(url, { credentials: 'include', ...options });
+}
+
+function setPurchaseOrderActionBusy(selector, poId, busy) {
+    document.querySelectorAll(selector).forEach((button) => {
+        if (String(button.dataset.poId || '') !== String(poId || '')) return;
+        button.disabled = busy;
+        button.classList.toggle('is-loading', busy);
+        button.setAttribute('aria-busy', busy ? 'true' : 'false');
+    });
+}
+
+function showPurchaseOrderActionError(message, fallback) {
+    const normalized = String(message || fallback || 'Unable to complete this action.').trim();
+    const displayMessage = normalized === 'Unable to load purchase order details.'
+        ? 'Unable to load purchase order details. Please try again.'
+        : normalized;
+    const now = Date.now();
+    if (lastPurchaseOrderError.message === displayMessage && now - lastPurchaseOrderError.shownAt < 3500) return;
+    lastPurchaseOrderError = { message: displayMessage, shownAt: now };
+    PharmaUtils.toast.error(displayMessage);
 }
 
 function setTheme(theme) {
@@ -88,6 +106,25 @@ function peso(value) {
         style: 'currency',
         currency: 'PHP'
     }).format(Math.abs(numericValue) < 0.005 ? 0 : numericValue);
+}
+
+function getPoPaymentStatus(order = {}) {
+    const apiState = String(order.payment_state || '').trim().toLowerCase();
+    if (['awaiting_invoice', 'unpaid', 'paid'].includes(apiState)) return apiState;
+    const total = Number(order.total_amount ?? order.invoice_total ?? order.final_payment);
+    if (!Number.isFinite(total) || total <= 0) return 'awaiting_invoice';
+    const remaining = Number(order.remaining_balance);
+    if (Number.isFinite(remaining)) return remaining <= 0.005 ? 'paid' : 'unpaid';
+    const paid = Number(order.total_paid || 0);
+    return Number.isFinite(paid) && paid + 0.005 >= total ? 'paid' : 'unpaid';
+}
+
+function purchaseOrderTotalDisplay(order = {}) {
+    const paymentState = getPoPaymentStatus(order);
+    if (paymentState !== 'awaiting_invoice') {
+        return `<span class="po-total-with-payment"><span class="po-money">${peso(order.total_amount)}</span>${paymentStatusBadge(paymentState)}</span>`;
+    }
+    return '<span class="po-total-pending"><strong>—</strong><small>Awaiting Invoice</small></span>';
 }
 
 const REASON_OPTIONS = [
@@ -650,19 +687,18 @@ function specificationTableCellList(items) {
 
 function purchaseOrderItemsSummary(items = [], fallbackNames = []) {
     const source = items.length ? items : fallbackNames.map((name) => ({ product_name: name }));
-    const count = source.length;
-    if (!count) {
-        return '<div class="po-items-summary"><strong>No products</strong></div>';
-    }
+    if (!source.length) return '<div class="po-items-summary"><strong>No products</strong></div>';
+    return productTableValueList(
+        source,
+        item => cleanText(item.product_name) || productTableProductName(item) || 'Unnamed product',
+        [],
+        { className: 'po-item-lines' }
+    );
+}
 
-    const fullProductName = (item) => cleanText(item.product_name) || productTableProductName(item) || 'Unnamed product';
-    const firstItem = source[0];
-    const firstName = fullProductName(firstItem);
-    const brand = cleanText(firstItem.brand_name);
-    const secondary = count > 1 ? `+${count - 1} more` : (brand && brand.toLowerCase() !== firstName.toLowerCase() ? brand : '');
-    const allNames = source.map(fullProductName).join(', ');
-
-    return `<div class="po-items-summary" title="${escapeHtml(allNames)}"><strong>${escapeHtml(firstName)}</strong>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ''}</div>`;
+function purchaseOrderQuantitySummary(items = []) {
+    if (!items.length) return '<span class="text-muted">-</span>';
+    return productTableValueList(items, purchaseUnitQuantityLabel, [], { className: 'po-order-qty-lines' });
 }
 
 function unitDisplayFromDetails(item) {
@@ -706,8 +742,9 @@ function purchaseOrderStatusStack(order) {
 }
 
 function paymentStatusBadge(status = 'Unpaid') {
-    const current = status === 'Fully Paid' ? 'Paid' : status;
-    const normalized = ['Unpaid', 'Partially Paid', 'Paid'].includes(current) ? current : 'Unpaid';
+    const state = String(status || '').trim().toLowerCase();
+    const current = state === 'paid' ? 'Paid' : state === 'unpaid' ? 'Unpaid' : state === 'awaiting_invoice' ? 'Awaiting Invoice' : status === 'Fully Paid' ? 'Paid' : status;
+    const normalized = ['Awaiting Invoice', 'Unpaid', 'Partially Paid', 'Paid'].includes(current) ? current : 'Unpaid';
     return `<span class="po-payment-badge ${normalized.toLowerCase().replaceAll(' ', '-')}">${escapeHtml(normalized)}</span>`;
 }
 
@@ -716,16 +753,15 @@ function isPurchaseOrderPaid(status, remainingBalance) {
 }
 
 function validNextStatuses(order) {
-    const status = order.status || 'Pending';
+    const status = order.status || 'Draft';
     const approved = order.approval_status === 'Approved';
-    if (status === 'Pending') return approved ? ['In transit', 'Cancelled'] : ['Cancelled'];
-    if (status === 'In transit') return ['Arrived', 'Cancelled'];
-    if (status === 'Arrived') return ['Cancelled'];
+    if (status === 'Draft') return approved ? ['Pending'] : [];
+    if (status === 'Pending') return ['Arrived'];
     return [];
 }
 
 function isOperationallyLocked(order) {
-    return ['In transit', 'Arrived', 'Delivered', 'Cancelled', 'Rejected'].includes(order.status || '');
+    return ['Pending', 'Arrived', 'Delivered', 'Cancelled', 'Rejected'].includes(order.status || '');
 }
 
 function canEditMajorFields(order) {
@@ -736,11 +772,82 @@ function canEditMajorFields(order) {
 function statusActionButton(order) {
     const nextStatuses = validNextStatuses(order);
     if (!nextStatuses.length) return '';
+    const nextStatus = nextStatuses[0];
     return `
-        <button class="btn btn-sm btn-outline-secondary status-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Change PO Status" aria-label="Change PO Status ${escapeHtml(order.po_number || '')}">
-            <i class="fa-solid fa-list-check"></i>
+        <button class="btn btn-sm btn-outline-secondary status-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" data-next-status="${escapeHtml(nextStatus)}" title="More actions" aria-label="More actions for ${escapeHtml(order.po_number || '')}" aria-haspopup="menu" aria-expanded="false">
+            <i class="fa-solid fa-ellipsis-vertical"></i>
         </button>
     `;
+}
+
+let activeStatusActionMenu = null;
+
+function closeStatusActionMenu() {
+    if (!activeStatusActionMenu) return;
+    activeStatusActionMenu.toggle.setAttribute('aria-expanded', 'false');
+    activeStatusActionMenu.menu.remove();
+    activeStatusActionMenu = null;
+}
+
+function positionStatusActionMenu() {
+    if (!activeStatusActionMenu) return;
+    const { toggle, menu } = activeStatusActionMenu;
+    if (!toggle.isConnected) {
+        closeStatusActionMenu();
+        return;
+    }
+    const triggerRect = toggle.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const safeGap = 12;
+    const left = Math.min(
+        window.innerWidth - menuRect.width - safeGap,
+        Math.max(safeGap, triggerRect.right - menuRect.width)
+    );
+    const opensUp = triggerRect.bottom + menuRect.height + 8 > window.innerHeight
+        && triggerRect.top - menuRect.height - 8 >= safeGap;
+    const top = opensUp
+        ? triggerRect.top - menuRect.height - 6
+        : Math.min(window.innerHeight - menuRect.height - safeGap, triggerRect.bottom + 6);
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(Math.max(safeGap, top))}px`;
+}
+
+function toggleStatusActionMenu(toggle) {
+    if (activeStatusActionMenu?.toggle === toggle) {
+        closeStatusActionMenu();
+        return;
+    }
+    closeStatusActionMenu();
+    const nextStatus = toggle.dataset.nextStatus || '';
+    const label = nextStatus === 'Arrived' ? 'Mark PO as Arrived' : 'Mark PO as Pending';
+    const menu = document.createElement('div');
+    menu.className = 'po-action-popover';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = `<button class="po-action-popover-item status-po-menu-item" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || '')}"><i class="fa-solid ${nextStatus === 'Arrived' ? 'fa-truck-ramp-box' : 'fa-paper-plane'}" aria-hidden="true"></i><span>${escapeHtml(label)}</span></button>`;
+    document.body.appendChild(menu);
+    toggle.setAttribute('aria-expanded', 'true');
+    activeStatusActionMenu = { toggle, menu };
+    positionStatusActionMenu();
+    menu.querySelector('.status-po-menu-item')?.focus({ preventScroll: true });
+}
+
+function invoiceActionButton(order) {
+    if ((order.status || '') !== 'Pending' && !((order.status || '') === 'Arrived' && order.invoice_recorded)) return '';
+    const label = order.invoice_recorded ? 'Edit Supplier Invoice' : 'Record Supplier Invoice';
+    return `<button class="btn btn-sm btn-outline-success record-invoice-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="${label}" aria-label="${label} for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-file-invoice-dollar"></i></button>`;
+}
+
+function paymentActionButton(order = {}) {
+    if (!['Pending', 'Arrived', 'Delivered'].includes(order.status || '')) return '';
+    const poId = escapeHtml(order.po_id || '');
+    const poNumber = escapeHtml(order.po_number || '');
+    if (!order.invoice_recorded) {
+        return `<button class="btn btn-sm btn-outline-secondary" type="button" disabled title="Record Supplier Invoice first" aria-label="Record Supplier Invoice first for ${poNumber}"><i class="fa-solid fa-wallet"></i></button>`;
+    }
+    if (isPurchaseOrderPaid(order.payment_status, order.remaining_balance ?? order.final_payment)) {
+        return `<button class="btn btn-sm btn-outline-primary view-payment-history-btn" type="button" data-po-id="${poId}" aria-label="View payment for ${poNumber}" title="View Payment"><i class="fa-solid fa-wallet"></i></button>`;
+    }
+    return `<button class="btn btn-sm btn-purple manage-payment-btn" type="button" data-po-id="${poId}" aria-label="Payment for ${poNumber}" title="Record Payment"><i class="fa-solid fa-wallet"></i></button>`;
 }
 
 function numberedList(values, options = {}) {
@@ -1610,6 +1717,14 @@ function clampNumber(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
 
+function constrainPoModalRect(rect, gap = 12) {
+    return window.DrpModalWorkspace.constrain(rect, gap);
+}
+
+function centerPoModalRect(rect, gap = 12) {
+    return window.DrpModalWorkspace.center(rect, gap);
+}
+
 function poModalParts(modalId) {
     const modal = document.getElementById(modalId);
     const dialog = modal?.querySelector('.modal-dialog') || null;
@@ -1622,14 +1737,20 @@ function setPoFloatingModalRect(config, nextRect = {}) {
     if (!modal || !dialog) return;
 
     const current = dialog.getBoundingClientRect();
-    const minWidth = Math.min(config.minWidth || 720, window.innerWidth - 16);
-    const minHeight = Math.min(config.minHeight || 520, window.innerHeight - 16);
-    const maxWidth = Math.max(minWidth, window.innerWidth - 16);
-    const maxHeight = Math.max(minHeight, window.innerHeight - 16);
+    const workspace = window.DrpModalWorkspace.bounds();
+    const minWidth = Math.min(config.minWidth || 720, workspace.width);
+    const minHeight = Math.min(config.minHeight || 520, workspace.height);
+    const maxWidth = Math.max(minWidth, workspace.width);
+    const maxHeight = Math.max(minHeight, workspace.height);
     const width = clampNumber(nextRect.width ?? current.width, minWidth, maxWidth);
     const height = clampNumber(nextRect.height ?? current.height, minHeight, maxHeight);
-    const left = clampNumber(nextRect.left ?? current.left, 8, Math.max(8, window.innerWidth - width - 8));
-    const top = clampNumber(nextRect.top ?? current.top, 8, Math.max(8, window.innerHeight - height - 8));
+    const constrained = constrainPoModalRect({
+        left: nextRect.left ?? current.left,
+        top: nextRect.top ?? current.top,
+        width,
+        height
+    });
+    const { left, top } = constrained;
 
     modal.classList.add('po-modal-positioned');
     modal.style.setProperty(`--${config.varPrefix}-left`, `${left}px`);
@@ -1646,20 +1767,17 @@ function centerPoFloatingModal(config) {
     const rect = dialog.getBoundingClientRect();
     const minWidth = config.minWidth || 720;
     const minHeight = config.minHeight || 520;
-    const width = Math.min(Math.max(rect.width, minWidth), window.innerWidth - 16);
-    const height = Math.min(Math.max(rect.height, minHeight), window.innerHeight - 16);
-    setPoFloatingModalRect(config, {
-        width,
-        height,
-        left: (window.innerWidth - width) / 2,
-        top: Math.max(8, (window.innerHeight - height) / 2)
-    });
+    const workspace = window.DrpModalWorkspace.bounds();
+    const width = Math.min(Math.max(rect.width, minWidth), workspace.width);
+    const height = Math.min(Math.max(rect.height, minHeight), workspace.height);
+    setPoFloatingModalRect(config, centerPoModalRect({ width, height }));
 }
 
 function initPoFloatingModalControls(config) {
     const { modal, dialog, content } = poModalParts(config.modalId);
     if (!modal || !dialog || !content || modal.dataset.floatingControlsReady === 'true') return;
     modal.dataset.floatingControlsReady = 'true';
+    modal.dataset.drpManagedSize = 'true';
 
     const header = modal.querySelector('.modal-header');
     const corner = document.getElementById(config.cornerId);
@@ -1671,6 +1789,7 @@ function initPoFloatingModalControls(config) {
             setPoFloatingModalRect(config);
         }
     });
+    modal.addEventListener('hidden.bs.modal', () => modal.classList.remove('po-modal-positioned'));
 
     header?.addEventListener('pointerdown', (event) => {
         if (event.button !== 0 || event.target.closest('button, a, input, select, textarea')) return;
@@ -1745,10 +1864,11 @@ function setCreatePoModalRect(nextRect = {}, options = {}) {
     const current = dialog.getBoundingClientRect();
     const preferredWidth = Number.parseFloat(modal.dataset.poPreferredWidth || '');
     const preferredHeight = Number.parseFloat(modal.dataset.poPreferredHeight || '');
-    const minWidth = Math.min(900, window.innerWidth - 16);
-    const minHeight = Math.min(540, window.innerHeight - 16);
-    const maxWidth = Math.max(minWidth, window.innerWidth - 16);
-    const maxHeight = Math.max(minHeight, window.innerHeight - 16);
+    const workspace = window.DrpModalWorkspace.bounds();
+    const minWidth = Math.min(900, workspace.width);
+    const minHeight = Math.min(540, workspace.height);
+    const maxWidth = Math.max(minWidth, workspace.width);
+    const maxHeight = Math.max(minHeight, workspace.height);
     const width = clampNumber(
         nextRect.width ?? (Number.isFinite(preferredWidth) ? preferredWidth : current.width),
         minWidth,
@@ -1759,8 +1879,13 @@ function setCreatePoModalRect(nextRect = {}, options = {}) {
         minHeight,
         maxHeight
     );
-    const left = clampNumber(nextRect.left ?? current.left, 8, Math.max(8, window.innerWidth - width - 8));
-    const top = clampNumber(nextRect.top ?? current.top, 8, Math.max(8, window.innerHeight - height - 8));
+    const constrained = constrainPoModalRect({
+        left: nextRect.left ?? current.left,
+        top: nextRect.top ?? current.top,
+        width,
+        height
+    });
+    const { left, top } = constrained;
 
     if (!Number.isFinite(preferredWidth) || options.rememberUserSize) {
         modal.dataset.poPreferredWidth = String(width);
@@ -1781,14 +1906,10 @@ function centerCreatePoModal() {
     if (!modal || !dialog) return;
 
     const rect = dialog.getBoundingClientRect();
-    const width = Math.min(Math.max(rect.width, Math.min(900, window.innerWidth - 16)), window.innerWidth - 16);
-    const height = Math.min(Math.max(rect.height, 540), window.innerHeight - 16);
-    setCreatePoModalRect({
-        width,
-        height,
-        left: (window.innerWidth - width) / 2,
-        top: Math.max(8, (window.innerHeight - height) / 2)
-    });
+    const workspace = window.DrpModalWorkspace.bounds();
+    const width = Math.min(Math.max(rect.width, Math.min(900, workspace.width)), workspace.width);
+    const height = Math.min(Math.max(rect.height, Math.min(540, workspace.height)), workspace.height);
+    setCreatePoModalRect(centerPoModalRect({ width, height }));
 }
 
 function createPoFormHeights() {
@@ -1862,6 +1983,7 @@ function initCreatePoModalLayoutControls() {
     const { modal, dialog, content } = createPoModalParts();
     if (!modal || !dialog || !content || modal.dataset.layoutControlsReady === 'true') return;
     modal.dataset.layoutControlsReady = 'true';
+    modal.dataset.drpManagedSize = 'true';
 
     const header = modal.querySelector('.modal-header');
     const divider = document.getElementById('po-create-resize-divider');
@@ -1876,6 +1998,7 @@ function initCreatePoModalLayoutControls() {
         }
         applyCreatePoFormExpansion();
     });
+    modal.addEventListener('hidden.bs.modal', () => modal.classList.remove('po-modal-positioned'));
 
     header?.addEventListener('pointerdown', (event) => {
         if (event.button !== 0 || event.target.closest('button, a, input, select, textarea')) return;
@@ -1975,14 +2098,20 @@ function setEditPoModalRect(nextRect = {}) {
     if (!modal || !dialog) return;
 
     const current = dialog.getBoundingClientRect();
-    const minWidth = Math.min(720, window.innerWidth - 16);
-    const minHeight = Math.min(540, window.innerHeight - 16);
-    const maxWidth = Math.max(minWidth, window.innerWidth - 16);
-    const maxHeight = Math.max(minHeight, window.innerHeight - 16);
+    const workspace = window.DrpModalWorkspace.bounds();
+    const minWidth = Math.min(720, workspace.width);
+    const minHeight = Math.min(540, workspace.height);
+    const maxWidth = Math.max(minWidth, workspace.width);
+    const maxHeight = Math.max(minHeight, workspace.height);
     const width = clampNumber(nextRect.width ?? current.width, minWidth, maxWidth);
     const height = clampNumber(nextRect.height ?? current.height, minHeight, maxHeight);
-    const left = clampNumber(nextRect.left ?? current.left, 8, Math.max(8, window.innerWidth - width - 8));
-    const top = clampNumber(nextRect.top ?? current.top, 8, Math.max(8, window.innerHeight - height - 8));
+    const constrained = constrainPoModalRect({
+        left: nextRect.left ?? current.left,
+        top: nextRect.top ?? current.top,
+        width,
+        height
+    });
+    const { left, top } = constrained;
 
     modal.classList.add('po-modal-positioned');
     modal.style.setProperty('--po-edit-modal-left', `${left}px`);
@@ -1997,14 +2126,10 @@ function centerEditPoModal() {
     if (!modal || !dialog) return;
 
     const rect = dialog.getBoundingClientRect();
-    const width = Math.min(Math.max(rect.width, 720), window.innerWidth - 16);
-    const height = Math.min(Math.max(rect.height, 540), window.innerHeight - 16);
-    setEditPoModalRect({
-        width,
-        height,
-        left: (window.innerWidth - width) / 2,
-        top: Math.max(8, (window.innerHeight - height) / 2)
-    });
+    const workspace = window.DrpModalWorkspace.bounds();
+    const width = Math.min(Math.max(rect.width, Math.min(720, workspace.width)), workspace.width);
+    const height = Math.min(Math.max(rect.height, Math.min(540, workspace.height)), workspace.height);
+    setEditPoModalRect(centerPoModalRect({ width, height }));
 }
 
 function editPoFormHeights() {
@@ -2072,6 +2197,7 @@ function initEditPoModalLayoutControls() {
     const { modal, dialog, content } = editPoModalParts();
     if (!modal || !dialog || !content || modal.dataset.layoutControlsReady === 'true') return;
     modal.dataset.layoutControlsReady = 'true';
+    modal.dataset.drpManagedSize = 'true';
 
     const header = modal.querySelector('.modal-header');
     const divider = document.getElementById('edit-po-resize-divider');
@@ -2085,6 +2211,7 @@ function initEditPoModalLayoutControls() {
         }
         applyEditPoFormExpansion();
     });
+    modal.addEventListener('hidden.bs.modal', () => modal.classList.remove('po-modal-positioned'));
 
     header?.addEventListener('pointerdown', (event) => {
         if (event.button !== 0 || event.target.closest('button, a, input, select, textarea')) return;
@@ -2332,21 +2459,17 @@ async function prefillApprovedPurchaseRequest() {
     }
 }
 
-function renderStatusSummary(counts = {}, openClaimsCount = 0) {
+function renderStatusSummary(counts = {}) {
     const container = document.getElementById('po-status-summary');
     if (!container) return;
 
     const lifecycleCards = Object.entries(STATUS_META).map(([status, color]) => `
-        <div class="status-card" style="--status-color:${color}">
+        <div class="status-card${status === 'Arrived' ? ' status-card-link' : ''}" style="--status-color:${color}" ${status === 'Arrived' ? 'role="link" tabindex="0" data-route="inspect-deliveries" aria-label="Open Inspect Deliveries"' : ''}>
             <strong>${Number(counts[status] || 0)}</strong>
             <p>${escapeHtml(STATUS_LABELS[status] || status)}</p>
         </div>
     `).join('');
-    const nextHtml = `${lifecycleCards}
-        <div class="status-card status-card-informational" style="--status-color:${OPEN_CLAIMS_META.color}">
-            <strong>${Number(openClaimsCount || 0)}</strong>
-            <p>${escapeHtml(OPEN_CLAIMS_META.label)}</p>
-        </div>`;
+    const nextHtml = lifecycleCards;
 
     if (nextHtml === lastStatusSummaryHtml) return;
 
@@ -2366,14 +2489,14 @@ function renderTableHead(view = currentPoView) {
 
         const activeColumnWidths = [
             ['col-po-number', '12%'],
-            ['col-pr-number', '13%'],
-            ['col-supplier', '14%'],
-            ['col-items-summary', '13%'],
-            ['col-money', '9%'],
-            ['col-delivery', '8%'],
-            ['col-terms', '9%'],
-            ['col-status', '12%'],
-            ['col-actions', '10%']
+            ['col-pr-number', '12%'],
+            ['col-supplier', '12%'],
+            ['col-items-summary', '18%'],
+            ['col-order-qty', '10%'],
+            ['col-delivery', '9%'],
+            ['col-money', '10%'],
+            ['col-status', '8.5%'],
+            ['col-actions', '8.5%']
         ];
         const columnLayouts = {
             active: activeColumnWidths.map(([columnClass]) => columnClass),
@@ -2469,9 +2592,9 @@ function renderTableHead(view = currentPoView) {
             <th class="col-pr-number">PR Reference</th>
             <th class="col-supplier">Supplier</th>
             <th class="col-items-summary">Items</th>
-            <th class="col-money">PO Total</th>
+            <th class="col-order-qty">Order Qty</th>
             <th class="col-delivery">ETA</th>
-            <th class="col-terms">Payment Mode</th>
+            <th class="col-money">PO Total</th>
             <th class="col-status">Status</th>
             <th class="col-actions">Action</th>
         </tr>
@@ -2490,6 +2613,7 @@ function commitPurchaseOrderTable(view, bodyHtml) {
     const tableBody = document.querySelector('#table-purchase-orders tbody');
     if (!tableBody) return;
 
+    closeStatusActionMenu();
     tableBody.classList.add('po-table-body-updating');
     renderTableHead(view);
     tableBody.innerHTML = bodyHtml;
@@ -2501,22 +2625,27 @@ function commitPurchaseOrderTable(view, bodyHtml) {
 
 function renderActivePurchaseOrders(orders) {
     if (orders.length === 0) {
-        commitPurchaseOrderTable('active', tableEmpty(9, 'No active purchase orders found.'));
+        commitPurchaseOrderTable('active', tableEmpty(9, 'No visible purchase orders found.'));
         return;
     }
 
-    const bodyHtml = orders.map((order) => {
-        const items = order.items || [];
-        const itemNames = order.item_names || [];
-        return `
+    const bodyHtml = orders.map(activePurchaseOrderRow).join('');
+
+    commitPurchaseOrderTable('active', bodyHtml);
+}
+
+function activePurchaseOrderRow(order) {
+    const items = order.items || [];
+    const itemNames = order.item_names || [];
+    return `
         <tr>
             <td class="po-number-cell">${escapeHtml(order.po_number || `PO-${order.po_id}`)}</td>
-            <td class="po-reference-cell"><strong>${escapeHtml(order.pr_number || 'Historical / Manual')}</strong>${order.pr_number ? '<span>Automatic PO</span>' : '<span>Manual record</span>'}</td>
+            <td class="po-reference-cell"><strong>${escapeHtml(order.pr_number || '—')}</strong></td>
             <td class="po-supplier-cell">${escapeHtml(order.supplier_name)}</td>
             <td class="po-items-summary-cell">${purchaseOrderItemsSummary(items, itemNames)}</td>
-            <td class="po-price-cell"><span class="po-money">${peso(order.total_amount)}</span></td>
+            <td class="po-order-qty-cell">${purchaseOrderQuantitySummary(items)}</td>
             <td class="po-delivery-cell">${formatDate(order.expected_delivery_date)}</td>
-            <td>${escapeHtml(order.payment_terms || 'Not set')}</td>
+            <td class="po-price-cell">${purchaseOrderTotalDisplay(order)}</td>
             <td class="po-status-cell">${purchaseOrderStatusStack(order)}</td>
             <td class="po-actions-cell">
                 <div class="po-actions">
@@ -2526,15 +2655,21 @@ function renderActivePurchaseOrders(orders) {
                     <button class="btn btn-sm btn-outline-dark print-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Print ${escapeHtml(order.po_number)}" title="Print PO">
                         <i class="fa-solid fa-print"></i>
                     </button>
-                    ${order.status === 'Delivered' && !isPurchaseOrderPaid(order.payment_status, order.remaining_balance ?? order.final_payment) ? `<button class="btn btn-sm btn-purple manage-payment-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Manage Payment for ${escapeHtml(order.po_number || '')}" title="Manage Payment"><i class="fa-solid fa-wallet"></i></button>` : ''}
+                    ${invoiceActionButton(order)}
+                    ${paymentActionButton(order)}
                     ${statusActionButton(order)}
                 </div>
             </td>
         </tr>
     `;
-    }).join('');
+}
 
-    commitPurchaseOrderTable('active', bodyHtml);
+async function refreshPurchaseOrderRow(poId) {
+    const currentRow = document.querySelector(`.record-invoice-btn[data-po-id="${CSS.escape(String(poId))}"]`)?.closest('tr');
+    if (!currentRow) return;
+    const order = await getPurchaseOrder(poId, { force: true });
+    currentRow.outerHTML = activePurchaseOrderRow(order);
+    window.dispatchEvent(new CustomEvent('drp:tables-updated'));
 }
 
 function renderArrivedPurchaseOrders(orders) {
@@ -2565,6 +2700,8 @@ function renderArrivedPurchaseOrders(orders) {
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || '')}" title="View PO"><i class="fa-regular fa-eye"></i></button>
                         <button class="btn btn-sm btn-outline-dark print-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Print ${escapeHtml(order.po_number || '')}" title="Print PO"><i class="fa-solid fa-print"></i></button>
+                        ${invoiceActionButton(order)}
+                        ${paymentActionButton(order)}
                         ${statusActionButton(order)}
                     </div>
                 </td>
@@ -2612,7 +2749,7 @@ function renderDeliveredPurchaseOrders(orders) {
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || '')}" title="View PO"><i class="fa-regular fa-eye"></i></button>
                         <button class="btn btn-sm btn-outline-dark print-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Print ${escapeHtml(order.po_number || '')}" title="Print PO"><i class="fa-solid fa-print"></i></button>
-                        ${!isPurchaseOrderPaid(order.payment_status, order.remaining_balance ?? order.final_payment) ? `<button class="btn btn-sm btn-purple manage-payment-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="Manage Payment for ${escapeHtml(order.po_number || '')}" title="Manage Payment"><i class="fa-solid fa-wallet"></i></button>` : ''}
+                        ${paymentActionButton(order)}
                     </div>
                 </td>
             </tr>
@@ -2629,13 +2766,17 @@ async function loadPurchaseOrders(options = {}) {
 
     try {
         const statusFilter = document.getElementById('po-status-filter')?.value || '';
-        const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '?scope=all';
-        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_orders.php${query}`);
+        const paymentStatusFilter = document.getElementById('po-payment-status-filter')?.value || '';
+        const query = new URLSearchParams();
+        if (statusFilter) query.set('status', statusFilter);
+        if (paymentStatusFilter) query.set('payment_status', paymentStatusFilter);
+        const queryString = query.toString();
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_orders.php${queryString ? `?${queryString}` : ''}`);
 
         if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;
 
         let orders = data.purchase_orders || [];
-        if (updateSummary) renderStatusSummary(data.status_counts || {}, data.open_claims_count || 0);
+        if (updateSummary) renderStatusSummary(data.status_counts || {});
         renderActivePurchaseOrders(orders);
     } catch (err) {
         if (loadToken !== purchaseOrdersLoadToken || viewAtRequest !== currentPoView) return;
@@ -2665,10 +2806,12 @@ function setPurchaseOrderView(view, options = {}) {
     });
 
     const filter = document.getElementById('po-status-filter');
-    if (filter) {
-        filter.disabled = nextView !== 'active';
-        if (nextView !== 'active') filter.value = '';
-    }
+    const paymentFilter = document.getElementById('po-payment-status-filter');
+    [filter, paymentFilter].forEach((control) => {
+        if (!control) return;
+        control.disabled = nextView !== 'active';
+        if (nextView !== 'active') control.value = '';
+    });
 
     loadPurchaseOrders({ updateSummary: Boolean(options.updateSummary) });
 }
@@ -2961,7 +3104,7 @@ async function submitPurchaseOrder() {
 }
 
 async function getPurchaseOrder(poId) {
-    const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_order.php?po_id=${encodeURIComponent(poId)}`);
+    const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_order.php?po_id=${encodeURIComponent(poId)}`, { retryGet: false });
     return data.purchase_order;
 }
 
@@ -3079,21 +3222,55 @@ function applyEditLocks(order) {
 }
 
 async function openViewPurchaseOrder(poId) {
-    try {
+    const requestKey = String(poId || '').trim();
+    if (!requestKey) return;
+    if (purchaseOrderViewRequests.has(requestKey)) return purchaseOrderViewRequests.get(requestKey);
+
+    const request = (async () => {
+        const generatedDocument = document.getElementById('generatedPoDocument');
+        const generatedFrame = document.getElementById('generatedPoFrame');
+        const loading = document.getElementById('generatedPoLoading');
+        setPurchaseOrderActionBusy('.view-po-btn', requestKey, true);
+        document.getElementById('viewPoNumber').textContent = 'Loading purchase order...';
+        generatedDocument.hidden = false;
+        generatedFrame.hidden = true;
+        generatedFrame.src = 'about:blank';
+        if (loading) {
+            loading.hidden = false;
+            loading.classList.remove('is-error');
+            loading.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Loading purchase order...</span>';
+        }
+        showModal('viewPurchaseOrderModal');
+
+        try {
         const order = await getPurchaseOrder(poId);
         activeViewOrder = order;
         document.getElementById('viewPoNumber').textContent = order.po_number;
-        const generatedDocument = document.getElementById('generatedPoDocument');
-        const generatedFrame = document.getElementById('generatedPoFrame');
-        generatedDocument.hidden = false;
+        window.__purchaseOrderPreviewCache.set(String(order.po_id), order);
         generatedFrame.style.height = '1123px';
+        generatedFrame.hidden = false;
+        if (loading) loading.hidden = true;
         generatedFrame.src = `purchase_order_print.html?po_id=${encodeURIComponent(order.po_id)}&embed=1`;
         const modalBody = document.querySelector('#viewPurchaseOrderModal .modal-body');
         if (modalBody) modalBody.scrollTop = 0;
-        showModal('viewPurchaseOrderModal');
         window.requestAnimationFrame(() => { if (modalBody) modalBody.scrollTop = 0; });
-    } catch (err) {
-        PharmaUtils.toast.error(err.message);
+        } catch (err) {
+            if (loading) {
+                loading.hidden = false;
+                loading.classList.add('is-error');
+                loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>Unable to load this purchase order.</span>';
+            }
+            showPurchaseOrderActionError(err.message, 'Unable to load purchase order details. Please try again.');
+        } finally {
+            setPurchaseOrderActionBusy('.view-po-btn', requestKey, false);
+        }
+    })();
+
+    purchaseOrderViewRequests.set(requestKey, request);
+    try {
+        return await request;
+    } finally {
+        purchaseOrderViewRequests.delete(requestKey);
     }
 }
 
@@ -3119,56 +3296,39 @@ async function updatePurchaseOrderStatusFromTable(poId) {
     try {
         if (!poId) return;
         const order = await getPurchaseOrder(poId);
-        const options = validNextStatuses(order);
-        if (!options.length) {
+        const nextStatus = validNextStatuses(order)[0] || '';
+        if (!nextStatus) {
             PharmaUtils.toast.info('No status changes are available for this purchase order.');
             return;
         }
 
-        let nextStatus = '';
-        let reason = '';
         if (window.Swal) {
-            const result = await Swal.fire({
-                title: 'Change PO Status',
-                input: 'select',
-                inputOptions: options.reduce((map, status) => ({ ...map, [status]: status }), {}),
-                inputPlaceholder: 'Select next status',
+            const isArrival = nextStatus === 'Arrived';
+            const result = await Swal.fire(isArrival ? {
+                title: 'Mark PO as Arrived?',
+                text: 'This records physical arrival and sends the PO to Inspect Deliveries. Invoice and payment remain separate.',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonText: 'Continue',
-                confirmButtonColor: '#7c3aed',
-                inputValidator: (value) => {
-                    if (!value) return 'Select a valid next status.';
-                    return null;
-                }
+                confirmButtonText: 'Confirm Arrival',
+                confirmButtonColor: '#7c3aed'
+            } : {
+                title: 'Mark this PO as Pending?',
+                text: 'This indicates that the order has been placed with the supplier.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Mark Pending',
+                confirmButtonColor: '#7c3aed'
             });
-
             if (!result.isConfirmed) return;
-            nextStatus = result.value;
         } else {
-            nextStatus = prompt(`Next status (${options.join(', ')}):`) || '';
-            if (!options.includes(nextStatus)) {
-                PharmaUtils.toast.error('Select a valid next status.');
-                return;
-            }
-        }
-
-        if (nextStatus === 'Cancelled') {
-            reason = await requestControlledReason({
-                title: 'Cancel Purchase Order',
-                label: 'Cancellation Reason',
-                confirmButtonText: 'Cancel PO',
-                confirmColor: '#dc2626',
-                options: CANCEL_REASON_OPTIONS,
-                errorMessage: 'A cancellation reason is required.'
-            });
-            if (!reason) return;
+            if (nextStatus === 'Pending' && !window.confirm('Mark this PO as Pending? This indicates that the order has been placed with the supplier.')) return;
+            if (nextStatus === 'Arrived' && !window.confirm('Mark this PO as Arrived and send it to Inspect Deliveries?')) return;
         }
 
         const data = await fetchJson(`${API_BASE_URL}/purchase_orders/update_purchase_order_status.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ po_id: poId, status: nextStatus, reason })
+            body: JSON.stringify({ po_id: poId, status: nextStatus })
         });
 
         PharmaUtils.toast.success(data.message);
@@ -3185,9 +3345,10 @@ const RECEIVE_DISPOSITIONS = [
     ['dispose', 'Dispose']
 ];
 const RECEIVE_RESOLUTIONS = [
-    ['replacement', 'Replacement'],
-    ['supplier_credit', 'Supplier Credit'],
-    ['next_po_credit', 'Credit on Next PO'],
+    ['replacement', 'Replacement Later'],
+    ['supplier_credit', 'Discount Current PO'],
+    ['next_po_credit', 'Credit Next PO'],
+    ['refund', 'Refund Due'],
     ['no_compensation', 'No Supplier Compensation']
 ];
 let receiveSubmitting = false;
@@ -3196,6 +3357,190 @@ let receiveValidationAttempted = false;
 function receiveDraftItem(item) {
     const draftItems = activeReceiveOrder?.inspection_draft?.items || [];
     return draftItems.find((draft) => String(draft.po_item_id) === String(item.po_item_id)) || {};
+}
+
+async function openSupplierInvoice(poId) {
+    try {
+        const [order, invoicePayload] = await Promise.all([
+            getPurchaseOrder(poId),
+            fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_order_invoice.php?po_id=${encodeURIComponent(poId)}`)
+        ]);
+        const invoice = invoicePayload.invoice || {};
+        const savedByItem = new Map((invoice.items || []).map((item) => [String(item.po_item_id), item]));
+        const today = new Date().toISOString().slice(0, 10);
+        const displayOrderedUnit = (unit, quantity) => {
+            const normalized = String(unit || 'pcs').trim();
+            if (Number(quantity) === 1 || /s$/i.test(normalized) || /pcs/i.test(normalized)) return normalized;
+            return `${normalized}s`;
+        };
+        const rows = (order.items || []).map((item) => {
+            const saved = savedByItem.get(String(item.po_item_id)) || {};
+            const qty = Number(item.purchase_qty || 1);
+            const unit = String(item.purchase_unit || 'pcs').trim();
+            const unitCost = saved.unit_cost ?? '';
+            return `
+                <tr data-po-item-id="${escapeHtml(item.po_item_id)}" data-order-qty="${qty}">
+                    <td>
+                        <div class="supplier-invoice-product">${escapeHtml(item.product_name || 'Product')}</div>
+                        <span class="supplier-invoice-spec">${escapeHtml(productSpecification(item) || '')}</span>
+                    </td>
+                    <td class="supplier-invoice-ordered">${qty} ${escapeHtml(displayOrderedUnit(unit, qty))}</td>
+                    <td>
+                        <div class="supplier-invoice-cost-group">
+                            <span>₱</span>
+                            <input class="invoice-unit-cost" type="number" min="0.01" step="0.01" value="${escapeHtml(unitCost)}" placeholder="0.00" aria-label="Supplier unit cost for ${escapeHtml(item.product_name || 'product')}">
+                            <span>/ ${escapeHtml(unit)}</span>
+                        </div>
+                    </td>
+                    <td class="text-end supplier-invoice-line-total">${peso(qty * Number(unitCost || 0))}</td>
+                </tr>`;
+        }).join('');
+        const html = `
+            <div class="supplier-invoice-form">
+                <section class="supplier-invoice-section">
+                    <h3 class="supplier-invoice-section-title">PO / Supplier Summary</h3>
+                    <div class="supplier-invoice-summary">
+                        <div><div class="supplier-invoice-po">${escapeHtml(order.po_number || '')}</div><div class="supplier-invoice-supplier">${escapeHtml(order.supplier_name || '')}</div></div>
+                        <span class="supplier-invoice-status">${escapeHtml(order.status || 'Pending')}</span>
+                    </div>
+                </section>
+                <section class="supplier-invoice-section">
+                    <h3 class="supplier-invoice-section-title">Supplier Invoice Information</h3>
+                    <div class="supplier-invoice-info-grid">
+                        <div><label for="supplierInvoiceNumber">Invoice Number <span class="supplier-invoice-required" aria-hidden="true">*</span></label><input id="supplierInvoiceNumber" class="form-control" maxlength="100" value="${escapeHtml(invoice.invoice_number || '')}" aria-describedby="supplierInvoiceNumberError" required><small id="supplierInvoiceNumberError" class="supplier-invoice-field-error" hidden>Invoice number is required.</small></div>
+                        <div><label for="supplierInvoiceDate">Invoice Date <span class="supplier-invoice-required" aria-hidden="true">*</span></label><input id="supplierInvoiceDate" class="form-control" type="date" value="${escapeHtml(invoice.invoice_date || today)}" aria-describedby="supplierInvoiceDateError" required><small id="supplierInvoiceDateError" class="supplier-invoice-field-error" hidden>A valid invoice date is required.</small></div>
+                    </div>
+                </section>
+                <section class="supplier-invoice-section">
+                    <h3 class="supplier-invoice-section-title">Invoice Line Breakdown</h3>
+                    <table class="supplier-invoice-lines">
+                        <thead><tr><th>Product</th><th>Ordered</th><th>Supplier Unit Cost</th><th class="text-end">Line Total</th></tr></thead>
+                        <tbody id="supplierInvoiceLines">${rows}</tbody>
+                    </table>
+                    <div class="supplier-invoice-totals-wrap">
+                        <div class="supplier-invoice-totals">
+                            <h3 class="supplier-invoice-section-title">Totals &amp; Validation</h3>
+                            <div class="supplier-invoice-total-row"><span>Subtotal</span><strong id="supplierInvoiceSubtotal">${peso(0)}</strong></div>
+                            <div class="supplier-invoice-total-row"><span>Discount</span><div class="supplier-invoice-total-input"><span>₱</span><input id="supplierInvoiceDiscount" class="form-control" type="number" min="0" step="0.01" value="${escapeHtml(invoice.discount ?? 0)}"></div></div>
+                            <div class="supplier-invoice-total-row"><span>Other Charges</span><div class="supplier-invoice-total-input"><span>₱</span><input id="supplierInvoiceCharges" class="form-control" type="number" min="0" step="0.01" value="${escapeHtml(invoice.other_charges ?? 0)}"></div></div>
+                            <div class="supplier-invoice-total-row emphasis"><span>Final Invoice Total</span><strong id="supplierInvoiceCalculated">${peso(0)}</strong></div>
+                            <div id="supplierInvoiceValidation" class="supplier-invoice-validation neutral" role="status" aria-live="polite"><strong>Complete the required invoice information.</strong></div>
+                        </div>
+                    </div>
+                </section>
+            </div>`;
+
+        const parseInvoiceAmount = (value, blankAsZero = false) => {
+            const normalized = String(value ?? '').replace(/[₱,\s]/g, '').trim();
+            if (normalized === '') return blankAsZero ? 0 : Number.NaN;
+            const parsed = Number(normalized);
+            return Number.isFinite(parsed) ? parsed : Number.NaN;
+        };
+
+        const readFormState = () => {
+            const invoiceNumber = document.getElementById('supplierInvoiceNumber')?.value.trim() || '';
+            const invoiceDateInput = document.getElementById('supplierInvoiceDate');
+            const discount = parseInvoiceAmount(document.getElementById('supplierInvoiceDiscount')?.value, true);
+            const charges = parseInvoiceAmount(document.getElementById('supplierInvoiceCharges')?.value, true);
+            const invoiceItems = Array.from(document.querySelectorAll('#supplierInvoiceLines tr')).map((row) => ({
+                po_item_id: row.dataset.poItemId,
+                order_qty: parseInvoiceAmount(row.dataset.orderQty),
+                unit_cost: parseInvoiceAmount(row.querySelector('.invoice-unit-cost')?.value),
+                row
+            }));
+            return { invoiceNumber, invoiceDate: invoiceDateInput?.value || '', validDate: Boolean(invoiceDateInput?.value && invoiceDateInput.checkValidity()), discount, charges, invoiceItems };
+        };
+
+        const updateInvoiceState = () => {
+            const state = readFormState();
+            let subtotal = 0;
+            state.invoiceItems.forEach((item) => {
+                const lineValid = Number.isFinite(item.order_qty) && item.order_qty > 0 && Number.isFinite(item.unit_cost) && item.unit_cost > 0;
+                const lineTotal = lineValid ? Math.round(item.order_qty * item.unit_cost * 100) / 100 : 0;
+                subtotal += lineTotal;
+                item.row.querySelector('.supplier-invoice-line-total').textContent = peso(lineTotal);
+                item.row.querySelector('.invoice-unit-cost')?.classList.toggle('is-invalid', !lineValid);
+            });
+            subtotal = Math.round(subtotal * 100) / 100;
+            const calculated = Math.round((subtotal - state.discount + state.charges) * 100) / 100;
+            document.getElementById('supplierInvoiceSubtotal').textContent = peso(subtotal);
+            document.getElementById('supplierInvoiceCalculated').textContent = peso(calculated);
+
+            const formValid = Boolean(state.invoiceNumber && state.validDate)
+                && state.invoiceItems.length > 0
+                && state.invoiceItems.every((item) => Number.isFinite(item.order_qty) && item.order_qty > 0)
+                && state.invoiceItems.every((item) => Number.isFinite(item.unit_cost) && item.unit_cost > 0)
+                && Number.isFinite(state.discount) && state.discount >= 0
+                && Number.isFinite(state.charges) && state.charges >= 0
+                && Number.isFinite(calculated) && calculated > 0;
+            const numberInput = document.getElementById('supplierInvoiceNumber');
+            const numberError = document.getElementById('supplierInvoiceNumberError');
+            const dateInput = document.getElementById('supplierInvoiceDate');
+            const dateError = document.getElementById('supplierInvoiceDateError');
+            numberInput?.classList.toggle('is-invalid', !state.invoiceNumber);
+            if (numberError) numberError.hidden = Boolean(state.invoiceNumber);
+            dateInput?.classList.toggle('is-invalid', !state.validDate);
+            if (dateError) dateError.hidden = state.validDate;
+
+            const validation = document.getElementById('supplierInvoiceValidation');
+            const firstError = !state.invoiceNumber ? 'Enter the required invoice number.'
+                : !state.validDate ? 'Enter a valid invoice date.'
+                : !state.invoiceItems.length ? 'This purchase order has no invoice lines.'
+                : !state.invoiceItems.every((item) => Number.isFinite(item.unit_cost) && item.unit_cost > 0) ? 'Enter a supplier unit cost greater than zero for every line.'
+                : !Number.isFinite(state.discount) || state.discount < 0 ? 'Discount must be zero or greater.'
+                : !Number.isFinite(state.charges) || state.charges < 0 ? 'Other charges must be zero or greater.'
+                : !Number.isFinite(calculated) || calculated <= 0 ? 'Final invoice total must be greater than zero.'
+                : '';
+            validation.className = `supplier-invoice-validation ${formValid ? 'match' : 'neutral'}`;
+            validation.innerHTML = formValid
+                ? `<strong>✓ Ready to save</strong><span>Final invoice total: ${peso(calculated)}</span>`
+                : `<strong>${escapeHtml(firstError || 'Complete the required invoice information.')}</strong>`;
+            const confirmButton = Swal.getConfirmButton();
+            if (confirmButton) confirmButton.disabled = !formValid;
+            return { ...state, calculated, formValid };
+        };
+
+        const result = await Swal.fire({
+            title: `${invoice.invoice_id ? 'Edit' : 'Record'} Supplier Invoice`,
+            html,
+            showCloseButton: true,
+            showCancelButton: true,
+            reverseButtons: true,
+            confirmButtonText: 'Save Supplier Invoice',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#4f46e5',
+            width: 1050,
+            customClass: { popup: 'supplier-invoice-modal', htmlContainer: 'supplier-invoice-modal-body', actions: 'supplier-invoice-footer', confirmButton: 'supplier-invoice-save-button' },
+            didOpen: () => {
+                const form = document.querySelector('.supplier-invoice-form');
+                form?.addEventListener('input', updateInvoiceState);
+                form?.addEventListener('change', updateInvoiceState);
+                updateInvoiceState();
+            },
+            preConfirm: () => {
+                const state = updateInvoiceState();
+                if (!state.formValid) {
+                    Swal.showValidationMessage('Complete the invoice number, date, every supplier unit cost, and a supplier invoice total greater than zero.');
+                    return false;
+                }
+                return {
+                    po_id: poId,
+                    invoice_number: state.invoiceNumber,
+                    invoice_date: state.invoiceDate,
+                    discount: state.discount,
+                    other_charges: state.charges,
+                    supplier_invoice_total: state.calculated,
+                    items: state.invoiceItems.map((item) => ({ po_item_id: item.po_item_id, unit_cost: item.unit_cost }))
+                };
+            }
+        });
+        if (!result.isConfirmed) return;
+        const saved = await fetchJson(`${API_BASE_URL}/purchase_orders/save_purchase_order_invoice.php`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(result.value) });
+        PharmaUtils.toast.success(saved.message);
+        await refreshPurchaseOrderRow(poId);
+    } catch (error) {
+        PharmaUtils.toast.error(error.message);
+    }
 }
 
 function receiveBatchRow(batch = {}, requiresExpiry = false, autoAllocate = false) {
@@ -3291,20 +3636,66 @@ function receiveReceivedHierarchy(purchaseQuantity, conversion, conversions) {
     return `${receivedLabel} received${remainder.length ? ` = ${remainder.join(' = ')}` : ''}`;
 }
 
-function receiveDamageLineRow(line, conversions, inventoryUnit) {
+function receiveDamageBatchOptions(batches = [], selectedIndex = '') {
+    if (!batches.length) return '<option value="">Assign during Batch &amp; Expiry</option>';
+    const placeholder = batches.length > 1 ? `<option value="" ${selectedIndex === '' || selectedIndex === null ? 'selected' : ''}>Select batch/lot...</option>` : '';
+    return placeholder + batches.map((batch, index) => {
+        const identifier = String(batch?.batch_identifier || '').trim();
+        const label = identifier || (batches.length === 1 ? 'Assign during Batch & Expiry' : `Batch ${index + 1} — assign in Step 2`);
+        const selected = String(selectedIndex) === String(index) || (selectedIndex === '' && batches.length === 1);
+        return `<option value="${index}" ${selected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    }).join('');
+}
+
+function receivePackageSequenceOptions(receivedPurchaseQuantity, purchaseUnit, selectedSequence = '') {
+    const total = Math.max(0, Math.trunc(Number(receivedPurchaseQuantity || 0)));
+    const unit = String(purchaseUnit || 'Package');
+    let options = `<option value="" ${selectedSequence === '' || selectedSequence === null ? 'selected' : ''}>Select ${escapeHtml(unit)}...</option>`;
+    for (let sequence = 1; sequence <= total; sequence += 1) {
+        options += `<option value="${sequence}" ${Number(selectedSequence) === sequence ? 'selected' : ''}>${escapeHtml(`${unit} ${sequence} of ${total}`)}</option>`;
+    }
+    return options;
+}
+
+function receiveDamageLineRow(line, conversions, inventoryUnit, purchaseUnit = '', receivedPurchaseQuantity = 0, batches = []) {
     const rows = Array.isArray(conversions) && conversions.length ? conversions : [{ conversion_id: '', unit_name: inventoryUnit, base_quantity: 1 }];
     const base = rows.find((entry) => Number(entry.base_quantity) === 1) || rows[rows.length - 1];
-    const packages = rows.filter((entry) => Number(entry.base_quantity) > 1);
-    const affectedOptions = packages.length ? packages : rows;
-    const defaultAffected = [...affectedOptions].sort((left, right) => Number(left.base_quantity) - Number(right.base_quantity))[0];
-    const selectedAffected = affectedOptions.find((entry) => String(entry.conversion_id) === String(line?.affected_unit_conversion_id)) || defaultAffected;
-    return `<div class="receive-damage-line" data-affected-sequence="0">
-        <strong class="receive-damage-line-label">${escapeHtml(selectedAffected?.unit_name || 'Unit')}</strong>
-        <div class="receive-field"><label>Affected Unit</label><select class="form-select damage-affected-unit">${affectedOptions.map((entry) => `<option value="${escapeHtml(entry.conversion_id)}" data-base-quantity="${Number(entry.base_quantity || 1)}" data-unit-name="${escapeHtml(entry.unit_name)}" ${String(entry.conversion_id) === String(selectedAffected?.conversion_id) ? 'selected' : ''}>${escapeHtml(`${entry.unit_name} — ${Number(entry.base_quantity || 1)} ${inventoryUnit}`)}</option>`).join('')}</select></div>
-        <div class="receive-field"><label>Damaged Pieces</label><div class="receive-damage-piece-control"><input class="form-control damage-line-qty" type="number" min="1" step="1" value="${escapeHtml(line?.damaged_quantity ?? '')}" placeholder="Qty"><span>${escapeHtml(base?.unit_name || inventoryUnit)}</span></div><small class="receive-field-error damage-line-error"></small></div>
+    const purchaseConversion = rows.find((entry) => String(entry.unit_name).toLowerCase() === String(purchaseUnit).toLowerCase())
+        || [...rows].sort((left, right) => Number(right.base_quantity) - Number(left.base_quantity))[0];
+    const innerUnits = rows.filter((entry) => Number(entry.base_quantity) < Number(purchaseConversion?.base_quantity || 1));
+    const defaultDamaged = [...innerUnits].sort((left, right) => Number(right.base_quantity) - Number(left.base_quantity))[0] || base;
+    const selectedDamaged = rows.find((entry) => String(entry.conversion_id) === String(line?.damaged_unit_conversion_id)) || defaultDamaged;
+    const packageSequence = line?.package_sequence ?? line?.sequence_no ?? '';
+    return `<div class="receive-damage-line">
+        <div class="receive-field"><label>Affected Package</label><select class="form-select damage-package-sequence" aria-label="Affected physical package">${receivePackageSequenceOptions(receivedPurchaseQuantity, purchaseUnit, packageSequence)}</select></div>
+        <div class="receive-field"><label>Damaged Quantity</label><div class="receive-damage-pair"><input class="form-control damage-line-qty" type="number" min="1" step="1" value="${escapeHtml(line?.damaged_quantity ?? '')}" placeholder="Qty" aria-label="Damaged product quantity"><select class="form-select damage-unit-conversion" aria-label="Damaged product unit">${rows.map((entry) => `<option value="${escapeHtml(entry.conversion_id)}" data-base-quantity="${Number(entry.base_quantity || 1)}" data-unit-name="${escapeHtml(entry.unit_name)}" ${String(entry.conversion_id) === String(selectedDamaged?.conversion_id) ? 'selected' : ''}>${escapeHtml(entry.unit_name)}</option>`).join('')}</select></div><small class="receive-field-error damage-line-error"></small></div>
+        <div class="receive-field"><label>Batch/Lot</label><select class="form-select damage-batch-index">${receiveDamageBatchOptions(batches, line?.batch_index ?? '')}</select></div>
         <button class="btn btn-sm btn-outline-danger receive-remove-damage-line" type="button" title="Remove affected package" aria-label="Remove affected package"><i class="fa-solid fa-trash"></i></button>
-        <input class="damage-unit-conversion" type="hidden" value="${escapeHtml(base?.conversion_id || '')}">
     </div>`;
+}
+
+function syncReceivePackageSequenceSelectors(card) {
+    const orderItem = activeReceiveOrder?.items.find((item) => String(item.po_item_id) === String(card.dataset.poItemId));
+    const purchaseUnit = purchasingConversion(orderItem || {}).purchaseUnit;
+    const receivedPurchaseQuantity = Number(card.querySelector('.receive-qty-input')?.value || 0);
+    const selects = [...card.querySelectorAll('.damage-package-sequence')];
+    const selected = selects.map((select) => select.value).filter(Boolean);
+    selects.forEach((select) => {
+        const current = select.value;
+        select.innerHTML = receivePackageSequenceOptions(receivedPurchaseQuantity, purchaseUnit, current);
+        select.querySelectorAll('option[value]').forEach((option) => {
+            if (!option.value || option.value === current) return;
+            option.disabled = selected.includes(option.value);
+        });
+    });
+}
+
+function syncReceiveDamageBatchSelectors(card) {
+    const batches = [...card.querySelectorAll('.receive-batch-row')].map((row) => ({ batch_identifier: row.querySelector('.receive-batch-id')?.value || '' }));
+    card.querySelectorAll('.damage-batch-index').forEach((select) => {
+        const selected = select.value;
+        select.innerHTML = receiveDamageBatchOptions(batches, selected);
+    });
 }
 
 function receiveQuantityValuesWithConversions(orderItem, values = {}) {
@@ -3346,6 +3737,7 @@ function renderReceiveItems(order) {
         const resolution = quantities.resolution;
         const disposition = quantities.disposition;
         const hasIssue = draft.has_issue === true || draft.has_issue === 1 || draft.has_issue === '1' || quantities.affected > 0;
+        if (hasIssue && !damageLines.length) damageLines.push({});
         const storedIssueType = String(draft.issue_type || '');
         const draftIssueType = storedIssueType.startsWith('Other:') ? 'Other' : storedIssueType;
         const draftIssueDetail = String(draft.issue_detail || (storedIssueType.startsWith('Other:') ? storedIssueType.slice(6).trim() : ''));
@@ -3394,15 +3786,16 @@ function renderReceiveItems(order) {
                     <section class="receive-issue-panel receive-process-card receive-scroll-target ${hasIssue ? '' : 'd-none'}">
                         <div class="section-card-heading"><span class="section-card-icon issue"><i class="fa-solid fa-triangle-exclamation"></i></span><div><span class="section-eyebrow">Issue</span><h3>Issue Details</h3></div></div>
                         <div class="receive-damage-breakdown receive-damage-anchor">
-                            <div class="receive-damage-breakdown-head"><div><strong>Damage Breakdown</strong><small>Record each affected package separately.</small></div><button class="btn btn-sm btn-outline-primary receive-add-damage-line" type="button"><i class="fa-solid fa-plus me-1"></i>Add Affected Pack</button></div>
-                            <div class="receive-damage-lines">${damageLines.map((line) => receiveDamageLineRow(line, packageConversions, conversion.inventoryUnit)).join('')}</div>
-                            <div class="receive-damage-totals"><span>Affected Packs: <strong class="receive-affected-package-count">${damageLines.length}</strong></span><span>Physically Damaged: <strong class="damaged-base-equivalent">${damagedBase} ${escapeHtml(conversion.inventoryUnit)}</strong></span></div>
+                            <div class="receive-damage-breakdown-head"><div><strong>Affected Goods Breakdown</strong><small>Record affected packaging separately from unavailable contents.</small></div><button class="btn btn-sm btn-outline-primary receive-add-damage-line" type="button"><i class="fa-solid fa-plus me-1"></i>Add Another Affected Package</button></div>
+                            <div class="receive-damage-lines">${damageLines.map((line) => receiveDamageLineRow(line, packageConversions, conversion.inventoryUnit, conversion.purchaseUnit, deliveredPurchase, batches)).join('')}</div>
+                            <div class="receive-damage-totals"><span>Affected Package: <strong class="receive-affected-package-count">None</strong></span><span>Damaged: <strong class="damaged-base-equivalent">${damagedBase} ${escapeHtml(conversion.inventoryUnit)}</strong></span><span>Unavailable from Inventory: <strong class="receive-unavailable-equivalent">${damagedBase} ${escapeHtml(conversion.inventoryUnit)}</strong></span><span>Accepted to Inventory: <strong class="receive-damage-accepted">${accepted} ${escapeHtml(conversion.inventoryUnit)}</strong></span></div>
                             <small class="receive-field-error receive-damaged-error"></small>
                         </div>
                         <div class="receive-field receive-issue-type-field"><label>Issue Type *</label><select class="form-select receive-issue-type"><option value="">Select issue...</option>${RECEIVE_ISSUE_TYPES.map((value) => `<option value="${value}" ${draftIssueType === value ? 'selected' : ''}>${value}</option>`).join('')}</select><small class="receive-field-error receive-issue-type-error"></small></div>
                         <div class="receive-field receive-disposition-field"><label>Affected Goods Action *</label><select class="form-select receive-disposition"><option value="">Select action...</option>${RECEIVE_DISPOSITIONS.map(([value, label]) => `<option value="${value}" ${disposition === value ? 'selected' : ''}>${label}</option>`).join('')}<option value="not_applicable" ${disposition === 'not_applicable' ? 'selected' : ''}>Not Applicable</option></select><small class="receive-field-error receive-disposition-error"></small></div>
-                        <div class="receive-field receive-action-quantity-field ${disposition && disposition !== 'not_applicable' ? '' : 'd-none'}"><label>Action Qty *</label><div class="receive-affected-control"><input class="form-control action-qty-input" type="number" min="0" step="1" value="${escapeHtml(actionInput)}" placeholder="Qty"><select class="form-select action-unit-conversion">${receiveConversionOptions(packageConversions, actionConversion.conversion_id, conversion.inventoryUnit)}</select></div><small class="action-base-equivalent">${escapeHtml(receiveUnitCountLabel(actionInput, actionConversion.unit_name))} = ${actionBase} ${escapeHtml(conversion.inventoryUnit)} removed</small><small class="receive-field-error receive-action-error"></small></div>
+                        <div class="receive-field receive-action-quantity-field ${disposition && disposition !== 'not_applicable' ? '' : 'd-none'}"><label>Unavailable Qty</label><div class="receive-actual-control"><input class="form-control action-qty-input" type="number" min="0" step="1" value="${escapeHtml(actionInput)}" readonly aria-label="Unavailable inventory quantity calculated from damaged contents"><span>${escapeHtml(conversion.inventoryUnit)}</span></div><small class="action-base-equivalent">Calculated from damaged contents.</small><small class="receive-field-error receive-action-error"></small></div>
                         <div class="receive-field receive-resolution-field"><label>Supplier Resolution *</label><select class="form-select receive-resolution"><option value="none">Select resolution...</option>${RECEIVE_RESOLUTIONS.map(([value, label]) => `<option value="${value}" ${resolution === value ? 'selected' : ''}>${label}</option>`).join('')}</select><small class="receive-field-error receive-resolution-error"></small></div>
+                        <div class="receive-field receive-confirmed-adjustment-field ${['supplier_credit', 'next_po_credit', 'refund'].includes(resolution) ? '' : 'd-none'}"><label class="receive-confirmed-adjustment-label">${resolution === 'next_po_credit' ? 'Confirmed Future Supplier Credit' : resolution === 'refund' ? 'Confirmed Refund Due' : 'Confirmed Current Discount'} *</label><div class="input-group"><span class="input-group-text">₱</span><input class="form-control receive-confirmed-adjustment" type="number" min="0.01" step="0.01" value="${escapeHtml(draft.confirmed_adjustment || '')}" placeholder="0.00"></div><small>Enter the amount confirmed by the supplier. It is not calculated from damaged quantity.</small><small class="receive-field-error receive-adjustment-error"></small></div>
                         <div class="receive-field receive-other-issue-field ${draftIssueType === 'Other' ? '' : 'd-none'}"><label>Specify Issue *</label><input class="form-control receive-issue-other" maxlength="70" value="${escapeHtml(draftIssueDetail)}" placeholder="Describe the issue"><small class="receive-field-error receive-other-error"></small></div>
                         <div class="receive-field receive-item-remarks-field"><label>Item Remarks</label><textarea class="form-control receive-remarks-input" rows="3" placeholder="Optional details about the discrepancy or supplier agreement...">${escapeHtml(draft.remarks || '')}</textarea></div>
                     </section>
@@ -3463,45 +3856,64 @@ function receiveFormState(strict = true) {
 
     document.querySelectorAll('#receiveInspectionCards .receive-item-card').forEach((card, cardIndex) => {
         const orderItem = activeReceiveOrder?.items.find((item) => String(item.po_item_id) === String(card.dataset.poItemId));
+        syncReceiveDamageBatchSelectors(card);
+        syncReceivePackageSequenceSelectors(card);
         const deliveredPurchase = Number(card.querySelector('.receive-qty-input')?.value || 0);
+        const purchaseSetup = purchasingConversion(orderItem || {});
+        const purchaseConversion = (orderItem?.package_conversions || []).find((entry) => String(entry.unit_name).toLowerCase() === String(purchaseSetup.purchaseUnit).toLowerCase())
+            || [...(orderItem?.package_conversions || [])].sort((left, right) => Number(right.base_quantity) - Number(left.base_quantity))[0]
+            || {};
+        const affectedUnitBaseQuantity = Number(purchaseConversion.base_quantity || purchaseSetup.baseQtyPerPurchaseUnit || 1);
         const damageLines = [];
         let damaged = 0;
-        let affectedPackageCapacity = 0;
         let damageLinesValid = true;
-        const affectedSequences = new Map();
-        [...card.querySelectorAll('.receive-damage-line')].forEach((row, lineIndex) => {
-            const affectedUnit = row.querySelector('.damage-affected-unit');
-            const affectedUnitConversionId = affectedUnit?.value || '';
-            const affectedUnitBaseQuantity = Number(affectedUnit?.selectedOptions?.[0]?.dataset.baseQuantity || 1);
-            const affectedUnitName = affectedUnit?.selectedOptions?.[0]?.dataset.unitName || 'Unit';
+        const affectedPackages = [];
+        const seenPackageSequences = new Set();
+        [...card.querySelectorAll('.receive-damage-line')].forEach((row) => {
+            const packageSequence = Number(row.querySelector('.damage-package-sequence')?.value || 0);
             const damagedQuantity = Number(row.querySelector('.damage-line-qty')?.value || 0);
-            const damagedUnitConversionId = row.querySelector('.damage-unit-conversion')?.value || '';
-            const damagedUnitBaseQuantity = Number((orderItem?.package_conversions || []).find((entry) => String(entry.conversion_id) === String(damagedUnitConversionId))?.base_quantity || 1);
+            const damagedUnit = row.querySelector('.damage-unit-conversion');
+            const damagedUnitConversionId = damagedUnit?.value || '';
+            const damagedUnitBaseQuantity = Number(damagedUnit?.selectedOptions?.[0]?.dataset.baseQuantity || 1);
             const damagedBaseQuantity = damagedQuantity * damagedUnitBaseQuantity;
-            const sequence = (affectedSequences.get(affectedUnitName) || 0) + 1;
-            affectedSequences.set(affectedUnitName, sequence);
-            const label = row.querySelector('.receive-damage-line-label');
-            if (label) label.textContent = `${affectedUnitName} ${sequence}`;
-            const rowValid = Number.isInteger(damagedQuantity) && damagedQuantity > 0 && damagedBaseQuantity <= affectedUnitBaseQuantity;
+            const duplicatePackage = packageSequence > 0 && seenPackageSequences.has(packageSequence);
+            if (packageSequence > 0) seenPackageSequences.add(packageSequence);
+            const rowValid = Boolean(purchaseConversion.conversion_id && damagedUnitConversionId)
+                && Number.isInteger(packageSequence) && packageSequence >= 1 && packageSequence <= deliveredPurchase
+                && !duplicatePackage
+                && Number.isInteger(damagedQuantity) && damagedQuantity > 0
+                && damagedBaseQuantity <= affectedUnitBaseQuantity;
             damageLinesValid = damageLinesValid && rowValid;
             damaged += Math.max(0, damagedBaseQuantity);
-            affectedPackageCapacity += affectedUnitBaseQuantity;
+            if (packageSequence > 0) affectedPackages.push(`${purchaseSetup.purchaseUnit} ${packageSequence} of ${deliveredPurchase}`);
             const rowError = row.querySelector('.damage-line-error');
-            if (rowError) rowError.textContent = damagedBaseQuantity > affectedUnitBaseQuantity
-                ? `Damage cannot exceed ${affectedUnitBaseQuantity} ${orderItem?.unit || 'units'} in one ${affectedUnitName}.`
-                : (receiveValidationAttempted && !rowValid ? 'Enter a positive damaged quantity.' : '');
-            row.querySelector('.damage-line-qty')?.classList.toggle('is-invalid', damagedBaseQuantity > affectedUnitBaseQuantity);
+            if (rowError) rowError.textContent = duplicatePackage
+                ? `${purchaseSetup.purchaseUnit} ${packageSequence} is already selected.`
+                : (damagedBaseQuantity > affectedUnitBaseQuantity
+                    ? `Damage cannot exceed ${affectedUnitBaseQuantity} ${orderItem?.unit || 'units'} in one ${purchaseSetup.purchaseUnit}.`
+                    : (receiveValidationAttempted && !rowValid ? 'Select a physical package and enter a positive damaged quantity using a configured unit.' : ''));
+            row.querySelector('.damage-package-sequence')?.classList.toggle('is-invalid', !Number.isInteger(packageSequence) || packageSequence < 1 || packageSequence > deliveredPurchase || duplicatePackage);
+            row.querySelector('.damage-line-qty')?.classList.toggle('is-invalid', !Number.isInteger(damagedQuantity) || damagedQuantity <= 0 || damagedBaseQuantity > affectedUnitBaseQuantity);
             const lineQuantityInput = row.querySelector('.damage-line-qty');
             if (lineQuantityInput) lineQuantityInput.max = String(Math.floor(affectedUnitBaseQuantity / Math.max(1, damagedUnitBaseQuantity)));
-            damageLines.push({ sequence_no: lineIndex + 1, affected_unit_conversion_id: affectedUnitConversionId, damaged_quantity: damagedQuantity, damaged_unit_conversion_id: damagedUnitConversionId });
+            const batchIndexValue = row.querySelector('.damage-batch-index')?.value ?? '';
+            damageLines.push({
+                package_sequence: packageSequence,
+                sequence_no: packageSequence,
+                affected_quantity: 1,
+                affected_unit_conversion_id: purchaseConversion.conversion_id || '',
+                damaged_quantity: damagedQuantity,
+                damaged_unit_conversion_id: damagedUnitConversionId,
+                batch_index: batchIndexValue === '' ? null : Number(batchIndexValue)
+            });
         });
         const baseConversion = (orderItem?.package_conversions || []).find((entry) => Number(entry.base_quantity) === 1) || (orderItem?.package_conversions || []).slice(-1)[0] || {};
         const damagedQuantity = damaged;
         const damagedUnitConversionId = baseConversion.conversion_id || '';
-        const actionQuantity = Number(card.querySelector('.action-qty-input')?.value || 0);
+        let actionQuantity = Number(card.querySelector('.action-qty-input')?.value || 0);
         const actionUnit = card.querySelector('.action-unit-conversion');
-        const actionUnitConversionId = actionUnit?.value || '';
-        const actionUnitBaseQuantity = Number(actionUnit?.selectedOptions?.[0]?.dataset.baseQuantity || 1);
+        let actionUnitConversionId = actionUnit?.value || '';
+        let actionUnitBaseQuantity = Number(actionUnit?.selectedOptions?.[0]?.dataset.baseQuantity || 1);
         let issueSelected = card.querySelector('.receive-issue-toggle')?.value === '1';
         if (!issueSelected) damaged = 0;
         let action = issueSelected ? actionQuantity * actionUnitBaseQuantity : 0;
@@ -3511,7 +3923,20 @@ function receiveFormState(strict = true) {
         const issueDetail = card.querySelector('.receive-issue-other')?.value.trim() || '';
         let disposition = card.querySelector('.receive-disposition')?.value || '';
         const resolution = card.querySelector('.receive-resolution')?.value || 'none';
-        if (disposition === 'not_applicable') action = 0;
+        const confirmedAdjustment = Number(card.querySelector('.receive-confirmed-adjustment')?.value || 0);
+        const physicalAction = ['return_to_supplier', 'hold_quarantine', 'dispose'].includes(disposition);
+        if (issueSelected && damaged > 0) {
+            actionQuantity = damaged;
+            actionUnitConversionId = baseConversion.conversion_id || actionUnitConversionId;
+            actionUnitBaseQuantity = 1;
+            action = damaged;
+            const actionInput = card.querySelector('.action-qty-input');
+            if (actionInput) actionInput.value = String(damaged);
+            if (actionUnit && actionUnitConversionId) actionUnit.value = actionUnitConversionId;
+        } else {
+            actionQuantity = 0;
+            action = 0;
+        }
         let quantities = receiveQuantityModel(orderItem, { delivered_purchase_quantity: deliveredPurchase, damaged_base_quantity: damaged, action_base_quantity: action, disposition, resolution });
         if (quantities.missing > 0) {
             issueSelected = true;
@@ -3525,21 +3950,19 @@ function receiveFormState(strict = true) {
         const { ordered, orderedPurchase, delivered, missing, accepted, affected, returned, disposed, quarantined } = quantities;
         const packageConversions = Array.isArray(orderItem?.package_conversions) ? orderItem.package_conversions : [];
         const itemRemarks = card.querySelector('.receive-remarks-input')?.value.trim() || '';
-        const physicalAction = ['return_to_supplier', 'hold_quarantine', 'dispose'].includes(disposition);
         const quantitiesComplete = Number.isInteger(deliveredPurchase) && deliveredPurchase >= 0 && deliveredPurchase <= orderedPurchase
-            && damageLinesValid && affectedPackageCapacity <= delivered && damaged <= delivered
+            && damageLinesValid && damaged <= delivered
             && Number.isInteger(actionQuantity) && actionQuantity >= 0 && action <= delivered;
         const itemErrors = [];
 
         if (!Number.isInteger(deliveredPurchase) || deliveredPurchase < 0) itemErrors.push('Delivered Purchase Unit quantity must be a non-negative whole number.');
-        if (!damageLinesValid) itemErrors.push('Complete each damage breakdown row with a valid quantity.');
-        if (affectedPackageCapacity > delivered) itemErrors.push('Affected package rows exceed the quantity physically received.');
+        if (issueSelected && damageLines.length === 0) itemErrors.push('Add at least one affected goods row.');
+        if (!damageLinesValid) itemErrors.push('Complete each affected goods row with valid quantities and units.');
         if (!Number.isInteger(actionQuantity) || actionQuantity < 0) itemErrors.push('Action quantity must be a non-negative whole number.');
         if (deliveredPurchase > orderedPurchase) { itemErrors.push('Delivered quantity exceeds the ordered PO quantity. Resolve the excess before confirming.'); state.hardErrors.push(`Product ${cardIndex + 1}: Delivered quantity exceeds the ordered quantity.`); }
         if (damaged > delivered) { itemErrors.push('Damaged quantity exceeds the received quantity.'); state.hardErrors.push(`Product ${cardIndex + 1}: Damaged quantity exceeds the received quantity.`); }
         if (action > delivered) { itemErrors.push('Action quantity exceeds the received quantity.'); state.hardErrors.push(`Product ${cardIndex + 1}: Action quantity exceeds the received quantity.`); }
         if (physicalAction && action < damaged) itemErrors.push('Action quantity cannot be less than the physically damaged quantity.');
-        if (issueSelected && missing === 0 && damaged === 0 && action === 0) itemErrors.push('Enter a damaged or action quantity.');
         if (strict && issueSelected && !issueType) itemErrors.push('Select an issue type.');
         if (strict && issueSelected && issueType === 'Other' && !issueDetail) itemErrors.push('Specify the issue.');
         if (strict && issueSelected && !disposition) itemErrors.push('Select a disposition.');
@@ -3547,6 +3970,7 @@ function receiveFormState(strict = true) {
         if (strict && damaged > 0 && disposition === 'not_applicable') itemErrors.push('Select what will physically happen to the damaged goods.');
         if (strict && missing > 0 && damaged === 0 && action === 0 && disposition !== 'not_applicable') itemErrors.push('Use Not Applicable for a short delivery with no goods to remove.');
         if (strict && issueSelected && resolution === 'none') itemErrors.push('Select a requested resolution.');
+        if (strict && issueSelected && ['supplier_credit', 'next_po_credit', 'refund'].includes(resolution) && (!Number.isFinite(confirmedAdjustment) || confirmedAdjustment <= 0)) itemErrors.push('Enter the supplier-confirmed monetary amount.');
 
         let batchRows = [...card.querySelectorAll('.receive-batch-row')];
         if (accepted > 0 && batchRows.length === 0) {
@@ -3578,7 +4002,11 @@ function receiveFormState(strict = true) {
         const batchRowsValid = batches.every((batch) => Number.isInteger(batch.quantity) && batch.quantity > 0);
         const batchesComplete = batchRowsValid && allocated === accepted && (accepted === 0 || batches.length > 0);
         const expiryComplete = accepted === 0 || card.dataset.requiresExpiry !== '1' || (batches.length > 0 && batches.every((batch) => Boolean(batch.expiry_date)));
-        const issueComplete = !issueSelected || (Boolean(issueType) && (issueType !== 'Other' || Boolean(issueDetail)) && Boolean(disposition) && resolution !== 'none'
+        const damageBatchesComplete = damageLines.every((line) => batches.length <= 1 || (Number.isInteger(line.batch_index) && line.batch_index >= 0 && line.batch_index < batches.length));
+        if (strict && issueSelected && !damageBatchesComplete) itemErrors.push('Select a batch/lot for every affected goods row.');
+        const issueComplete = !issueSelected || ((damageLines.length > 0 || missing > 0) && damageLinesValid && damageBatchesComplete
+            && Boolean(issueType) && (issueType !== 'Other' || Boolean(issueDetail)) && Boolean(disposition) && resolution !== 'none'
+            && (!['supplier_credit', 'next_po_credit', 'refund'].includes(resolution) || (Number.isFinite(confirmedAdjustment) && confirmedAdjustment > 0))
             && (!physicalAction || (action > 0 && action >= damaged))
             && !(damaged > 0 && disposition === 'not_applicable')
             && !(missing > 0 && damaged === 0 && action === 0 && disposition !== 'not_applicable'));
@@ -3605,7 +4033,7 @@ function receiveFormState(strict = true) {
         state.checks.batches = state.checks.batches && batchesComplete && expiryComplete;
         state.checks.confirmation = state.checks.confirmation && inspected && batchesComplete && expiryComplete;
         state.errors.push(...itemErrors.map((error) => `Product ${cardIndex + 1}: ${error}`));
-        state.items.push({ po_item_id: card.dataset.poItemId, delivered_purchase_quantity: deliveredPurchase, delivered_quantity: delivered, received_quantity: delivered, has_issue: issueSelected, damage_lines: issueSelected ? damageLines : [], damaged_quantity: issueSelected ? damagedQuantity : 0, damaged_unit_conversion_id: damagedUnitConversionId, damaged_base_quantity: damaged, action_quantity: issueSelected && physicalAction ? actionQuantity : 0, action_unit_conversion_id: actionUnitConversionId, action_base_quantity: action, affected_quantity: issueSelected ? (physicalAction ? actionQuantity : damagedQuantity) : 0, unit_conversion_id: physicalAction ? actionUnitConversionId : damagedUnitConversionId, returned_quantity: returned, quarantined_quantity: quarantined, disposed_quantity: disposed, disposition: issueSelected ? disposition : '', issue_type: issueSelected ? issueType : '', issue_detail: issueSelected && issueType === 'Other' ? issueDetail : '', resolution: issueSelected ? resolution : 'none', batches, remarks: issueSelected ? itemRemarks : '', inspection_complete: inspected, accepted_quantity: accepted, missing_quantity: missing });
+        state.items.push({ po_item_id: card.dataset.poItemId, delivered_purchase_quantity: deliveredPurchase, delivered_quantity: delivered, received_quantity: delivered, has_issue: issueSelected, damage_lines: issueSelected ? damageLines : [], damaged_quantity: issueSelected ? damagedQuantity : 0, damaged_unit_conversion_id: damagedUnitConversionId, damaged_base_quantity: damaged, action_quantity: issueSelected && physicalAction ? actionQuantity : 0, action_unit_conversion_id: actionUnitConversionId, action_base_quantity: action, affected_quantity: issueSelected ? (physicalAction ? actionQuantity : damagedQuantity) : 0, unit_conversion_id: physicalAction ? actionUnitConversionId : damagedUnitConversionId, returned_quantity: returned, quarantined_quantity: quarantined, disposed_quantity: disposed, disposition: issueSelected ? disposition : '', issue_type: issueSelected ? issueType : '', issue_detail: issueSelected && issueType === 'Other' ? issueDetail : '', resolution: issueSelected ? resolution : 'none', confirmed_adjustment: issueSelected && ['supplier_credit', 'next_po_credit', 'refund'].includes(resolution) ? confirmedAdjustment : 0, batches, remarks: issueSelected ? itemRemarks : '', inspection_complete: inspected, accepted_quantity: accepted, missing_quantity: missing });
 
         card.dataset.ready = readyForInspection ? '1' : '0';
         card.dataset.checkQuantities = quantitiesComplete ? '1' : '0';
@@ -3614,7 +4042,7 @@ function receiveFormState(strict = true) {
         card.dataset.checkResolution = issueComplete ? '1' : '0';
         card.dataset.checkRemarks = issueComplete ? '1' : '0';
         card.dataset.checkFinalInspection = inspected ? '1' : '0';
-        card.classList.toggle('has-error', deliveredPurchase > orderedPurchase || damaged > delivered || affectedPackageCapacity > delivered || action > delivered || (physicalAction && action < damaged));
+        card.classList.toggle('has-error', deliveredPurchase > orderedPurchase || damaged > delivered || action > delivered || (physicalAction && action < damaged));
         const missingQuantity = card.querySelector('.receive-missing-qty');
         if (missingQuantity) missingQuantity.textContent = String(missing);
         const missingPurchase = card.querySelector('.receive-missing-purchase');
@@ -3633,7 +4061,11 @@ function receiveFormState(strict = true) {
         const damagedEquivalent = card.querySelector('.damaged-base-equivalent');
         if (damagedEquivalent) damagedEquivalent.textContent = `${damaged} ${quantities.conversion.inventoryUnit} total`;
         const affectedCount = card.querySelector('.receive-affected-package-count');
-        if (affectedCount) affectedCount.textContent = String(damageLines.length);
+        if (affectedCount) affectedCount.textContent = affectedPackages.join(', ') || 'None';
+        const unavailableQuantity = card.querySelector('.receive-unavailable-equivalent');
+        if (unavailableQuantity) unavailableQuantity.textContent = `${action} ${quantities.conversion.inventoryUnit}`;
+        const damageAccepted = card.querySelector('.receive-damage-accepted');
+        if (damageAccepted) damageAccepted.textContent = `${accepted} ${quantities.conversion.inventoryUnit}`;
         const actionEquivalent = card.querySelector('.action-base-equivalent');
         if (actionEquivalent) {
             const actionUnitName = actionUnit?.selectedOptions?.[0]?.dataset.unitName || quantities.conversion.inventoryUnit;
@@ -3653,25 +4085,28 @@ function receiveFormState(strict = true) {
             else if (option.value) option.hidden = shortOnly;
         });
         card.querySelector('.receive-action-quantity-field')?.classList.toggle('d-none', !physicalAction);
+        const adjustmentField = card.querySelector('.receive-confirmed-adjustment-field');
+        adjustmentField?.classList.toggle('d-none', !['supplier_credit', 'next_po_credit', 'refund'].includes(resolution));
+        const adjustmentLabel = card.querySelector('.receive-confirmed-adjustment-label');
+        if (adjustmentLabel) adjustmentLabel.textContent = resolution === 'next_po_credit' ? 'Confirmed Future Supplier Credit *' : resolution === 'refund' ? 'Confirmed Refund Due *' : 'Confirmed Current Discount *';
 
         const showFieldErrors = strict && receiveValidationAttempted;
         const fieldErrors = [
             ['.receive-qty-error', !Number.isInteger(deliveredPurchase) || deliveredPurchase < 0 || deliveredPurchase > orderedPurchase, 'Enter a valid received quantity.'],
-            ['.receive-damaged-error', issueSelected && (!damageLinesValid || affectedPackageCapacity > delivered || damaged > delivered), affectedPackageCapacity > delivered ? `Cannot add affected packages beyond ${receiveUnitCountLabel(deliveredPurchase, quantities.conversion.purchaseUnit)} received.` : 'Complete the damage breakdown.'],
+            ['.receive-damaged-error', issueSelected && (!damageLinesValid || damaged > delivered), 'Complete the affected-goods breakdown.'],
             ['.receive-action-error', issueSelected && physicalAction && (!Number.isInteger(actionQuantity) || action <= 0 || action > delivered || action < damaged), action < damaged ? 'Action Qty must cover all damaged units.' : 'Enter a valid action quantity.'],
             ['.receive-issue-type-error', issueSelected && !issueType, 'Select an issue type.'],
             ['.receive-other-error', issueSelected && issueType === 'Other' && !issueDetail, 'Specify the issue.'],
             ['.receive-disposition-error', issueSelected && !disposition, 'Select an affected goods action.'],
-            ['.receive-resolution-error', issueSelected && resolution === 'none', 'Select a supplier resolution.']
+            ['.receive-resolution-error', issueSelected && resolution === 'none', 'Select a supplier resolution.'],
+            ['.receive-adjustment-error', issueSelected && ['supplier_credit', 'next_po_credit', 'refund'].includes(resolution) && (!Number.isFinite(confirmedAdjustment) || confirmedAdjustment <= 0), 'Enter the confirmed amount.']
         ];
         fieldErrors.forEach(([selector, invalid, message]) => {
             const error = card.querySelector(selector);
-            const showImmediately = selector === '.receive-damaged-error' && affectedPackageCapacity > delivered;
-            if (error) error.textContent = (showImmediately || (showFieldErrors && invalid)) ? message : '';
+            if (error) error.textContent = showFieldErrors && invalid ? message : '';
         });
         const addDamage = card.querySelector('.receive-add-damage-line');
-        const defaultAffectedFactor = Math.min(...packageConversions.filter((entry) => Number(entry.base_quantity) > 1).map((entry) => Number(entry.base_quantity)), delivered || 1);
-        if (addDamage) addDamage.disabled = affectedPackageCapacity + defaultAffectedFactor > delivered;
+        if (addDamage) addDamage.disabled = damageLines.length >= deliveredPurchase;
         const shortageNote = card.querySelector('.receive-shortage-note');
         if (shortageNote) shortageNote.textContent = missing > 0 ? `Short by ${missing} ${quantities.conversion.inventoryUnit}` : 'No shortage detected.';
         const allocationDifference = accepted - allocated;
@@ -3749,13 +4184,15 @@ function renderReceivePaymentSummary() {
         const actionLabel = item.disposition === 'not_applicable'
             ? 'Not Applicable'
             : `${Number(item.action_quantity || 0)} ${actionConversion?.unit_name || conversion.inventoryUnit}${Number(item.action_base_quantity || 0) !== Number(item.action_quantity || 0) ? ` / ${Number(item.action_base_quantity || 0)} ${conversion.inventoryUnit}` : ''}`;
-        const damageBreakdown = (item.damage_lines || []).map((line, lineIndex) => {
-            const affectedUnit = (orderItem.package_conversions || []).find((entry) => String(entry.conversion_id) === String(line.affected_unit_conversion_id));
+        const damageBreakdown = (item.damage_lines || []).map((line) => {
             const damagedUnit = (orderItem.package_conversions || []).find((entry) => String(entry.conversion_id) === String(line.damaged_unit_conversion_id));
-            return `<li>${escapeHtml(`${affectedUnit?.unit_name || 'Package'} ${lineIndex + 1}`)} → ${Number(line.damaged_quantity || 0)} ${escapeHtml(damagedUnit?.unit_name || conversion.inventoryUnit)} damaged</li>`;
+            const batchLabel = line.batch_identifier ? ` · Batch ${line.batch_identifier}` : '';
+            const packageSequence = Number(line.package_sequence || line.sequence_no || 0);
+            const packageLabel = `${conversion.purchaseUnit} ${packageSequence} of ${Number(item.delivered_purchase_quantity || 0)}`;
+            return `<li>${escapeHtml(packageLabel)} → ${Number(line.damaged_quantity || 0)} ${escapeHtml(damagedUnit?.unit_name || conversion.inventoryUnit)} damaged${escapeHtml(batchLabel)}</li>`;
         }).join('');
         const issueReview = item.has_issue ? `<span class="receiving-issue-state">Issue recorded</span>` : `<span class="receiving-no-issues">No issues</span>`;
-        return `<article class="receiving-summary-item"><header><strong>${escapeHtml([productTableBrand(orderItem), productTableProductName(orderItem)].filter(Boolean).join(' — ') || `Product ${index + 1}`)}</strong>${issueReview}</header>${damageBreakdown ? `<div class="receiving-damage-breakdown"><span>Damage Breakdown</span><ul>${damageBreakdown}</ul></div>` : ''}<dl>
+        return `<article class="receiving-summary-item"><header><strong>${escapeHtml([productTableBrand(orderItem), productTableProductName(orderItem)].filter(Boolean).join(' — ') || `Product ${index + 1}`)}</strong>${issueReview}</header>${damageBreakdown ? `<div class="receiving-damage-breakdown"><span>Affected Goods Breakdown</span><ul>${damageBreakdown}</ul></div>` : ''}<dl>
             <div><dt>PO Ordered</dt><dd>${Number(orderItem.purchase_qty || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(orderItem.inventory_qty_ordered || orderItem.quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
             <div><dt>Actual Received</dt><dd>${Number(item.delivered_purchase_quantity || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(item.received_quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
             <div><dt>Physically Damaged</dt><dd>${escapeHtml(damagedLabel)}</dd></div>
@@ -3926,6 +4363,9 @@ async function openReceivePurchaseOrder(poId) {
             : 'See item details';
         document.getElementById('receivePoStatus').textContent = activeReceiveOrder.status || 'Arrived';
         document.getElementById('receivePoRemarks').value = activeReceiveOrder.inspection_draft?.remarks || '';
+        document.getElementById('receiveDeliveredByName').value = activeReceiveOrder.inspection_draft?.delivered_by_name || '';
+        document.getElementById('receiveDeliveryReceiptNo').value = activeReceiveOrder.inspection_draft?.delivery_receipt_no || '';
+        document.getElementById('receiveReceivedDateTime').value = receiptDisplayDate(activeReceiveOrder.received_date || activeReceiveOrder.inspection_draft?.updated_at || new Date().toISOString());
         document.getElementById('inspectionBreadcrumbPo').textContent = activeReceiveOrder.po_number || 'Purchase Order';
         document.getElementById('inspectionWorkspaceTitle').textContent = `Inspect ${activeReceiveOrder.po_number || 'Delivery'}`;
         document.getElementById('receiveDraftBadge')?.classList.toggle('d-none', !activeReceiveOrder.inspection_in_progress);
@@ -3943,11 +4383,17 @@ async function openReceivePurchaseOrder(poId) {
 function receivePayload(strict = true) {
     if (!activeReceiveOrder) throw new Error('No purchase order selected.');
     const summary = receiveFormState(strict);
+    const deliveredByName = document.getElementById('receiveDeliveredByName')?.value.trim() || '';
+    const deliveryReceiptNo = document.getElementById('receiveDeliveryReceiptNo')?.value.trim() || '';
+    if (strict && !deliveredByName) throw new Error('Enter the supplier representative or driver name.');
+    if (strict && !deliveryReceiptNo) throw new Error('Enter the supplier delivery receipt number.');
     if (strict && !summary.valid) {
         throw new Error(summary.errors[0] || 'Please review the receiving quantities.');
     }
     return {
         po_id: activeReceiveOrder.po_id,
+        delivered_by_name: deliveredByName,
+        delivery_receipt_no: deliveryReceiptNo,
         remarks: document.getElementById('receivePoRemarks')?.value || '',
         items: summary.items
     };
@@ -3961,7 +4407,7 @@ function receiveReceiptRows(payload) {
         const goodQty = Number(payloadItem.accepted_quantity ?? Math.max(0, receivedQty - Number(payloadItem.action_base_quantity || damagedQty)));
         const unitCost = Number(orderItem.price || 0);
         const affectedQty = damagedQty + Math.max(0, Number(orderItem.inventory_qty_ordered || orderItem.quantity || 0) - receivedQty);
-        const supplierCredit = ['return_for_credit', 'reject_without_replacement'].includes(payloadItem.resolution) ? affectedQty * unitCost : 0;
+        const supplierCredit = ['supplier_credit', 'next_po_credit'].includes(payloadItem.resolution) ? Number(payloadItem.confirmed_adjustment || 0) : 0;
         const actionLabel = RECEIVE_RESOLUTIONS.find(([value]) => value === payloadItem.resolution)?.[1] || 'No issue';
         return `
             <tr>
@@ -3990,7 +4436,9 @@ function receiptReportFromReceiving(details) {
         poNo: details.po_number,
         supplier: details.supplier_name,
         supplierAddress: details.supplier_address || '',
-        deliveryReference: details.delivery_reference || '',
+        deliveryReference: details.delivery_receipt_no || details.delivery_reference || '',
+        deliveredBy: details.delivered_by_name || '',
+        inspectedBy: details.inspected_by_name || details.received_by || '',
         receivedBy: details.grn_settings?.received_by_name || '',
         checkedBy: '',
         approvedBy: details.grn_settings?.approved_by_name || '',
@@ -4009,9 +4457,9 @@ function receiptReportFromReceiving(details) {
         items: (details.items || []).map((item) => ({
             productCode: item.product_code || item.sku || '',
             category: item.category_name || '',
-            product: item.product_name,
+            product: productTableProductName(item),
             brand: item.brand_name,
-            specification: [item.generic_or_variant, item.strength, item.size_value, item.packaging].filter(Boolean).join(' - '),
+            specification: item.specification || [item.generic_or_variant, item.strength, item.size_value, item.packaging].filter(Boolean).join(' • '),
             orderedQty: Number(item.ordered_quantity || 0),
             receivedQty: Number(item.delivered_quantity || 0),
             acceptedQty: Number(item.accepted_quantity || 0),
@@ -4021,9 +4469,18 @@ function receiptReportFromReceiving(details) {
             returnedQty: Number(item.returned_quantity || 0),
             missingQty: Number(item.missing_quantity || 0),
             replacementPendingQty: Number(item.replacement_pending_quantity || 0),
+            replacementReceivedQty: Number(item.replacement_received_quantity || 0),
+            replacementExpectedQty: Number(item.replacement_expected_quantity || 0),
             inventoryAdded: Number(item.inventory_added || 0),
             resolution: item.resolution || 'none',
             resolutionLabel: receivingResolutionLabel(item.resolution),
+            claimStatus: item.return_status || '',
+            claimResolvedAt: item.claim_resolved_at || null,
+            disposition: item.affected_goods_action || '',
+            creditId: item.credit_id || null,
+            creditAmount: Number(item.credit_amount || 0),
+            creditStatus: item.credit_status || '',
+            creditAppliedAmount: Number(item.credit_applied_amount || 0),
             issueType: item.issue_type || '',
             unitLabel: item.unit || 'pcs',
             unitCost: Number(item.unit_price || 0),
@@ -4077,24 +4534,19 @@ function grnGroupedItems(items) {
 
 function grnProductRows(report) {
     return grnGroupedItems(report.items).map((group) => `
-        ${group.category ? `<tr class="grn-category-row"><th colspan="13">${escapeHtml(group.category.toUpperCase())}</th></tr>` : ''}
+        ${group.category ? `<tr class="grn-category-row"><th colspan="9">${escapeHtml(group.category.toUpperCase())}</th></tr>` : ''}
         ${group.items.map(({ item, index }) => {
-            const lineTotal = Number(item.orderedQty || 0) * Number(item.unitCost || 0);
             return `
                 <tr>
                     <td class="center">${index + 1}</td>
                     <td>${escapeHtml(item.brand || '')}</td>
-                    <td>${escapeHtml(item.product || '')}</td>
-                    <td>${escapeHtml(item.specification || '')}</td>
+                    <td><strong>${escapeHtml(item.product || '')}</strong>${item.specification ? `<span class="grn-product-spec">${escapeHtml(item.specification)}</span>` : ''}</td>
                     <td class="center">${escapeHtml(item.unitLabel || '')}</td>
                     <td class="number">${item.orderedQty}</td>
                     <td class="number">${item.receivedQty}</td>
                     <td class="number">${item.acceptedQty ?? item.goodQty}</td>
                     <td class="number">${item.damagedQty}</td>
                     <td class="number">${item.returnedQty || 0}</td>
-                    <td class="center">${escapeHtml(item.expiryDate || '')}</td>
-                    <td class="money">${peso(item.unitCost)}</td>
-                    <td class="money">${peso(lineTotal)}</td>
                 </tr>
             `;
         }).join('')}
@@ -4131,19 +4583,16 @@ function openReceiptPreview(report, options = {}) {
                 .grn-number-row { grid-template-columns: 22mm minmax(0,1fr); }
                 .grn-number-row strong { white-space: nowrap; font-size: 7pt; }
                 .grn-table { width: 100%; margin-top: 2.5mm; border-collapse: collapse; table-layout: fixed; }
-                .grn-table col:nth-child(1) { width: 3%; }
-                .grn-table col:nth-child(2) { width: 8%; }
-                .grn-table col:nth-child(3) { width: 11%; }
-                .grn-table col:nth-child(4) { width: 17%; }
-                .grn-table col:nth-child(5) { width: 6%; }
-                .grn-table col:nth-child(n+6):nth-child(-n+10) { width: 4.5%; }
-                .grn-table col:nth-child(11) { width: 9%; }
-                .grn-table col:nth-child(12) { width: 8%; }
-                .grn-table col:nth-child(13) { width: 9.5%; }
+                .grn-table col:nth-child(1) { width: 4%; }
+                .grn-table col:nth-child(2) { width: 12%; }
+                .grn-table col:nth-child(3) { width: 32%; }
+                .grn-table col:nth-child(4) { width: 8%; }
+                .grn-table col:nth-child(n+5) { width: 8.8%; }
                 .grn-table th, .grn-table td { padding: 1.25mm .7mm; border: .35mm solid #555; vertical-align: top; overflow-wrap: anywhere; }
                 .grn-table thead { display: table-header-group; }
                 .grn-table thead th { background: #e8e8e8; font-size: 5.4pt; line-height: 1.1; text-align: center; text-transform: uppercase; overflow-wrap: normal; word-break: normal; }
                 .grn-table tbody td { font-size: 6.2pt; }
+                .grn-product-spec { display: block; margin-top: .7mm; color: #555; font-size: 5.7pt; line-height: 1.2; }
                 .grn-table tr { break-inside: avoid; page-break-inside: avoid; }
                 .grn-category-row th { padding: 1.2mm; background: #d5d5d5; font-size: 6.5pt; text-align: left; letter-spacing: .5px; }
                 .center { text-align: center; }
@@ -4186,7 +4635,8 @@ function openReceiptPreview(report, options = {}) {
                     <div class="grn-info-column">${grnInformationRows([
                         ['Supplier', report.supplier],
                         ['Supplier Address', report.supplierAddress],
-                        ['Received By', report.receivedBy]
+                        ['Received By', report.receivedBy],
+                        ['Delivered By', report.deliveredBy]
                     ])}</div>
                     <div class="grn-info-column">${grnInformationRows([
                         ['PO Number', report.poNo],
@@ -4196,15 +4646,14 @@ function openReceiptPreview(report, options = {}) {
                     <div class="grn-info-column">${grnInformationRows([
                         ['Receiving Status', report.status],
                         ['Payment Status', report.paymentStatus],
-                        ['Delivery Reference', report.deliveryReference]
+                        ['Delivery Receipt', report.deliveryReference]
                     ])}</div>
                 </section>
                 <table class="grn-table">
-                    <colgroup>${'<col>'.repeat(13)}</colgroup>
+                    <colgroup>${'<col>'.repeat(9)}</colgroup>
                     <thead><tr>
-                        <th>#</th><th>Brand</th><th>Product Name</th><th>Specification</th><th>Unit</th>
-                        <th>Ord.<br>Qty</th><th>Rcvd.<br>Qty</th><th>Accept.<br>Qty</th><th>Damage<br>Qty</th><th>Return<br>Qty</th>
-                        <th>Expiry Date</th><th>Unit Cost</th><th>Line Total</th>
+                        <th>#</th><th>Brand</th><th>Product / Specification</th><th>Unit</th>
+                        <th>Ordered</th><th>Received</th><th>Accepted</th><th>Damaged</th><th>Returned</th>
                     </tr></thead>
                     <tbody>${grnProductRows(report)}</tbody>
                 </table>
@@ -4256,12 +4705,174 @@ function openReceiptPreview(report, options = {}) {
                 window.addEventListener('load', positionGrnSignatureFooter);
                 window.addEventListener('beforeprint', positionGrnSignatureFooter);
                 window.addEventListener('resize', positionGrnSignatureFooter);
+                ${options.autoPrint ? `window.addEventListener('load', () => setTimeout(() => window.print(), 150));` : ''}
                 ${options.embedded ? `function fitEmbeddedGrn(){ document.body.style.zoom = Math.min(1, Math.max(.42, (window.innerWidth - 28) / 794)); } window.addEventListener('load', fitEmbeddedGrn); window.addEventListener('resize', fitEmbeddedGrn);` : ''}
             <\/script>
         </body>
         </html>
     `);
     receiptWindow.document.close();
+}
+
+function receivingHasDiscrepancy(report) {
+    return (report.items || []).some((item) => item.damagedQty > 0 || item.missingQty > 0 || item.returnedQty > 0 || item.replacementExpectedQty > 0 || (item.resolution && item.resolution !== 'none'));
+}
+
+function supplierDiscrepancyAffectedQuantity(item) {
+    return Math.max(item.damagedQty || 0, item.returnedQty || 0) + Number(item.missingQty || 0);
+}
+
+function supplierDiscrepancyQuantityLabel(quantity, unit = 'Unit') {
+    const numeric = Number(quantity || 0);
+    const cleanUnit = String(unit || 'Unit').trim();
+    const label = numeric === 1 || /s$/i.test(cleanUnit) ? cleanUnit : `${cleanUnit}s`;
+    return `${numeric} ${label}`;
+}
+
+function supplierDiscrepancyIsReplacement(item) {
+    return item.replacementExpectedQty > 0 || ['replacement', 'return_for_replacement'].includes(item.resolution);
+}
+
+function supplierDiscrepancyIsCredit(item) {
+    return ['supplier_credit', 'next_po_credit', 'return_for_credit', 'keep_with_discount'].includes(item.resolution);
+}
+
+function supplierDiscrepancyCreditApplied(item) {
+    const amount = Number(item.creditAmount || 0);
+    const applied = Number(item.creditAppliedAmount || 0);
+    return amount > 0 && (applied + 0.005 >= amount || String(item.creditStatus || '').toLowerCase() === 'applied');
+}
+
+function supplierDiscrepancyIsReturn(item) {
+    return !supplierDiscrepancyIsReplacement(item) && !supplierDiscrepancyIsCredit(item)
+        && (String(item.disposition || '').toLowerCase().includes('return') || item.resolution === 'return_to_supplier');
+}
+
+function supplierDiscrepancyReturnCompleted(item) {
+    const status = String(item.claimStatus || '').toLowerCase();
+    return Boolean(item.claimResolvedAt) && (status.includes('resolved') || status.includes('completed') || status.includes('returned'));
+}
+
+function supplierDiscrepancyResolution(item) {
+    const unit = item.unitLabel || 'Unit';
+    const affected = Math.max(item.replacementExpectedQty || 0, supplierDiscrepancyAffectedQuantity(item));
+    const quantity = supplierDiscrepancyQuantityLabel(affected, unit);
+    if (supplierDiscrepancyIsReplacement(item)) {
+        const outstanding = Math.max(Number(item.replacementPendingQty || 0), affected - Number(item.replacementReceivedQty || 0), 0);
+        if (item.replacementReceivedQty > 0 && outstanding > 0) return `${quantity} — Replacement Partially Received (${supplierDiscrepancyQuantityLabel(outstanding, unit)} outstanding)`;
+        if (affected > 0 && outstanding <= 0) return `${quantity} — Replacement Completed`;
+        return `${quantity} — Replacement Required`;
+    }
+    if (supplierDiscrepancyIsCredit(item)) {
+        return `${quantity} — ${supplierDiscrepancyCreditApplied(item) ? 'Credit Applied' : 'Supplier Credit Requested'}`;
+    }
+    if (supplierDiscrepancyIsReturn(item)) return `${quantity} — ${supplierDiscrepancyReturnCompleted(item) ? 'Return Completed' : 'Return to Supplier'}`;
+    if (item.resolution === 'refund') return `${quantity} — Refund Requested`;
+    return `${quantity} — ${item.resolutionLabel || 'Supplier Action Pending'}`;
+}
+
+function supplierDiscrepancyStatus(items, summary) {
+    const replacementItems = items.filter(supplierDiscrepancyIsReplacement);
+    if (replacementItems.length) {
+        if (summary.replacementOutstanding > 0 && summary.replacementReceived > 0) return 'REPLACEMENT PARTIALLY RECEIVED';
+        if (summary.replacementOutstanding > 0) return 'REPLACEMENT PENDING';
+        if (summary.replacementRequired > 0 && summary.replacementReceived >= summary.replacementRequired) return 'REPLACEMENT COMPLETED';
+    }
+
+    const creditItems = items.filter(supplierDiscrepancyIsCredit);
+    if (creditItems.length) {
+        return creditItems.every(supplierDiscrepancyCreditApplied) ? 'CREDIT APPLIED' : 'SUPPLIER CREDIT PENDING';
+    }
+
+    const returnItems = items.filter(supplierDiscrepancyIsReturn);
+    if (returnItems.length) return returnItems.every(supplierDiscrepancyReturnCompleted) ? 'RETURN COMPLETED' : 'RETURN PENDING';
+
+    const refundItems = items.filter((item) => item.resolution === 'refund');
+    if (refundItems.length) {
+        const refundStatuses = refundItems.map((item) => String(item.claimStatus || '').trim().toLowerCase());
+        return refundStatuses.some((status) => status.includes('resolved') || status.includes('received')) ? 'REFUND RECEIVED' : 'REFUND PENDING';
+    }
+    return 'CLAIM PENDING';
+}
+
+function supplierDiscrepancySummaryRows(items, summary, summaryUnit, documentStatus) {
+    const rows = [`<tr><td>Total Damaged</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(summary.damaged, summaryUnit))}</td></tr>`];
+    if (summary.shortage > 0) rows.push(`<tr><td>Total Shortage</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(summary.shortage, summaryUnit))}</td></tr>`);
+    const replacementItems = items.filter(supplierDiscrepancyIsReplacement);
+    if (replacementItems.length) {
+        rows.push(`<tr><td>Replacement Required</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(summary.replacementRequired, summaryUnit))}</td></tr>`);
+        rows.push(`<tr><td>Replacement Received</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(summary.replacementReceived, summaryUnit))}</td></tr>`);
+        rows.push(`<tr><td>Replacement Outstanding</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(summary.replacementOutstanding, summaryUnit))}</td></tr>`);
+    }
+    const creditItems = items.filter(supplierDiscrepancyIsCredit);
+    if (creditItems.length) {
+        const creditQuantity = creditItems.reduce((total, item) => total + supplierDiscrepancyAffectedQuantity(item), 0);
+        const creditAmount = creditItems.reduce((total, item) => total + Number(item.creditAmount || 0), 0);
+        rows.push(`<tr><td>Credit Quantity</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(creditQuantity, summaryUnit))}</td></tr>`);
+        if (creditAmount > 0) rows.push(`<tr><td>Confirmed Credit</td><td>${peso(creditAmount)}</td></tr>`);
+        rows.push(`<tr><td>Credit Status</td><td>${creditItems.every(supplierDiscrepancyCreditApplied) ? 'Credit Applied' : 'Supplier Credit Pending'}</td></tr>`);
+    }
+    const returnItems = items.filter(supplierDiscrepancyIsReturn);
+    if (returnItems.length) {
+        const required = returnItems.reduce((total, item) => total + supplierDiscrepancyAffectedQuantity(item), 0);
+        const completed = returnItems.reduce((total, item) => total + (supplierDiscrepancyReturnCompleted(item) ? supplierDiscrepancyAffectedQuantity(item) : 0), 0);
+        rows.push(`<tr><td>Return Required</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(required, summaryUnit))}</td></tr>`);
+        rows.push(`<tr><td>Return Completed</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(completed, summaryUnit))}</td></tr>`);
+        rows.push(`<tr><td>Return Outstanding</td><td>${escapeHtml(supplierDiscrepancyQuantityLabel(Math.max(0, required - completed), summaryUnit))}</td></tr>`);
+    }
+    rows.push(`<tr><td>Claim Status</td><td>${escapeHtml(documentStatus)}</td></tr>`);
+    return rows.join('');
+}
+
+function supplierDiscrepancyRows(report) {
+    return report.items.filter((item) => item.damagedQty > 0 || item.missingQty > 0 || item.returnedQty > 0 || item.replacementExpectedQty > 0 || item.resolution !== 'none').map((item, index) => `
+        <tr>
+            <td class="center">${index + 1}</td>
+            <td>${escapeHtml(item.brand || '')}</td>
+            <td><strong>${escapeHtml(item.product || '')}</strong>${item.specification ? `<span class="product-spec">${escapeHtml(item.specification)}</span>` : ''}${item.issueType ? `<span class="issue-note">Issue: ${escapeHtml(item.issueType)}</span>` : ''}</td>
+            <td class="center">${escapeHtml(item.unitLabel || '')}</td>
+            <td class="number">${item.orderedQty}</td><td class="number">${item.receivedQty}</td><td class="number">${item.acceptedQty}</td><td class="number">${item.damagedQty}</td>
+            <td>${escapeHtml(supplierDiscrepancyResolution(item))}</td>
+        </tr>`).join('');
+}
+
+function openSupplierDiscrepancyPreview(report, options = {}) {
+    if (!receivingHasDiscrepancy(report)) {
+        options.targetWindow?.close?.();
+        PharmaUtils.toast.info('This receiving has no supplier discrepancy document.');
+        return;
+    }
+    const previewWindow = options.targetWindow || window.open('', '_blank', 'width=1200,height=850');
+    if (!previewWindow) return;
+    const discrepancyItems = report.items.filter((item) => item.damagedQty > 0 || item.missingQty > 0 || item.returnedQty > 0 || item.replacementExpectedQty > 0 || item.resolution !== 'none');
+    const summary = discrepancyItems.reduce((total, item) => {
+        total.damaged += item.damagedQty;
+        total.shortage += item.missingQty;
+        if (supplierDiscrepancyIsReplacement(item)) {
+            const required = Math.max(Number(item.replacementExpectedQty || 0), supplierDiscrepancyAffectedQuantity(item));
+            const received = Math.min(required, Number(item.replacementReceivedQty || 0));
+            total.replacementRequired += required;
+            total.replacementReceived += received;
+            total.replacementOutstanding += Math.max(Number(item.replacementPendingQty || 0), required - received, 0);
+        }
+        return total;
+    }, { damaged: 0, shortage: 0, replacementRequired: 0, replacementReceived: 0, replacementOutstanding: 0 });
+    const unitLabels = [...new Set(discrepancyItems.map((item) => String(item.unitLabel || 'Unit')))];
+    const summaryUnit = unitLabels.length === 1 ? unitLabels[0] : 'Units';
+    const documentStatus = supplierDiscrepancyStatus(discrepancyItems, summary);
+    previewWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Delivery Discrepancy & Replacement Acknowledgement</title><style>
+        *{box-sizing:border-box}@page{size:A4 portrait;margin:10mm}body{margin:0;background:#e5e7eb;color:#111;font-family:Arial,Helvetica,sans-serif}.actions{display:flex;justify-content:center;gap:8px;padding:12px}button{padding:8px 14px;border:1px solid #111;background:#fff;border-radius:3px;font-weight:700;cursor:pointer}.document{display:flex;flex-direction:column;width:210mm;min-height:297mm;margin:0 auto 24px;padding:10mm;background:#fff;box-shadow:0 8px 28px rgba(0,0,0,.16);font-size:8pt;line-height:1.3}.header{text-align:center;border-bottom:1.5px solid #111;padding-bottom:3mm}.pharmacy{font-size:15pt;font-weight:800}.address,.contact{font-size:7.5pt;margin-top:.7mm}.title{font-size:10pt;font-weight:800;letter-spacing:.7px;margin-top:2.5mm}.info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1mm 8mm;padding:3mm 0;border-bottom:1px solid #444}.info-row{display:grid;grid-template-columns:30mm 1fr;gap:2mm}.info-row.full{grid-column:1/-1}.info-row>span{font-size:6pt;font-weight:700;text-transform:uppercase;color:#444}.info-row strong{font-size:7pt;overflow-wrap:anywhere}.status{display:inline-block;padding:1mm 2mm;border:1px solid #555;border-radius:10mm}.items{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:3mm}.items col:nth-child(1){width:4%}.items col:nth-child(2){width:10%}.items col:nth-child(3){width:25%}.items col:nth-child(4){width:7%}.items col:nth-child(n+5):nth-child(-n+8){width:7%}.items col:nth-child(9){width:26%}.items th,.items td{border:.3mm solid #555;padding:1.4mm .8mm;vertical-align:top;overflow-wrap:anywhere}.items th{background:#e8e8e8;font-size:5.5pt;text-transform:uppercase;text-align:center}.items td{font-size:6.3pt}.center,.number{text-align:center}.product-spec,.issue-note{display:block;margin-top:.6mm;color:#555;font-size:5.7pt}.issue-note{font-weight:700;color:#7a2e0e}.lower{display:grid;grid-template-columns:1fr 75mm;gap:7mm;margin-top:4mm}.section-title{font-size:7pt;font-weight:800;text-transform:uppercase;border-bottom:1px solid #333;padding-bottom:1mm;margin-bottom:2mm}.remarks{min-height:24mm;border:.3mm solid #555;padding:2mm;white-space:pre-wrap}.summary{width:100%;border-collapse:collapse}.summary td{padding:1.2mm;border-bottom:.25mm solid #aaa}.summary td:last-child{text-align:right;font-weight:700}.signatures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:30mm;margin-top:auto;padding-top:18mm;page-break-inside:avoid}.signature{text-align:center}.signature-line{min-height:9mm;border-bottom:.35mm solid #222}.signature-label{font-size:6pt;font-weight:700;text-transform:uppercase;margin-top:1.5mm}@media print{body{background:#fff}.actions{display:none}.document{width:190mm;min-height:277mm;margin:0;padding:0;box-shadow:none}.items tr,.lower,.signatures{break-inside:avoid;page-break-inside:avoid}}
+    </style></head><body><div class="actions"><button onclick="window.print()">Print / Save PDF</button><button onclick="window.close()">Close</button></div><main class="document">
+        <header class="header"><div class="pharmacy">${escapeHtml(report.pharmacyName)}</div>${report.pharmacyAddress ? `<div class="address">${escapeHtml(report.pharmacyAddress)}</div>` : ''}${report.contact ? `<div class="contact">Contact Number: ${escapeHtml(report.contact)}</div>` : ''}<div class="title">DELIVERY DISCREPANCY &amp; REPLACEMENT ACKNOWLEDGEMENT</div></header>
+        <section class="info">${[
+            ['Supplier', report.supplier], ['PO Number', report.poNo], ['GRN Number', report.grnNo], ['Delivery Receipt No.', report.deliveryReference],
+            ['Received Date', receiptDisplayDate(report.receivedDate)], ['Receiving Status', report.status], ['Claim Status', documentStatus, true]
+        ].map(([label,value,full]) => `<div class="info-row${full ? ' full' : ''}"><span>${escapeHtml(label)}</span><strong>${label === 'Claim Status' ? `<span class="status">${escapeHtml(value)}</span>` : escapeHtml(value || '—')}</strong></div>`).join('')}</section>
+        <table class="items"><colgroup>${'<col>'.repeat(9)}</colgroup><thead><tr><th>#</th><th>Brand</th><th>Product / Specification</th><th>Unit</th><th>Ordered</th><th>Received</th><th>Accepted</th><th>Damaged</th><th>Supplier Resolution</th></tr></thead><tbody>${supplierDiscrepancyRows(report)}</tbody></table>
+        <section class="lower"><div><div class="section-title">Remarks / Supplier Agreement</div><div class="remarks">${escapeHtml(report.remarks || '')}</div></div><div><div class="section-title">Delivery Discrepancy Summary</div><table class="summary">${supplierDiscrepancySummaryRows(discrepancyItems, summary, summaryUnit, documentStatus)}</table></div></section>
+        <section class="signatures"><div class="signature"><div class="signature-line"></div><div class="signature-label">Receiving / Inspection Staff</div></div><div class="signature"><div class="signature-line"></div><div class="signature-label">Supplier Representative / Driver</div></div></section>
+    </main><script>${options.autoPrint ? `window.addEventListener('load',()=>setTimeout(()=>window.print(),150));` : ''}<\/script></body></html>`);
+    previewWindow.document.close();
 }
 
 async function submitReceivePurchaseOrder() {
@@ -4342,6 +4953,7 @@ let activeReceivingDetails = null;
 let receivingUiScrollY = 0;
 let supplierPaymentSubmitting = false;
 let supplierPaymentSubmissionKey = '';
+let activeSupplierCredits = [];
 let supplierPaymentPendingState = null;
 let supplierPaymentReturnFocus = null;
 let supplierPaymentResultContext = null;
@@ -4352,6 +4964,7 @@ function receivingResolutionLabel(resolution = 'none') {
         replacement: 'Replacement',
         supplier_credit: 'Supplier Credit',
         next_po_credit: 'Credit on Next PO',
+        refund: 'Refund Due',
         no_compensation: 'No Supplier Compensation',
         return_for_credit: 'Return for Supplier Credit',
         return_for_replacement: 'Return for Replacement',
@@ -4375,7 +4988,7 @@ function ensureReceivingUi() {
                 <div class="grn-preview-view" id="grnPreviewView">
                     <header class="grn-preview-toolbar">
                         <div class="grn-toolbar-left"><strong id="grnPreviewTitle">Goods Received Note</strong><div class="grn-revision-meta"><span><b>Last Edited:</b> <span id="grnLastEdited">Not edited yet</span></span><span id="grnEditedByRow" class="d-none"><b>Edited By:</b> <span id="grnEditedBy"></span></span><span id="grnEditReasonRow" class="d-none"><b>Reason:</b> <span id="grnEditReason"></span></span></div></div>
-                        <div class="grn-preview-actions"><button class="btn btn-primary" id="btnGrnPreviewPrint" type="button"><i class="fa-solid fa-print me-1"></i>Print GRN</button><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button></div>
+                        <div class="grn-preview-actions"><button class="btn btn-outline-primary d-none" id="btnGrnPreviewSupplier" type="button"><i class="fa-regular fa-eye me-1"></i>View Supplier Discrepancy</button><button class="btn btn-outline-primary d-none" id="btnGrnPreviewPrintSupplier" type="button"><i class="fa-solid fa-print me-1"></i>Print Supplier Discrepancy</button><button class="btn btn-primary" id="btnGrnPreviewPrint" type="button"><i class="fa-solid fa-print me-1"></i>Print GRN</button><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button></div>
                     </header>
                     <div class="grn-preview-scroll"><iframe id="grnPreviewFrame" title="Goods Received Note A4 preview"></iframe></div>
                 </div>
@@ -4389,7 +5002,7 @@ function ensureReceivingUi() {
         <aside class="receiving-drawer" id="receivingDetailsDrawer" aria-hidden="true" aria-labelledby="receivingDetailsTitle">
             <header class="receiving-drawer-header"><div class="receiving-drawer-title"><h2 id="receivingDetailsTitle">Receiving Details</h2><p id="receivingDetailsSubtitle">Posted receiving record</p></div><button class="receiving-drawer-close" type="button" data-close-receiving-ui aria-label="Close receiving details"><i class="fa-solid fa-xmark"></i></button></header>
             <div class="receiving-drawer-body" id="receivingDetailsBody"><div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading receiving details...</div></div>
-            <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button><button class="btn btn-outline-primary" id="btnDrawerPrintGrn" type="button"><i class="fa-solid fa-print me-1"></i>Print GRN</button><button class="btn btn-purple" id="btnDrawerManagePayment" type="button"><i class="fa-solid fa-wallet me-1"></i>Record Payment</button></footer>
+            <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button><button class="btn btn-outline-primary d-none" id="btnDrawerSupplierDiscrepancy" type="button"><i class="fa-regular fa-eye me-1"></i>Supplier Discrepancy</button><button class="btn btn-outline-primary" id="btnDrawerPrintGrn" type="button"><i class="fa-solid fa-print me-1"></i>Print GRN</button><button class="btn btn-purple" id="btnDrawerManagePayment" type="button"><i class="fa-solid fa-wallet me-1"></i>Record Payment</button></footer>
         </aside>`;
     document.body.insertAdjacentHTML('beforeend', `
         <div class="receiving-ui-backdrop" id="receivingUiBackdrop"></div>
@@ -4398,7 +5011,7 @@ function ensureReceivingUi() {
             <div class="supplier-payment-dialog-card supplier-payment-entry-card">
                 <header class="receiving-drawer-header"><div class="receiving-drawer-title"><h2 id="supplierPaymentTitle">PO Payment</h2><p id="supplierPaymentSubtitle">Cash purchase order payment</p></div><button class="receiving-drawer-close" type="button" data-close-receiving-ui aria-label="Close supplier payment"><i class="fa-solid fa-xmark"></i></button></header>
                 <div class="receiving-drawer-body" id="supplierPaymentBody"><div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading payment details...</div></div>
-                <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Close</button><button class="btn btn-purple" id="btnSaveSupplierPayment" type="button"><i class="fa-solid fa-money-check-dollar me-1"></i>Record Payment</button></footer>
+                <footer class="receiving-drawer-footer"><button class="btn btn-light border" type="button" data-close-receiving-ui>Cancel</button><button class="btn btn-purple" id="btnSaveSupplierPayment" type="button"><i class="fa-solid fa-money-check-dollar me-1"></i>Record Payment</button></footer>
             </div>
         </section>
         <section class="supplier-payment-dialog" id="supplierPaymentConfirmDialog" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="supplierPaymentConfirmTitle" aria-describedby="supplierPaymentConfirmMessage">
@@ -4420,15 +5033,18 @@ function ensureReceivingUi() {
         if (document.querySelector('.supplier-payment-dialog.is-open') || document.getElementById('grnModal')?.dataset.mode === 'edit') return;
         closeReceivingUi();
     });
-    document.getElementById('btnDrawerPrintGrn')?.addEventListener('click', () => activeReceivingDetails && openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails)));
+    document.getElementById('btnDrawerPrintGrn')?.addEventListener('click', () => activeReceivingDetails && openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), { autoPrint: true }));
+    document.getElementById('btnDrawerSupplierDiscrepancy')?.addEventListener('click', () => activeReceivingDetails && openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails)));
     document.getElementById('btnDrawerManagePayment')?.addEventListener('click', () => activeReceivingDetails && openSupplierPayment(activeReceivingDetails.po_id));
-    document.getElementById('btnGrnPreviewPrint')?.addEventListener('click', () => activeReceivingDetails && openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails)));
+    document.getElementById('btnGrnPreviewPrint')?.addEventListener('click', () => activeReceivingDetails && openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), { autoPrint: true }));
+    document.getElementById('btnGrnPreviewSupplier')?.addEventListener('click', () => activeReceivingDetails && openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails)));
+    document.getElementById('btnGrnPreviewPrintSupplier')?.addEventListener('click', () => activeReceivingDetails && openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails), { autoPrint: true }));
     document.getElementById('btnCancelGrnEdit')?.addEventListener('click', closeGrnEditForm);
     document.getElementById('btnSaveGrnEdit')?.addEventListener('click', saveGrnEdit);
     document.getElementById('btnSaveSupplierPayment')?.addEventListener('click', submitSupplierPayment);
     document.getElementById('supplierPaymentBody')?.addEventListener('click', (event) => {
-        const option = event.target.closest('.payment-basis-option');
-        if (option) selectSupplierPaymentBasis(option.dataset.paymentBasis || '');
+        const creditButton = event.target.closest('.apply-supplier-credit-btn');
+        if (creditButton) applySupplierCreditFromPayment(creditButton);
     });
     document.getElementById('btnCancelSupplierPaymentConfirm')?.addEventListener('click', cancelSupplierPaymentConfirmation);
     document.getElementById('btnConfirmSupplierPayment')?.addEventListener('click', confirmSupplierPayment);
@@ -4471,9 +5087,14 @@ function setGrnModalMode(mode = 'preview') {
 
 async function fetchReceivingDetails(poId, fresh = false) {
     if (!fresh && receivingDetailsCache.has(String(poId))) return receivingDetailsCache.get(String(poId));
-    const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_receiving_details.php?po_id=${encodeURIComponent(poId)}&t=${Date.now()}`);
+    const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_receiving_details.php?po_id=${encodeURIComponent(poId)}&t=${Date.now()}`, { retryGet: false });
     receivingDetailsCache.set(String(poId), data.receiving);
     return data.receiving;
+}
+
+async function fetchPurchaseOrderPaymentDetails(poId) {
+    const data = await fetchJson(`${API_BASE_URL}/purchase_orders/get_purchase_order_payment_details.php?po_id=${encodeURIComponent(poId)}&t=${Date.now()}`, { retryGet: false });
+    return data.payment_details;
 }
 
 function receivingItemDisplayName(item) {
@@ -4526,6 +5147,8 @@ function renderReceivingDetails(details) {
             <div class="receiving-info-box"><span>Arrival Date</span><strong>${escapeHtml(formatDate(details.expected_delivery_date))}</strong></div>
             <div class="receiving-info-box"><span>Received Date</span><strong>${escapeHtml(receiptDisplayDate(details.received_date))}</strong></div>
             <div class="receiving-info-box"><span>Received By</span><strong>${escapeHtml(details.received_by || 'System')}</strong></div>
+            <div class="receiving-info-box"><span>Delivered By / Driver</span><strong>${escapeHtml(details.delivered_by_name || '—')}</strong></div>
+            <div class="receiving-info-box"><span>Supplier Delivery Receipt No.</span><strong>${escapeHtml(details.delivery_receipt_no || '—')}</strong></div>
             <div class="receiving-info-box"><span>PO Business Status</span><strong>${escapeHtml(details.status || 'Delivered')}</strong></div>
             <div class="receiving-info-box"><span>Receiving Status</span><strong><span class="receiving-result-badge">Receiving Completed</span></strong></div>
             <div class="receiving-info-box"><span>Payment Status</span><strong>${paymentStatusBadge(payment.payment_status)}</strong></div>
@@ -4545,7 +5168,7 @@ function renderReceivingDetails(details) {
                         ['Inventory Added', receivingQuantityLabel(item.inventory_added, item.unit)]
                     ].map(([label,value]) => `<div class="receiving-qty"><span>${label}</span><b>${escapeHtml(value)}</b></div>`).join('')}
                 </div>
-                ${(item.damage_breakdown || []).length ? `<section class="receiving-damage-details"><h4>Damage Breakdown</h4>${item.damage_breakdown.map((line) => `<div class="receiving-damage-row"><span>${escapeHtml(line.affected_unit_name || 'Package')} ${Number(line.sequence_no || 0)}</span><strong>${Number(line.damaged_base_quantity || 0)} ${escapeHtml(item.unit || line.damaged_unit_name || 'Pc')} damaged</strong></div>`).join('')}<div class="receiving-damage-total"><span>Total Physically Damaged</span><strong>${receivingQuantityLabel(item.damaged_quantity, item.unit)} damaged</strong></div></section>` : ''}
+                ${(item.damage_breakdown || []).length ? `<section class="receiving-damage-details"><h4>Affected Goods Breakdown</h4>${item.damage_breakdown.map((line) => `<div class="receiving-damage-row"><span>${escapeHtml(`${item.purchase_unit || line.affected_unit_name || 'Package'} ${Number(line.package_sequence || line.sequence_no || 0)} of ${Number(item.delivered_purchase_quantity || 0)}`)}${line.batch_identifier ? ` · ${escapeHtml(line.batch_identifier)}` : ''}</span><strong>${Number(line.damaged_base_quantity || 0)} ${escapeHtml(item.unit || line.damaged_unit_name || 'Pc')} damaged</strong></div>`).join('')}<div class="receiving-damage-total"><span>Total Physically Damaged</span><strong>${receivingQuantityLabel(item.damaged_quantity, item.unit)} damaged</strong></div></section>` : ''}
                 ${item.resolution !== 'none' ? `<dl class="receiving-claim-summary"><div><dt>Issue</dt><dd>${escapeHtml(item.issue_type || 'Issue')}</dd></div><div><dt>Affected Goods Action</dt><dd>${escapeHtml(item.affected_goods_action || 'Not Applicable')}</dd></div><div><dt>Supplier Resolution</dt><dd>${escapeHtml(receivingResolutionLabel(item.resolution))}</dd></div><div><dt>Claim Status</dt><dd>${escapeHtml(item.return_status || 'Pending')}</dd></div>${String(item.item_remarks || '').trim() ? `<div class="wide"><dt>Item Remarks</dt><dd>${escapeHtml(item.item_remarks)}</dd></div>` : ''}</dl>` : ''}
             </article>`).join('')}
         <div class="receiving-section-title"><i class="fa-solid fa-boxes-stacked"></i>Batch and Expiry Allocation</div>
@@ -4580,6 +5203,7 @@ async function openReceivingDetails(poId) {
         document.getElementById('receivingDetailsTitle').textContent = 'Receiving Details';
         document.getElementById('receivingDetailsSubtitle').textContent = `${details.grn_number} · ${details.po_number} · ${details.supplier_name}`;
         if (body) body.innerHTML = renderReceivingDetails(details);
+        document.getElementById('btnDrawerSupplierDiscrepancy')?.classList.toggle('d-none', !receivingHasDiscrepancy(receiptReportFromReceiving(details)));
         const manage = document.getElementById('btnDrawerManagePayment');
         if (manage) {
             const canManage = !isPurchaseOrderPaid(details.payment?.payment_status, details.payment?.remaining_balance);
@@ -4623,6 +5247,9 @@ async function openGrnPreview(poId) {
         const details = await fetchReceivingDetails(poId, true);
         activeReceivingDetails = details;
         updateGrnRevisionToolbar(details);
+        const hasDiscrepancy = receivingHasDiscrepancy(receiptReportFromReceiving(details));
+        document.getElementById('btnGrnPreviewSupplier')?.classList.toggle('d-none', !hasDiscrepancy);
+        document.getElementById('btnGrnPreviewPrintSupplier')?.classList.toggle('d-none', !hasDiscrepancy);
         renderGrnPreviewDocument(details);
     } catch (error) {
         if (frame) frame.srcdoc = `<!doctype html><html><body style="font-family:Arial;padding:40px;color:#b42318">${escapeHtml(error.message)}</body></html>`;
@@ -4637,9 +5264,15 @@ function grnDispositionValue(value) {
     return ({ 'Return to Supplier':'return_to_supplier', 'Hold/Quarantine':'hold_quarantine', Dispose:'dispose', 'Not Applicable':'not_applicable' })[value] || 'not_applicable';
 }
 
+function grnResolutionValue(value) {
+    return ({ return_for_replacement:'replacement', return_for_credit:'supplier_credit', keep_with_discount:'supplier_credit', reject_without_replacement:'no_compensation', keep_damaged:'no_compensation' })[value] || value || 'none';
+}
+
 function grnEditDamageRow(item, line = {}, index = 0) {
     const defaultConversion = item.package_conversions?.find((conversion) => Number(conversion.base_quantity) === 1)?.conversion_id || item.package_conversions?.[0]?.conversion_id || '';
-    return `<div class="grn-edit-damage-row" data-damage-row><span class="grn-damage-number">Package ${index + 1}</span><select data-field="affected_conversion">${grnConversionOptions(item, line.affected_unit_conversion_id || item.package_conversions?.[0]?.conversion_id)}</select><input data-field="damaged_quantity" type="number" min="1" step="1" value="${Number(line.damaged_quantity || 1)}"><select data-field="damaged_conversion">${grnConversionOptions(item, line.damaged_unit_conversion_id || defaultConversion)}</select><button class="btn btn-sm btn-outline-danger" type="button" data-remove-grn-damage aria-label="Remove damage row"><i class="fa-solid fa-trash"></i></button></div>`;
+    const batchOptions = (item.batches || []).map((batch) => `<option value="${escapeHtml(batch.batch_id)}" ${String(batch.batch_id) === String(line.inventory_batch_id) ? 'selected' : ''}>${escapeHtml(batch.batch_identifier || 'Receiving batch')}</option>`).join('');
+    const packageOptions = receivePackageSequenceOptions(item.delivered_purchase_quantity || 0, item.purchase_unit || 'Package', line.package_sequence ?? line.sequence_no ?? '');
+    return `<div class="grn-edit-damage-row" data-damage-row><span class="grn-damage-number">Affected Package</span><select data-field="package_sequence" aria-label="Affected physical package">${packageOptions}</select><input data-field="damaged_quantity" aria-label="Damaged product quantity" type="number" min="1" step="1" value="${Number(line.damaged_quantity || 1)}"><select data-field="damaged_conversion">${grnConversionOptions(item, line.damaged_unit_conversion_id || defaultConversion)}</select><select data-field="inventory_batch_id" aria-label="Affected batch/lot">${batchOptions || '<option value="">No receiving batch</option>'}</select><button class="btn btn-sm btn-outline-danger" type="button" data-remove-grn-damage aria-label="Remove affected goods row"><i class="fa-solid fa-trash"></i></button></div>`;
 }
 
 function grnEditSelectOptions(options, selected) {
@@ -4660,9 +5293,10 @@ function renderGrnEditForm(details) {
                     <label><span>Affected Goods Quantity</span><div class="grn-inline-fields"><input data-field="action_quantity" type="number" min="0" step="1" value="${Number(item.action_selected_quantity || 0)}"><select data-field="action_conversion">${grnConversionOptions(item, item.action_unit_conversion_id)}</select></div></label>
                     <label><span>Issue</span><select data-field="issue_type"><option value="">No issue</option>${grnEditSelectOptions(['Damaged Product','Broken Package','Expired','Wrong Item','Short Quantity','Other'].map((value) => [value,value]), item.issue_type)}</select></label>
                     <label><span>Affected Goods Action</span><select data-field="disposition">${grnEditSelectOptions([['not_applicable','Not Applicable'],['return_to_supplier','Return to Supplier'],['hold_quarantine','Hold / Quarantine'],['dispose','Dispose']], grnDispositionValue(item.affected_goods_action))}</select></label>
-                    <label><span>Supplier Resolution</span><select data-field="resolution">${grnEditSelectOptions([['none','No issue'],['replacement','Replacement'],['supplier_credit','Supplier Credit'],['next_po_credit','Credit on Next PO'],['no_compensation','No Supplier Compensation']], item.resolution || 'none')}</select></label>
+                    <label><span>Supplier Resolution</span><select data-field="resolution">${grnEditSelectOptions([['none','No issue'],['replacement','Replacement'],['supplier_credit','Supplier Credit'],['next_po_credit','Credit on Next PO'],['refund','Refund Due'],['no_compensation','No Supplier Compensation']], grnResolutionValue(item.resolution))}</select></label>
+                    <label data-grn-confirmed-adjustment-wrap class="${['supplier_credit','next_po_credit','refund'].includes(grnResolutionValue(item.resolution)) ? '' : 'd-none'}"><span>Supplier-Confirmed Amount</span><input data-field="confirmed_adjustment" type="number" min="0.01" step="0.01" value="${Number(item.supplier_adjustment || 0) > 0 ? Number(item.supplier_adjustment).toFixed(2) : ''}" placeholder="0.00"><small>Entered explicitly; never calculated from damaged quantity.</small></label>
                 </div>
-                <section class="grn-edit-damage"><div class="grn-edit-subhead"><strong>Damage Breakdown</strong><button class="btn btn-sm btn-outline-primary" type="button" data-add-grn-damage><i class="fa-solid fa-plus me-1"></i>Add Package</button></div><div data-damage-list>${(item.damage_breakdown || []).map((line, lineIndex) => grnEditDamageRow(item, line, lineIndex)).join('')}</div></section>
+                <section class="grn-edit-damage"><div class="grn-edit-subhead"><strong>Affected Goods Breakdown</strong><button class="btn btn-sm btn-outline-primary" type="button" data-add-grn-damage><i class="fa-solid fa-plus me-1"></i>Add Another Affected Package</button></div><div data-damage-list>${(item.damage_breakdown || []).map((line, lineIndex) => grnEditDamageRow(item, line, lineIndex)).join('')}</div></section>
                 <section class="grn-edit-batches"><strong>Batch &amp; Expiry</strong>${(item.batches || []).map((batch) => `<div class="grn-edit-batch" data-batch-id="${escapeHtml(batch.batch_id)}"><span>${escapeHtml(batch.batch_identifier)}</span><label>Quantity<input data-field="batch_quantity" type="number" min="1" step="1" value="${Number(batch.batch_quantity || 0)}"></label><label>Expiry Date<input data-field="batch_expiry" type="date" value="${escapeHtml(batch.expiry_date || '')}"></label></div>`).join('')}</section>
                 <label class="grn-edit-remarks"><span>Item Remarks</span><textarea data-field="item_remarks" rows="2">${escapeHtml(item.item_remarks || '')}</textarea></label>
             </article>`).join('')}
@@ -4679,7 +5313,12 @@ function updateGrnEditSaveState() {
 }
 
 function refreshGrnDamageNumbers(itemNode) {
-    itemNode.querySelectorAll('[data-damage-row]').forEach((row, index) => { const label = row.querySelector('.grn-damage-number'); if (label) label.textContent = `Package ${index + 1}`; });
+    const selects = [...itemNode.querySelectorAll('[data-field="package_sequence"]')];
+    const selected = selects.map((select) => select.value).filter(Boolean);
+    selects.forEach((select) => select.querySelectorAll('option[value]').forEach((option) => {
+        option.disabled = Boolean(option.value && option.value !== select.value && selected.includes(option.value));
+    }));
+    itemNode.querySelectorAll('[data-damage-row]').forEach((row) => { const label = row.querySelector('.grn-damage-number'); if (label) label.textContent = 'Affected Package'; });
 }
 
 function openGrnEditForm() {
@@ -4689,6 +5328,7 @@ function openGrnEditForm() {
     const body = document.getElementById('grnEditBody');
     if (!body) return;
     body.innerHTML = renderGrnEditForm(activeReceivingDetails);
+    body.querySelectorAll('.grn-edit-item').forEach(refreshGrnDamageNumbers);
     body.onclick = (event) => {
         const itemNode = event.target.closest('.grn-edit-item');
         if (!itemNode) return;
@@ -4698,6 +5338,13 @@ function openGrnEditForm() {
             const item = activeReceivingDetails.items.find((candidate) => String(candidate.po_item_id) === String(itemNode.dataset.poItemId));
             const list = itemNode.querySelector('[data-damage-list]');
             if (item && list) { list.insertAdjacentHTML('beforeend', grnEditDamageRow(item, {}, list.querySelectorAll('[data-damage-row]').length)); }
+        }
+    };
+    body.onchange = (event) => {
+        if (event.target.matches('[data-field="package_sequence"]')) refreshGrnDamageNumbers(event.target.closest('.grn-edit-item'));
+        if (event.target.matches('[data-field="resolution"]')) {
+            const itemNode = event.target.closest('.grn-edit-item');
+            itemNode?.querySelector('[data-grn-confirmed-adjustment-wrap]')?.classList.toggle('d-none', !['supplier_credit','next_po_credit','refund'].includes(event.target.value));
         }
     };
     document.getElementById('grnEditReasonInput')?.addEventListener('input', updateGrnEditSaveState);
@@ -4740,8 +5387,9 @@ function grnEditPayload() {
             issue_type: itemNode.querySelector('[data-field="issue_type"]')?.value || '',
             disposition: itemNode.querySelector('[data-field="disposition"]')?.value || 'not_applicable',
             resolution: itemNode.querySelector('[data-field="resolution"]')?.value || 'none',
+            confirmed_adjustment: Number(itemNode.querySelector('[data-field="confirmed_adjustment"]')?.value || 0),
             remarks: itemNode.querySelector('[data-field="item_remarks"]')?.value.trim() || '',
-            damage_lines: [...itemNode.querySelectorAll('[data-damage-row]')].map((row) => ({ affected_unit_conversion_id:row.querySelector('[data-field="affected_conversion"]')?.value || '', damaged_quantity:Number(row.querySelector('[data-field="damaged_quantity"]')?.value || 0), damaged_unit_conversion_id:row.querySelector('[data-field="damaged_conversion"]')?.value || '' })),
+            damage_lines: [...itemNode.querySelectorAll('[data-damage-row]')].map((row) => ({ package_sequence:Number(row.querySelector('[data-field="package_sequence"]')?.value || 0), damaged_quantity:Number(row.querySelector('[data-field="damaged_quantity"]')?.value || 0), damaged_unit_conversion_id:row.querySelector('[data-field="damaged_conversion"]')?.value || '', inventory_batch_id:row.querySelector('[data-field="inventory_batch_id"]')?.value || '' })),
             batches: [...itemNode.querySelectorAll('.grn-edit-batch')].map((batch) => ({ batch_id:batch.dataset.batchId, quantity:Number(batch.querySelector('[data-field="batch_quantity"]')?.value || 0), expiry_date:batch.querySelector('[data-field="batch_expiry"]')?.value || '' }))
         }))
     };
@@ -4770,48 +5418,51 @@ function renderSupplierPayment(details) {
     const payment = details.payment || {};
     const originalTotal = Number(details.total_amount || 0);
     const previousPayments = Number(payment.total_paid || 0);
-    const confirmedCredit = Number(payment.supplier_credit_applied || 0);
-    const remainingBalance = Math.max(originalTotal - previousPayments - confirmedCredit, 0);
+    const currentDiscount = Number(payment.current_po_discount || 0);
+    const futureCreditApplied = Number(payment.future_supplier_credit_applied || 0);
+    const netAmountDue = Number(payment.adjusted_payable ?? Math.max(0, originalTotal - currentDiscount - futureCreditApplied));
+    const remainingBalance = Number(payment.remaining_balance ?? Math.max(netAmountDue - previousPayments, 0));
     const fullyPaid = isPurchaseOrderPaid(payment.payment_status, remainingBalance);
-    const acceptedGoodsValue = Number(details.totals?.accepted_goods_value || 0);
-    const acceptedQuantity = Number(details.totals?.accepted_units || 0);
-    const replacementQuantity = (details.items || []).reduce((sum, item) => sum + Number(item.replacement_pending_quantity || 0), 0);
-    const replacementReferenceValue = (details.items || []).reduce((sum, item) => sum + (Number(item.replacement_pending_quantity || 0) * Number(item.unit_price || 0)), 0);
-    const unitLabels = [...new Set((details.items || []).map((item) => cleanText(item.unit)).filter(Boolean))];
-    const quantityUnit = unitLabels.length === 1 ? unitLabels[0] : 'units';
-    const claimStatuses = [...new Set((details.items || []).map((item) => cleanText(item.return_status)).filter(Boolean))];
-    const claimStatus = claimStatuses.length ? claimStatuses.join(', ') : 'No open claim';
+    const replacementQuantity = Number(details.claim_summary?.replacement_pending_quantity || 0);
+    const quantityUnit = 'units';
+    const futureCreditCreated = Number(details.claim_summary?.future_supplier_credit || 0);
     const payments = Array.isArray(payment.payments) ? payment.payments : [];
+    const availableCreditRows = activeSupplierCredits.map((credit) => `<div class="supplier-credit-apply-row"><div><strong>${peso(credit.available_amount)}</strong><span>From ${escapeHtml(credit.source_po_number || 'previous supplier claim')}</span></div><div class="input-group input-group-sm"><span class="input-group-text">₱</span><input class="form-control supplier-credit-apply-amount" type="number" min="0.01" step="0.01" max="${Number(credit.available_amount)}" value="${Number(Math.min(credit.available_amount, remainingBalance)).toFixed(2)}"></div><button class="btn btn-outline-primary apply-supplier-credit-btn" type="button" data-credit-id="${escapeHtml(credit.credit_id)}">Apply Credit</button></div>`).join('');
     return `
-        <div class="po-payment-section-heading"><i class="fa-solid fa-receipt"></i><span>PO Payment</span></div>
+        <div class="po-payment-section-heading"><i class="fa-solid fa-file-invoice-dollar"></i><span>PO &amp; Supplier Invoice</span></div>
         <div class="po-payment-summary-grid">
-            <div><span>Original PO Total</span><strong>${peso(originalTotal)}</strong></div>
+            <div><span>PO Number</span><strong>${escapeHtml(details.po_number || '—')}</strong></div>
+            <div><span>Supplier</span><strong>${escapeHtml(details.supplier_name || '—')}</strong></div>
+            <div><span>Invoice Number</span><strong>${escapeHtml(details.invoice_number || '—')}</strong></div>
+            <div><span>Invoice Date</span><strong>${escapeHtml(formatDate(details.invoice_date))}</strong></div>
+            <div><span>Invoice Total</span><strong>${peso(originalTotal)}</strong></div>
+            <div><span>Payment Status</span>${paymentStatusBadge(payment.payment_status || 'Unpaid')}</div>
+        </div>
+        <div class="po-payment-section-heading"><i class="fa-solid fa-receipt"></i><span>Payment Summary</span></div>
+        <div class="po-payment-financial-summary">
+            <div><span>Supplier Invoice Total</span><strong>${peso(originalTotal)}</strong></div>
+            <div><span>Current PO Discount</span><strong>-${peso(currentDiscount)}</strong></div>
+            <div><span>Supplier Credit Applied</span><strong>-${peso(futureCreditApplied)}</strong></div>
+            <div class="net"><span>Net Amount Due</span><strong>${peso(netAmountDue)}</strong></div>
             <div><span>Previous Payments</span><strong>${peso(previousPayments)}</strong></div>
-            <div><span>Received / Accepted</span><strong>${escapeHtml(receivingQuantityLabel(acceptedQuantity, quantityUnit))}</strong></div>
-            <div><span>Replacement Pending</span><strong>${escapeHtml(receivingQuantityLabel(replacementQuantity, quantityUnit))}</strong>${replacementQuantity > 0 ? `<small>Reference value: ${peso(replacementReferenceValue)}</small>` : ''}</div>
-            <div><span>Supplier Resolution</span><strong>${escapeHtml(receivingSupplierResolution(details))}</strong></div>
-            <div><span>Claim Status</span><strong>${escapeHtml(claimStatus)}</strong></div>
-            <div><span>Confirmed Supplier Credit</span><strong>${peso(confirmedCredit)}</strong></div>
-            <div><span>Payment Status</span>${paymentStatusBadge(payment.payment_status)}</div>
+            <div class="balance"><span>Remaining Balance</span><strong>${peso(remainingBalance)}</strong></div>
         </div>
+        ${replacementQuantity > 0 ? `<div class="alert alert-warning mt-3 mb-0"><strong>Replacement Pending — ${escapeHtml(receivingQuantityLabel(replacementQuantity, quantityUnit))}</strong><div>This claim does not reduce the current PO amount due.</div></div>` : ''}
+        ${futureCreditCreated > 0 ? `<div class="alert alert-info mt-3 mb-0"><strong>Future Supplier Credit: ${peso(futureCreditCreated)}</strong><div>Available for a future PO from this supplier.</div></div>` : ''}
+        ${availableCreditRows && remainingBalance > 0 ? `<div class="po-payment-section-heading"><i class="fa-solid fa-ticket"></i><span>Available Supplier Credit</span></div><p class="payment-mode-note">Confirm how much credit from previous supplier claims should be applied to this PO.</p><div class="supplier-credit-apply-list">${availableCreditRows}</div>` : ''}
         ${fullyPaid ? '<div class="alert alert-success mt-3 mb-0"><i class="fa-solid fa-circle-check me-2"></i>This purchase order is fully paid. Additional payments are not allowed.</div>' : `
-        <div class="po-payment-section-heading"><i class="fa-solid fa-sliders"></i><span>Payment Basis</span></div>
-        <div class="payment-basis-options" role="radiogroup" aria-label="Payment Basis">
-            <button class="payment-basis-option" type="button" role="radio" aria-checked="false" data-payment-basis="full">Full PO</button>
-            <button class="payment-basis-option" type="button" role="radio" aria-checked="false" data-payment-basis="accepted">Accepted Goods Only</button>
-            <button class="payment-basis-option" type="button" role="radio" aria-checked="false" data-payment-basis="custom">Custom Amount</button>
-        </div>
         <div class="po-payment-section-heading"><i class="fa-solid fa-money-bill-wave"></i><span>Payment</span></div>
         <form class="supplier-payment-form" id="supplierPaymentForm" novalidate>
-            <div class="form-field full"><label for="supplierPaymentAmount">Amount to Pay Now</label><div class="payment-amount-control"><span class="payment-currency-prefix">₱</span><input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" max="${remainingBalance}" value="" inputmode="decimal" autocomplete="off" aria-describedby="supplierPaymentValidation" disabled></div><p class="payment-mode-note">Payment Mode: <strong>Cash</strong></p><div class="payment-validation" id="supplierPaymentValidation" aria-live="polite">Select a payment basis.</div></div>
+            <div class="form-field"><label for="supplierPaymentDate">Payment Date</label><input class="form-control" id="supplierPaymentDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+            <div class="form-field"><label for="supplierPaymentMode">Payment Mode</label><input class="form-control" id="supplierPaymentMode" type="text" value="Cash" readonly></div>
+            <div class="form-field full"><label for="supplierPaymentAmount">Amount to Pay</label><div class="payment-amount-control"><span class="payment-currency-prefix">₱</span><input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" max="${remainingBalance}" value="${remainingBalance.toFixed(2)}" inputmode="decimal" autocomplete="off" aria-describedby="supplierPaymentValidation"></div><div class="payment-validation" id="supplierPaymentValidation" aria-live="polite"></div></div>
             <div class="payment-calculation-card full">
                 <div><span>Previous Payments</span><strong>${peso(previousPayments)}</strong></div>
-                <div><span>Confirmed Current-PO Credits</span><strong>${peso(confirmedCredit)}</strong></div>
+                <div><span>Net Amount Due</span><strong>${peso(netAmountDue)}</strong></div>
                 <div><span>Amount to Pay Now</span><strong id="supplierPaymentAmountSummary">${peso(0)}</strong></div>
                 <div class="balance"><span>Balance After Payment</span><strong id="supplierPaymentBalanceAfter">${peso(remainingBalance)}</strong></div>
             </div>
             <input type="hidden" id="supplierPaymentOriginalTotal" value="${originalTotal}">
-            <input type="hidden" id="supplierPaymentAcceptedValue" value="${acceptedGoodsValue}">
         </form>`}
         ${payments.length ? `<div class="po-payment-section-heading"><i class="fa-solid fa-clock-rotate-left"></i><span>Payment History</span></div>${renderPaymentHistory(payments)}` : ''}`;
 }
@@ -4846,53 +5497,34 @@ function supplierPaymentCalculationValues() {
     const payment = activeReceivingDetails?.payment || {};
     const originalTotal = Number(activeReceivingDetails?.total_amount || 0);
     const previouslyPaid = Number(payment.total_paid || 0);
-    const confirmedCredit = Number(payment.supplier_credit_applied || 0);
-    const acceptedValue = Number(activeReceivingDetails?.totals?.accepted_goods_value || 0);
-    const remainingBalance = Math.max(0, originalTotal - previouslyPaid - confirmedCredit);
+    const currentDiscount = Number(payment.current_po_discount || 0);
+    const futureCreditApplied = Number(payment.future_supplier_credit_applied || 0);
+    const netAmountDue = Number(payment.adjusted_payable ?? Math.max(0, originalTotal - currentDiscount - futureCreditApplied));
+    const remainingBalance = Number(payment.remaining_balance ?? Math.max(0, netAmountDue - previouslyPaid));
     return {
         originalTotal,
         previouslyPaid,
-        confirmedCredit,
-        acceptedValue,
-        remainingBalance,
-        acceptedPayment: Math.max(0, Math.min(remainingBalance, acceptedValue - previouslyPaid - confirmedCredit))
+        currentDiscount,
+        futureCreditApplied,
+        netAmountDue,
+        remainingBalance
     };
-}
-
-function selectSupplierPaymentBasis(basis, customAmount = '') {
-    const input = document.getElementById('supplierPaymentAmount');
-    if (!input) return;
-    const values = supplierPaymentCalculationValues();
-    document.querySelectorAll('.payment-basis-option').forEach((option) => {
-        option.setAttribute('aria-checked', option.dataset.paymentBasis === basis ? 'true' : 'false');
-    });
-    input.disabled = !basis;
-    input.readOnly = basis !== 'custom';
-    input.classList.toggle('is-readonly', basis !== 'custom' && Boolean(basis));
-    if (basis === 'full') input.value = values.remainingBalance.toFixed(2);
-    else if (basis === 'accepted') input.value = values.acceptedPayment.toFixed(2);
-    else if (basis === 'custom') input.value = customAmount;
-    else input.value = '';
-    updateSupplierPaymentValidation();
-    if (basis === 'custom') requestAnimationFrame(() => input.focus());
 }
 
 function captureSupplierPaymentState() {
     const values = supplierPaymentCalculationValues();
     const amount = Number(document.getElementById('supplierPaymentAmount')?.value || 0);
-    const paymentBasis = document.querySelector('.payment-basis-option[aria-checked="true"]')?.dataset.paymentBasis || '';
     return {
         poId: activeReceivingDetails?.po_id || '',
         poNumber: activeReceivingDetails?.po_number || '',
         supplier: activeReceivingDetails?.supplier_name || '',
-        paymentBasis,
         amount: Math.round(amount * 100) / 100,
         amountInput: document.getElementById('supplierPaymentAmount')?.value || '',
         paymentMethod: 'cash',
-        paymentDate: new Date().toISOString().slice(0, 10),
+        paymentDate: document.getElementById('supplierPaymentDate')?.value || new Date().toISOString().slice(0, 10),
         referenceNumber: '',
         remarks: '',
-        adjustedPayable: values.originalTotal - values.confirmedCredit,
+        adjustedPayable: values.netAmountDue,
         previouslyPaid: values.previouslyPaid,
         remainingBalance: values.remainingBalance,
         balanceAfter: Math.max(0, Math.round((values.remainingBalance - amount) * 100) / 100),
@@ -4903,7 +5535,10 @@ function captureSupplierPaymentState() {
 
 function restoreSupplierPaymentState(state) {
     if (!state) return;
-    selectSupplierPaymentBasis(state.paymentBasis || 'custom', state.amountInput || '');
+    const input = document.getElementById('supplierPaymentAmount');
+    if (input) input.value = state.amountInput || state.remainingBalance?.toFixed?.(2) || '';
+    const paymentDate = document.getElementById('supplierPaymentDate');
+    if (paymentDate) paymentDate.value = state.paymentDate || new Date().toISOString().slice(0, 10);
     supplierPaymentSubmissionKey = state.idempotencyKey;
     updateSupplierPaymentValidation();
 }
@@ -5033,13 +5668,13 @@ function updateSupplierPaymentValidation() {
     if (!activeReceivingDetails) return false;
     const values = supplierPaymentCalculationValues();
     const remaining = values.remainingBalance;
-    const basis = document.querySelector('.payment-basis-option[aria-checked="true"]')?.dataset.paymentBasis || '';
     const amount = Number(document.getElementById('supplierPaymentAmount')?.value || 0);
+    const paymentDate = document.getElementById('supplierPaymentDate')?.value || '';
     let message = 'Ready to record payment.';
     let valid = true;
-    if (!basis) { valid = false; message = 'Select a payment basis.'; }
-    else if (!Number.isFinite(amount) || amount <= 0) { valid = false; message = 'Payment amount must be greater than zero.'; }
+    if (!Number.isFinite(amount) || amount <= 0) { valid = false; message = 'Payment amount must be greater than zero.'; }
     else if (amount > remaining) { valid = false; message = `Payment amount exceeds the remaining balance by ${peso(amount - remaining)}.`; }
+    else if (!paymentDate) { valid = false; message = 'Payment date is required.'; }
     const validation = document.getElementById('supplierPaymentValidation');
     if (validation) validation.textContent = valid ? '' : message;
     const amountInput = document.getElementById('supplierPaymentAmount');
@@ -5060,11 +5695,24 @@ function updateSupplierPaymentValidation() {
 }
 
 async function openSupplierPayment(poId, options = {}) {
+    const requestKey = String(poId || '').trim();
+    if (!requestKey) return;
+    if (purchaseOrderPaymentRequests.has(requestKey)) return purchaseOrderPaymentRequests.get(requestKey);
+
+    const request = (async () => {
+    setPurchaseOrderActionBusy('.manage-payment-btn, .view-payment-history-btn', requestKey, true);
     showReceivingDrawer('supplierPaymentDrawer');
     const body = document.getElementById('supplierPaymentBody');
     if (body) body.innerHTML = '<div class="receiving-loading"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading payment details...</div>';
     try {
-        const details = await fetchReceivingDetails(poId, true);
+        const details = await fetchPurchaseOrderPaymentDetails(poId);
+        activeSupplierCredits = [];
+        try {
+            const creditData = await fetchJson(`${API_BASE_URL}/purchase_orders/get_supplier_credits.php?po_id=${encodeURIComponent(poId)}`);
+            activeSupplierCredits = Array.isArray(creditData.credits) ? creditData.credits : [];
+        } catch (_) {
+            activeSupplierCredits = [];
+        }
         activeReceivingDetails = details;
         if (!options.reuseKey) supplierPaymentSubmissionKey = globalThis.crypto?.randomUUID?.() || `po-payment-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         document.getElementById('supplierPaymentSubtitle').textContent = `${details.po_number} · ${details.supplier_name}`;
@@ -5072,6 +5720,7 @@ async function openSupplierPayment(poId, options = {}) {
         const save = document.getElementById('btnSaveSupplierPayment');
         if (save) save.classList.toggle('d-none', isPurchaseOrderPaid(details.payment?.payment_status, details.payment?.remaining_balance));
         document.getElementById('supplierPaymentAmount')?.addEventListener('input', updateSupplierPaymentValidation);
+        document.getElementById('supplierPaymentDate')?.addEventListener('change', updateSupplierPaymentValidation);
         const amountInput = document.getElementById('supplierPaymentAmount');
         amountInput?.addEventListener('change', () => {
             const value = Number(amountInput.value);
@@ -5080,10 +5729,45 @@ async function openSupplierPayment(poId, options = {}) {
         });
         if (options.preservedState) restoreSupplierPaymentState(options.preservedState);
         updateSupplierPaymentValidation();
-        requestAnimationFrame(() => body?.querySelector('input[name="supplierPaymentBasis"]')?.focus());
+        requestAnimationFrame(() => document.getElementById('supplierPaymentAmount')?.focus());
     } catch (error) {
         if (body) body.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`;
         document.getElementById('btnSaveSupplierPayment')?.classList.add('d-none');
+    } finally {
+        setPurchaseOrderActionBusy('.manage-payment-btn, .view-payment-history-btn', requestKey, false);
+    }
+    })();
+
+    purchaseOrderPaymentRequests.set(requestKey, request);
+    try {
+        return await request;
+    } finally {
+        purchaseOrderPaymentRequests.delete(requestKey);
+    }
+}
+
+async function applySupplierCreditFromPayment(button) {
+    if (!activeReceivingDetails || !button) return;
+    const row = button.closest('.supplier-credit-apply-row');
+    const amount = Number(row?.querySelector('.supplier-credit-apply-amount')?.value || 0);
+    const creditId = button.dataset.creditId || '';
+    if (!creditId || !Number.isFinite(amount) || amount <= 0) return PharmaUtils.toast.error('Enter a positive supplier credit amount.');
+    try {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Applying...';
+        const poId = activeReceivingDetails.po_id;
+        const data = await fetchJson(`${API_BASE_URL}/purchase_orders/apply_supplier_credit.php`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ po_id: poId, credit_id: creditId, amount_applied: amount })
+        });
+        receivingDetailsCache.delete(String(poId));
+        PharmaUtils.toast.success(data.message || 'Supplier credit applied.');
+        await openSupplierPayment(poId, { reuseKey: true });
+        if (document.body.dataset.page === 'purchase-orders') await loadPurchaseOrders();
+    } catch (error) {
+        PharmaUtils.toast.error(error.message);
+        button.disabled = false;
+        button.textContent = 'Apply Credit';
     }
 }
 
@@ -5112,7 +5796,7 @@ async function confirmSupplierPayment() {
             })
         });
         receivingDetailsCache.delete(String(state.poId));
-        activeReceivingDetails = await fetchReceivingDetails(state.poId, true);
+        activeReceivingDetails = await fetchPurchaseOrderPaymentDetails(state.poId);
         if (document.body.dataset.page === 'inspect-deliveries') await loadInspectionQueue();
         else await loadPurchaseOrders();
         supplierPaymentSubmissionKey = globalThis.crypto?.randomUUID?.() || `po-payment-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -5135,11 +5819,26 @@ async function confirmSupplierPayment() {
     }
 }
 
-async function openDeliveredReceipt(poId) {
+async function openDeliveredReceipt(poId, autoPrint = false) {
+    const targetWindow = window.open('', '_blank', 'width=1200,height=850');
+    if (!targetWindow) return;
     try {
         const details = await fetchReceivingDetails(poId, true);
-        openReceiptPreview(receiptReportFromReceiving(details));
+        openReceiptPreview(receiptReportFromReceiving(details), { targetWindow, autoPrint });
     } catch (error) {
+        targetWindow.close();
+        PharmaUtils.toast.error(error.message);
+    }
+}
+
+async function openSupplierDiscrepancyForPo(poId, autoPrint = false) {
+    const targetWindow = window.open('', '_blank', 'width=1200,height=850');
+    if (!targetWindow) return;
+    try {
+        const details = await fetchReceivingDetails(poId, true);
+        openSupplierDiscrepancyPreview(receiptReportFromReceiving(details), { targetWindow, autoPrint });
+    } catch (error) {
+        targetWindow.close();
         PharmaUtils.toast.error(error.message);
     }
 }
@@ -5357,8 +6056,11 @@ function renderInspectionQueue() {
         const arrivalDate = order.arrival_date || order.expected_delivery_date || order.order_date;
         const receivedDate = order.received_date;
         const actionLabel = snapshot.key === 'awaiting' ? 'Start Inspection' : 'Continue Inspection';
+        const supplierActions = completed && snapshot.hasIssues
+            ? `<button class="btn btn-sm btn-outline-warning queue-action-icon queue-view-supplier-discrepancy" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Supplier Discrepancy" aria-label="View Supplier Discrepancy for ${escapeHtml(order.po_number || '')}"><i class="fa-regular fa-file-lines"></i></button><button class="btn btn-sm btn-outline-warning queue-action-icon queue-print-supplier-discrepancy" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Print Supplier Discrepancy" aria-label="Print Supplier Discrepancy for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-print"></i></button>`
+            : '';
         const actions = completed
-            ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Goods Received Note" aria-label="View Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-primary queue-action-icon queue-edit-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Edit Goods Received Note" aria-label="Edit Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-outline-secondary queue-action-icon queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Print Goods Received Note" aria-label="Print Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-print"></i></button>`
+            ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Goods Received Note" aria-label="View Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-primary queue-action-icon queue-edit-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Edit Goods Received Note" aria-label="Edit Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-outline-secondary queue-action-icon queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Print Goods Received Note" aria-label="Print Goods Received Note for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-print"></i></button>${supplierActions}`
             : `<button class="btn btn-sm ${snapshot.key === 'awaiting' ? 'btn-outline-primary' : 'btn-primary'} queue-action-icon inspect-queue-action" type="button" data-po-id="${escapeHtml(order.po_id)}" title="${actionLabel}" aria-label="${actionLabel} for ${escapeHtml(order.po_number || '')}"><i class="fa-solid fa-clipboard-check"></i></button>`;
         return `<tr class="queue-row" data-po-id="${escapeHtml(order.po_id)}">
             <td><span class="queue-po" title="${escapeHtml(order.po_number || '-')}">${escapeHtml(order.po_number || '-')}</span><span class="queue-secondary" title="${escapeHtml(completed ? order.grn_number : 'No GRN yet')}">${escapeHtml(completed ? order.grn_number : 'No GRN yet')}</span></td>
@@ -5480,6 +6182,23 @@ function bindReceiveWorkspaceEvents() {
     cards?.addEventListener('change', (event) => {
         const card = event.target.closest('.receive-item-card');
         if (card) card.dataset.touched = '1';
+        if (event.target.matches('.receive-issue-toggle') && card) {
+            const damageList = card.querySelector('.receive-damage-lines');
+            if (event.target.value === '1' && damageList && !damageList.querySelector('.receive-damage-line')) {
+                const orderItem = activeReceiveOrder?.items.find((item) => String(item.po_item_id) === String(card.dataset.poItemId));
+                const conversions = Array.isArray(orderItem?.package_conversions) ? orderItem.package_conversions : [];
+                const purchaseUnit = purchasingConversion(orderItem || {}).purchaseUnit;
+                const batches = [...card.querySelectorAll('.receive-batch-row')].map((row) => ({ batch_identifier: row.querySelector('.receive-batch-id')?.value || '' }));
+                const receivedPurchaseQuantity = Number(card.querySelector('.receive-qty-input')?.value || 0);
+                damageList.insertAdjacentHTML('beforeend', receiveDamageLineRow({}, conversions, orderItem?.unit || 'unit', purchaseUnit, receivedPurchaseQuantity, batches));
+                syncReceivePackageSequenceSelectors(card);
+            }
+            if (event.target.value === '0') {
+                if (damageList) damageList.innerHTML = '';
+                const actionQuantity = card.querySelector('.action-qty-input');
+                if (actionQuantity) actionQuantity.value = '0';
+            }
+        }
         if (event.target.matches('.receive-issue-type') && event.target.value === 'Short Quantity') {
             const action = card?.querySelector('.receive-disposition');
             if (action) action.value = 'not_applicable';
@@ -5496,9 +6215,13 @@ function bindReceiveWorkspaceEvents() {
             const card = addDamage.closest('.receive-item-card');
             const orderItem = activeReceiveOrder?.items.find((item) => String(item.po_item_id) === String(card?.dataset.poItemId));
             const conversions = Array.isArray(orderItem?.package_conversions) ? orderItem.package_conversions : [];
-            card?.querySelector('.receive-damage-lines')?.insertAdjacentHTML('beforeend', receiveDamageLineRow({}, conversions, orderItem?.unit || 'unit'));
+            const purchaseUnit = purchasingConversion(orderItem || {}).purchaseUnit;
+            const batches = [...(card?.querySelectorAll('.receive-batch-row') || [])].map((row) => ({ batch_identifier: row.querySelector('.receive-batch-id')?.value || '' }));
+            const receivedPurchaseQuantity = Number(card?.querySelector('.receive-qty-input')?.value || 0);
+            card?.querySelector('.receive-damage-lines')?.insertAdjacentHTML('beforeend', receiveDamageLineRow({}, conversions, orderItem?.unit || 'unit', purchaseUnit, receivedPurchaseQuantity, batches));
+            if (card) syncReceivePackageSequenceSelectors(card);
             renderReceivePaymentSummary();
-            card?.querySelector('.receive-damage-line:last-child .damage-line-qty')?.focus();
+            card?.querySelector('.receive-damage-line:last-child .damage-package-sequence')?.focus();
             return;
         }
         const removeDamage = event.target.closest('.receive-remove-damage-line');
@@ -5560,10 +6283,14 @@ function initInspectDeliveries() {
         const view = event.target.closest('.queue-view-receiving');
         const edit = event.target.closest('.queue-edit-receiving');
         const print = event.target.closest('.queue-print-grn');
+        const viewSupplier = event.target.closest('.queue-view-supplier-discrepancy');
+        const printSupplier = event.target.closest('.queue-print-supplier-discrepancy');
         if (inspect) openInspectionWorkspace(inspect.dataset.poId, { pushHistory: true });
         else if (view) openReceivingDetails(view.dataset.poId);
         else if (edit) openGrnEditor(edit.dataset.poId);
-        else if (print) openDeliveredReceipt(print.dataset.poId);
+        else if (print) openDeliveredReceipt(print.dataset.poId, true);
+        else if (viewSupplier) openSupplierDiscrepancyForPo(viewSupplier.dataset.poId);
+        else if (printSupplier) openSupplierDiscrepancyForPo(printSupplier.dataset.poId, true);
     });
     window.addEventListener('popstate', () => {
         const nextParams = new URLSearchParams(window.location.search);
@@ -5646,6 +6373,7 @@ function initPurchaseOrders() {
     document.getElementById('btnOpenNextInspection')?.addEventListener('click', openNextUninspectedCard);
     document.getElementById('btnSaveReturnDamage')?.addEventListener('click', submitReturnDamage);
     const statusFilter = document.getElementById('po-status-filter');
+    const paymentStatusFilter = document.getElementById('po-payment-status-filter');
     const params = new URLSearchParams(window.location.search);
     const initialPoView = purchaseOrderViewFromUrl();
     const linkedPoId = params.get('po_id') || '';
@@ -5663,6 +6391,7 @@ function initPurchaseOrders() {
         statusFilter.value = queryStatus;
     }
     statusFilter?.addEventListener('change', loadPurchaseOrders);
+    paymentStatusFilter?.addEventListener('change', loadPurchaseOrders);
     document.querySelectorAll('.po-view-btn').forEach((button) => {
         button.addEventListener('click', () => setPurchaseOrderView(button.dataset.poView || 'active'));
     });
@@ -5854,10 +6583,36 @@ function initPurchaseOrders() {
         const printButton = event.target.closest('.print-po-btn');
         const statusButton = event.target.closest('.status-po-btn');
         const managePaymentButton = event.target.closest('.manage-payment-btn, .view-payment-history-btn');
+        const invoiceButton = event.target.closest('.record-invoice-btn');
         if (viewButton) openViewPurchaseOrder(viewButton.dataset.poId);
-        if (printButton) printPurchaseOrder({ po_id:printButton.dataset.poId });
-        if (statusButton) updatePurchaseOrderStatusFromTable(statusButton.dataset.poId);
-        if (managePaymentButton) openSupplierPayment(managePaymentButton.dataset.poId);
+        else if (printButton) printPurchaseOrder({ po_id:printButton.dataset.poId });
+        else if (statusButton) toggleStatusActionMenu(statusButton);
+        else if (invoiceButton) openSupplierInvoice(invoiceButton.dataset.poId);
+        else if (managePaymentButton) openSupplierPayment(managePaymentButton.dataset.poId);
+    });
+    document.addEventListener('click', (event) => {
+        const menuItem = event.target.closest('.status-po-menu-item');
+        if (menuItem) {
+            const poId = menuItem.dataset.poId;
+            closeStatusActionMenu();
+            updatePurchaseOrderStatusFromTable(poId);
+            return;
+        }
+        if (!event.target.closest('.status-po-btn, .po-action-popover')) closeStatusActionMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeStatusActionMenu();
+    });
+    window.addEventListener('resize', positionStatusActionMenu);
+    window.addEventListener('scroll', positionStatusActionMenu, true);
+    document.getElementById('po-status-summary')?.addEventListener('click', (event) => {
+        if (event.target.closest('[data-route="inspect-deliveries"]')) window.location.href = 'inspect_deliveries.html';
+    });
+    document.getElementById('po-status-summary')?.addEventListener('keydown', (event) => {
+        if (['Enter', ' '].includes(event.key) && event.target.closest('[data-route="inspect-deliveries"]')) {
+            event.preventDefault();
+            window.location.href = 'inspect_deliveries.html';
+        }
     });
 
     renderDraftItems(createDraftItems, '#table-po-items', 'remove-po-item');

@@ -213,7 +213,7 @@ function reportFilterOptions(PDO $pdo, array $role): array
         'brands' => array_column(reportRows($pdo, "SELECT DISTINCT brand_name AS name FROM product WHERE brand_name IS NOT NULL AND brand_name <> '' ORDER BY brand_name"), 'name'),
         'suppliers' => reportRows($pdo, 'SELECT supplier_id AS id, supplier_name AS name FROM suppliers WHERE archived_at IS NULL ORDER BY supplier_name'),
         'payment_methods' => ['cash', 'gcash', 'card', 'mixed'],
-        'po_statuses' => ['Pending', 'In transit', 'Arrived', 'Delivered', 'Cancelled'],
+        'po_statuses' => ['Draft', 'Pending', 'Arrived', 'Delivered', 'Cancelled'],
         'stock_statuses' => ['healthy', 'low', 'out', 'negative'],
         'cashiers' => [],
         'sales_clerks' => [],

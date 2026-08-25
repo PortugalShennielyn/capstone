@@ -12,14 +12,16 @@ function clamp(value, min, max) {
 }
 
 function viewportLimits(config) {
-    const margin = window.innerWidth <= 820 ? 12 : 16;
+    const workspace = window.DrpModalWorkspace;
+    const area = workspace.bounds(window.innerWidth <= 820 ? 12 : 16);
+    const margin = area.gap;
     const maxWidth = Math.max(
-        Math.min(config.minWidth, window.innerWidth - margin * 2),
-        Math.min(window.innerWidth - margin * 2, Math.floor(window.innerWidth * config.maxWidthRatio))
+        Math.min(config.minWidth, area.width),
+        Math.min(area.width, Math.floor(area.width * config.maxWidthRatio))
     );
     const maxHeight = Math.max(
-        Math.min(config.minHeight, window.innerHeight - margin * 2),
-        Math.min(window.innerHeight - margin * 2, Math.floor(window.innerHeight * config.maxHeightRatio))
+        Math.min(config.minHeight, area.height),
+        Math.min(area.height, Math.floor(area.height * config.maxHeightRatio))
     );
 
     return {
@@ -27,7 +29,8 @@ function viewportLimits(config) {
         minWidth: Math.min(config.minWidth, maxWidth),
         minHeight: Math.min(config.minHeight, maxHeight),
         maxWidth,
-        maxHeight
+        maxHeight,
+        area
     };
 }
 
@@ -46,8 +49,13 @@ function setModalRect(state, nextRect = {}) {
     const limits = viewportLimits(state.config);
     const width = clamp(nextRect.width ?? current.width, limits.minWidth, limits.maxWidth);
     const height = clamp(nextRect.height ?? current.height, limits.minHeight, limits.maxHeight);
-    const left = clamp(nextRect.left ?? current.left, limits.margin, Math.max(limits.margin, window.innerWidth - width - limits.margin));
-    const top = clamp(nextRect.top ?? current.top, limits.margin, Math.max(limits.margin, window.innerHeight - height - limits.margin));
+    const constrained = window.DrpModalWorkspace.constrain({
+        left: nextRect.left ?? current.left,
+        top: nextRect.top ?? current.top,
+        width,
+        height
+    }, limits.margin);
+    const { left, top } = constrained;
 
     modal.classList.add('drp-modal-managed', 'drp-modal-positioned');
     modal.dataset.drpManagedSize = 'true';
@@ -63,12 +71,7 @@ function defaultRect(state) {
     const width = clamp(state.config.width, limits.minWidth, limits.maxWidth);
     const height = clamp(state.config.height, limits.minHeight, limits.maxHeight);
 
-    return {
-        width,
-        height,
-        left: (window.innerWidth - width) / 2,
-        top: Math.max(limits.margin, (window.innerHeight - height) / 2)
-    };
+    return window.DrpModalWorkspace.center({ width, height }, limits.margin);
 }
 
 function resetModal(state) {

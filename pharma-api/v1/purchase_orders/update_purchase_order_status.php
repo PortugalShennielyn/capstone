@@ -42,8 +42,8 @@ try {
     $currentStatus = (string) ($current['status'] ?? '');
     $approvalStatus = (string) ($current['approval_status'] ?? '');
     $allowedTransitions = [
-        'Pending' => ['In transit', 'Cancelled'],
-        'In transit' => ['Arrived', 'Cancelled'],
+        'Draft' => ['Pending', 'Cancelled'],
+        'Pending' => ['Arrived', 'Cancelled'],
         'Arrived' => ['Cancelled']
     ];
 
@@ -77,7 +77,10 @@ try {
 
     echo json_encode([
         'status' => 'success',
-        'message' => 'Purchase order status updated successfully.'
+        'message' => $status === 'Arrived'
+            ? 'Purchase order marked as arrived and sent to delivery inspection.'
+            : 'Purchase order status updated successfully.',
+        'actual_total' => null
     ]);
 } catch (InvalidArgumentException $e) {
     if ($pdo->inTransaction()) {

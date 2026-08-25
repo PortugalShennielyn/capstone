@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $payload = readPurchaseRequestPayload();
 $prId = cleanId($payload['pr_id'] ?? null);
 $decision = strtolower(trim((string) ($payload['decision'] ?? '')));
-$statuses = ['approve' => 'Approved', 'reject' => 'Rejected', 'revision' => 'Revision Requested'];
+$statuses = ['approve' => 'Approved', 'reject' => 'Rejected'];
 
 if ($prId === '' || !isset($statuses[$decision])) sendPurchaseRequestJson(false, 'A valid purchase request decision is required.', null, 422);
 
@@ -24,6 +24,41 @@ try {
     if (!$request) throw new InvalidArgumentException('Purchase request was not found.');
     if (($request['status'] ?? '') !== 'Pending Supervisor Approval') {
         throw new InvalidArgumentException('Only pending purchase requests can be reviewed.');
+    }
+
+    if ($decision === 'approve') {
+        $submittedQuantities = is_array($payload['approved_quantities'] ?? null) ? $payload['approved_quantities'] : [];
+        $items = purchaseRequestItems($pdo, $prId);
+        $quantitiesByItem = [];
+        foreach ($submittedQuantities as $submitted) {
+            $prItemId = cleanId($submitted['pr_item_id'] ?? null);
+            if ($prItemId === '' || isset($quantitiesByItem[$prItemId])) {
+                throw new InvalidArgumentException('Submit one approved quantity for every requested product.');
+            }
+            $quantitiesByItem[$prItemId] = $submitted['approved_qty'] ?? null;
+        }
+        if (count($items) !== count($quantitiesByItem)) {
+            throw new InvalidArgumentException('Submit one approved quantity for every requested product.');
+        }
+        $updateQuantity = $pdo->prepare(
+            'UPDATE purchase_request_items SET approved_qty = :approved_qty
+             WHERE pr_item_id = :pr_item_id AND pr_id = :pr_id'
+        );
+        foreach ($items as $item) {
+            $prItemId = cleanId($item['pr_item_id'] ?? null);
+            if (!array_key_exists($prItemId, $quantitiesByItem)) {
+                throw new InvalidArgumentException('An approved quantity does not belong to this purchase request.');
+            }
+            $approvedQty = positivePurchaseRequestQuantity($quantitiesByItem[$prItemId], (string) ($item['unit'] ?? ''));
+            $updateQuantity->execute([
+                ':approved_qty' => $approvedQty,
+                ':pr_item_id' => $prItemId,
+                ':pr_id' => $prId,
+            ]);
+            if ($updateQuantity->rowCount() !== 1) {
+                throw new RuntimeException('A purchase request item changed while it was being reviewed.');
+            }
+        }
     }
 
     $stmt = $pdo->prepare(
@@ -40,8 +75,8 @@ try {
     $pdo->commit();
     recordActivityLog($pdo, 'Purchase Request', $statuses[$decision], ($request['pr_number'] ?? 'PR') . ' ' . $statuses[$decision] . ' by Supervisor', $prId);
     $message = $decision === 'approve'
-        ? 'Purchase request approved. It is now available to Manager/Admin for PO generation.'
-        : 'Purchase request ' . strtolower($statuses[$decision]) . ' successfully.';
+        ? 'Purchase request and approved quantities saved. It is now available to Manager/Admin for PO generation.'
+        : 'Purchase request rejected successfully.';
     sendPurchaseRequestJson(true, $message, [
         'pr_id' => $prId,
         'status' => $statuses[$decision],

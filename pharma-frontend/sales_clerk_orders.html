@@ -2,16 +2,16 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=5"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dr. R Pharmacy | My Orders</title>
+    <title>Dr. R Pharmacy | Clerk Transactions</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=20" rel="stylesheet">
-    <script src="./js/navbar.js?v=69" defer></script>
+    <link href="./css/navbar.css?v=36" rel="stylesheet">
+    <script src="./js/navbar.js?v=83" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root { --purple:#7c3aed; --purple-dark:#5b21b6; --ink:#101936; --muted:#667085; --line:#e6eaf2; --body:#f6f8fc; --shadow:0 14px 34px rgba(16,25,54,.07); --blue:#2563eb; --green:#16a34a; --red:#dc2626; --orange:#d97706; }
@@ -154,10 +154,9 @@
         <header class="topbar">
             <div class="topbar-left">
                 <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
-                <span class="brand-tile"><i class="fa-solid fa-clipboard-list"></i></span>
-                <div class="page-title"><strong>My Orders</strong><span>Track the customer orders you created.</span></div>
+                <div class="page-title-mini"><strong>Clerk Transactions</strong><span>Clerk Transactions</span></div>
             </div>
-            <div class="topbar-right"><div class="date-pill" id="currentDateTime"><span>--</span><i class="fa-regular fa-calendar"></i></div></div>
+            <div class="topbar-right"></div>
         </header>
         <section class="page-body">
             <section class="panel" aria-label="My sales clerk orders">
@@ -234,6 +233,7 @@
         import API_BASE_URL from './js/config/config.js';
         import verifySession from './js/modules/auth.js?v=8';
         import { savedTransactionTotals } from './js/modules/sales_financials.js?v=1';
+        import { createLiveSync } from './js/modules/live_data.js?v=1';
 
         const peso = new Intl.NumberFormat('en-PH', { style:'currency', currency:'PHP' });
         const numberFormat = new Intl.NumberFormat('en-PH');
@@ -446,14 +446,15 @@
                 setTimeout(() => window.print(), 250);
             }
         }
-        async function loadOrders() {
-            ordersTableBody.innerHTML = '<tr class="empty-row"><td colspan="8">Loading orders...</td></tr>';
+        async function loadOrders({ silent = false } = {}) {
+            if (!silent) ordersTableBody.innerHTML = '<tr class="empty-row"><td colspan="8">Loading orders...</td></tr>';
             const params = new URLSearchParams({ tab:state.activeTab, search:searchInput.value.trim() });
             const data = await apiFetch(`sales/get_my_sales_clerk_orders.php?${params.toString()}`);
-            state.orders = Array.isArray(data.orders) ? data.orders : [];
+            const nextOrders = Array.isArray(data.orders) ? data.orders : [];
+            const changed = JSON.stringify(nextOrders) !== JSON.stringify(state.orders) || JSON.stringify(data.summary || {}) !== JSON.stringify(state.summary);
+            state.orders = nextOrders;
             state.summary = data.summary || {};
-            renderTabs();
-            renderOrders();
+            if (changed || !silent) { renderTabs(); renderOrders(); }
         }
         async function openOrder(orderId) {
             renderDrawer({ ...(state.orders.find(order => order.order_id === orderId) || {}), items:[], history:[] });
@@ -467,7 +468,7 @@
             toastr.success(data.message || 'Order cancelled.');
             await loadOrders();
         }
-        function updateClock() { document.getElementById('currentDateTime').firstElementChild.textContent = new Date().toLocaleString('en-PH', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
+        function updateClock() { const clock = document.getElementById('currentDateTime')?.firstElementChild; if (clock) clock.textContent = new Date().toLocaleString('en-PH', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
 
         await verifySession();
         if (!tabs.some(tab => tab.key === state.activeTab)) state.activeTab = 'waiting_cashier';
@@ -475,6 +476,7 @@
         setInterval(updateClock, 60000);
         renderTabs();
         await loadOrders().catch(error => { ordersTableBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(error.message)}</td></tr>`; });
+        createLiveSync({ interval: 2000, events: ['order-created', 'order-accepted', 'payment-completed'], sync: () => loadOrders({ silent: true }) });
         const initialOrderId = new URLSearchParams(location.search).get('order_id');
         if (initialOrderId) {
             if (state.activeTab === 'completed') {

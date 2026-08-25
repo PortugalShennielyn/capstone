@@ -89,6 +89,7 @@ try {
                 p.price,
                 p.category_id,
                 p.type_id,
+                pmu.unit_name AS inventory_unit,
                 pc.category_name,
                 pt.type_name,
                 md.generic_name,
@@ -112,10 +113,19 @@ try {
                 msd.pack_content AS medical_pack_content,
                 msd.package_type AS medical_package_type,
                 p.status AS product_status,
+                (SELECT GROUP_CONCAT(
+                    COALESCE(NULLIF(TRIM(psv.value_text),''), NULLIF(TRIM(CONCAT(TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(psv.value_number AS CHAR))), CASE WHEN spec_unit.unit_name IS NULL THEN '' ELSE CONCAT(' ',spec_unit.unit_name) END)),''))
+                    ORDER BY COALESCE(pts.sort_order,2147483647),ps.specification_name SEPARATOR ' • ')
+                 FROM product_specification_values psv
+                 INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
+                 LEFT JOIN product_type_specifications pts ON pts.type_id=p.type_id AND pts.specification_id=psv.specification_id
+                 LEFT JOIN product_measurement_units spec_unit ON spec_unit.measurement_unit_id=psv.measurement_unit_id
+                 WHERE psv.product_id=p.product_id) AS normalized_specification,
                 COALESCE(stock.available_stock, 0) AS available_stock
             FROM product p
             LEFT JOIN product_categories pc ON pc.category_id = p.category_id
             LEFT JOIN product_types pt ON pt.type_id = p.type_id
+            LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = p.inventory_unit_id
             LEFT JOIN medicine_details md ON md.product_id = p.product_id
             LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
             LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
@@ -135,7 +145,8 @@ try {
             'product_id' => (string) $row['product_id'],
             'brand_name' => trim((string) ($row['brand_name'] ?? '')),
             'product_name' => trim((string) ($row['product_name'] ?? '')),
-            'specification' => salesBuildSpecification($row),
+            'specification' => trim((string) ($row['normalized_specification'] ?? '')) ?: salesBuildSpecification($row),
+            'inventory_unit' => trim((string) ($row['inventory_unit'] ?? '')),
             'generic_name' => trim((string) ($row['generic_name'] ?? '')),
             'strength' => trim((string) ($row['strength'] ?? '')),
             'strength_value' => salesSpecificationValue($row['strength_value'] ?? ''),
