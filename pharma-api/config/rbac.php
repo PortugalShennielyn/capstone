@@ -30,12 +30,7 @@ function currentSessionHasRbacRole(string $role): bool
 
 function managerApiRequestAllowed(string $scriptName): bool
 {
-    $path = strtolower(str_replace('\\', '/', $scriptName));
-    $marker = '/pharma-api/v1/';
-    $markerPosition = strpos($path, $marker);
-    $relativePath = $markerPosition === false
-        ? ltrim($path, '/')
-        : substr($path, $markerPosition + strlen($marker));
+    $relativePath = rbacRelativeApiPath($scriptName);
 
     if (str_starts_with($relativePath, 'auth/')) {
         return true;
@@ -68,12 +63,7 @@ function enforceManagerApiBoundary(): void
 
 function supervisorApiRequestAllowed(string $scriptName, string $requestMethod): bool
 {
-    $path = strtolower(str_replace('\\', '/', $scriptName));
-    $marker = '/pharma-api/v1/';
-    $markerPosition = strpos($path, $marker);
-    $relativePath = $markerPosition === false
-        ? ltrim($path, '/')
-        : substr($path, $markerPosition + strlen($marker));
+    $relativePath = rbacRelativeApiPath($scriptName);
     $method = strtoupper($requestMethod);
 
     if (str_starts_with($relativePath, 'auth/')) return true;
@@ -101,6 +91,66 @@ function enforceSupervisorApiBoundary(): void
             sendForbiddenResponse('This action is outside Supervisor PR-review permissions.');
         }
     }
+}
+
+function cashierApiRequestAllowed(string $scriptName): bool
+{
+    $relativePath = rbacRelativeApiPath($scriptName);
+
+    return str_starts_with($relativePath, 'auth/')
+        || str_starts_with($relativePath, 'cashier/')
+        || $relativePath === 'reports/get_report.php';
+}
+
+function enforceCashierApiBoundary(): void
+{
+    if (currentSessionHasRbacRole('cashier') || currentSessionHasRbacRole('ro_cashier')) {
+        if (!cashierApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '')) {
+            sendForbiddenResponse('Access denied.');
+        }
+    }
+}
+
+function salesClerkApiRequestAllowed(string $scriptName): bool
+{
+    $relativePath = rbacRelativeApiPath($scriptName);
+
+    if (str_starts_with($relativePath, 'auth/')) {
+        return true;
+    }
+
+    return $relativePath === 'reports/get_report.php'
+        || in_array($relativePath, [
+            'sales/get_sales_clerk_dashboard.php',
+            'sales/get_my_sales_clerk_order.php',
+            'sales/get_my_sales_clerk_orders.php',
+            'sales/cancel_my_sales_clerk_order.php',
+            'sales/sales_product_filters.php',
+            'sales/sales_products_search.php',
+            'sales/upload_product_image.php',
+            'sales/sales_order_create.php',
+            'sales/sales_order_send_to_cashier.php',
+        ], true);
+}
+
+function enforceSalesClerkApiBoundary(): void
+{
+    if (currentSessionHasRbacRole('salesclerk') || currentSessionHasRbacRole('ro_sales_clerk')) {
+        if (!salesClerkApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '')) {
+            sendForbiddenResponse('Access denied.');
+        }
+    }
+}
+
+function rbacRelativeApiPath(string $scriptName): string
+{
+    $path = strtolower(str_replace('\\', '/', $scriptName));
+    $marker = '/pharma-api/v1/';
+    $markerPosition = strpos($path, $marker);
+
+    return $markerPosition === false
+        ? ltrim($path, '/')
+        : substr($path, $markerPosition + strlen($marker));
 }
 
 ?>

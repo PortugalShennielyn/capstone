@@ -4,6 +4,14 @@
         return;
     }
 
+    if (!document.getElementById('drp-ui-system-styles')) {
+        const uiStyles = document.createElement('link');
+        uiStyles.id = 'drp-ui-system-styles';
+        uiStyles.rel = 'stylesheet';
+        uiStyles.href = './css/ui-system.css?v=3';
+        document.head.appendChild(uiStyles);
+    }
+
     const prefetchedUrls = new Set(
         Array.from(document.querySelectorAll('link[rel="prefetch"]')).map(link => link.href)
     );
@@ -130,7 +138,7 @@ async function initializeNavbar(container) {
         expanded: "pharmacyNavbarScrollTopExpanded",
         collapsed: "pharmacyNavbarScrollTopCollapsed"
     };
-    const savedCollapsed = localStorage.getItem("drpSidebarCollapsed") === "true";
+    const savedCollapsed = true;
     const mainWrapperBeforeLoad = document.getElementById("mainWrapper");
     document.body.classList.add("navbar-state-booting");
     document.body.classList.add("role-loading");
@@ -148,7 +156,7 @@ async function initializeNavbar(container) {
 
     try {
         const rbac = await import("./modules/rbac.js?v=7");
-        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v44";
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v48";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -190,6 +198,25 @@ async function initializeNavbar(container) {
 
         const sidebar = document.getElementById("sidebar");
         const mainWrapper = document.getElementById("mainWrapper");
+        const sidebarToggle = container.querySelector("#sidebarToggle");
+        let headerSidebarToggle = null;
+        document.querySelectorAll("#sidebarToggle").forEach(toggle => {
+            if (toggle !== sidebarToggle) toggle.remove();
+        });
+        try {
+            localStorage.removeItem("drpSidebarCollapsed");
+        } catch (error) {}
+        let sidebarBackdrop = document.getElementById("sidebarBackdrop");
+        if (!sidebarBackdrop) {
+            sidebarBackdrop = document.createElement("div");
+            sidebarBackdrop.id = "sidebarBackdrop";
+            sidebarBackdrop.className = "sidebar-backdrop";
+            sidebarBackdrop.setAttribute("aria-hidden", "true");
+            document.body.appendChild(sidebarBackdrop);
+        }
+        document.querySelectorAll(".sidebar-backdrop").forEach(backdrop => {
+            if (backdrop !== sidebarBackdrop) backdrop.remove();
+        });
         const filename = window.location.pathname.split("/").pop() || "dashboard.html";
         let isRestoringNavbarScroll = false;
         let navbarScrollRestoreFrame = 0;
@@ -723,6 +750,12 @@ async function initializeNavbar(container) {
             if (event.key !== "Escape") return;
             setUserPopoverOpen(false);
             closeSlimFlyout();
+            if (document.body.classList.contains("sidebar-open")) {
+                saveNavbarScrollPosition(true);
+                setSidebarState(true);
+                scheduleNavbarScrollRestore(false);
+                headerSidebarToggle?.focus({ preventScroll: true });
+            }
         }
 
         function getActiveLabel() {
@@ -759,16 +792,50 @@ async function initializeNavbar(container) {
             return pageMap[activePage] || "Dashboard";
         }
 
+        function updateSidebarToggleState(isOpen) {
+            sidebarToggle?.setAttribute("aria-expanded", String(isOpen));
+            sidebarToggle?.setAttribute("aria-label", "Close sidebar");
+            const tooltip = sidebarToggle.querySelector(".sidebar-tooltip");
+            if (tooltip) tooltip.textContent = "Close sidebar";
+            headerSidebarToggle?.setAttribute("aria-expanded", String(isOpen));
+            headerSidebarToggle?.setAttribute("aria-label", "Open sidebar");
+            const headerTooltip = headerSidebarToggle?.querySelector(".sidebar-tooltip");
+            if (headerTooltip) headerTooltip.textContent = "Open sidebar";
+        }
+
+        function openSidebar() {
+            sidebar?.classList.remove("collapsed");
+            sidebar?.classList.add("is-expanded");
+            mainWrapper?.classList.add("collapsed");
+            document.body.classList.remove("navbar-sidebar-collapsed");
+            document.body.classList.add("sidebar-open");
+            document.documentElement.classList.remove("sidebar-collapsed");
+            document.documentElement.classList.add("sidebar-expanded");
+            sidebarBackdrop?.setAttribute("aria-hidden", "false");
+            updateSidebarToggleState(true);
+            closeSlimFlyout();
+        }
+
+        function closeSidebar() {
+            sidebar?.classList.add("collapsed");
+            sidebar?.classList.remove("is-expanded");
+            mainWrapper?.classList.add("collapsed");
+            document.body.classList.add("navbar-sidebar-collapsed");
+            document.body.classList.remove("sidebar-open");
+            document.documentElement.classList.add("sidebar-collapsed");
+            document.documentElement.classList.remove("sidebar-expanded");
+            sidebarBackdrop?.setAttribute("aria-hidden", "true");
+            updateSidebarToggleState(false);
+        }
+
+        function toggleSidebar() {
+            if (document.body.classList.contains("sidebar-open")) closeSidebar();
+            else openSidebar();
+        }
+
         function setSidebarState(isCollapsed) {
-            sidebar?.classList.toggle("collapsed", isCollapsed);
-            mainWrapper?.classList.toggle("collapsed", isCollapsed);
-            document.body.classList.toggle("navbar-sidebar-collapsed", isCollapsed);
-            document.documentElement.classList.toggle("sidebar-collapsed", isCollapsed);
-            document.documentElement.classList.toggle("sidebar-expanded", !isCollapsed);
-            localStorage.setItem("drpSidebarCollapsed", String(isCollapsed));
-            if (!isCollapsed) {
-                closeSlimFlyout();
-            }
+            if (isCollapsed) closeSidebar();
+            else openSidebar();
         }
 
         function getNavbarScrollContainer() {
@@ -848,7 +915,7 @@ async function initializeNavbar(container) {
         function closeSidebarFromOutside(event) {
             if (!sidebar || sidebar.classList.contains("collapsed")) return;
             if (sidebar.contains(event.target)) return;
-            if (event.target.closest("#sidebarToggle")) return;
+            if (event.target.closest("#sidebarToggle, #sidebarOpenToggle")) return;
             if (event.target.closest(".modal, .modal-backdrop, .swal2-container, .toast, .toast-container")) return;
 
             saveNavbarScrollPosition(true);
@@ -945,6 +1012,7 @@ async function initializeNavbar(container) {
             if ((isSamePath && isSameHash) || isActiveModule) {
                 event.preventDefault();
                 event.stopPropagation();
+                setSidebarState(true);
                 return;
             }
 
@@ -957,6 +1025,7 @@ async function initializeNavbar(container) {
             event.preventDefault();
             saveExpandedGroupsState();
             saveNavbarScrollPosition(true);
+            setSidebarState(true);
             window.__drpNavigationRuntime.navigate(targetUrl);
         }
 
@@ -993,15 +1062,24 @@ async function initializeNavbar(container) {
         restoreExpandedGroupsState();
         applyActiveNavigation({ expandActiveGroup: true });
         initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSession });
+        headerSidebarToggle = document.getElementById("sidebarOpenToggle");
         enhanceDataTables();
         window.addEventListener("hashchange", () => {
             applyActiveNavigation();
             scheduleNavbarScrollRestore();
         });
         setSidebarState(savedCollapsed);
-        document.getElementById("sidebarToggle")?.addEventListener("click", () => {
+        const handleSidebarToggle = () => {
             saveNavbarScrollPosition(true);
-            setSidebarState(!sidebar.classList.contains("collapsed"));
+            toggleSidebar();
+            scheduleNavbarScrollRestore(false);
+        };
+        sidebarToggle?.addEventListener("click", handleSidebarToggle);
+        headerSidebarToggle?.addEventListener("click", handleSidebarToggle);
+        sidebarBackdrop.addEventListener("click", () => {
+            if (!document.body.classList.contains("sidebar-open")) return;
+            saveNavbarScrollPosition(true);
+            setSidebarState(true);
             scheduleNavbarScrollRestore(false);
         });
         getNavbarScrollContainer()?.addEventListener("scroll", () => saveNavbarScrollPosition(), { passive: true });
@@ -1069,7 +1147,7 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
     topbar.dataset.drpSharedReady = 'true';
     topbar.classList.add('drp-shared-topbar');
 
-    const searchPages = new Set(['dashboard.html', 'supervisor_dashboard.html', 'products.html', 'inventory.html', 'shelf_inventory.html', 'supplier.html', 'purchase_requests.html', 'supervisor_approval.html', 'admin_settings.html']);
+    const searchPages = new Set(['dashboard.html', 'supervisor_dashboard.html', 'products.html', 'inventory.html', 'shelf_inventory.html', 'supplier.html', 'purchase_requests.html', 'supervisor_approval.html', 'admin_settings.html', 'sales_clerk_pos.html', 'sales_clerk_orders.html', 'cashier_pos.html']);
     const hasGlobalSearch = searchPages.has(filename);
     topbar.classList.toggle('has-global-search', hasGlobalSearch);
 
@@ -1203,7 +1281,31 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         rebuild();
     }
 
+    const titleContext = topbar.querySelector('.page-title-mini, .page-title, .topbar-greeting');
+    const documentModuleTitle = document.title.split('|').pop()?.trim();
+    const moduleTitle = documentModuleTitle || titleContext?.querySelector('strong')?.textContent?.trim() || 'Pharmacy';
+    if (titleContext) titleContext.classList.add('topbar-greeting');
+    if (titleContext && !document.getElementById('sidebarOpenToggle')) {
+        const openSidebarButton = document.createElement('button');
+        openSidebarButton.id = 'sidebarOpenToggle';
+        openSidebarButton.className = 'drp-sidebar-open-toggle';
+        openSidebarButton.type = 'button';
+        openSidebarButton.setAttribute('aria-expanded', 'false');
+        openSidebarButton.setAttribute('aria-label', 'Open sidebar');
+        openSidebarButton.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i><span class="sidebar-tooltip" role="tooltip">Open sidebar</span>';
+        titleContext.insertAdjacentElement('beforebegin', openSidebarButton);
+    }
+    const renderModuleTitle = () => {
+        if (!titleContext) return;
+        const strong = titleContext.querySelector('strong');
+        if (strong) strong.textContent = moduleTitle;
+        titleContext.querySelectorAll('span').forEach((subtitle) => subtitle.remove());
+        titleContext.setAttribute('aria-label', moduleTitle);
+    };
+    renderModuleTitle();
+
     let controls = topbar.querySelector('.topbar-right');
+    topbar.querySelectorAll('#themeToggle, #dashboardBusinessHours, .date-pill, #currentDateTime').forEach((element) => element.remove());
     if (filename !== 'dashboard.html') {
         if (!controls) {
             controls = document.createElement('div');
@@ -1213,29 +1315,11 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         }
         controls.classList.add('drp-topbar-controls');
         controls.querySelectorAll('button').forEach(button => {
-            if (button.id !== 'themeToggle' && button.querySelector('.fa-bell')) button.remove();
+            if (button.querySelector('.fa-bell, .fa-moon, .fa-sun')) button.remove();
         });
-        let theme = document.getElementById('themeToggle');
-        if (!theme) {
-            theme = document.createElement('button');
-            theme.className = 'icon-btn';
-            theme.id = 'themeToggle';
-            theme.type = 'button';
-            theme.setAttribute('aria-label', 'Toggle dark mode');
-            theme.innerHTML = '<i class="fa-solid fa-moon"></i>';
-            theme.dataset.drpSharedTheme = 'true';
-            theme.addEventListener('click', () => {
-                const next = document.body.classList.contains('dark-mode') ? 'light' : 'dark';
-                document.body.classList.toggle('dark-mode', next === 'dark');
-                document.documentElement.setAttribute('data-bs-theme', next);
-                theme.innerHTML = next === 'dark' ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
-                localStorage.setItem('drpTheme', next);
-            });
-            controls.appendChild(theme);
-        }
         const status = document.createElement('div');
         status.className = 'topbar-status';
-        status.innerHTML = '<span class="command-chip" id="dashboardStoreStatus">Loading status...</span><span class="command-chip" id="dashboardBusinessHours">Loading hours...</span>';
+        status.innerHTML = '<span class="command-chip" id="dashboardStoreStatus">Loading status...</span>';
         controls.insertBefore(status, controls.firstChild);
         const notifications = document.createElement('div');
         notifications.className = 'dashboard-notifications';
@@ -1408,11 +1492,73 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
     }
 }
 
+function initModalWorkspaceBounds() {
+    if (window.DrpModalWorkspace) return window.DrpModalWorkspace;
+
+    const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    const sidebarWidth = () => {
+        const value = window.getComputedStyle(document.documentElement)
+            .getPropertyValue('--sidebar-collapsed-width');
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    };
+    const bounds = (gap = 12) => {
+        const safeGap = Math.max(0, numberOr(gap, 12));
+        const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+        const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+        const left = sidebarWidth() + safeGap;
+        const top = safeGap;
+        const right = Math.max(left, viewportWidth - safeGap);
+        const bottom = Math.max(top, viewportHeight - safeGap);
+        return {
+            gap: safeGap,
+            left,
+            top,
+            right,
+            bottom,
+            width: Math.max(0, right - left),
+            height: Math.max(0, bottom - top)
+        };
+    };
+    const constrain = (rect = {}, gap = 12) => {
+        const area = bounds(gap);
+        const requestedWidth = Math.max(0, numberOr(rect.width, 0));
+        const requestedHeight = Math.max(0, numberOr(rect.height, 0));
+        const width = Math.min(requestedWidth, area.width);
+        const height = Math.min(requestedHeight, area.height);
+        const maxLeft = Math.max(area.left, area.right - width);
+        const maxTop = Math.max(area.top, area.bottom - height);
+        return {
+            left: clamp(numberOr(rect.left, area.left), area.left, maxLeft),
+            top: clamp(numberOr(rect.top, area.top), area.top, maxTop),
+            width,
+            height,
+            bounds: area
+        };
+    };
+    const center = (rect = {}, gap = 12) => {
+        const area = bounds(gap);
+        const width = Math.min(Math.max(0, numberOr(rect.width, 0)), area.width);
+        const height = Math.min(Math.max(0, numberOr(rect.height, 0)), area.height);
+        return constrain({
+            left: area.left + (area.width - width) / 2,
+            top: area.top + (area.height - height) / 2,
+            width,
+            height
+        }, gap);
+    };
+
+    window.DrpModalWorkspace = Object.freeze({ bounds, constrain, center });
+    return window.DrpModalWorkspace;
+}
+
 function initGlobalModalBehavior() {
     if (window.__drpGlobalModalBehaviorInitialized) return;
     window.__drpGlobalModalBehaviorInitialized = true;
 
     const modalSelector = '.modal';
+    const modalWorkspace = initModalWorkspaceBounds();
 
     function setStaticBackdrop(modal) {
         if (!modal || modal.dataset.drpStaticBackdrop === 'true') return;
@@ -1482,6 +1628,29 @@ function initGlobalModalBehavior() {
         let offsetY = 0;
         let dragging = false;
 
+        const moveDrag = (event) => {
+            if (!dragging) return;
+            const rect = dialog.getBoundingClientRect();
+            const next = modalWorkspace.constrain({
+                left: offsetX + event.clientX - startX,
+                top: offsetY + event.clientY - startY,
+                width: rect.width,
+                height: rect.height
+            });
+            dialog.style.left = `${next.left}px`;
+            dialog.style.top = `${next.top}px`;
+        };
+
+        const stopDrag = (event) => {
+            dragging = false;
+            if (header.hasPointerCapture?.(event.pointerId)) {
+                header.releasePointerCapture(event.pointerId);
+            }
+            window.removeEventListener('pointermove', moveDrag);
+            window.removeEventListener('pointerup', stopDrag);
+            window.removeEventListener('pointercancel', stopDrag);
+        };
+
         const resetModalLayout = () => {
             if (modal.dataset.drpManagedSize === 'true') {
                 return;
@@ -1505,41 +1674,33 @@ function initGlobalModalBehavior() {
         };
 
         header.addEventListener('pointerdown', (event) => {
+            if (modal.dataset.drpManagedSize === 'true') return;
             if (event.target.closest('button, input, select, textarea, a')) return;
             if (event.button !== 0 && event.pointerType === 'mouse') return;
             const rect = dialog.getBoundingClientRect();
+            const constrained = modalWorkspace.constrain(rect);
             dragging = true;
             startX = event.clientX;
             startY = event.clientY;
-            offsetX = rect.left;
-            offsetY = rect.top;
+            offsetX = constrained.left;
+            offsetY = constrained.top;
             dialog.style.position = 'fixed';
             dialog.style.margin = '0';
-            dialog.style.left = `${rect.left}px`;
-            dialog.style.top = `${rect.top}px`;
+            dialog.style.left = `${constrained.left}px`;
+            dialog.style.top = `${constrained.top}px`;
             dialog.style.transform = 'none';
             header.setPointerCapture?.(event.pointerId);
+            window.addEventListener('pointermove', moveDrag);
+            window.addEventListener('pointerup', stopDrag, { once: true });
+            window.addEventListener('pointercancel', stopDrag, { once: true });
         });
 
-        header.addEventListener('pointermove', (event) => {
-            if (!dragging) return;
-            const rect = dialog.getBoundingClientRect();
-            const maxLeft = Math.max(8, window.innerWidth - Math.min(rect.width, window.innerWidth - 16) - 8);
-            const maxTop = Math.max(8, window.innerHeight - 96);
-            const nextLeft = Math.min(Math.max(8, offsetX + event.clientX - startX), maxLeft);
-            const nextTop = Math.min(Math.max(8, offsetY + event.clientY - startY), maxTop);
-            dialog.style.left = `${nextLeft}px`;
-            dialog.style.top = `${nextTop}px`;
+        window.addEventListener('resize', () => {
+            if (dialog.style.position !== 'fixed' || !modal.classList.contains('show')) return;
+            const constrained = modalWorkspace.constrain(dialog.getBoundingClientRect());
+            dialog.style.left = `${constrained.left}px`;
+            dialog.style.top = `${constrained.top}px`;
         });
-
-        const stopDrag = (event) => {
-            dragging = false;
-            if (header.hasPointerCapture?.(event.pointerId)) {
-                header.releasePointerCapture(event.pointerId);
-            }
-        };
-        header.addEventListener('pointerup', stopDrag);
-        header.addEventListener('pointercancel', stopDrag);
 
         modal.addEventListener('show.bs.modal', resetModalLayout);
         modal.addEventListener('hidden.bs.modal', resetModalLayout);
@@ -1652,8 +1813,6 @@ function ensureNavbarRuntimeStyles() {
     style.id = "navbar-runtime-styles";
     style.textContent = `
         :root {
-            --sidebar-width: 260px;
-            --sidebar-collapsed-width: 70px;
             --navbar-ease: cubic-bezier(.22, 1, .36, 1);
         }
 
@@ -1679,9 +1838,10 @@ function ensureNavbarRuntimeStyles() {
             height: 100vh !important;
             height: 100dvh !important;
             margin: 0 !important;
-            overflow: hidden !important;
+            overflow: visible !important;
             transform: translateZ(0);
             will-change: width;
+            z-index: 2000 !important;
             transition: width .24s var(--navbar-ease), box-shadow .24s var(--navbar-ease) !important;
         }
 
@@ -1728,10 +1888,16 @@ function ensureNavbarRuntimeStyles() {
         #mainWrapper,
         .main-wrapper,
         .navbar-page-content {
-            margin-left: var(--sidebar-width) !important;
-            width: calc(100% - var(--sidebar-width)) !important;
+            margin-left: var(--sidebar-collapsed-width) !important;
+            width: calc(100% - var(--sidebar-collapsed-width)) !important;
             animation: drpPageEnter .16s ease-out both;
-            transition: margin-left .22s var(--navbar-ease), width .22s var(--navbar-ease) !important;
+            transition: none !important;
+        }
+
+        .app-main {
+            margin-left: var(--sidebar-collapsed-width) !important;
+            width: calc(100% - var(--sidebar-collapsed-width)) !important;
+            transition: none !important;
         }
 
         body.navbar-sidebar-collapsed #mainWrapper,

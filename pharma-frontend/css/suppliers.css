@@ -12,8 +12,9 @@
 
 .supplier-summary-card {
     position: relative;
-    min-height: 112px;
-    padding: 18px;
+    height: 76px;
+    min-height: 76px;
+    padding: 10px 14px;
     overflow: hidden;
     border: 1px solid var(--border-soft);
     border-radius: 10px;
@@ -32,28 +33,32 @@
 
 .supplier-summary-card strong {
     display: block;
-    margin-top: 8px;
+    margin-top: 3px;
     color: #322659;
-    font-size: 1.65rem;
+    font-size: 1.4rem;
     line-height: 1;
 }
 
 .supplier-summary-card > i {
     position: absolute;
-    top: 18px;
-    right: 18px;
+    top: 10px;
+    right: 14px;
     display: grid;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     place-items: center;
     border-radius: 9px;
     color: #6d28d9;
     background: #f3e8ff;
 }
+.supplier-summary-card:nth-child(1) > i { color:var(--info,#0369a1); background:var(--info-soft,#e0f2fe); }
+.supplier-summary-card:nth-child(2) > i { color:var(--success,#15803d); background:var(--success-soft,#dcfce7); }
+.supplier-summary-card:nth-child(3) > i { color:var(--teal,#0f766e); background:var(--teal-soft,#ccfbf1); }
+.supplier-summary-card:nth-child(4) > i { color:var(--primary,#4f46e5); background:var(--primary-soft,#eef2ff); }
 
 .supplier-section-card {
     min-width: 0;
-    padding: 18px;
+    padding: 14px;
 }
 
 .supplier-section-heading {
@@ -61,8 +66,20 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
 }
+
+.supplier-directory-card { padding: 0; }
+.supplier-directory-card > .supplier-section-heading { min-height:60px; margin:0; padding:9px 14px; }
+.supplier-directory-title { display:flex; align-items:center; gap:8px; }
+.supplier-directory-toggle { width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:7px; color:var(--drp-primary,#4f46e5); background:var(--drp-primary-soft,#eef2ff); }
+.supplier-directory-toggle:hover { color:var(--drp-primary-hover,#4338ca); background:#e0e7ff; }
+.supplier-directory-body { padding: 0 14px 14px; }
+.supplier-directory-body[hidden] { display:none !important; }
+.supplier-directory-tools { display:flex; justify-content:flex-end; margin-bottom:10px; }
+.supplier-catalog-search { position:relative; }
+.supplier-catalog-search > i { position:absolute; left:13px; top:50%; z-index:1; color:#64748b; transform:translateY(-50%); pointer-events:none; }
+.supplier-catalog-search .form-control { padding-left:38px; }
 
 .supplier-section-heading h5 {
     margin: 0;

@@ -16,7 +16,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 $settings = fetchSystemSettings($pdo);
 $profile = $settings;
-unset($profile['grnReceivedByName'], $profile['grnApprovedByName']);
+unset(
+    $profile['grnReceivedByName'],
+    $profile['grnApprovedByName'],
+    $profile['prPreparedName'],
+    $profile['prPreparedRole'],
+    $profile['prReviewedName'],
+    $profile['prReviewedRole'],
+    $profile['poPreparedName'],
+    $profile['poPreparedRole'],
+    $profile['poApprovedName'],
+    $profile['poApprovedRole']
+);
 
 echo json_encode([
     'status' => 'success',
@@ -24,6 +35,16 @@ echo json_encode([
     'grn' => [
         'receivedByName' => $settings['grnReceivedByName'] ?? '',
         'approvedByName' => $settings['grnApprovedByName'] ?? '',
+    ],
+    'procurementDocumentSettings' => [
+        'prPreparedName' => $settings['prPreparedName'] ?? '',
+        'prPreparedRole' => $settings['prPreparedRole'] ?? 'Manager',
+        'prReviewedName' => $settings['prReviewedName'] ?? '',
+        'prReviewedRole' => $settings['prReviewedRole'] ?? 'Supervisor',
+        'poPreparedName' => $settings['poPreparedName'] ?? '',
+        'poPreparedRole' => $settings['poPreparedRole'] ?? 'Manager',
+        'poApprovedName' => $settings['poApprovedName'] ?? '',
+        'poApprovedRole' => $settings['poApprovedRole'] ?? 'Supervisor',
     ],
     'businessSchedule' => fetchBusinessHours($pdo),
     'businessExceptions' => fetchBusinessHourExceptions($pdo, $_GET['month'] ?? null),

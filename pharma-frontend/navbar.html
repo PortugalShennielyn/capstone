@@ -1,7 +1,14 @@
-<aside class="app-sidebar sidebar" id="sidebar">
-    <a href="dashboard.html" class="sidebar-brand" aria-label="Dr. R Pharmacy dashboard" data-dashboard-view="dashboard">
-        <span class="brand-mark"><i class="fa-solid fa-prescription-bottle-medical"></i></span>
-    </a>
+<aside class="app-sidebar sidebar collapsed" id="sidebar" aria-label="Application sidebar">
+    <div class="sidebar-header">
+        <a href="dashboard.html" class="sidebar-brand" aria-label="Dr. R Pharmacy dashboard" data-dashboard-view="dashboard">
+            <span class="brand-mark"><i class="fa-solid fa-prescription-bottle-medical"></i></span>
+            <span class="brand-text">Dr. R Pharmacy</span>
+        </a>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-expanded="false" aria-label="Close sidebar">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+            <span class="sidebar-tooltip" role="tooltip">Close sidebar</span>
+        </button>
+    </div>
 
     <nav class="sidebar-nav" aria-label="Main navigation">
         <a href="dashboard.html" class="nav-link-item" data-nav-page="dashboard" data-dashboard-view="dashboard" title="Dashboard">

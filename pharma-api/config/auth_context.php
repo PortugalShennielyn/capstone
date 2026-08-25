@@ -491,6 +491,8 @@ function requireValidSession(PDO $pdo, array $allowedRoles = []): void
 
     enforceManagerApiBoundary();
     enforceSupervisorApiBoundary();
+    enforceCashierApiBoundary();
+    enforceSalesClerkApiBoundary();
     authDiagnosticLog('Session verified', [
         'function' => __FUNCTION__,
         'auth_session' => maskedAuthIdentifier((string) ($_SESSION['auth_session_id'] ?? '')),

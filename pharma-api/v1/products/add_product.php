@@ -56,12 +56,25 @@ function joinSkuParts(?string ...$parts): ?string
     return count($clean) ? implode(' ', $clean) : null;
 }
 
-function normalizeSkuVariation(array $variation, string $categoryName, ?string $fallbackPrice): array
+function normalizeSkuSellingPrice($value, string $productStatus): float
+{
+    $priceText = trim((string) ($value ?? ''));
+    if ($priceText === '' || !preg_match('/^\d+(?:\.\d{1,2})?$/', $priceText) || !is_numeric($priceText) || !is_finite((float) $priceText)) {
+        throw new InvalidArgumentException('Each SKU Selling Price must be numeric with no more than 2 decimal places.');
+    }
+
+    $price = (float) $priceText;
+    if ($price < 0 || ($productStatus === 'Active' && $price <= 0)) {
+        throw new InvalidArgumentException('Each active SKU Selling Price must be greater than 0.');
+    }
+
+    return round($price, 2);
+}
+
+function normalizeSkuVariation(array $variation, string $categoryName, ?string $fallbackPrice, string $productStatus): array
 {
     $price = $variation['price'] ?? $fallbackPrice;
-    if (!is_numeric($price) || (float) $price < 0) {
-        throw new InvalidArgumentException('Each SKU must have a valid non-negative price.');
-    }
+    $price = normalizeSkuSellingPrice($price, $productStatus);
 
     $barcode = cleanSkuField($variation, 'barcode') ?? ('AUTO-' . strtoupper(bin2hex(random_bytes(6))));
 
@@ -85,7 +98,7 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
         'pack_content' => cleanSkuField($variation, 'pack_content') ?? joinSkuParts(cleanSkuNumber($variation, 'pack_content_qty'), cleanSkuField($variation, 'pack_content_unit')),
         'barcode' => $barcode,
         'inventory_unit_id' => cleanId($variation['inventory_unit_id'] ?? null),
-        'price' => (float) $price,
+        'price' => $price,
         'is_empty_detail' => $categoryName === 'Grocery'
             ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
             : (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)
@@ -209,7 +222,7 @@ try {
     $brandName = requiredProductField($payload, 'brand_name');
     $productName = requiredProductField($payload, 'product_name');
     $productStatus = normalizeProductStatus($payload['status'] ?? 'Active');
-    $fallbackPrice = $payload['price'] ?? '0';
+    $fallbackPrice = $payload['price'] ?? null;
     $pricingMethod = normalizePricingMethod($payload['pricing_method'] ?? 'manual');
     $customMarkup = normalizeMarkupPercentage($payload['custom_markup_percentage'] ?? null, true);
     if ($pricingMethod === 'custom_markup' && $customMarkup === null) {
@@ -226,8 +239,8 @@ try {
         if ($purchaseUnit === null) {
             throw new InvalidArgumentException('Purchase Unit is required when assigning a supplier.');
         }
-        if (!is_numeric($supplierCostPrice) || (float) $supplierCostPrice < 0) {
-            throw new InvalidArgumentException('Supplier cost must be a non-negative number.');
+        if ($supplierCostPrice !== null && $supplierCostPrice !== '' && (!is_numeric($supplierCostPrice) || (float) $supplierCostPrice < 0)) {
+            throw new InvalidArgumentException('Supplier cost must be a non-negative number when provided.');
         }
     }
     if ($categoryId === '') {
@@ -255,7 +268,7 @@ try {
             continue;
         }
         $variation['generic_name'] = cleanSkuField($variation, 'generic_name') ?? cleanSkuField($payload, 'generic_name');
-        $sku = normalizeSkuVariation($variation, $categoryName, $fallbackPrice);
+        $sku = normalizeSkuVariation($variation, $categoryName, $fallbackPrice, $productStatus);
         $inventoryUnit = requiredProductInventoryUnit($pdo, $sku['inventory_unit_id']);
         $sku['inventory_unit_id'] = $inventoryUnit['measurement_unit_id'];
         $sku['inventory_unit_name'] = $inventoryUnit['unit_name'];
@@ -324,8 +337,8 @@ try {
         'INSERT INTO supplier_products (supplier_product_id,supplier_id,product_id,supplier_cost_price,supplier_cost_input,supplier_cost_basis,purchase_unit,purchase_unit_contains,inventory_unit,units_per_purchase_unit)
          VALUES (:supplier_product_id,:supplier_id,:product_id,:supplier_cost_price,:supplier_cost_input,\'purchase\',:purchase_unit,:purchase_unit_contains,:inventory_unit,:units_per_purchase_unit)
          ON DUPLICATE KEY UPDATE
-            supplier_cost_price = VALUES(supplier_cost_price),
-            supplier_cost_input = VALUES(supplier_cost_input),
+            supplier_cost_price = COALESCE(VALUES(supplier_cost_price), supplier_cost_price),
+            supplier_cost_input = COALESCE(VALUES(supplier_cost_input), supplier_cost_input),
             supplier_cost_basis = VALUES(supplier_cost_basis),
             purchase_unit = VALUES(purchase_unit),
             purchase_unit_contains = VALUES(purchase_unit_contains),
@@ -393,8 +406,8 @@ try {
                 ':supplier_product_id' => $supplierProductId,
                 ':supplier_id' => $supplierId,
                 ':product_id' => $productId,
-                ':supplier_cost_price' => (float) $supplierCostPrice / $unitsPerPurchaseUnit,
-                ':supplier_cost_input' => (float) $supplierCostPrice,
+                ':supplier_cost_price' => ($supplierCostPrice === null || $supplierCostPrice === '') ? null : (float) $supplierCostPrice / $unitsPerPurchaseUnit,
+                ':supplier_cost_input' => ($supplierCostPrice === null || $supplierCostPrice === '') ? null : (float) $supplierCostPrice,
                 ':purchase_unit' => $purchaseUnit,
                 ':purchase_unit_contains' => $unitsPerPurchaseUnit,
                 ':inventory_unit' => $sku['inventory_unit_name'],
@@ -408,10 +421,10 @@ try {
             ]);
         }
         saveProductSpecificationValues($pdo, $productId, $sku['specifications']);
+        syncProductDefaultSellingPrice($pdo, $productId, (float) $sku['price']);
         $createdProductIds[] = $productId;
     }
 
-    ensureProductDefaultSellingOption($pdo, $productId);
     $pdo->commit();
 
     foreach ($createdProductIds as $createdProductId) {

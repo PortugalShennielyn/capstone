@@ -26,15 +26,22 @@
         .pr-print-table tr { break-inside:avoid; page-break-inside:avoid; }
         .pr-print-table th,.pr-print-table td { padding:4px 4px; border:1px solid #111; vertical-align:middle; }
         .pr-print-table th { color:#000; background:#fff; font-size:7pt; font-weight:800; text-align:center; text-transform:uppercase; }
-        .pr-print-table th:nth-child(1){width:6%}.pr-print-table th:nth-child(2){width:45%}.pr-print-table th:nth-child(3){width:13%}.pr-print-table th:nth-child(4),.pr-print-table th:nth-child(5),.pr-print-table th:nth-child(6){width:8%}.pr-print-table th:nth-child(7){width:12%}
+        .pr-print-table th:nth-child(1){width:6%}.pr-print-table th:nth-child(2){width:37%}.pr-print-table th:nth-child(3){width:12%}.pr-print-table th:nth-child(4){width:7%}.pr-print-table th:nth-child(5){width:9%;white-space:nowrap}.pr-print-table th:nth-child(6){width:8%}.pr-print-table th:nth-child(7),.pr-print-table th:nth-child(8){width:10.5%}
+        .pr-print-table th:nth-child(n+4):nth-child(-n+8) { padding-left:5px; padding-right:5px; text-align:center; vertical-align:middle; }
         .pr-print-table td:nth-child(1),.pr-print-table td:nth-child(n+3) { text-align:center; }
+        .pr-print-table .quantity-cell { font-weight:700; white-space:nowrap; }
         .product-description strong { display:block; font-size:7.8pt; }
         .product-description span { display:block; margin-top:2px; color:#333; line-height:1.2; }
         .notes-block { min-height:34px; margin-top:8px; padding:6px 8px; border:1px solid #111; font-size:8pt; }
         .notes-block strong { margin-right:6px; text-transform:uppercase; }
         #purchaseRequestDocument { min-height:274mm; display:flex; flex-direction:column; }
-        .signature-grid { display:grid; grid-template-columns:1fr 1fr 120px; gap:18px; margin-top:auto; padding-top:14mm; font-size:8pt; }
-        .signature-line { padding-top:5px; border-top:1px solid #111; text-align:center; }
+        .signature-grid { display:grid; grid-template-columns:1fr 1fr; gap:18mm; margin-top:auto; padding-top:14mm; font-size:8pt; break-inside:avoid; page-break-inside:avoid; }
+        .signature-block { min-width:0; text-align:center; }
+        .signature-caption { display:block; font-weight:800; text-align:left; }
+        .signature-space { height:11mm; }
+        .signature-name { display:block; min-height:5mm; font-size:8pt; font-weight:700; text-align:center; }
+        .signature-line { width:100%; border-top:1px solid #111; }
+        .signature-role { display:block; margin-top:3px; font-size:7.5pt; }
         .document-footer { display:flex; justify-content:space-between; margin-top:9mm; padding-top:5px; border-top:1px solid #000; color:#000; font-size:6.8pt; }
         .loading,.error { padding:70px 20px; text-align:center; font-weight:700; }
         .error { color:#991b1b; }
@@ -65,6 +72,6 @@
         <div class="loading" id="printLoading">Loading purchase request...</div>
         <article id="purchaseRequestDocument" hidden></article>
     </main>
-    <script type="module" src="./js/modules/purchase_request_print.js?v=9"></script>
+    <script type="module" src="./js/modules/purchase_request_print.js?v=14"></script>
 </body>
 </html>

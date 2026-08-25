@@ -3,9 +3,10 @@ import {
     formatProductIdentity,
     formatProductSpecification,
     productSearchText
-} from './product_specification.js';
+} from './product_specification.js?v=8';
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits, measurementUnitsForContext } from './measurement_units.js?v=2';
+import { purchasingConversion } from './purchasing_conversion.js?v=2';
 
 const API = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -17,11 +18,6 @@ const esc = (value) => String(value ?? '')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
-const money = (value) => `\u20b1${Number(value || 0).toLocaleString('en-PH', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-})}`;
-
 const canManageSupplierCatalog = () => ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
 
 const state = {
@@ -51,6 +47,25 @@ function unitOptions(context, selected = '') {
             const isSelected = [value, symbol].some(item => unitKey(item) === selectedKey);
             return `<option value="${esc(value)}" ${isSelected ? 'selected' : ''}>${esc(label)}</option>`;
         }).join('');
+}
+
+function purchaseUnitOptions(product, selected = '') {
+    const selectedKey = unitKey(selected);
+    const baseUnit = inventoryUnit(product);
+    const allowed = measurementUnitsForContext(state.units, { context: 'purchase' })
+        .filter(unit => ['box', 'carton'].includes(unitKey(unit.unit_name)));
+    if (baseUnit && !allowed.some(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(baseUnit)))) {
+        const baseRecord = measurementUnitsForContext(state.units, { context: 'inventory' })
+            .find(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(baseUnit)));
+        if (baseRecord) allowed.push(baseRecord);
+    }
+    return allowed.map(unit => {
+        const value = String(unit.unit_name || '').trim();
+        const symbol = String(unit.unit_symbol || '').trim();
+        const label = symbol && unitKey(symbol) !== unitKey(value) ? `${value} (${symbol})` : value;
+        const isSelected = [value, symbol].some(item => unitKey(item) === selectedKey);
+        return `<option value="${esc(value)}" ${isSelected ? 'selected' : ''}>${esc(label)}</option>`;
+    }).join('');
 }
 
 function inventoryUnit(product) {
@@ -290,8 +305,7 @@ function rememberTerms() {
         state.terms.set(String(card.dataset.productId), {
             purchaseUnit: card.querySelector('.term-unit')?.value || 'Box',
             inventoryUnit: card.querySelector('.term-inventory-unit')?.value || '',
-            quantity: card.querySelector('.term-quantity')?.value || '',
-            cost: card.querySelector('.term-cost')?.value || ''
+            quantity: card.querySelector('.term-quantity')?.value || ''
         });
     });
 }
@@ -300,8 +314,7 @@ function defaultTerms(product) {
     return state.terms.get(String(product.product_id)) || {
         purchaseUnit: 'Box',
         inventoryUnit: inventoryUnit(product),
-        quantity: '1',
-        cost: ''
+        quantity: ''
     };
 }
 
@@ -331,7 +344,7 @@ function renderStep2() {
                             <div>
                                 <label class="form-label">Purchase Unit <span class="text-danger">*</span></label>
                                 <select class="form-select term-unit">
-                                    <option value="">Select Purchase Unit...</option>${unitOptions('purchase', saved.purchaseUnit)}
+                                    <option value="">Select Purchase Unit...</option>${purchaseUnitOptions(product, saved.purchaseUnit)}
                                 </select>
                                 <div class="assignment-field-error"></div>
                             </div>
@@ -341,15 +354,13 @@ function renderStep2() {
                                 <div class="form-text">Defined in Product Master.</div>
                                 <div class="assignment-field-error"></div>
                             </div>
-                            <div>
-                                <label class="form-label">Units per Purchase Unit <span class="text-danger">*</span></label>
-                                <input class="form-control term-quantity" type="number" min="1" step="1"
-                                       inputmode="numeric" value="${esc(saved.quantity)}">
-                                <div class="assignment-field-error"></div>
-                            </div>
-                            <div>
-                                <label class="form-label">Supplier Cost per Purchase Unit <span class="text-danger">*</span></label>
-                                <div class="input-group"><span class="input-group-text">\u20b1</span><input class="form-control term-cost" type="number" min="0" step=".01" inputmode="decimal" value="${esc(saved.cost)}"></div>
+                            <div class="term-quantity-field">
+                                <label class="form-label term-quantity-label">Contents per ${esc(saved.purchaseUnit || 'Purchase Unit')} <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input class="form-control term-quantity" type="number" min="1" step="1"
+                                           inputmode="numeric" value="${esc(saved.quantity)}">
+                                    <span class="input-group-text term-quantity-unit">${esc(unit)}</span>
+                                </div>
                                 <div class="assignment-field-error"></div>
                             </div>
                             <div class="assignment-preview term-preview"></div>
@@ -361,18 +372,30 @@ function renderStep2() {
 }
 
 function updateTermCard(card) {
-    const purchaseUnit = card.querySelector('.term-unit')?.value || 'Box';
+    const purchaseUnit = card.querySelector('.term-unit')?.value || '';
     const inventory = card.querySelector('.term-inventory-unit')?.value || 'unit';
-    const quantity = Number(card.querySelector('.term-quantity')?.value || 0);
-    const cost = Number(card.querySelector('.term-cost')?.value || 0);
-    const complete = quantity >= 1 && Number.isInteger(quantity)
-        && card.querySelector('.term-cost')?.value !== ''
-        && cost >= 0;
+    const quantityInput = card.querySelector('.term-quantity');
+    const sameUnit = unitKey(purchaseUnit) === unitKey(inventory);
+    if (sameUnit) quantityInput.value = '1';
+    quantityInput.disabled = sameUnit;
+    card.querySelector('.term-quantity-field')?.classList.toggle('d-none', sameUnit);
+    card.querySelector('.term-quantity-label').innerHTML = `Contents per ${esc(purchaseUnit || 'Purchase Unit')} <span class="text-danger">*</span>`;
+    const quantity = Number(quantityInput.value || 0);
+    const conversion = purchasingConversion({
+        purchase_unit: purchaseUnit || 'Purchase Unit',
+        inventory_unit: inventory,
+        units_per_purchase_unit: sameUnit ? 1 : quantity
+    });
+    card.querySelector('.term-quantity-unit').textContent = conversion.baseQtyPerPurchaseUnit === 1
+        ? inventory
+        : (/s$/i.test(inventory) ? inventory : `${inventory}s`);
+    const complete = purchaseUnit !== '' && quantity >= 1 && Number.isInteger(quantity);
     const status = card.querySelector('.term-status');
     status.textContent = complete ? 'Complete' : 'Missing information';
     status.className = `badge term-status ${complete ? 'text-bg-success' : 'text-bg-light'}`;
-    card.querySelector('.term-preview').innerHTML =
-        `<strong>Preview:</strong> 1 ${esc(purchaseUnit)} = ${esc(quantity || 0)} ${esc(inventory)} · Estimated ${esc(purchaseUnit)} cost: ${money(cost * quantity)}`;
+    card.querySelector('.term-preview').innerHTML = complete
+        ? `<strong>Preview:</strong> ${esc(conversion.summary)}`
+        : `<strong>Preview:</strong> Enter ${esc(`Contents per ${purchaseUnit || 'Purchase Unit'}`)}.`;
 }
 
 function clearTermValidation() {
@@ -407,11 +430,11 @@ function validateStep2() {
         const purchaseUnit = card.querySelector('.term-unit');
         const inventoryUnit = card.querySelector('.term-inventory-unit');
         const quantity = card.querySelector('.term-quantity');
-        const cost = card.querySelector('.term-cost');
+        const sameUnit = unitKey(purchaseUnit.value) === unitKey(inventoryUnit.value);
 
-        if (!['box', 'carton'].includes(unitKey(purchaseUnit.value))) {
-            setFieldError(purchaseUnit, 'Purchase Unit must be Box or Carton.');
-            errors.push(`${identity}: Purchase Unit must be Box or Carton.`);
+        if (!['box', 'carton'].includes(unitKey(purchaseUnit.value)) && !sameUnit) {
+            setFieldError(purchaseUnit, 'Purchase Unit must be Box, Carton, or the Product Base Unit.');
+            errors.push(`${identity}: select Box, Carton, or the Product Base Unit.`);
             firstInvalid ||= purchaseUnit;
         }
         if (!inventoryUnit.value) {
@@ -420,14 +443,9 @@ function validateStep2() {
             firstInvalid ||= inventoryUnit;
         }
         if (quantity.value === '' || Number(quantity.value) < 1 || !Number.isInteger(Number(quantity.value))) {
-            setFieldError(quantity, 'Units per Purchase Unit must be a whole number greater than 0.');
-            errors.push(`${identity}: Units per Purchase Unit must be greater than 0.`);
+            setFieldError(quantity, `Contents per ${purchaseUnit.value || 'Purchase Unit'} must be a whole number greater than 0.`);
+            errors.push(`${identity}: Contents per ${purchaseUnit.value || 'Purchase Unit'} must be greater than 0.`);
             firstInvalid ||= quantity;
-        }
-        if (cost.value === '' || Number(cost.value) < 0) {
-            setFieldError(cost, 'Supplier Cost must be greater than or equal to 0.');
-            errors.push(`${identity}: Supplier Cost is required.`);
-            firstInvalid ||= cost;
         }
         updateTermCard(card);
     });
@@ -463,6 +481,7 @@ function renderStep3() {
             ${selectedProducts().map((product) => {
                 const saved = defaultTerms(product);
                 const unit = saved.inventoryUnit || inventoryUnit(product);
+                const conversion = purchasingConversion({ purchase_unit: saved.purchaseUnit, inventory_unit: unit, units_per_purchase_unit: saved.quantity });
                 return `
                     <article class="assignment-review-card">
                         <div class="assignment-selected-identity mb-1">${esc(formatProductIdentity(product))}</div>
@@ -470,9 +489,7 @@ function renderStep3() {
                         <div class="assignment-review-grid">
                             <div><span>Purchase Unit</span><strong>${esc(saved.purchaseUnit)}</strong></div>
                             <div><span>Product Base Unit</span><strong>${esc(unit)}</strong></div>
-                            <div><span>Units per Purchase Unit</span><strong>${esc(saved.quantity)}</strong></div>
-                            <div><span>Supplier Cost</span><strong>${money(saved.cost)} per ${esc(unit)}</strong></div>
-                            <div><span>Estimated Purchase Unit Cost</span><strong>${money(Number(saved.cost) * Number(saved.quantity))}</strong></div>
+                            <div><span>Contents</span><strong>${esc(conversion.summary)}</strong></div>
                         </div>
                     </article>`;
             }).join('')}
@@ -614,7 +631,6 @@ async function saveAssignments() {
                 body: JSON.stringify({
                     supplier_id: supplierId,
                     product_id: product.product_id,
-                    supplier_cost_price: saved.cost,
                     purchase_unit: saved.purchaseUnit,
                     inventory_unit: saved.inventoryUnit,
                     units_per_purchase_unit: saved.quantity
@@ -670,7 +686,7 @@ modal.addEventListener('hidden.bs.modal', () => {
 
 modal.addEventListener('input', (event) => {
     if (event.target.matches('#assignmentProductSearch')) renderProducts();
-    if (event.target.matches('.term-unit,.term-inventory-unit,.term-quantity,.term-cost')) {
+    if (event.target.matches('.term-unit,.term-inventory-unit,.term-quantity')) {
         updateTermCard(event.target.closest('.assignment-term-card'));
         rememberTerms();
     }

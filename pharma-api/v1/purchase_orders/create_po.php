@@ -71,13 +71,11 @@ try {
     validatePurchaseOrderSupplier($pdo, $supplierId);
     validateProductsForSupplier($pdo, $supplierId, $items);
     $items = applySupplierProductSetup($pdo, $supplierId, $items);
-    $validatedTotalAmount = validateSubmittedPurchaseOrderTotals($payload, $items);
-
     $poNumber = 'PO-' . date('Ymd-His') . '-' . strtoupper(bin2hex(random_bytes(2)));
     $poId = newUuid($pdo);
     $masterStatement = $pdo->prepare(
         "INSERT INTO purchase_orders (po_id, supplier_id, po_number, payment_terms, expected_delivery_date, status, approval_status, total_amount, created_at)
-         VALUES (:po_id, :supplier_id, :po_number, :payment_terms, :expected_delivery_date, 'Pending', 'Approved', 0.00, NOW())"
+         VALUES (:po_id, :supplier_id, :po_number, :payment_terms, :expected_delivery_date, 'Draft', 'Approved', NULL, NOW())"
     );
     $masterStatement->execute([
         ':po_id' => $poId,
@@ -134,34 +132,24 @@ try {
          )'
     );
 
-    $totalAmount = 0.0;
-
     foreach ($items as $item) {
         $quantityParams = purchaseOrderQuantityParams($item);
-        $totalAmount += (float) $quantityParams[':line_total'];
+        $quantityParams[':line_total'] = null;
+        $snapshotParams = purchaseOrderItemSnapshotParams($item);
+        $snapshotParams[':unit_price_snapshot'] = null;
         $itemStatement->execute(array_merge([
             ':po_id' => $poId,
             ':pr_item_id' => $requestedByProduct[cleanId($item['product_id'])]['pr_item_id'],
             ':product_id' => cleanId($item['product_id'])
-        ], $quantityParams, purchaseOrderItemSnapshotParams($item)));
+        ], $quantityParams, $snapshotParams));
     }
-
-    if (purchaseOrderMoneyCents($totalAmount, 'Purchase-order total is invalid.') !== purchaseOrderMoneyCents($validatedTotalAmount, 'Purchase-order total is invalid.')) {
-        throw new InvalidArgumentException('Purchase-order total changed during validation. Please try again.');
-    }
-
-    $totalStatement = $pdo->prepare('UPDATE purchase_orders SET total_amount = :total_amount WHERE po_id = :po_id');
-    $totalStatement->execute([
-        ':total_amount' => $totalAmount,
-        ':po_id' => $poId
-    ]);
 
     $touchRequest = $pdo->prepare('UPDATE purchase_requests SET updated_at = NOW() WHERE pr_id = :pr_id AND status = "Approved"');
     $touchRequest->execute([':pr_id' => $prId]);
 
     $pdo->commit();
 
-    recordActivityLog($pdo, 'Purchase Order', 'Pending', 'PO ' . $poNumber . ' is Pending', $poId);
+    recordActivityLog($pdo, 'Purchase Order', 'Draft', 'PO ' . $poNumber . ' was generated as Draft', $poId);
 
     http_response_code(201);
     echo json_encode([

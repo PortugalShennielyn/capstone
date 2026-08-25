@@ -35,6 +35,16 @@ try {
             por.resolution_type,
             por.remarks,
             por.return_status,
+            original_receiving.receiving_id,
+            original_item.receiving_item_id,
+            original_receiving.delivery_receipt_no,
+            original_receiving.received_date AS inspection_date,
+            original_item.accepted_quantity,
+            credit.credit_id,
+            credit.credit_amount,
+            credit.credit_status,
+            credit.amount_applied AS credit_applied,
+            GREATEST(0, COALESCE(credit.credit_amount, 0) - COALESCE(credit.amount_applied, 0)) AS credit_remaining,
             po.po_id,
             po.po_number,
             po.created_at AS order_date,
@@ -61,8 +71,8 @@ try {
             COALESCE(NULLIF(poi.unit_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS unit,
             COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, 'N/A') AS packaging,
             poi.quantity AS ordered_quantity,
-            COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
-            COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity
+            COALESCE(original_item.received_quantity, SUM(pori.received_quantity), 0) AS received_quantity,
+            COALESCE(original_item.damaged_quantity, SUM(pori.damaged_quantity), 0) AS damaged_quantity
          FROM supplier_claim_legacy_projection por
          INNER JOIN purchase_orders po ON po.po_id = por.po_id
          INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
@@ -72,6 +82,10 @@ try {
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
+         LEFT JOIN (SELECT claim_id, MIN(receiving_item_id) AS receiving_item_id FROM supplier_claim_damage_lines WHERE receiving_item_id IS NOT NULL GROUP BY claim_id) claim_receiving ON claim_receiving.claim_id = por.return_id
+         LEFT JOIN purchase_order_receiving_items original_item ON original_item.receiving_item_id = claim_receiving.receiving_item_id
+         LEFT JOIN purchase_order_receiving original_receiving ON original_receiving.receiving_id = original_item.receiving_id
+         LEFT JOIN (SELECT cr.credit_id, cr.claim_id, cr.credit_amount, cr.credit_status, COALESCE(SUM(app.amount_applied),0) AS amount_applied FROM supplier_credits cr LEFT JOIN supplier_credit_applications app ON app.credit_id=cr.credit_id GROUP BY cr.credit_id,cr.claim_id,cr.credit_amount,cr.credit_status) credit ON credit.claim_id=por.return_id
          LEFT JOIN purchase_order_receiving_item_summary pori ON pori.po_item_id = poi.po_item_id
          WHERE por.return_id = :return_id
          GROUP BY
@@ -88,6 +102,17 @@ try {
             por.resolution_type,
             por.remarks,
             por.return_status,
+            original_receiving.receiving_id,
+            original_item.receiving_item_id,
+            original_receiving.delivery_receipt_no,
+            original_receiving.received_date,
+            original_item.accepted_quantity,
+            original_item.received_quantity,
+            original_item.damaged_quantity,
+            credit.credit_id,
+            credit.credit_amount,
+            credit.credit_status,
+            credit.amount_applied,
             po.po_id,
             po.po_number,
             po.created_at,
@@ -134,7 +159,41 @@ try {
         exit();
     }
 
-    echo json_encode(['status' => 'success', 'return_damage' => decoratePurchaseOrderReturnRecord($record)]);
+    $record = decoratePurchaseOrderReturnRecord($record);
+    $activities = [[
+        'created_at' => $record['return_date'],
+        'description' => 'Issue recorded during delivery inspection.'
+    ]];
+    if (!empty($record['inspection_date']) && (int) ($record['accepted_quantity'] ?? 0) > 0) {
+        $activities[] = [
+            'created_at' => $record['inspection_date'],
+            'description' => (int) $record['accepted_quantity'] . ' accepted units recorded in the original receiving event.'
+        ];
+    }
+    $replacementActivity = $pdo->prepare(
+        "SELECT receiving.received_date AS created_at,
+                CONCAT(item.accepted_quantity, ' replacement units accepted', IF(item.damaged_quantity > 0, CONCAT('; ', item.damaged_quantity, ' rejected'), ''), IF(receiving.delivery_receipt_no IS NOT NULL AND receiving.delivery_receipt_no <> '', CONCAT(' (DR ', receiving.delivery_receipt_no, ')'), ''), '.') AS description
+         FROM purchase_order_receiving receiving
+         INNER JOIN purchase_order_receiving_items item ON item.receiving_id = receiving.receiving_id
+         WHERE receiving.claim_id = :claim_id AND receiving.receiving_type = 'Replacement'
+         ORDER BY receiving.received_date"
+    );
+    $replacementActivity->execute([':claim_id' => $returnId]);
+    $activities = array_merge($activities, $replacementActivity->fetchAll(PDO::FETCH_ASSOC));
+    $creditActivity = $pdo->prepare(
+        "SELECT app.applied_at AS created_at, CONCAT('Supplier credit of ₱', FORMAT(app.amount_applied, 2), ' applied to ', po.po_number, '.') AS description
+         FROM supplier_credit_applications app
+         INNER JOIN supplier_credits credit ON credit.credit_id = app.credit_id
+         INNER JOIN purchase_orders po ON po.po_id = app.po_id
+         WHERE credit.claim_id = :claim_id
+         ORDER BY app.applied_at"
+    );
+    $creditActivity->execute([':claim_id' => $returnId]);
+    $activities = array_merge($activities, $creditActivity->fetchAll(PDO::FETCH_ASSOC));
+    usort($activities, static fn(array $a, array $b): int => strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? '')));
+    $record['activities'] = $activities;
+
+    echo json_encode(['status' => 'success', 'return_damage' => $record]);
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to load return/damage details.']);

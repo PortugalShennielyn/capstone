@@ -1,5 +1,6 @@
 import API_BASE_URL from '../config/config.js';
 import PharmaUtils from '../utils.js';
+import { publishDataUpdate } from './live_data.js?v=1';
 import {
     cleanDisplay,
     combineValueUnit as ruleCombineValueUnit,
@@ -14,7 +15,7 @@ import {
     formatMeasurementValue,
     formatProductSpecification,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=7';
+} from './product_specification.js?v=8';
 import {
     archiveMeasurementUnitCache,
     loadMeasurementUnits,
@@ -827,7 +828,7 @@ function syncSelectedPricingControls() {
     if (manageButton) {
         manageButton.classList.toggle('d-none', productState.pricingSelectionMode);
         manageButton.disabled = eligibleCount === 0;
-        manageButton.innerHTML = `<i class="fa-solid fa-tags me-2"></i>Manage Prices${eligibleCount ? `<span class="manage-prices-count">${eligibleCount} need review</span>` : ''}`;
+        manageButton.innerHTML = `<i class="fa-solid fa-tags me-1"></i>Manage Prices${eligibleCount ? `<span class="manage-prices-count" title="${eligibleCount} products need review">${eligibleCount}</span>` : ''}`;
     }
     selectionActions?.classList.toggle('d-none', !productState.pricingSelectionMode);
     setPricingText('pricingSelectionCount', `${selectedCount} selected · ${visibleEligibleCount} eligible`);
@@ -1435,13 +1436,18 @@ function validateVisibleProductFields(form) {
             && field.value !== ''
             && field.min !== ''
             && Number(field.value) < Number(field.min);
-        if (!empty && !belowMinimum) return;
+        const invalidSellingPrice = field.matches('.edit-var-price')
+            && !empty
+            && (!/^\d+(?:\.\d{1,2})?$/.test(String(field.value).trim()) || !Number.isFinite(Number(field.value)) || Number(field.value) <= 0);
+        if (!empty && !belowMinimum && !invalidSellingPrice) return;
 
         const label = field.closest('.col-md-6, .col-12, section, div')?.querySelector('.form-label')?.textContent
             ?.replace('*', '').trim() || 'This field';
         const error = document.createElement('div');
         error.className = 'product-field-error';
-        error.textContent = empty ? `${label} is required.` : `${label} must be ${field.min} or greater.`;
+        error.textContent = empty
+            ? `${label} is required.`
+            : (invalidSellingPrice ? `${label} must be greater than 0 with no more than 2 decimal places.` : `${label} must be ${field.min} or greater.`);
         const anchor = field.closest('.input-group, .variation-pair') || field;
         anchor.insertAdjacentElement('afterend', error);
         field.classList.add('is-invalid');
@@ -1876,8 +1882,11 @@ function dynamicSpecificationField(specification, variation, rowId) {
     const value = specificationValue(variation, specification.specification_id);
     const label = escapeHtml(specification.display_name || specification.specification_name);
     const attributes = `data-specification-id="${escapeHtml(specification.specification_id)}" data-field-style="${escapeHtml(specification.field_style)}"`;
+    const helper = String(specification.specification_name || '').trim().toLowerCase() === 'pack content'
+        ? '<div class="form-text">Describes what is physically inside one Selling / Inventory Unit (for example, 44 pcs).</div>'
+        : '';
     if (specification.field_style === 'Number with Unit') {
-        return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><div class="input-group"><input class="form-control dynamic-spec-number" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(value.value_number))}"><select class="form-select dynamic-spec-unit" data-measurement-group="${escapeHtml(specification.measurement_group || '')}">${dynamicUnitOptions(specification.measurement_group, value.measurement_unit_id, value)}</select></div></div>`;
+        return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><div class="input-group"><input class="form-control dynamic-spec-number" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(value.value_number))}"><select class="form-select dynamic-spec-unit" data-measurement-group="${escapeHtml(specification.measurement_group || '')}">${dynamicUnitOptions(specification.measurement_group, value.measurement_unit_id, value)}</select></div>${helper}</div>`;
     }
     if (specification.field_style === 'Number Only') {
         return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-number" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(value.value_number))}"></div>`;
@@ -1902,7 +1911,11 @@ function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
     const deleteButton = canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Remove variant"><i class="fa-solid fa-trash-can"></i></button>' : '';
     const fields = productState.specifications.map(specification => dynamicSpecificationField(specification, variation, rowId)).join('');
     const empty = productState.specifications.length ? '' : `<div class="dynamic-specification-empty"><p class="mb-2">No specifications have been configured for this Product Type.</p><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button">Customize Specifications</button></div>`;
-    return `<div class="edit-variation-entry"><div class="d-flex align-items-center justify-content-between gap-2 mb-3"><span class="fw-bold small text-muted">${mode === 'edit' ? 'Product SKU Details' : 'Sellable SKU'}</span><div><button class="btn btn-sm btn-outline-secondary btn-customize-specifications me-2" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div></div>${empty}<div class="dynamic-specification-grid">${fields}</div><div class="add-variant-purchasing"><h6 class="add-variant-subtitle">Inventory, Barcode &amp; Selling Price</h6><div class="row g-3">${inventoryUnitField(variation)}<div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" inputmode="text" value="${escapeHtml(variation.barcode || '')}"></div><div class="col-md-6"><label class="form-label">Selling Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div></div></div></div>`;
+    return `<div class="edit-variation-entry"><div class="d-flex align-items-center justify-content-between gap-2 mb-3"><span class="fw-bold small text-muted">Product SKU Details</span><div><button class="btn btn-sm btn-outline-secondary btn-customize-specifications me-2" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div></div>${empty}<div class="dynamic-specification-grid">${fields}${inventoryUnitField(variation)}<div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" inputmode="text" value="${escapeHtml(variation.barcode || '')}"></div>${sellingPriceField(variation)}</div></div>`;
+}
+
+function sellingPriceField(variation = {}) {
+    return `<div class="col-md-6 sku-selling-price-field"><label class="form-label">Selling Price <span class="text-danger">*</span></label><div class="input-group"><span class="input-group-text">₱</span><input class="form-control edit-var-price" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(variation.price ?? '')}" required></div></div>`;
 }
 
 function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName = '', canDelete = true, mode = 'edit') {
@@ -1912,7 +1925,7 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
     const rule = getVariationRule(categoryName, typeName);
     const rowId = `variation-rule-${Math.random().toString(36).slice(2)}`;
     const defaultName = `${mode}DefaultVariation`;
-    const header = mode === 'edit' ? 'Product SKU Details' : 'Sellable SKU';
+    const header = 'Product SKU Details';
     const deleteButton = canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Remove variant"><i class="fa-solid fa-trash-can"></i></button>' : '';
     const medicineFields = `
                 <div class="col-md-6"><label class="form-label">Generic Name</label><input class="form-control edit-var-generic-name" value="${escapeHtml(variation.generic_name || '')}" placeholder="Povidone-Iodine"></div>
@@ -1921,7 +1934,7 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-6"><label class="form-label">Net Content</label><div class="variation-pair"><input class="form-control edit-var-net-content-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.net_content_value))}" placeholder="500"><select class="form-select edit-var-net-content-unit">${measurementUnitOptionList('Volume', variation.net_content_unit || '')}</select></div></div>
                 <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule'])}</select></div>
                 ${inventoryUnitField(variation)}
-                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
+                ${sellingPriceField(variation)}
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
     `;
     const medicalFields = `
@@ -1931,7 +1944,7 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-6"><label class="form-label">Sterile Status</label><select class="form-select edit-var-sterile-status"><option value="">-</option><option ${variation.sterile_status === 'Sterile' ? 'selected' : ''}>Sterile</option><option ${variation.sterile_status === 'Non-sterile' ? 'selected' : ''}>Non-sterile</option><option disabled>──────────</option><option value="${CUSTOMIZE_OPTION}">⚙ Customize / Add Specifications</option></select></div>
                 <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'roll', 'tube'])}</select></div>
                 ${inventoryUnitField(variation)}
-                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
+                ${sellingPriceField(variation)}
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
     `;
     const groceryFields = `
@@ -1941,45 +1954,13 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['can', 'bottle', 'box', 'pack', 'sachet', 'tube', 'jar', 'pouch'])}</select></div>
                 <div class="col-md-6"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control edit-var-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" value="${escapeHtml(formatMeasurementValue(variation.pack_content_qty))}" placeholder="12"><select class="form-select edit-var-pack-content-unit">${measurementUnitOptionList('Count', variation.pack_content_unit || '')}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
                 ${inventoryUnitField(variation)}
-                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
+                ${sellingPriceField(variation)}
     `;
 
-    const addMedicineFields = `
-        <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Generic Name</label><input class="form-control edit-var-generic-name" value="${escapeHtml(variation.generic_name || '')}" placeholder="Povidone-Iodine"></div>
-            <div class="col-md-6"><label class="form-label">Strength</label><div class="variation-pair"><input class="form-control edit-var-strength-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.strength_value))}" placeholder="70"><select class="form-select edit-var-strength-unit">${measurementUnitOptionList('Strength', variation.strength_unit || '')}</select></div></div>
-            <div class="col-md-6"><label class="form-label">Dosage Form</label><input class="form-control edit-var-dosage-form" value="${escapeHtml(variation.dosage_form || '')}" placeholder="Solution"></div>
-            <div class="col-md-6"><label class="form-label">Net Content</label><div class="variation-pair"><input class="form-control edit-var-net-content-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.net_content_value))}" placeholder="500"><select class="form-select edit-var-net-content-unit">${measurementUnitOptionList('Volume', variation.net_content_unit || '')}</select></div></div>
-            ${inventoryUnitField(variation)}
-            <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
-        </div>
-        <div class="add-variant-purchasing">
-            <h6 class="add-variant-subtitle">Packaging &amp; Price</h6>
-            <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule'])}</select></div>
-                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
-            </div>
-        </div>
-    `;
+    const addMedicineFields = `<div class="row g-3">${medicineFields}</div>`;
     const addMedicalFields = `<div class="row g-3">${medicalFields}</div>`;
-    const addGroceryFields = `
-        <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">${escapeHtml(groceryVariantLabel(typeName))}</label><input class="form-control edit-var-name" list="${rowId}-variant" value="${escapeHtml(variation.variant_name || '')}" placeholder="Select or type">${datalist(`${rowId}-variant`, rule.variantOptions)}</div>
-            <div class="col-md-6"><label class="form-label">Size</label><select class="form-select edit-var-size-value">${optionList(rule.sizeOptions, formatMeasurementText(variation.size_value))}</select></div>
-            <div class="col-md-6"><label class="form-label">Net Weight</label><div class="variation-pair"><input class="form-control edit-var-weight-value" list="${rowId}-weight" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.weight_value))}" placeholder="155"><select class="form-select edit-var-weight-unit">${measurementUnitOptionList('Weight', variation.weight_unit || '')}</select></div>${datalist(`${rowId}-weight`, rule.weightValues)}</div>
-            ${inventoryUnitField(variation)}
-            <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
-        </div>
-        <div class="add-variant-purchasing">
-            <h6 class="add-variant-subtitle">Packaging &amp; Price</h6>
-            <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['can', 'bottle', 'box', 'pack', 'sachet', 'tube', 'jar', 'pouch'])}</select></div>
-                <div class="col-md-6"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control edit-var-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" value="${escapeHtml(formatMeasurementValue(variation.pack_content_qty))}" placeholder="12"><select class="form-select edit-var-pack-content-unit">${measurementUnitOptionList('Count', variation.pack_content_unit || '')}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
-                <div class="col-md-6"><label class="form-label">Price</label><input class="form-control edit-var-price" type="number" min="0" step=".01" value="${escapeHtml(variation.price ?? '')}" required></div>
-            </div>
-        </div>
-    `;
+    const addGroceryFields = `<div class="row g-3">${groceryFields}</div>`;
 
     return `
         <div class="edit-variation-entry">
@@ -2006,13 +1987,6 @@ function renderEditVariations(product, categoryName = '') {
     list.innerHTML = variations.map((variation, index) => editVariationEntry(variation, categoryName || product?.category_name || '', typeName, variations.length > 1 || index > 0, 'edit')).join('');
     if (!list.querySelector('.edit-var-default:checked')) {
         list.querySelector('.edit-var-default')?.setAttribute('checked', 'checked');
-    }
-    const existingSkuPrice = list.querySelector('.edit-variation-entry:first-child .edit-var-price');
-    if (existingSkuPrice) {
-        existingSkuPrice.required = false;
-        existingSkuPrice.closest('.col-md-6')?.classList.add('d-none');
-        const pricingHeading = existingSkuPrice.closest('.add-variant-purchasing')?.querySelector('.add-variant-subtitle');
-        pricingHeading?.remove();
     }
 }
 
@@ -2174,7 +2148,7 @@ async function openCreateAnotherVariant(product) {
     const cachedConfiguration = referenceCache.configurationsByType.get(String(product.type_id || ''));
     if (cachedConfiguration) {
         applyProductConfiguration(product.type_id || '', cachedConfiguration);
-        renderAddVariations({ variations: [{ price: product.price || '' }] }, product.category_name || '');
+        renderAddVariations({ variations: [{ price: '' }] }, product.category_name || '');
     } else {
         document.getElementById('addVariationList').innerHTML = '<div class="dynamic-specification-empty"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading Product Type specifications...</div>';
     }
@@ -2194,7 +2168,7 @@ async function openCreateAnotherVariant(product) {
             populateAddTypes(product.category_id || '', product.type_id || ''),
             loadProductConfiguration(product.type_id || '')
         ]);
-        renderAddVariations({ variations: [{ price: product.price || '' }] }, product.category_name || '');
+        renderAddVariations({ variations: [{ price: '' }] }, product.category_name || '');
         bootstrap.Modal.getInstance(modalElement)?.handleUpdate();
     } catch (error) {
         document.getElementById('addVariationList').innerHTML = `<div class="dynamic-specification-empty text-danger">${escapeHtml(error.message || 'Product Type specifications could not be loaded.')}</div>`;
@@ -2268,14 +2242,9 @@ function updateEditPricingView({ preserveApply = false } = {}) {
     document.getElementById('editCustomPricingView')?.classList.toggle('d-none', method !== 'custom_markup');
     document.getElementById('editManualPricingView')?.classList.toggle('d-none', method !== 'manual');
     const customInput = document.getElementById('editProductCustomMarkup');
-    const manualInput = document.getElementById('editProductManualPrice');
     if (customInput) {
         customInput.required = method === 'custom_markup';
         customInput.disabled = method !== 'custom_markup';
-    }
-    if (manualInput) {
-        manualInput.required = method === 'manual';
-        manualInput.disabled = method !== 'manual';
     }
 
     setPricingText('editPricingCategory', context.category.category_name || context.product.category_name || 'Not available');
@@ -2293,7 +2262,7 @@ function updateEditPricingView({ preserveApply = false } = {}) {
     setPricingText('editPricingCustomDifference', difference === null ? 'Not available' : signedPrice(difference), difference > 0 ? 'positive' : difference < 0 ? 'negative' : '');
     setPricingText('editPricingCustomStatus', customMarkup === null ? 'Enter a valid custom markup' : pricingDifferenceStatus(calculated, context.currentPrice));
 
-    const manualPrice = Number(getValue('editProductManualPrice'));
+    const manualPrice = Number(document.querySelector('#editVariationList .edit-variation-entry:first-child .edit-var-price')?.value);
     const gross = Number.isFinite(manualPrice) && context.cost !== null ? roundedCurrency(manualPrice - context.cost) : null;
     setPricingText('editPricingManualCost', costLabel, context.cost === null ? 'negative' : '');
     setPricingText('editPricingManualGross', gross === null ? 'Not available' : signedPrice(gross), gross > 0 ? 'positive' : gross < 0 ? 'negative' : '');
@@ -2338,7 +2307,6 @@ async function openEditProduct(productId) {
     document.getElementById('editProductStatus').value = product.status || 'Active';
     document.getElementById('editProductPricingMethod').value = product.pricing_method || product.pricing?.pricing_method || 'manual';
     document.getElementById('editProductCustomMarkup').value = product.pricing?.custom_markup_percentage ?? '';
-    document.getElementById('editProductManualPrice').value = roundedCurrency(product.price) ?? '';
     editPricingApplyRequested = false;
     const requestSequence = ++editProductRequestSequence;
     const form = document.getElementById('editProductForm');
@@ -2425,7 +2393,7 @@ async function submitEditProduct(event) {
         variations: collectEditVariations()
     };
     if (pricingMethod === 'custom_markup') payload.custom_markup_percentage = getValue('editProductCustomMarkup');
-    if (pricingMethod === 'manual') payload.manual_selling_price = getValue('editProductManualPrice');
+    if (pricingMethod === 'manual') payload.manual_selling_price = payload.variations.find(variation => !variation.delete)?.price || '';
     if (pricingMethod !== 'manual' && editPricingApplyRequested) payload.apply_calculated_price = true;
 
     try {
@@ -2666,24 +2634,6 @@ function initProductCards() {
         renderProductCards();
     });
 
-    document.getElementById('clearProductFilters')?.addEventListener('click', () => {
-        const search = document.getElementById('productSearchInput');
-        const category = document.getElementById('productCategoryFilter');
-        const type = document.getElementById('productTypeFilter');
-        const stock = document.getElementById('productStatusFilter');
-        const pricing = document.getElementById('productPricingFilter');
-        const sort = document.getElementById('productSortSelect');
-
-        if (search) search.value = '';
-        if (category) category.value = '';
-        if (type) type.value = '';
-        if (stock) stock.value = 'all';
-        if (pricing) pricing.value = 'all';
-        if (sort) sort.value = 'name-asc';
-        loadProductTypeFilter();
-        renderProductCards();
-    });
-
     document.getElementById('table-products')?.addEventListener('click', (event) => {
         if (event.target.closest('.product-pricing-select')) {
             event.stopPropagation();
@@ -2802,7 +2752,7 @@ function initProductCards() {
         const product = getProductById(getValue('editProductId'));
         if (!product) return;
         const variations = collectEditVariations().filter(variation => !variation.delete);
-        variations.push({ price: product.price || '', is_default: 0 });
+        variations.push({ price: '', is_default: 0 });
         const categoryName = document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || product.category_name || '';
         renderEditVariations({ ...product, variations }, categoryName);
     });
@@ -2823,11 +2773,13 @@ function initProductCards() {
     document.getElementById('editVariationList')?.addEventListener('change', (event) => {
         handleSellableSkuCustomization(event, true);
     });
+    document.getElementById('editVariationList')?.addEventListener('input', (event) => {
+        if (event.target.matches('.edit-var-price')) updateEditPricingView({ preserveApply: true });
+    });
     document.getElementById('editVariationList')?.addEventListener('focusin', rememberCustomizationValue);
 
     document.getElementById('editProductPricingMethod')?.addEventListener('change', () => updateEditPricingView());
     document.getElementById('editProductCustomMarkup')?.addEventListener('input', () => updateEditPricingView());
-    document.getElementById('editProductManualPrice')?.addEventListener('input', () => updateEditPricingView({ preserveApply: true }));
     document.getElementById('btnApplyCalculatedPrice')?.addEventListener('click', () => {
         editPricingApplyRequested = true;
         const button = document.getElementById('btnApplyCalculatedPrice');
@@ -3528,6 +3480,9 @@ async function loadInventoryTable() {
 
 export { initAddProductForm, initProductCards, loadProductsTable, loadInventoryTable };
 export default initAddProductForm;
+
+window.addEventListener('products:created', (event) => publishDataUpdate('product-updated', event.detail || {}));
+window.addEventListener('products:changed', (event) => publishDataUpdate('product-updated', event.detail || {}));
 
 // Populate suppliers when add product modal opens
 const _addProductModalEl = document.getElementById('addProductModal');

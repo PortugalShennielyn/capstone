@@ -14,18 +14,20 @@ function purchaseOrderPaymentStatus(float $adjustedPayable, float $totalPaid): s
     return 'Partially Paid';
 }
 
+function purchaseOrderNormalizedPaymentState(?float $adjustedPayable, float $totalPaid): string
+{
+    if ($adjustedPayable === null || $adjustedPayable <= 0) return 'awaiting_invoice';
+    return round($totalPaid, 2) + 0.005 >= round($adjustedPayable, 2) ? 'paid' : 'unpaid';
+}
+
 function purchaseOrderEffectivePayable(PDO $pdo, string $poId, ?float $storedPayable = null): float
 {
     $statement = $pdo->prepare(
-        'SELECT COALESCE(
-                    NULLIF(po.total_amount, 0),
-                    SUM(COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, 0))),
-                    0
-                )
+        'SELECT COALESCE(poi.supplier_invoice_total, NULLIF(po.final_payment, 0), po.total_amount, 0)
          FROM purchase_orders po
-         LEFT JOIN purchase_order_items poi ON poi.po_id = po.po_id
+         LEFT JOIN purchase_order_invoices poi ON poi.po_id = po.po_id
          WHERE po.po_id = :po_id
-         GROUP BY po.po_id, po.total_amount'
+         LIMIT 1'
     );
     $statement->execute([':po_id' => $poId]);
     return round(max(0, (float) $statement->fetchColumn()), 2);
@@ -39,7 +41,13 @@ function purchaseOrderPaymentSummary(PDO $pdo, string $poId, ?float $adjustedPay
         $adjustedPayable = (float) ($payableStatement->fetchColumn() ?: 0);
     }
     $adjustedPayable = purchaseOrderEffectivePayable($pdo, $poId, $adjustedPayable);
-    $creditApplied = supplierClaimCreditAppliedToPo($pdo, $poId);
+    $discountStatement = $pdo->prepare("SELECT COALESCE(SUM(app.amount_applied),0) FROM supplier_credit_applications app INNER JOIN supplier_credits cr ON cr.credit_id=app.credit_id INNER JOIN supplier_claims sc ON sc.claim_id=cr.claim_id INNER JOIN purchase_order_items source_item ON source_item.po_item_id=sc.po_item_id WHERE app.po_id=:po_id AND source_item.po_id=:source_po_id AND sc.resolution_type IN ('Current PO Credit','Supplier Credit')");
+    $discountStatement->execute([':po_id' => $poId, ':source_po_id' => $poId]);
+    $currentDiscount = round((float) $discountStatement->fetchColumn(), 2);
+    $futureCreditStatement = $pdo->prepare('SELECT COALESCE(SUM(app.amount_applied),0) FROM supplier_credit_applications app INNER JOIN supplier_credits cr ON cr.credit_id=app.credit_id INNER JOIN supplier_claims sc ON sc.claim_id=cr.claim_id INNER JOIN purchase_order_items source_item ON source_item.po_item_id=sc.po_item_id WHERE app.po_id=:po_id AND source_item.po_id<>:source_po_id');
+    $futureCreditStatement->execute([':po_id' => $poId, ':source_po_id' => $poId]);
+    $futureCreditApplied = round((float) $futureCreditStatement->fetchColumn(), 2);
+    $creditApplied = round($currentDiscount + $futureCreditApplied, 2);
     $adjustedPayable = max(0, (float) $adjustedPayable - $creditApplied);
     $paidStatement = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM purchase_order_payments WHERE po_id = :po_id');
     $paidStatement->execute([':po_id' => $poId]);
@@ -48,6 +56,8 @@ function purchaseOrderPaymentSummary(PDO $pdo, string $poId, ?float $adjustedPay
     return [
         'adjusted_payable' => $adjustedPayable,
         'supplier_credit_applied' => $creditApplied,
+        'current_po_discount' => $currentDiscount,
+        'future_supplier_credit_applied' => $futureCreditApplied,
         'total_paid' => $totalPaid,
         'remaining_balance' => round(max(0, $adjustedPayable - $totalPaid), 2),
         'payment_status' => purchaseOrderPaymentStatus($adjustedPayable, $totalPaid)
@@ -79,6 +89,60 @@ function purchaseOrderPaymentHistory(PDO $pdo, string $poId): array
     }
     unset($row);
     return $rows;
+}
+
+function buildPurchaseOrderPaymentDetails(PDO $pdo, string $poId): ?array
+{
+    $statement = $pdo->prepare(
+        'SELECT po.po_id, po.po_number, po.status, po.payment_status, po.payment_terms,
+                po.created_at AS order_date, po.expected_delivery_date,
+                s.supplier_id, s.supplier_name,
+                invoice.invoice_id, invoice.invoice_number, invoice.invoice_date,
+                invoice.discount AS invoice_discount, invoice.other_charges AS invoice_other_charges,
+                invoice.supplier_invoice_total AS invoice_total
+         FROM purchase_orders po
+         INNER JOIN suppliers s ON s.supplier_id = po.supplier_id
+         LEFT JOIN purchase_order_invoices invoice ON invoice.po_id = po.po_id
+         WHERE po.po_id = :po_id
+         LIMIT 1'
+    );
+    $statement->execute([':po_id' => $poId]);
+    $details = $statement->fetch(PDO::FETCH_ASSOC);
+    if (!$details) return null;
+
+    $details['invoice_recorded'] = !empty($details['invoice_id']);
+    $details['total_amount'] = $details['invoice_total'] === null ? null : round((float) $details['invoice_total'], 2);
+    $details['invoice_discount'] = round((float) ($details['invoice_discount'] ?? 0), 2);
+    $details['invoice_other_charges'] = round((float) ($details['invoice_other_charges'] ?? 0), 2);
+    $effectivePayable = $details['total_amount'] ?? 0.0;
+    $details['final_payment'] = $effectivePayable;
+    $details['payment'] = purchaseOrderPaymentSummary($pdo, $poId, $effectivePayable);
+    $details['payment']['payments'] = purchaseOrderPaymentHistory($pdo, $poId);
+
+    $replacementStatement = $pdo->prepare(
+        "SELECT COALESCE(SUM(GREATEST(
+                    CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(sc.remarks, 17), CHAR(10), 1), '$.replacement_expected_qty')), '0') AS SIGNED)
+                    - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(sc.remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED), 0)), 0)
+         FROM supplier_claims sc
+         INNER JOIN purchase_order_items poi ON poi.po_item_id = sc.po_item_id
+         WHERE poi.po_id = :po_id
+           AND sc.remarks LIKE '[RETURN_META_V1]%'
+           AND sc.resolution_type = 'Replacement'"
+    );
+    $replacementStatement->execute([':po_id' => $poId]);
+    $futureCreditStatement = $pdo->prepare(
+        "SELECT COALESCE(SUM(cr.credit_amount), 0)
+         FROM supplier_credits cr
+         INNER JOIN supplier_claims sc ON sc.claim_id = cr.claim_id
+         INNER JOIN purchase_order_items poi ON poi.po_item_id = sc.po_item_id
+         WHERE poi.po_id = :po_id AND sc.resolution_type = 'Next PO Credit'"
+    );
+    $futureCreditStatement->execute([':po_id' => $poId]);
+    $details['claim_summary'] = [
+        'replacement_pending_quantity' => (int) $replacementStatement->fetchColumn(),
+        'future_supplier_credit' => round((float) $futureCreditStatement->fetchColumn(), 2),
+    ];
+    return $details;
 }
 
 function synchronizePurchaseOrderPaymentStatus(PDO $pdo, string $poId, float $adjustedPayable): array

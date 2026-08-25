@@ -62,7 +62,7 @@ try {
 
     $approvalStatus = (string) ($currentOrder['approval_status'] ?? 'Pending');
     $currentStatus = (string) ($currentOrder['status'] ?? 'Pending');
-    $lockedStatuses = ['In transit', 'Arrived', 'Delivered', 'Cancelled', 'Rejected'];
+    $lockedStatuses = ['Pending', 'Arrived', 'Delivered', 'Cancelled', 'Rejected'];
     if (in_array($currentStatus, $lockedStatuses, true)) {
         throw new InvalidArgumentException('This purchase order is locked and can no longer be edited.');
     }
@@ -71,7 +71,6 @@ try {
     validateProductsForSupplier($pdo, $supplierId, $items, $poId);
     $items = applySupplierProductSetup($pdo, $supplierId, $items);
     validatePurchaseOrderItems($items);
-    $validatedTotalAmount = validateSubmittedPurchaseOrderTotals($payload, $items);
 
     $existingCompareStatement = $pdo->prepare(
         'SELECT
@@ -97,8 +96,7 @@ try {
                 'product_id' => cleanId($item['product_id'] ?? null),
                 'purchase_qty' => (int) ($item['purchase_qty'] ?? $item['quantity'] ?? 0),
                 'purchase_unit' => strtolower(trim((string) ($item['purchase_unit'] ?? 'pcs'))),
-                'units_per_purchase_unit' => (int) ($item['units_per_purchase_unit'] ?? 1),
-                'price' => number_format((float) ($item['price'] ?? 0), 2, '.', '')
+                'units_per_purchase_unit' => (int) ($item['units_per_purchase_unit'] ?? 1)
             ];
         }
         usort($signature, static fn($a, $b) => strcmp($a['po_item_id'] . $a['product_id'], $b['po_item_id'] . $b['product_id']));
@@ -108,7 +106,7 @@ try {
     $majorChanged = cleanId($currentOrder['supplier_id'] ?? null) !== $supplierId
         || $majorSignature($existingCompareRows) !== $majorSignature($items);
     if ($approvalStatus === 'Approved' && $majorChanged) {
-        throw new InvalidArgumentException('Supplier, item, quantity, and cost changes are locked after an approved purchase request is converted to a purchase order.');
+        throw new InvalidArgumentException('Supplier, item, and quantity changes are locked after an approved purchase request is converted to a purchase order.');
     }
 
     $orderStatement = $pdo->prepare(
@@ -214,16 +212,16 @@ try {
            AND po_id = :po_id'
     );
 
-    $totalAmount = 0.0;
-
     foreach ($items as $item) {
         $poItemId = cleanId($item['po_item_id'] ?? null);
         $quantityParams = purchaseOrderQuantityParams($item);
-        $totalAmount += (float) $quantityParams[':line_total'];
+        $quantityParams[':line_total'] = null;
+        $snapshotParams = purchaseOrderItemSnapshotParams($item);
+        $snapshotParams[':unit_price_snapshot'] = null;
         $params = array_merge([
             ':po_id' => $poId,
             ':product_id' => cleanId($item['product_id'])
-        ], $quantityParams, purchaseOrderItemSnapshotParams($item));
+        ], $quantityParams, $snapshotParams);
 
         if ($poItemId !== '') {
             if (!in_array($poItemId, $existingItemIds, true)) {
@@ -265,15 +263,8 @@ try {
         $deleteStatement->execute(array_merge([$poId], $deleteItemIds));
     }
 
-    if (purchaseOrderMoneyCents($totalAmount, 'Purchase-order total is invalid.') !== purchaseOrderMoneyCents($validatedTotalAmount, 'Purchase-order total is invalid.')) {
-        throw new InvalidArgumentException('Purchase-order total changed during validation. Please try again.');
-    }
-
-    $totalStatement = $pdo->prepare('UPDATE purchase_orders SET total_amount = :total_amount WHERE po_id = :po_id');
-    $totalStatement->execute([
-        ':total_amount' => $totalAmount,
-        ':po_id' => $poId
-    ]);
+    $pdo->prepare('UPDATE purchase_orders SET total_amount = NULL WHERE po_id = :po_id AND status = \'Draft\'')
+        ->execute([':po_id' => $poId]);
 
     if ($approvalStatus === 'Revision Requested') {
         recordPurchaseOrderApprovalAudit($pdo, $poId, 'Revision Requested', 'Pending', 'resubmit_revision', 'Legacy purchase order revision was resubmitted.');

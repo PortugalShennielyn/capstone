@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-<script src="./js/navbar_bootstrap.js?v=8"></script>
+<script src="./js/navbar_bootstrap.js?v=11"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Purchase Requests</title>
@@ -12,12 +12,12 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=20" rel="stylesheet">
-    <link href="./css/supervisor_approval.css?v=9" rel="stylesheet">
-<script src="./js/navbar.js?v=73" defer></script>
+    <link href="./css/navbar.css?v=36" rel="stylesheet">
+    <link href="./css/supervisor_approval.css?v=12" rel="stylesheet">
+<script src="./js/navbar.js?v=83" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
-        :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --purple:#7c3aed; --purple-dark:#6427d8; --body-bg:#f4f6fb; --border-soft:#e8ecf3; --text-main:#252b37; --muted:#667085; --transition:all .3s ease; }
+        :root { --purple:#7c3aed; --purple-dark:#6427d8; --body-bg:#f4f6fb; --border-soft:#e8ecf3; --text-main:#252b37; --muted:#667085; --transition:all .3s ease; }
         * { box-sizing:border-box; }
         body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter",sans-serif; }
         body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; --muted:#a9b4c7; }
@@ -29,15 +29,15 @@
         .page-title-mini { display:flex; flex-direction:column; line-height:1.2; }
         .page-title-mini strong { font-size:15px; font-weight:800; }
         .page-title-mini span { margin-top:3px; color:#7b8494; font-size:12px; font-weight:600; }
-        .page-body { padding:clamp(22px,2vw,34px); }
+        .page-body { padding:clamp(16px,1.5vw,24px); }
         .workspace { width:100%; max-width:1480px; margin:0 auto; }
         .btn-purple { color:#fff; background:var(--purple); border-color:var(--purple); }
         .btn-purple:hover { color:#fff; background:var(--purple-dark); border-color:var(--purple-dark); }
-        .pr-summary-grid { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:12px; margin-bottom:18px; }
-        .pr-summary-card { min-height:88px; display:flex; align-items:center; gap:13px; padding:15px 16px; border:1px solid var(--border-soft); border-left:4px solid var(--card-color); border-radius:10px; background:#fff; box-shadow:0 8px 22px rgba(15,23,42,.045); }
-        .pr-summary-icon { width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 38px; border-radius:10px; color:var(--card-color); background:color-mix(in srgb,var(--card-color) 12%,transparent); }
-        .pr-summary-card span { display:block; color:var(--muted); font-size:.75rem; font-weight:800; }
-        .pr-summary-card strong { display:block; margin-top:4px; font-size:1.42rem; font-weight:900; line-height:1; }
+        .pr-summary-grid { display:grid; grid-template-columns:repeat(5,minmax(145px,1fr)); gap:10px; margin-bottom:12px; }
+        .pr-summary-card { min-height:70px; height:70px; display:flex; align-items:center; gap:11px; padding:9px 14px; border:1px solid var(--border-soft); border-left:4px solid var(--card-color); border-radius:10px; background:#fff; box-shadow:0 6px 16px rgba(15,23,42,.04); }
+        .pr-summary-icon { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; flex:0 0 36px; border-radius:9px; color:var(--card-color); background:color-mix(in srgb,var(--card-color) 12%,transparent); }
+        .pr-summary-card span { display:block; color:var(--muted); font-size:12px; font-weight:800; line-height:1.15; }
+        .pr-summary-card strong { display:block; margin-top:2px; font-size:21px; font-weight:900; line-height:1; }
         .pr-card { border:1px solid var(--border-soft); border-radius:12px; background:#fff; box-shadow:0 8px 22px rgba(15,23,42,.045); }
         .pr-card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; padding:18px 18px 0; }
         .pr-card-header h2 { margin:0; font-size:1.05rem; font-weight:850; }
@@ -46,13 +46,17 @@
         .pr-filters { display:grid; grid-template-columns:minmax(260px,1fr) 210px 175px 175px auto; gap:10px; align-items:end; padding:16px 18px; }
         .pr-filter-field label { display:block; margin-bottom:5px; color:#596274; font-size:11px; font-weight:850; text-transform:uppercase; }
         .pr-filter-field .form-control,.pr-filter-field .form-select { min-height:40px; font-size:13px; }
-        .pr-table-wrap { width:100%; overflow-x:auto; border-top:1px solid var(--border-soft); border-radius:0 0 12px 12px; }
-        .pr-table { min-width:1020px; width:100%; margin:0; table-layout:fixed!important; }
+        .pr-table-wrap { width:100%; overflow-x:visible; border-top:1px solid var(--border-soft); border-radius:0 0 12px 12px; }
+        .pr-table-wrap > .data-table-wrapper { width:100%!important; max-width:100%!important; max-height:none!important; overflow:visible!important; border-radius:0 0 12px 12px!important; }
+        .pr-table-wrap > .data-table-wrapper > table.pr-table.data-table-enhanced,.pr-table { width:100%; min-width:0!important; max-width:100%!important; margin:0; table-layout:fixed!important; }
         .pr-table th { padding:13px 10px; color:#596274; background:#f8f9fc; font-size:11px; font-weight:850; text-align:left; text-transform:uppercase; white-space:nowrap; }
         .pr-table td { padding:13px 10px; color:var(--text-main); font-size:12px; font-weight:650; line-height:1.4; text-align:left; vertical-align:middle; }
-        .pr-table th:nth-child(1){width:17%}.pr-table th:nth-child(2){width:14%}.pr-table th:nth-child(3){width:15%}.pr-table th:nth-child(4){width:17%}.pr-table th:nth-child(5){width:10%}.pr-table th:nth-child(6){width:12%}.pr-table th:nth-child(7){width:15%}
+        .pr-table th:nth-child(1){width:16.5%}.pr-table th:nth-child(2){width:12%}.pr-table th:nth-child(3){width:17.5%}.pr-table th:nth-child(4){width:21%}.pr-table th:nth-child(5){width:8.25%}.pr-table th:nth-child(6){width:8.25%}
         .pr-table th:nth-child(5),.pr-table td:nth-child(5){text-align:center}
-        .pr-table td:nth-child(7) { padding-right:5px; padding-left:5px; }
+        .pr-table-wrap > .data-table-wrapper > table.pr-table.data-table-enhanced th:nth-child(7),.pr-table-wrap > .data-table-wrapper > table.pr-table.data-table-enhanced td:nth-child(7),.pr-table th:nth-child(7),.pr-table td:nth-child(7) { position:static!important; right:auto!important; z-index:auto!important; width:15%!important; min-width:160px!important; max-width:180px!important; padding-right:6px!important; padding-left:6px!important; border-left:0!important; box-shadow:none!important; text-align:center; }
+        .pr-table-wrap > .data-table-wrapper > table.pr-table.data-table-enhanced th:nth-child(7),.pr-table th:nth-child(7) { background:#f8f9fc!important; }
+        .pr-table-wrap > .data-table-wrapper > table.pr-table.data-table-enhanced td:nth-child(7),.pr-table td:nth-child(7) { background:var(--bs-table-bg,#fff)!important; }
+        .pr-table-wrap > .data-table-wrapper > table.pr-table.data-table-enhanced tbody tr:hover td:nth-child(7),.pr-table tbody tr:hover td:nth-child(7) { background:var(--bs-table-hover-bg,#f8fafc)!important; }
         .pr-number-value { display:inline-block; white-space:normal; word-break:normal; overflow-wrap:normal; }
         .requested-by-value { white-space:nowrap; }
         .pr-item-summary strong,.pr-item-summary span { display:block; }
@@ -63,9 +67,10 @@
         .pr-po-generated-zero { display:inline-block; min-width:24px; color:var(--muted); font-size:12px; font-weight:700; text-align:center; }
         .pr-status { display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; font-size:10.5px; font-weight:850; white-space:nowrap; }
         .is-draft{color:#475569;background:#e2e8f0}.is-pending{color:#92400e;background:#fef3c7}.is-approved{color:#166534;background:#dcfce7}.is-revision{color:#6d28d9;background:#ede9fe}.is-rejected{color:#991b1b;background:#fee2e2}
-        .pr-actions { display:flex; align-items:center; justify-content:center; flex-wrap:nowrap; gap:7px; }
-        .pr-actions .btn { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
-        .pr-actions .btn.pr-labeled-action { width:auto; padding:0 9px; gap:5px; white-space:nowrap; }
+        .pr-table td:nth-child(7) .pr-actions { width:auto!important; max-width:100%!important; display:inline-flex!important; align-items:center!important; justify-content:center!important; flex-wrap:nowrap!important; gap:5px!important; white-space:nowrap; }
+        .pr-table td:nth-child(7) .pr-actions .btn { width:30px!important; min-width:30px!important; height:30px!important; display:inline-flex; align-items:center; justify-content:center; padding:0!important; font-size:14px; }
+        .pr-table td:nth-child(7) .pr-actions .btn.pr-labeled-action { width:auto!important; min-width:0!important; height:30px!important; padding:0 5px!important; gap:3px!important; font-size:13px; white-space:nowrap; }
+        .pr-table td:nth-child(7) .pr-actions .btn.pr-labeled-action i { font-size:12px; }
         .pr-empty { height:180px; color:#8790a1!important; text-align:center; vertical-align:middle!important; }
         .request-form-meta { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:16px; }
         .request-form-meta > div { padding:10px 11px; border:1px solid var(--border-soft); border-radius:8px; background:#fafbfe; }
@@ -142,6 +147,7 @@
         .related-pos-modal .modal-dialog{width:min(94vw,1100px);max-width:1100px}.related-pos-modal .modal-content{max-height:86vh;overflow:hidden;border:0;border-radius:12px}.related-pos-modal .modal-header{flex:0 0 auto;padding:16px 20px}.related-pos-modal .modal-body{min-height:180px;padding:0;overflow:auto}.related-pos-table{width:100%;margin:0;table-layout:auto}.related-pos-table th{position:sticky;top:0;z-index:1;padding:11px 12px;color:#475569;background:#f8fafc;font-size:10px;font-weight:850;letter-spacing:.025em;text-transform:uppercase;white-space:nowrap}.related-pos-table td{padding:12px;vertical-align:middle;border-color:var(--border-soft);font-size:12px}.related-po-number{white-space:nowrap}.related-po-supplier{display:block;min-width:150px;font-weight:700}.related-po-items{min-width:190px;max-width:320px}.related-po-items strong,.related-po-items span{display:block}.related-po-items span{margin-top:3px;color:var(--muted);font-size:10px;line-height:1.35;overflow-wrap:anywhere}.related-po-action{width:1%;white-space:nowrap}.related-po-action .btn{display:inline-flex;align-items:center;gap:6px}.related-po-loading,.related-pos-empty{padding:42px 20px!important;color:var(--muted);text-align:center}.related-pos-empty i{display:block;margin-bottom:10px;font-size:26px}.related-po-document-modal .modal-dialog{width:96vw;max-width:none;height:94vh;margin:3vh auto}.related-po-document-modal .modal-content{height:100%;overflow:hidden;border:0;border-radius:12px}.related-po-document-modal .modal-header{flex:0 0 auto;padding:10px 16px}.related-po-document-modal .modal-body{min-height:0;padding:0;overflow:auto;background:#e8ebef}.related-po-document-frame{display:block;width:100%;height:1123px;border:0;background:#fff}
         body.dark-mode .topbar,body.dark-mode .pr-card,body.dark-mode .pr-summary-card,body.dark-mode .modal-content { background:#182131; }
         body.dark-mode .pr-table th,body.dark-mode .product-catalog-table th,body.dark-mode .finalize-items-table th { color:#cbd5e1; background:#202b3d; }
+        body.dark-mode .pr-table th:nth-child(7){background:#202b3d!important}body.dark-mode .pr-table td:nth-child(7){background:var(--bs-table-bg,#182131)!important}body.dark-mode .pr-table tbody tr:hover td:nth-child(7){background:var(--bs-table-hover-bg,#202b3d)!important}
         body.dark-mode .request-preview-shell { background:#111827; }
         body.dark-mode .related-pos-table th{color:#cbd5e1;background:#202b3d}body.dark-mode .related-po-document-modal .modal-body{background:#111827}
         body.dark-mode .product-catalog-scroll { background:#182131; }
@@ -166,7 +172,6 @@
             </div>
             <div class="topbar-right">
                 <button class="icon-btn" type="button" aria-label="Notifications"><i class="fa-regular fa-bell"></i></button>
-                <button class="icon-btn" id="themeToggle" type="button" aria-label="Toggle dark mode"><i class="fa-solid fa-moon"></i></button>
             </div>
         </header>
         <section class="page-body"><div class="workspace">
@@ -220,9 +225,9 @@
 
     <div class="modal fade supervisor-review-modal" id="generatePoModal" tabindex="-1" aria-labelledby="generatePoTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
         <div class="modal-header"><div><span class="eyebrow">Manager purchasing workflow</span><h2 class="modal-title" id="generatePoTitle">Generate Purchase Orders</h2><p class="modal-subtitle" id="generatePoNumber"></p></div><button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
-        <nav class="approval-stepper" id="poGenerationStepper" aria-label="PO generation steps"><button type="button" data-po-step-target="1"><span>1</span><strong>Purchasing Setup</strong><small>Choose supplier and order units</small></button><button type="button" data-po-step-target="2"><span>2</span><strong>PO Preview</strong><small>Review supplier purchase orders</small></button></nav>
+        <nav class="approval-stepper" id="poGenerationStepper" aria-label="PO generation steps"><button type="button" data-po-step-target="1"><span>1</span><strong>Purchasing Setup</strong><small>Choose supplier; quantity is automatic</small></button><button type="button" data-po-step-target="2"><span>2</span><strong>PO Preview</strong><small>Review supplier purchase orders</small></button></nav>
         <div class="modal-body">
-            <section class="approval-step" data-po-step-panel="1"><div class="step-heading"><div><h3>Purchasing Setup</h3><p>Select a database purchasing setup and purchase-unit quantity for every approved item.</p></div></div><div class="procurement-table-wrap"><table class="procurement-table"><thead><tr><th>Product</th><th>Approved Request</th><th>Supplier</th><th>Purchase Unit</th><th>Contents</th><th>Cost</th><th>Order Qty</th><th>Expected / Excess</th><th>Line Total</th></tr></thead><tbody id="managerProcurementAssignments"></tbody></table></div><div class="setup-validation" id="managerSetupValidation"></div></section>
+            <section class="approval-step" data-po-step-panel="1"><div class="step-heading"><div><h3>Purchasing Setup</h3><p>Select a supplier. PO quantity is derived automatically from the approved requirement and packaging conversion.</p></div></div><div class="procurement-table-wrap"><table class="procurement-table"><thead><tr><th>Product</th><th>Approved Requirement</th><th>Supplier</th><th>Purchase Unit</th><th>Contents</th><th>PO Qty</th><th>Base Qty / Excess</th></tr></thead><tbody id="managerProcurementAssignments"></tbody></table></div><div class="setup-validation" id="managerSetupValidation"></div></section>
             <section class="approval-step" data-po-step-panel="2" hidden><div class="step-heading"><div><h3>Purchase Order Preview</h3><p>Items are grouped into one purchase order per supplier.</p></div><div class="po-preview-count" id="managerPoPreviewCount"></div></div><div class="po-preview-summary" id="managerPoPreviewSummary"></div><div class="supplier-po-preview" id="managerSupplierPoPreview"></div><div class="setup-validation" id="managerPoPreviewValidation"></div></section>
         </div>
         <div class="modal-footer" id="generatePoActions"></div>
@@ -232,7 +237,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script type="module" src="./js/modules/purchase_requests.js?v=31"></script>
+<script type="module" src="./js/modules/purchase_requests.js?v=34"></script>
     <script type="module">import verifySession from './js/modules/auth.js?v=8'; await verifySession();</script>
 </body>
 </html>

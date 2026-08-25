@@ -98,7 +98,9 @@ try {
         "SELECT psv.product_id, ps.specification_id, ps.specification_name,
                 COALESCE(NULLIF(pts.display_label, ''), ps.specification_name) AS display_name, ps.field_style,
                 psv.value_text, psv.value_number, psv.measurement_unit_id,
-                COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name) AS unit_symbol
+                pmu.unit_name,
+                COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name) AS unit_symbol,
+                pmu.measurement_group AS unit_measurement_group
          FROM product_specification_values psv
          INNER JOIN product p ON p.product_id = psv.product_id
          INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id

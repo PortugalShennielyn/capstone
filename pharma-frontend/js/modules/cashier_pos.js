@@ -4,6 +4,7 @@ import {
     vatInclusivePaymentTotals,
     savedTransactionTotals,
 } from './sales_financials.js?v=1';
+import { createLiveSync, publishDataUpdate } from './live_data.js?v=1';
 
 const state = {
     tab: 'waiting',
@@ -14,17 +15,26 @@ const state = {
     receiptOnly: false,
 };
 
-const nodes = {
-    waiting: document.getElementById('summaryWaiting'),
-    processing: document.getElementById('summaryProcessing'),
-    completed: document.getElementById('summaryCompleted'),
-    sales: document.getElementById('summarySales'),
-    search: document.getElementById('cashierSearch'),
-    list: document.getElementById('cashierOrderList'),
-    detail: document.getElementById('cashierDetailPanel'),
-    refresh: document.getElementById('refreshCashierBtn'),
-    receiptPrint: document.getElementById('cashierReceiptPrintArea'),
-};
+const nodes = {};
+
+function collectCashierNodes() {
+    Object.assign(nodes, {
+        waiting: document.getElementById('waitingCount'),
+        processing: document.getElementById('processingCount'),
+        search: document.getElementById('cashierSearch'),
+        list: document.getElementById('cashierOrderList'),
+        detail: document.getElementById('cashierDetailPanel'),
+        receiptPrint: document.getElementById('cashierReceiptPrintArea'),
+    });
+
+    const missing = ['waiting', 'processing', 'search', 'list', 'detail']
+        .filter((key) => !nodes[key]);
+    if (missing.length) {
+        console.error(`Cashier POS could not initialize because required DOM nodes are missing: ${missing.join(', ')}`);
+        return false;
+    }
+    return true;
+}
 
 const money = (value) => `\u20b1${Number(value || 0).toLocaleString('en-PH', {
     minimumFractionDigits: 2,
@@ -123,8 +133,6 @@ function statusClass(order) {
 function renderSummary(summary = {}) {
     nodes.waiting.textContent = numberText(summary.waiting_orders);
     nodes.processing.textContent = numberText(summary.processing_orders);
-    nodes.completed.textContent = numberText(summary.completed_today);
-    nodes.sales.textContent = money(summary.total_sales_today);
 }
 
 function orderActionLabel(order) {
@@ -349,7 +357,7 @@ function nextWaitingDetail() {
 
 function itemRows(order) {
     if (!Array.isArray(order.items) || !order.items.length) {
-        return `<tr><td colspan="4" class="text-center text-muted py-4">No order items.</td></tr>`;
+        return `<tr><td colspan="5" class="text-center text-muted py-4">No order items.</td></tr>`;
     }
 
     return order.items.map((item) => {
@@ -364,11 +372,18 @@ function itemRows(order) {
                     ${specParts ? `<span class="item-spec">${escapeHtml(specParts)}</span>` : ''}
                     ${inactive ? '<span class="item-spec text-danger">Inactive &mdash; cannot be sold</span>' : ''}
                 </td>
+                <td class="unit-col">${escapeHtml(displayUnit(item.selected_unit))}</td>
                 <td>${money(item.unit_price)}</td>
                 <td>${money(item.line_total)}</td>
             </tr>
         `;
     }).join('');
+}
+
+function displayUnit(unit) {
+    const value = String(unit || 'Unit').trim();
+    if (/^(pc|pcs|piece|pieces|each)$/i.test(value)) return 'Piece';
+    return value.replace(/\bpack\b/gi, 'Pack').replace(/\bbox\b/gi, 'Box');
 }
 
 function renderDetail(order) {
@@ -410,53 +425,44 @@ function renderDetail(order) {
             <span>${isCompleted ? 'Completed At' : 'Time Accepted'}<b>${escapeHtml(formatDateTime(isCompleted ? order.completed_at : order.cashier_accepted_at))}</b></span>
         </div>
         ${inactiveItem ? `<div class="alert alert-danger py-2 px-3 mb-3"><strong>${escapeHtml(inactiveItem.product_name)}</strong> is now inactive. Remove it from the order before continuing.</div>` : ''}
-        <section class="payment-hero" aria-label="Payment summary">
-            <div class="payment-hero-block">
-                <span>TOTAL</span>
-                <strong id="paymentHeroTotal">${money(displayFinalAmount)}</strong>
-            </div>
-            <label class="payment-hero-block" for="cashAmountInput">
-                <span>CASH RECEIVED</span>
-                <input class="cash-input" id="cashAmountInput" type="number" min="0" step="0.01"
-                    placeholder="0.00" value="${cashValue > 0 ? cashValue.toFixed(2) : ''}" ${canPay ? '' : 'disabled'}
-                    inputmode="decimal" autocomplete="off">
-            </label>
-            <div class="payment-hero-block change">
-                <span>CHANGE</span>
-                <strong id="changeAmount">${money(displayChange)}</strong>
-            </div>
-        </section>
-        <div class="detail-scroll">
-            <div class="items-wrap">
+        <div class="checkout-layout">
+            <section class="order-items-panel" aria-label="Order items">
+             <div class="items-wrap">
                 <table class="items-table">
                     <thead>
                         <tr>
                             <th class="qty-col">Qty</th>
                             <th>Item</th>
+                            <th class="unit-col">Unit</th>
                             <th class="price-col">Unit Price</th>
                             <th class="amount-col">Amount</th>
                         </tr>
                     </thead>
                     <tbody>${itemRows(order)}</tbody>
                 </table>
-            </div>
-            <div class="totals-list">
-                <div class="total-line"><span>Total Items</span><strong>${numberText(order.item_count)}</strong></div>
-                <div class="total-line"><span>Total Quantity</span><strong>${numberText(order.total_quantity)}</strong></div>
-                <div class="total-line"><span>Subtotal</span><strong>${money(order.subtotal)}</strong></div>
-                <label class="total-line discount-line" for="cashierDiscountType">
+             </div>
+            </section>
+            <aside class="checkout-panel" aria-label="Checkout">
+              <div class="checkout-total"><span>Total</span><strong id="paymentHeroTotal">${money(displayFinalAmount)}</strong></div>
+              <div class="totals-list">
+                <label class="checkout-field" for="cashierDiscountType">
                     <span>Discount</span>
                     <span class="discount-control">
                         <select class="discount-select" id="cashierDiscountType" ${canPay ? '' : 'disabled'}>${discountSelect}</select>
                         <input class="discount-input ${selectedDiscountType === 'custom' ? '' : 'is-hidden'}" id="cashierDiscountAmount" type="number" min="0" step="0.01" value="${selectedDiscountAmount.toFixed(2)}" ${canPay ? '' : 'disabled'} inputmode="decimal" autocomplete="off" aria-label="Custom cashier discount amount">
                     </span>
                 </label>
+                <div class="total-line"><span>Subtotal</span><strong>${money(order.subtotal)}</strong></div>
                 <div class="total-line"><span>Total Discount</span><strong id="totalDiscount">${money(isCompleted ? completedReceiptTotals(order).discount : totals.discount)}</strong></div>
                 <div class="total-line"><span>VATable Sales</span><strong id="vatableSales">${money(isCompleted ? completedReceiptTotals(order).vatableSales : totals.vatableSales)}</strong></div>
                 <div class="total-line"><span>VAT (12%)</span><strong id="vatAmount">${money(isCompleted ? completedReceiptTotals(order).vat : totals.vat)}</strong></div>
                 <div class="total-line after-discount"><span>Total Amount</span><strong id="finalAmount">${money(displayFinalAmount)}</strong></div>
-            </div>
-            ${isCompleted ? `
+              </div>
+              <label class="checkout-field" for="cashAmountInput"><span>Cash Received</span>
+                <input class="cash-input" id="cashAmountInput" type="number" min="0" step="0.01" placeholder="0.00" value="${cashValue > 0 ? cashValue.toFixed(2) : ''}" ${canPay ? '' : 'disabled'} inputmode="decimal" autocomplete="off">
+              </label>
+              <div class="checkout-change"><span>Change</span><strong id="changeAmount">${money(displayChange)}</strong></div>
+              ${isCompleted ? `
                 <div class="receipt-box">
                     Receipt No: ${escapeHtml(order.receipt_no || '-')}<br>
                     Cashier: ${escapeHtml(order.cashier_name || 'Unassigned')}<br>
@@ -466,24 +472,25 @@ function renderDetail(order) {
                     Change: ${money(order.change_amount)}<br>
                     Total Amount: ${money(displayFinalAmount)}
                 </div>
-            ` : ''}
-        </div>
-        <div class="detail-actions">
-            ${isWaiting ? `
+              ` : ''}
+              <div class="detail-actions">
+              ${isWaiting ? `
                 <button class="primary-action" type="button" data-accept-active="${order.order_id}">
                     <i class="fa-solid fa-folder-open"></i> Open Order
                 </button>
-            ` : ''}
-            ${canPay ? `
+              ` : ''}
+              ${canPay ? `
                 <button class="primary-action" type="button" id="completePaymentBtn" disabled>
                     <i class="fa-solid fa-circle-check"></i> Complete Payment
                 </button>
-            ` : ''}
-            ${isCompleted ? `
+              ` : ''}
+              ${isCompleted ? `
                 <button class="secondary-action" type="button" id="printReceiptBtn">
                     <i class="fa-solid fa-print"></i> Print Receipt
                 </button>
-            ` : ''}
+              ` : ''}
+              </div>
+            </aside>
         </div>
     `;
 
@@ -540,9 +547,9 @@ function bindDetailEvents(order) {
     }
 }
 
-async function loadOrders(keepSelection = true) {
+async function loadOrders(keepSelection = true, { silent = false } = {}) {
     state.tab = normalizeWorkingTab(state.tab);
-    nodes.list.innerHTML = '<div class="empty-list">Loading orders...</div>';
+    if (!silent) nodes.list.innerHTML = '<div class="empty-list">Loading orders...</div>';
     try {
         const query = new URLSearchParams({
             tab: state.tab,
@@ -551,16 +558,18 @@ async function loadOrders(keepSelection = true) {
         const data = await apiFetch(`/cashier/get_cashier_orders.php?${query.toString()}`, {
             headers: {},
         });
-        state.orders = Array.isArray(data.orders) ? data.orders : [];
+        const nextOrders = Array.isArray(data.orders) ? data.orders : [];
+        const changed = JSON.stringify(nextOrders) !== JSON.stringify(state.orders);
+        state.orders = nextOrders;
         renderSummary(data.summary || {});
-        renderOrders();
+        if (changed || !silent) renderOrders();
 
         if (!keepSelection || !state.activeOrderId) {
             return;
         }
 
         const stillVisible = state.orders.some((order) => Number(order.order_id) === Number(state.activeOrderId));
-        if (stillVisible) {
+        if (stillVisible && !silent) {
             await loadOrderDetail(state.activeOrderId);
         }
     } catch (error) {
@@ -619,6 +628,7 @@ async function acceptOrder(orderId) {
         syncTabs();
         renderDetail(data);
         await loadOrders(true);
+        publishDataUpdate('order-accepted', { orderId: Number(orderId) });
         toast('success', 'Order accepted.');
     } catch (error) {
         toast('error', error.message);
@@ -641,6 +651,8 @@ async function completePayment(orderId, amountPaid, discountType = 'none', disco
         syncTabs();
         renderDetail(data);
         toast('success', 'Payment completed. Receipt is ready for printing.');
+        publishDataUpdate('payment-completed', { orderId: Number(orderId) });
+        publishDataUpdate('shelf-updated', { orderId: Number(orderId) });
         printCashierReceipt(data, () => {
             showWaitingQueueAndSelectNext().catch((error) => toast('error', error.message));
         });
@@ -673,8 +685,6 @@ function bindEvents() {
         state.searchTimer = window.setTimeout(() => loadOrders(false), 250);
     });
 
-    nodes.refresh.addEventListener('click', () => loadOrders(true));
-
     nodes.list.addEventListener('click', (event) => {
         const action = event.target.closest('[data-order-action]');
         const card = event.target.closest('[data-order-card]');
@@ -699,6 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
             timeOut: 2600,
         };
     }
+    if (!collectCashierNodes()) return;
     bindEvents();
     emptyDetail();
     const targetOrderId = new URLSearchParams(window.location.search).get('order_id');
@@ -710,3 +721,5 @@ document.addEventListener('DOMContentLoaded', () => {
         loadOrders(false);
     }
 });
+
+createLiveSync({ interval: 2000, events: ['order-created', 'order-accepted', 'payment-completed'], sync: () => loadOrders(true, { silent: true }) });

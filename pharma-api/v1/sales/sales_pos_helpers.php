@@ -161,14 +161,6 @@ function salesBuildSpecification(array $row): string
 {
     $parts = [];
     $category = strtolower(salesSpecificationText($row['category_name'] ?? ''));
-    $packaging = salesSpecificationText(
-        $row['packaging']
-        ?? $row['medicine_package_type']
-        ?? $row['grocery_package_type']
-        ?? $row['medical_package_type']
-        ?? ''
-    );
-
     if ($category === 'medicine') {
         $values = [
             $row['generic_name'] ?? '',
@@ -179,7 +171,6 @@ function salesBuildSpecification(array $row): string
                 $row['net_content_value'] ?? $row['volume_value'] ?? '',
                 $row['net_content_unit'] ?? $row['volume_unit'] ?? ''
             ),
-            $packaging,
         ];
     } elseif (in_array($category, ['medical supply', 'medical supplies'], true)) {
         $values = [
@@ -187,8 +178,6 @@ function salesBuildSpecification(array $row): string
             $row['medical_size'] ?? $row['size'] ?? '',
             $row['material'] ?? '',
             $row['sterile_status'] ?? '',
-            $packaging,
-            $row['medical_pack_content'] ?? $row['pack_content'] ?? '',
         ];
     } else {
         $values = [
@@ -198,7 +187,6 @@ function salesBuildSpecification(array $row): string
                 $row['net_weight'] ?? $row['weight_volume_value'] ?? '',
                 $row['grocery_unit'] ?? $row['weight_volume_unit'] ?? $row['unit'] ?? ''
             ),
-            $packaging,
         ];
     }
 

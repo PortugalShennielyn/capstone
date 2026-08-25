@@ -10,7 +10,9 @@ html,body{margin:0;color:#111;background:#e7eaee;font-family:Arial,Helvetica,san
 .supplier-heading h1{margin:0;font-size:18.5pt;font-weight:900;line-height:1.05;letter-spacing:.035em;text-transform:uppercase}
 .supplier-contact{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:2px 7px;margin-top:2px;color:#333;font-size:7.2pt;line-height:1.15}
 .supplier-contact .contact-separator{font-size:6pt}
-.document-title{margin-top:4px;font-size:11.5pt;font-weight:900;line-height:1.05;letter-spacing:.16em}
+.document-title-row{position:relative;display:flex;align-items:center;justify-content:center;margin-top:4px;min-height:18px}
+.document-title{font-size:11.5pt;font-weight:900;line-height:1.05;letter-spacing:.16em}
+.document-status{position:absolute;right:0;padding:2px 7px;border:1px solid #9ca3af;border-radius:999px;color:#374151;background:#f8fafc;font-size:6.8pt;font-weight:900;letter-spacing:.055em;text-transform:uppercase}
 .document-rule{margin:4px 0 6px;border:0;border-top:1.5px solid #111}
 .meta{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:18mm;margin-bottom:6px}
 .meta-block{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:8px;row-gap:3px;align-content:start;min-width:0}
@@ -32,17 +34,14 @@ th{color:#111;background:#f2f2f2;font-size:7.5pt;font-weight:900;line-height:1.1
 .product span{margin-top:1px;color:#333;font-size:7.5pt;line-height:1.15}
 .center{text-align:center}
 .money{text-align:right;white-space:nowrap}
-.totals{width:245px;margin:7px 0 0 auto}
-.totals div{display:flex;justify-content:space-between;padding:4px 7px;border:1px solid #222;border-top:0;font-size:8.3pt}
-.totals div:first-child{border-top:1px solid #222}
-.totals .grand{font-size:9.6pt;font-weight:900}
+.actual-total{display:flex;justify-content:space-between;gap:18px;width:330px;margin:8px 0 0 auto;padding:7px 9px;border:1px solid #222;font-size:8.7pt}
+.actual-total span{font-weight:800}.actual-total strong{font-size:9.5pt;white-space:nowrap}
 .signatures{display:grid;grid-template-columns:1fr 1fr;gap:56px;margin-top:auto;break-inside:avoid;page-break-inside:avoid}
 .signature-caption{display:block;font-size:8pt;font-weight:800;text-align:left}
-.signature-space{height:14mm}
-.signature-line{padding-top:4px;border-top:1px solid #111;text-align:center}
-.signature strong,.signature span{display:block}
-.signature strong{font-size:8.3pt}
-.signature span{margin-top:1px;font-size:7.5pt}
+.signature-space{height:11mm}
+.signature-name{display:block;min-height:5mm;font-size:8pt;font-weight:700;text-align:center}
+.signature-line{width:100%;border-top:1px solid #111}
+.signature-role{display:block;margin-top:3px;font-size:7.5pt;text-align:center}
 .document-footer,.continuation-footer{display:flex;justify-content:space-between;margin-top:7mm;padding-top:4px;border-top:1px solid #555;color:#333;font-size:6.6pt}
 .continuation-footer{margin-top:auto}
 .loading,.error{padding:80px 20px;text-align:center;font-weight:700}

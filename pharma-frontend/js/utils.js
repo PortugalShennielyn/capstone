@@ -108,9 +108,11 @@ const PharmaUtils = {
     // 3. Smart API Fetch Wrapper (Automatically handles loading states and parses JSON errors)
     async safeFetch(url, options = {}) {
         const method = String(options.method || 'GET').toUpperCase();
-        const shouldRetry = method === 'GET';
+        const shouldRetry = method === 'GET' && options.retryGet !== false;
         const attempts = shouldRetry ? 2 : 1;
         let lastError;
+        const fetchOptions = { ...options };
+        delete fetchOptions.retryGet;
         const tabToken = sessionStorage.getItem('pharma_tab_token') || '';
         const headers = new Headers(options.headers || {});
         if (tabToken && !headers.has('X-Tab-Token')) {
@@ -126,7 +128,7 @@ const PharmaUtils = {
 
             try {
                 const response = await fetch(requestUrl, {
-                    ...options,
+                    ...fetchOptions,
                     headers,
                     cache: shouldRetry ? 'no-store' : options.cache,
                     signal: options.signal || controller.signal
@@ -147,6 +149,7 @@ const PharmaUtils = {
                     error.status = response.status;
                     error.isAuthError = response.status === 401;
                     error.isAuthorizationError = response.status === 403;
+                    error.isHttpResponse = true;
                     throw error;
                 }
 
@@ -156,6 +159,10 @@ const PharmaUtils = {
                 lastError = error.name === 'AbortError'
                     ? new Error('Request timed out. Please refresh and try again.')
                     : error;
+
+                // Retrying a completed 4xx/5xx response only duplicates the same
+                // failing action. Retries are reserved for transport failures.
+                if (error.isHttpResponse) throw lastError;
 
                 if (attempt === attempts - 1) {
                     // Forward the error to be explicitly caught by your operational pages

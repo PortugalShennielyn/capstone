@@ -47,6 +47,21 @@ function joinUpdateParts(?string ...$parts): ?string
     return count($clean) ? implode(' ', $clean) : null;
 }
 
+function normalizeUpdateSkuSellingPrice($value, string $productStatus): float
+{
+    $priceText = trim((string) ($value ?? ''));
+    if ($priceText === '' || !preg_match('/^\d+(?:\.\d{1,2})?$/', $priceText) || !is_numeric($priceText) || !is_finite((float) $priceText)) {
+        throw new InvalidArgumentException('SKU Selling Price must be numeric with no more than 2 decimal places.');
+    }
+
+    $price = (float) $priceText;
+    if ($price < 0 || ($productStatus === 'Active' && $price <= 0)) {
+        throw new InvalidArgumentException('An active SKU Selling Price must be greater than 0.');
+    }
+
+    return round($price, 2);
+}
+
 try {
     ensureProductCustomizationSchema($pdo);
     ensureProductStatusColumn($pdo);
@@ -96,13 +111,16 @@ try {
     }
     $price = round((float) $existingPricing['price'], 2);
     $applyCalculatedPrice = !empty($payload['apply_calculated_price']) && $pricingMethod !== 'manual';
-    if ($pricingMethod === 'manual') {
-        $manualPrice = $payload['manual_selling_price'] ?? $variation['price'] ?? $payload['price'] ?? null;
-        if (!is_numeric($manualPrice) || !is_finite((float) $manualPrice) || (float) $manualPrice < 0) {
-            throw new InvalidArgumentException('Manual Selling Price must be a valid number greater than or equal to zero.');
-        }
-        $price = round((float) $manualPrice, 2);
-    } elseif ($applyCalculatedPrice) {
+    $submittedSkuPrice = $variation['price'] ?? $payload['manual_selling_price'] ?? $payload['price'] ?? null;
+    if ($submittedSkuPrice !== null && trim((string) $submittedSkuPrice) !== '') {
+        $price = normalizeUpdateSkuSellingPrice($submittedSkuPrice, $productStatus);
+    } elseif ($pricingMethod === 'manual') {
+        throw new InvalidArgumentException('SKU Selling Price is required.');
+    } elseif ($productStatus === 'Active' && $price <= 0) {
+        throw new InvalidArgumentException('An active SKU Selling Price must be greater than 0.');
+    }
+
+    if ($applyCalculatedPrice) {
         $basis = latestAcceptedCostBasis($pdo, $productId);
         if (!$basis || !is_numeric($basis['unit_cost']) || !is_finite((float) $basis['unit_cost'])) {
             throw new InvalidArgumentException('A valid accepted cost basis is required before applying a calculated price.');

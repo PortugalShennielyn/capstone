@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=5"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Admin Settings</title>
@@ -13,14 +13,12 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=20" rel="stylesheet">
-    <script src="./js/navbar.js?v=69" defer></script>
+    <link href="./css/navbar.css?v=36" rel="stylesheet">
+    <script src="./js/navbar.js?v=83" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 
     <style>
         :root {
-            --sidebar-width: 260px;
-            --sidebar-collapsed-width: 70px;
             --sidebar-bg: #1f2530;
             --sidebar-bg-deep: #171c25;
             --sidebar-text: #c6ccd8;
@@ -1334,9 +1332,96 @@
             justify-content: flex-end;
         }
 
+        .procurement-signatories {
+            display: grid;
+            gap: 14px;
+            margin-top: 2px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        .procurement-signatories-heading {
+            display: grid;
+            gap: 3px;
+        }
+
+        .procurement-signatories-heading h4 {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 14px;
+            font-weight: 850;
+        }
+
+        .procurement-signatories-heading p {
+            font-size: 12px;
+        }
+
+        .procurement-signatory-group {
+            display: grid;
+            gap: 10px;
+        }
+
+        .procurement-signatory-group h5 {
+            margin: 0;
+            color: #667085;
+            font-size: 10px;
+            font-weight: 850;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .procurement-signatory-fields {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px 18px;
+        }
+
         body.dark-mode .general-setting-field .admin-setting-value {
             background: #111827;
         }
+
+        .procurement-settings-card { max-width: 1180px; gap: 16px; }
+        .procurement-subtabs { display:flex; align-items:center; gap:8px; overflow-x:auto; padding:4px; border:1px solid var(--border-soft); border-radius:10px; background:#f8fafc; scrollbar-width:thin; }
+        .procurement-subtabs button { min-height:38px; display:inline-flex; align-items:center; justify-content:center; gap:8px; flex:0 0 auto; padding:0 14px; border:0; border-radius:8px; color:#596274; background:transparent; font-size:12px; font-weight:850; white-space:nowrap; }
+        .procurement-subtabs button.is-active { color:#fff; background:var(--purple); box-shadow:0 7px 15px rgba(124,58,237,.18); }
+        .procurement-panel { display:none; gap:14px; }
+        .procurement-panel.is-active { display:grid; }
+        .procurement-panel-intro { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+        .procurement-panel-intro-copy { display:grid; gap:3px; }
+        .procurement-panel-intro h4 { margin:0; color:var(--text-main); font-size:14px; font-weight:850; }
+        .procurement-panel-intro p { margin:0; color:#7b8494; font-size:12px; }
+        .procurement-setting-group,.procurement-document-card { display:grid; gap:0; overflow:hidden; border:1px solid var(--border-soft); border-radius:9px; background:#fff; }
+        .procurement-group-heading { padding:10px 14px; border-bottom:1px solid var(--border-soft); background:#f8fafc; }
+        .procurement-group-heading span { color:#596274; font-size:10px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+        .procurement-setting-group .admin-setting-list { gap:0!important; grid-template-columns:1fr!important; }
+        .procurement-document-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .procurement-document-card { padding:0 18px 18px; }
+        .procurement-document-card .procurement-group-heading { margin:0 -18px 16px; padding:11px 18px; }
+        .procurement-signatory-list { display:grid; gap:18px; }
+        .procurement-signatory-block { display:grid; gap:9px; }
+        .procurement-signatory-block + .procurement-signatory-block { padding-top:17px; border-top:1px solid var(--border-soft); }
+        .procurement-signatory-block h5 { margin:0; color:var(--text-main); font-size:13px; font-weight:850; }
+        .procurement-signatory-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .procurement-summary-field { display:grid; gap:4px; min-width:0; }
+        .procurement-summary-field span { color:#7b8494; font-size:10px; font-weight:800; letter-spacing:.035em; text-transform:uppercase; }
+        .procurement-summary-field strong { min-height:20px; color:var(--text-main); font-size:13px; font-weight:650; overflow-wrap:anywhere; }
+        .procurement-summary-field strong i { margin-left:5px; color:#98a2b3; font-size:9px; }
+        .procurement-edit-fields { display:none; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .procurement-document-editor.is-editing .procurement-signatory-summary { display:none; }
+        .procurement-document-editor.is-editing .procurement-edit-fields { display:grid; }
+        .procurement-document-editor.is-editing #editProcurementSignatoriesBtn { display:none; }
+        .procurement-role-note { display:flex; align-items:center; gap:7px; margin:0; color:#7b8494; font-size:11px; }
+        .procurement-role-note i { color:#98a2b3; font-size:10px; }
+        .procurement-document-actions { display:none; justify-content:flex-end; gap:9px; padding-top:2px; }
+        .procurement-document-editor.is-editing .procurement-document-actions { display:flex; }
+        .procurement-document-editor:not(.is-editing) .procurement-role-note { display:none; }
+        .procurement-edit-button { flex:0 0 auto; }
+        .procurement-document-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px 16px; padding:14px; }
+        .procurement-save-actions { justify-content:flex-end; padding-top:2px; }
+        .procurement-save-actions .btn:disabled { opacity:.52; box-shadow:none; }
+        .procurement-save-actions .btn:not(:disabled) { box-shadow:0 8px 18px rgba(124,58,237,.2); }
+        body.dark-mode .procurement-subtabs,body.dark-mode .procurement-group-heading { background:#111827; }
+        body.dark-mode .procurement-setting-group,body.dark-mode .procurement-document-card { background:#182131; }
 
         .general-summary-panel {
             position: relative;
@@ -1405,7 +1490,7 @@
         .business-hours-inner-tabs {
             display: inline-flex;
             flex-wrap: wrap;
-            gap: 6px;
+            gap: 10px;
             width: fit-content;
             padding: 4px;
             border: 1px solid #dbe3ef;
@@ -2853,8 +2938,22 @@
             }
 
             .general-settings-grid,
+            .procurement-signatory-fields,
+            .procurement-document-grid,
+            .procurement-document-fields,
+            .procurement-edit-fields,
+            .procurement-signatory-summary,
             .business-time-pickers {
                 grid-template-columns: 1fr;
+            }
+
+            .procurement-panel-intro {
+                align-items:stretch;
+                flex-direction:column;
+            }
+
+            .procurement-edit-button {
+                align-self:flex-start;
             }
 
             .general-setting-field.is-full {
@@ -3006,9 +3105,6 @@
                     <i class="fa-regular fa-bell"></i>
                     <span class="notification-badge">3</span>
                 </button>
-                <button class="icon-btn" type="button" id="themeToggle" aria-label="Toggle dark mode">
-                    <i class="fa-solid fa-moon"></i>
-                </button>
 
                 <!-- user dropdown removed to avoid duplicate profile UI -->
             </div>
@@ -3064,9 +3160,9 @@
                                     <button class="is-active" type="button" data-admin-section="general"><i class="fa-solid fa-store"></i><span>General</span></button>
                                     <button type="button" data-admin-section="business-hours"><i class="fa-regular fa-clock"></i><span>Business Hours</span></button>
                                     <button type="button" data-admin-section="inventory"><i class="fa-solid fa-warehouse"></i><span>Inventory</span></button>
-                                    <button type="button" data-admin-section="purchase-orders"><i class="fa-solid fa-file-invoice-dollar"></i><span>Purchase Orders</span></button>
+                                    <button type="button" data-admin-section="purchase-orders"><i class="fa-solid fa-file-invoice-dollar"></i><span>Procurement</span></button>
                                     <button type="button" data-admin-section="sales"><i class="fa-solid fa-cash-register"></i><span>Sales</span></button>
-                                    <button type="button" data-admin-section="receipt"><i class="fa-solid fa-receipt"></i><span>Receipt</span></button>
+                                    <button type="button" data-admin-section="receipt"><i class="fa-solid fa-receipt"></i><span>POS Receipt</span></button>
                                     <button type="button" data-admin-section="users"><i class="fa-solid fa-users-gear"></i><span>Users &amp; Roles</span></button>
                                     <button type="button" data-admin-section="notifications"><i class="fa-solid fa-bell"></i><span>Notifications</span></button>
                                     <button type="button" data-admin-section="backup"><i class="fa-solid fa-box-archive"></i><span>Backup &amp; Restore</span></button>
@@ -3232,49 +3328,38 @@
                                         </div>
                                     </section>
 
-                                    <section class="admin-setting-card">
+                                    <section class="admin-setting-card procurement-settings-card">
                                         <header>
-                                            <h3>Purchase Orders</h3>
-                                            <p>Defaults used when creating and receiving purchase orders.</p>
+                                            <h3>Procurement Settings</h3>
+                                            <p>Manage procurement documents, signatories, receiving, and GRN preferences.</p>
                                         </header>
-                                        <div class="admin-setting-list">
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Auto Generate PO Number</span>
-                                                <label class="admin-switch" aria-label="Auto Generate PO Number"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
+                                        <nav class="procurement-subtabs" aria-label="Procurement settings sections">
+                                            <button class="is-active" type="button" data-procurement-tab="documents"><i class="fa-regular fa-file-lines"></i><span>Documents &amp; Signatures</span></button>
+                                            <button type="button" data-procurement-tab="receiving"><i class="fa-solid fa-boxes-packing"></i><span>Receiving &amp; GRN</span></button>
+                                        </nav>
+
+                                        <div class="procurement-panel procurement-document-editor is-active" data-procurement-panel="documents">
+                                            <div class="procurement-panel-intro"><div class="procurement-panel-intro-copy"><h4>Documents &amp; Signatures</h4><p>Manage the names and role labels printed on PR and PO documents.</p></div><button class="btn btn-purple procurement-edit-button" type="button" id="editProcurementSignatoriesBtn"><i class="fa-solid fa-pen me-1"></i>Edit</button></div>
+                                            <div class="procurement-document-grid">
+                                                <section class="procurement-document-card"><div class="procurement-group-heading"><span>Purchase Request</span></div><div class="procurement-signatory-list">
+                                                    <div class="procurement-signatory-block"><h5>Requested / Prepared By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="prPreparedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="prPreparedRole">Manager<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="prPreparedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="prPreparedRoleInput" type="text" maxlength="100" value="Manager" autocomplete="off"></label></div></div>
+                                                    <div class="procurement-signatory-block"><h5>Checked / Reviewed By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="prReviewedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="prReviewedRole">Supervisor<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="prReviewedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="prReviewedRoleInput" type="text" maxlength="100" value="Supervisor" autocomplete="off"></label></div></div>
+                                                </div></section>
+                                                <section class="procurement-document-card"><div class="procurement-group-heading"><span>Purchase Order</span></div><div class="procurement-signatory-list">
+                                                    <div class="procurement-signatory-block"><h5>Prepared By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="poPreparedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="poPreparedRole">Manager<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="poPreparedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="poPreparedRoleInput" type="text" maxlength="100" value="Manager" autocomplete="off"></label></div></div>
+                                                    <div class="procurement-signatory-block"><h5>Checked &amp; Approved By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="poApprovedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="poApprovedRole">Supervisor<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="poApprovedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="poApprovedRoleInput" type="text" maxlength="100" value="Supervisor" autocomplete="off"></label></div></div>
+                                                </div></section>
                                             </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">CEO PR Approval Required</span>
-                                                <label class="admin-switch" aria-label="CEO PR Approval Required"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Allow PO Edit Before Approval</span>
-                                                <label class="admin-switch" aria-label="Allow PO Edit Before Approval"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Allow PO Cancellation Before Approval</span>
-                                                <label class="admin-switch" aria-label="Allow PO Cancellation Before Approval"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Require Receiving Inspection</span>
-                                                <label class="admin-switch" aria-label="Require Receiving Inspection"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Require Expiry Date on Receiving</span>
-                                                <label class="admin-switch" aria-label="Require Expiry Date on Receiving"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Require Batch Number on Receiving</span>
-                                                <label class="admin-switch" aria-label="Require Batch Number on Receiving"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Default Payment Terms</span>
-                                                <select class="admin-setting-control" aria-label="Default Payment Terms">
-                                                    <option selected>Manual</option>
-                                                    <option>Due on receipt</option>
-                                                    <option>Net 15</option>
-                                                    <option>Net 30</option>
-                                                </select>
-                                            </div>
+                                            <p class="procurement-role-note"><i class="fa-solid fa-lock"></i>Role labels are locked during normal use and can only be changed while editing these document settings.</p>
+                                            <div class="procurement-document-actions"><button class="btn btn-light" type="button" id="cancelProcurementSignatoriesBtn">Cancel</button><button class="btn btn-purple" type="button" id="saveProcurementSignatoriesBtn">Save Changes</button></div>
+                                        </div>
+
+                                        <div class="procurement-panel" data-procurement-panel="receiving" hidden>
+                                            <div class="procurement-setting-group"><div class="procurement-panel-intro"><div class="procurement-panel-intro-copy"><h4>Goods Received Note (GRN)</h4><p>Configure names and labels printed on the receiving document.</p></div></div><div class="procurement-document-fields">
+                                                <label class="general-setting-field"><span class="admin-setting-label">Received By Name</span><input class="admin-setting-control procurement-receiving-control" id="grnReceivedByNameInput" type="text" maxlength="150" autocomplete="off"></label>
+                                                <label class="general-setting-field"><span class="admin-setting-label">Approved By Name</span><input class="admin-setting-control procurement-receiving-control" id="grnApprovedByNameInput" type="text" maxlength="150" autocomplete="off"></label>
+                                            </div></div>
+                                            <div class="admin-setting-actions procurement-save-actions"><button class="btn btn-purple" type="button" id="saveGrnSettingsBtn" disabled>Save Receiving &amp; GRN Settings</button></div>
                                         </div>
                                     </section>
 
@@ -3313,7 +3398,7 @@
 
                                     <section class="admin-setting-card">
                                         <header>
-                                            <h3>Receipt Settings</h3>
+                                            <h3>POS Receipt Settings</h3>
                                             <p>Printed and preview receipt preferences.</p>
                                         </header>
                                         <div class="admin-setting-list">
@@ -3401,26 +3486,6 @@
                                                         <tr><td colspan="7">Loading users...</td></tr>
                                                     </tbody>
                                                 </table>
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                    <section class="admin-setting-card">
-                                        <header>
-                                            <h3>Goods Received Note Settings</h3>
-                                            <p>Names printed on the GRN header and final signature footer.</p>
-                                        </header>
-                                        <div class="general-settings-grid">
-                                            <label class="general-setting-field">
-                                                <span class="admin-setting-label">Received By Name</span>
-                                                <input class="admin-setting-control" id="grnReceivedByNameInput" type="text" maxlength="150" autocomplete="off" aria-label="Received By Name">
-                                            </label>
-                                            <label class="general-setting-field">
-                                                <span class="admin-setting-label">Approved By Name</span>
-                                                <input class="admin-setting-control" id="grnApprovedByNameInput" type="text" maxlength="150" autocomplete="off" aria-label="Approved By Name">
-                                            </label>
-                                            <div class="admin-setting-actions general-save-actions">
-                                                <button class="btn btn-purple" type="button" id="saveGrnSettingsBtn">Save GRN Settings</button>
                                             </div>
                                         </div>
                                     </section>
@@ -4116,6 +4181,25 @@
                 grn: {
                     receivedByName: '',
                     approvedByName: ''
+                },
+                procurementDocumentSettings: {
+                    prPreparedName: '',
+                    prPreparedRole: 'Manager',
+                    prReviewedName: '',
+                    prReviewedRole: 'Supervisor',
+                    poPreparedName: '',
+                    poPreparedRole: 'Manager',
+                    poApprovedName: '',
+                    poApprovedRole: 'Supervisor'
+                },
+                procurementPreferences: {
+                    autoPoNumber: true,
+                    editWhileDraft: true,
+                    cancelBeforeArrival: true,
+                    paymentTerms: 'Manual',
+                    requireInspection: true,
+                    requireExpiry: true,
+                    requireBatch: true
                 }
             };
             const profileFields = {
@@ -4134,6 +4218,24 @@
                 approvedByName: document.getElementById('grnApprovedByNameInput')
             };
             const saveGrnSettingsBtn = document.getElementById('saveGrnSettingsBtn');
+            const procurementDocumentFields = {
+                prPreparedName: document.getElementById('prPreparedNameInput'),
+                prPreparedRole: document.getElementById('prPreparedRoleInput'),
+                prReviewedName: document.getElementById('prReviewedNameInput'),
+                prReviewedRole: document.getElementById('prReviewedRoleInput'),
+                poPreparedName: document.getElementById('poPreparedNameInput'),
+                poPreparedRole: document.getElementById('poPreparedRoleInput'),
+                poApprovedName: document.getElementById('poApprovedNameInput'),
+                poApprovedRole: document.getElementById('poApprovedRoleInput')
+            };
+            const procurementDocumentEditor = document.querySelector('.procurement-document-editor');
+            const procurementDocumentValues = Object.fromEntries(
+                Array.from(document.querySelectorAll('[data-procurement-value]')).map(value => [value.dataset.procurementValue, value])
+            );
+            const editProcurementSignatoriesBtn = document.getElementById('editProcurementSignatoriesBtn');
+            const cancelProcurementSignatoriesBtn = document.getElementById('cancelProcurementSignatoriesBtn');
+            const saveProcurementSignatoriesBtn = document.getElementById('saveProcurementSignatoriesBtn');
+            let procurementDocumentSnapshot = null;
             const businessDayTabs = document.getElementById('businessDayTabs');
             const businessDayEditor = document.getElementById('businessDayEditor');
             const weeklyOverviewBody = document.getElementById('weeklyScheduleOverviewBody');
@@ -4219,6 +4321,11 @@
                         ...defaults.grn,
                         ...(settings.grn || {}),
                         ...(data.grn || {})
+                    },
+                    procurementDocumentSettings: {
+                        ...defaults.procurementDocumentSettings,
+                        ...(settings.procurementDocumentSettings || {}),
+                        ...(data.procurementDocumentSettings || {})
                     },
                     businessSchedule: data.businessSchedule || settings.businessSchedule || defaults.businessSchedule,
                     businessExceptions: data.businessExceptions || settings.businessExceptions || {},
@@ -4908,10 +5015,77 @@
                     });
                     settings.grn = { ...grn, ...(data.grn || {}) };
                     writeSettings(settings);
-                    toastr.success('Goods Received Note settings saved.');
+                    if (saveGrnSettingsBtn) saveGrnSettingsBtn.disabled = true;
+                    toastr.success('Receiving and GRN settings saved.');
                 } catch (error) {
                     toastr.error(error.message || 'Unable to save Goods Received Note settings.');
                 }
+            }
+
+            async function saveProcurementSignatories() {
+                const settings = readSettings();
+                const procurementDocumentSettings = Object.fromEntries(
+                    Object.entries(procurementDocumentFields).map(([key, field]) => [key, field?.value.trim() || defaults.procurementDocumentSettings[key]])
+                );
+                try {
+                    const data = await settingsRequest('save_procurement_signatories.php', {
+                        method: 'POST',
+                        body: JSON.stringify(procurementDocumentSettings)
+                    });
+                    settings.procurementDocumentSettings = {
+                        ...procurementDocumentSettings,
+                        ...(data.procurementDocumentSettings || {})
+                    };
+                    writeSettings(settings);
+                    Object.entries(settings.procurementDocumentSettings).forEach(([key, value]) => {
+                        if (procurementDocumentFields[key]) procurementDocumentFields[key].value = value || defaults.procurementDocumentSettings[key] || '';
+                    });
+                    renderProcurementDocumentValues();
+                    setProcurementDocumentEditMode(false);
+                    toastr.success('Document settings saved.');
+                } catch (error) {
+                    toastr.error(error.message || 'Unable to save PR and PO document settings.');
+                } finally {
+                    if (saveProcurementSignatoriesBtn) saveProcurementSignatoriesBtn.disabled = false;
+                }
+            }
+
+            function currentProcurementDocumentValues() {
+                return Object.fromEntries(Object.entries(procurementDocumentFields).map(([key, field]) => [key, field?.value || '']));
+            }
+
+            function renderProcurementDocumentValues() {
+                Object.entries(procurementDocumentFields).forEach(([key, field]) => {
+                    const output = procurementDocumentValues[key];
+                    if (!output) return;
+                    output.textContent = field?.value.trim() || defaults.procurementDocumentSettings[key] || '—';
+                    if (key.endsWith('Role')) {
+                        const lock = document.createElement('i');
+                        lock.className = 'fa-solid fa-lock';
+                        lock.setAttribute('aria-label', 'Locked outside edit mode');
+                        output.appendChild(lock);
+                    }
+                });
+            }
+
+            function setProcurementDocumentEditMode(editing) {
+                procurementDocumentEditor?.classList.toggle('is-editing', editing);
+                if (editing) {
+                    procurementDocumentSnapshot = currentProcurementDocumentValues();
+                    procurementDocumentFields.prPreparedName?.focus();
+                } else {
+                    procurementDocumentSnapshot = null;
+                }
+            }
+
+            function cancelProcurementDocumentEdit() {
+                if (procurementDocumentSnapshot) {
+                    Object.entries(procurementDocumentSnapshot).forEach(([key, value]) => {
+                        if (procurementDocumentFields[key]) procurementDocumentFields[key].value = value;
+                    });
+                }
+                renderProcurementDocumentValues();
+                setProcurementDocumentEditMode(false);
             }
 
             function saveSecuritySettings() {
@@ -4937,6 +5111,8 @@
                 const businessSchedule = normalizeSchedule(settings);
                 const profile = profileFromSettings(settings);
                 const grn = { ...defaults.grn, ...(settings.grn || {}) };
+                const procurementDocumentSettings = { ...defaults.procurementDocumentSettings, ...(settings.procurementDocumentSettings || {}) };
+                const procurementPreferences = { ...defaults.procurementPreferences, ...(settings.procurementPreferences || {}) };
                 businessExceptions = settings.businessExceptions || {};
                 nextBusinessException = settings.nextBusinessException || null;
                 if (sessionTimeoutSelect) sessionTimeoutSelect.value = String(security.sessionTimeoutMs);
@@ -4944,13 +5120,27 @@
                 applyProfile(profile, businessSchedule);
                 if (grnFields.receivedByName) grnFields.receivedByName.value = grn.receivedByName || '';
                 if (grnFields.approvedByName) grnFields.approvedByName.value = grn.approvedByName || '';
+                Object.entries(procurementDocumentFields).forEach(([key, field]) => {
+                    if (field) field.value = procurementDocumentSettings[key] || defaults.procurementDocumentSettings[key];
+                });
+                renderProcurementDocumentValues();
+                if (saveGrnSettingsBtn) saveGrnSettingsBtn.disabled = true;
                 updateScheduleSummary(businessSchedule);
                 renderBusinessHours(businessSchedule);
-                writeSettings({ ...settings, profile, grn, businessHours, businessSchedule, security });
+                writeSettings({ ...settings, profile, grn, procurementDocumentSettings, procurementPreferences, businessHours, businessSchedule, security });
             }
 
             saveGeneralInfoBtn?.addEventListener('click', saveGeneralInfo);
             saveGrnSettingsBtn?.addEventListener('click', saveGrnSettings);
+            editProcurementSignatoriesBtn?.addEventListener('click', () => setProcurementDocumentEditMode(true));
+            cancelProcurementSignatoriesBtn?.addEventListener('click', cancelProcurementDocumentEdit);
+            saveProcurementSignatoriesBtn?.addEventListener('click', () => {
+                saveProcurementSignatoriesBtn.disabled = true;
+                saveProcurementSignatories();
+            });
+            Object.values(grnFields).forEach(control => {
+                ['input', 'change'].forEach(eventName => control?.addEventListener(eventName, () => { if (saveGrnSettingsBtn) saveGrnSettingsBtn.disabled = false; }));
+            });
             businessHoursTabButtons.forEach(button => {
                 button.addEventListener('click', () => {
                     activeBusinessHoursView = button.dataset.businessHoursTab === 'calendar' ? 'calendar' : 'weekly';
@@ -5336,10 +5526,9 @@
                 'General': 'general',
                 'Business Hours': 'business-hours',
                 'Inventory': 'inventory',
-                'Purchase Orders': 'purchase-orders',
-                'Goods Received Note Settings': 'purchase-orders',
+                'Procurement Settings': 'purchase-orders',
                 'Sales': 'sales',
-                'Receipt Settings': 'receipt',
+                'POS Receipt Settings': 'receipt',
                 'Users & Roles': 'users',
                 'Role Permission Matrix': 'users',
                 'Notifications': 'notifications',
@@ -5360,15 +5549,17 @@
             });
 
             function activate(section) {
+                const validSection = buttons.some(button => button.dataset.adminSection === section) ? section : 'general';
                 buttons.forEach(button => {
-                    const isActive = button.dataset.adminSection === section;
+                    const isActive = button.dataset.adminSection === validSection;
                     button.classList.toggle('is-active', isActive);
                     button.setAttribute('aria-current', isActive ? 'page' : 'false');
                 });
 
                 cards.forEach(card => {
-                    card.classList.toggle('d-none', card.dataset.adminPane !== section);
+                    card.classList.toggle('d-none', card.dataset.adminPane !== validSection);
                 });
+                sessionStorage.setItem('drpAdminSettingsSection', validSection);
             }
 
             buttons.forEach(button => {
@@ -5376,7 +5567,29 @@
             });
 
             const params = new URLSearchParams(window.location.search);
-            activate(params.get('section') === 'users' ? 'users' : 'general');
+            const requestedSection = params.get('section');
+            activate(requestedSection || sessionStorage.getItem('drpAdminSettingsSection') || 'general');
+        })();
+        (function setupProcurementSettingsTabs() {
+            const buttons = Array.from(document.querySelectorAll('[data-procurement-tab]'));
+            const panels = Array.from(document.querySelectorAll('[data-procurement-panel]'));
+            if (!buttons.length || !panels.length) return;
+            function activate(tabName) {
+                const activeTab = buttons.some(button => button.dataset.procurementTab === tabName) ? tabName : 'documents';
+                buttons.forEach(button => {
+                    const active = button.dataset.procurementTab === activeTab;
+                    button.classList.toggle('is-active', active);
+                    button.setAttribute('aria-selected', active ? 'true' : 'false');
+                });
+                panels.forEach(panel => {
+                    const active = panel.dataset.procurementPanel === activeTab;
+                    panel.classList.toggle('is-active', active);
+                    panel.hidden = !active;
+                });
+                sessionStorage.setItem('drpProcurementSettingsTab', activeTab);
+            }
+            buttons.forEach(button => button.addEventListener('click', () => activate(button.dataset.procurementTab)));
+            activate(sessionStorage.getItem('drpProcurementSettingsTab') || 'documents');
         })();
         (function setupAdminSettingsActionModals() {
             const actionModalEl = document.getElementById('settingsActionModal');

@@ -14,8 +14,7 @@ function purchaseRequestSupplierOptions(PDO $pdo, array $productIds): array
         "SELECT sp.supplier_product_id, sp.product_id, sp.supplier_id, s.supplier_name,
                 s.address AS supplier_address, s.phone AS supplier_phone, s.email AS supplier_email,
                 sp.purchase_unit, sp.purchase_unit_contains, sp.inner_unit, sp.units_per_inner_unit,
-                sp.inventory_unit, sp.units_per_purchase_unit, sp.supplier_cost_price,
-                sp.supplier_cost_input, sp.supplier_cost_basis
+                sp.inventory_unit, sp.units_per_purchase_unit
          FROM supplier_products sp
          INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
          WHERE sp.product_id IN ({$placeholders})
@@ -180,8 +179,7 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
     $supplierProductStmt = $pdo->prepare(
         "SELECT sp.supplier_product_id, sp.supplier_id, sp.product_id,
                 sp.purchase_unit, sp.purchase_unit_contains, sp.inner_unit, sp.units_per_inner_unit,
-                sp.inventory_unit, sp.units_per_purchase_unit, sp.supplier_cost_price,
-                sp.supplier_cost_input, sp.supplier_cost_basis,
+                sp.inventory_unit, sp.units_per_purchase_unit,
                 s.supplier_name
          FROM supplier_products sp
          INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
@@ -208,37 +206,23 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         $purchaseUnit = trim((string) ($setup['purchase_unit'] ?? ''));
         $inventoryUnit = trim((string) ($setup['inventory_unit'] ?? ''));
         $conversion = supplierPurchasingConversion($setup)['base_qty_per_purchase_unit'];
-        $cost = supplierPurchasingCost($setup, supplierPurchasingConversion($setup));
         if ($purchaseUnit === '') throw new InvalidArgumentException('Purchase Unit is required for every approved product.');
         if ($inventoryUnit === '') throw new InvalidArgumentException('Inventory Unit is required for every approved product.');
         if ($conversion <= 0) throw new InvalidArgumentException('Units per Purchase Unit must be greater than zero.');
-        if ((float) $cost['estimated_purchase_unit_cost'] <= 0 || (float) $cost['supplier_cost_per_inventory_unit'] <= 0) {
-            throw new InvalidArgumentException('Supplier cost must be greater than zero for every approved product.');
-        }
 
-        // PR quantities are always stored in the Product Master base inventory
-        // unit. The supplier conversion selected during PO generation determines
-        // the minimum purchase-unit quantity without mutating the PR item.
-        $minimumOrderQty = (int) ceil((float) $requestItem['requested_qty'] / $conversion);
-        $orderQtyRaw = $assignment['order_qty'] ?? $minimumOrderQty;
-        if (!is_numeric($orderQtyRaw) || (int) $orderQtyRaw <= 0 || (float) $orderQtyRaw !== (float) (int) $orderQtyRaw) {
-            throw new InvalidArgumentException('Order Quantity must be a positive whole number.');
+        // The Supervisor-approved base quantity is the immutable purchasing
+        // authority. Never trust or accept an order quantity from the browser.
+        if ($requestItem['approved_qty'] === null || (float) $requestItem['approved_qty'] <= 0) {
+            throw new InvalidArgumentException('Every approved product must have a valid Supervisor-approved quantity.');
         }
-        $orderQty = (int) $orderQtyRaw;
-        if ($orderQty < $minimumOrderQty) {
-            throw new InvalidArgumentException('Order Quantity cannot be less than the package quantity needed to cover the request.');
-        }
+        $approvedQty = (float) $requestItem['approved_qty'];
+        $orderQty = (int) ceil($approvedQty / $conversion);
 
         $snapshot = $productSnapshots[cleanId($requestItem['product_id'])] ?? null;
         if (!$snapshot || strcasecmp((string) ($snapshot['product_status'] ?? ''), 'Active') !== 0) {
             throw new InvalidArgumentException('An approved product is missing or inactive.');
         }
         $supplierId = cleanId($setup['supplier_id']);
-        // PO items retain the normalized base-unit price plus their purchase
-        // unit and conversion snapshots, so the purchase-unit quote is stable.
-        $unitCost = round((float) $cost['supplier_cost_per_inventory_unit'], 4);
-        $purchaseUnitCost = round((float) $cost['estimated_purchase_unit_cost'], 2);
-        $lineTotal = round($orderQty * $purchaseUnitCost, 2);
         $groups[$supplierId]['supplier_name'] = $setup['supplier_name'];
         $groups[$supplierId]['items'][] = [
             'request_item' => $requestItem,
@@ -247,9 +231,7 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
             'conversion' => $conversion,
             'order_qty' => $orderQty,
             'expected_base_qty' => inventoryQuantityForPurchaseQuantity($orderQty, $conversion),
-            'unit_cost' => $unitCost,
-            'purchase_unit_cost' => $purchaseUnitCost,
-            'line_total' => $lineTotal,
+            'approved_qty' => $approvedQty,
             'snapshot' => $snapshot,
         ];
     }
@@ -262,7 +244,7 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         "INSERT INTO purchase_orders
             (po_id, pr_id, supplier_id, po_number, payment_terms, expected_delivery_date, status, approval_status, total_amount, created_at)
          VALUES
-            (:po_id, :pr_id, :supplier_id, :po_number, :payment_terms, :eta, 'Pending', 'Approved', :total_amount, NOW())"
+            (:po_id, :pr_id, :supplier_id, :po_number, :payment_terms, :eta, 'Draft', 'Approved', NULL, NOW())"
     );
     $insertItem = $pdo->prepare(
         'INSERT INTO purchase_order_items
@@ -280,7 +262,6 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
     );
     $generated = [];
     foreach ($groups as $supplierId => $group) {
-        $total = round(array_sum(array_column($group['items'], 'line_total')), 2);
         $poId = newUuid($pdo);
         $poNumber = automaticPurchaseOrderNumber();
         $eta = trim((string) ($supplierEtas[$supplierId] ?? ''));
@@ -290,7 +271,7 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         if (!$date || $date->format('Y-m-d') !== $eta) throw new InvalidArgumentException('ETA must be a valid date.');
         $insertPo->execute([
             ':po_id' => $poId, ':pr_id' => $prId, ':supplier_id' => $supplierId,
-            ':po_number' => $poNumber, ':payment_terms' => $paymentTerms, ':eta' => $eta, ':total_amount' => $total,
+            ':po_number' => $poNumber, ':payment_terms' => $paymentTerms, ':eta' => $eta,
         ]);
         foreach ($group['items'] as $item) {
             $snapshot = $item['snapshot'];
@@ -305,12 +286,12 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
                 ':generic_name' => $snapshot['generic_name'], ':variant_flavor' => $snapshot['variant_flavor'],
                 ':strength' => $snapshot['strength'], ':size_value' => $snapshot['size_value'],
                 ':unit' => $item['inventory_unit'], ':packaging' => $snapshot['packaging'],
-                ':unit_cost' => $item['unit_cost'], ':line_total' => $item['line_total'],
+                ':unit_cost' => null, ':line_total' => null,
             ]);
         }
         $generated[] = [
             'po_id' => $poId, 'po_number' => $poNumber, 'supplier_id' => $supplierId,
-            'supplier_name' => $group['supplier_name'], 'item_count' => count($group['items']), 'total_amount' => $total,
+            'supplier_name' => $group['supplier_name'], 'item_count' => count($group['items']), 'total_amount' => null,
             'payment_terms' => $paymentTerms, 'expected_delivery_date' => $eta,
         ];
     }

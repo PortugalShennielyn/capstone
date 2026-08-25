@@ -3,6 +3,7 @@ require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 require_once 'purchase_order_payment_helpers.php';
+require_once 'purchase_order_invoice_helpers.php';
 require_once '../products/product_category_schema.php';
 require_once '../purchase_requests/purchase_request_helpers.php';
 
@@ -15,10 +16,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 try {
     ensurePurchaseRequestSchema($pdo);
     ensurePurchaseOrderSchema($pdo);
+    ensurePurchaseOrderInvoiceSchema($pdo);
     $status = trim((string) ($_GET['status'] ?? ''));
+    $paymentStatus = trim((string) ($_GET['payment_status'] ?? ''));
     $scope = trim((string) ($_GET['scope'] ?? 'active'));
     $whereClause = '';
     $params = [];
+
+    if ($paymentStatus !== '' && !in_array($paymentStatus, ['Paid', 'Unpaid'], true)) {
+        throw new InvalidArgumentException('Invalid payment status filter.');
+    }
 
     if ($status !== '') {
         if (!in_array($status, purchaseOrderStatuses(), true)) {
@@ -32,7 +39,7 @@ try {
     } elseif ($scope === 'all') {
         $whereClause = '';
     } else {
-        $whereClause = "WHERE po.status IN ('Pending', 'In transit') AND po.approval_status <> 'Rejected'";
+        $whereClause = "WHERE po.status IN ('Draft', 'Pending', 'Delivered') AND po.approval_status <> 'Rejected'";
     }
 
     $statement = $pdo->prepare(
@@ -45,11 +52,14 @@ try {
             po.payment_terms,
             po.payment_status,
             po.approval_status,
+            po.total_amount AS legacy_total_amount,
+            poi.supplier_invoice_total AS invoice_total,
             po.final_payment AS stored_final_payment,
             COALESCE(payments.total_paid, 0) AS stored_total_paid,
             COALESCE(credits.total_credit, 0) AS supplier_credit_applied,
             po.expected_delivery_date,
             po.status,
+            CASE WHEN poi.invoice_id IS NULL THEN 0 ELSE 1 END AS invoice_recorded,
             COALESCE(claims.open_claim_count, 0) AS open_claim_count,
             CASE
                 WHEN COALESCE(claims.open_replacement_count, 0) > 0 THEN 'Replacement Pending'
@@ -60,6 +70,7 @@ try {
             receiving.received_date,
             receiving.receiving_remarks,
             receiving.inspection_status,
+            COALESCE(receiving.receiving_record_available, 0) AS receiving_record_available,
             audit.action AS approval_action,
             audit.reason AS approval_reason,
             audit.created_at AS approval_reason_at,
@@ -67,6 +78,7 @@ try {
             s.supplier_name
          FROM purchase_orders po
          INNER JOIN suppliers s ON s.supplier_id = po.supplier_id
+         LEFT JOIN purchase_order_invoices poi ON poi.po_id = po.po_id
          LEFT JOIN purchase_requests pr ON pr.pr_id = po.pr_id
          LEFT JOIN (
             SELECT po_id, SUM(amount) AS total_paid
@@ -87,7 +99,7 @@ try {
             FROM supplier_claims sc
             INNER JOIN purchase_order_items poi ON poi.po_item_id = sc.po_item_id
             WHERE sc.resolved_at IS NULL
-              AND sc.claim_status NOT IN ('Resolved', 'Replacement Received / Resolved')
+              AND sc.claim_status NOT IN ('Resolved', 'Resolved / Credit Issued', 'Replacement Received / Resolved')
             GROUP BY poi.po_id
          ) claims ON claims.po_id = po.po_id
          LEFT JOIN (
@@ -95,8 +107,14 @@ try {
                 po_id,
                 MAX(received_date) AS received_date,
                 MAX(inspection_status) AS inspection_status,
+                MAX(EXISTS(
+                    SELECT 1
+                    FROM purchase_order_receiving_items pri
+                    WHERE pri.receiving_id = purchase_order_receiving.receiving_id
+                )) AS receiving_record_available,
                 SUBSTRING_INDEX(GROUP_CONCAT(NULLIF(remarks, '') ORDER BY received_date DESC SEPARATOR ' | '), ' | ', 1) AS receiving_remarks
             FROM purchase_order_receiving
+            WHERE receiving_type = 'Original'
             GROUP BY po_id
          ) receiving ON receiving.po_id = po.po_id
          LEFT JOIN (
@@ -132,7 +150,7 @@ try {
                 END AS purchase_unit,
                 COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
                 COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
-                COALESCE(NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, 0)) AS stored_line_total,
+                COALESCE(ROUND(piii.unit_cost * poi.purchase_qty, 2), poi.line_total) AS stored_line_total,
                 CASE
                     WHEN NULLIF(TRIM(poi.product_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.product_name_snapshot)) LIKE 'N/A%' THEN p.product_name
                     ELSE poi.product_name_snapshot
@@ -162,11 +180,12 @@ try {
                     ELSE COALESCE(md.dosage_form, '')
                 END AS unit,
                 COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging,
-                COALESCE(poi.unit_price_snapshot, 0) AS price,
+                COALESCE(piii.unit_cost / NULLIF(poi.units_per_purchase_unit_snapshot, 0), poi.unit_price_snapshot) AS price,
                 p.price AS selling_price,
                 COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
                 COALESCE(SUM(pori.damaged_quantity), 0) AS damaged_quantity,
                 COALESCE(returns.returned_quantity, 0) AS returned_quantity,
+                COALESCE(returns.replacement_pending_quantity, 0) AS replacement_pending_quantity,
                 COALESCE(batches.inventory_added, 0) AS inventory_added
              FROM purchase_order_items poi
              INNER JOIN product p ON p.product_id = poi.product_id
@@ -175,6 +194,7 @@ try {
              LEFT JOIN medicine_details md ON md.product_id = p.product_id
              LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
              LEFT JOIN purchase_order_receiving_item_summary pori ON pori.po_item_id = poi.po_item_id
+             LEFT JOIN purchase_order_invoice_items piii ON piii.po_item_id = poi.po_item_id
              LEFT JOIN (
                  SELECT po_item_id,
                         SUM(CASE
@@ -183,7 +203,17 @@ try {
                             THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.damaged_quantity')), return_quantity) AS SIGNED)
                             WHEN remarks NOT LIKE '[RETURN_META_V1]%' THEN return_quantity
                             ELSE 0
-                        END) AS returned_quantity
+                        END) AS returned_quantity,
+                        SUM(CASE
+                            WHEN remarks LIKE '[RETURN_META_V1]%'
+                             AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) = 'return_for_replacement'
+                            THEN GREATEST(
+                                CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_expected_qty')), '0') AS SIGNED)
+                                - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED),
+                                0
+                            )
+                            ELSE 0
+                        END) AS replacement_pending_quantity
                  FROM supplier_claim_legacy_projection
                  GROUP BY po_item_id
               ) returns ON returns.po_item_id = poi.po_item_id
@@ -193,7 +223,7 @@ try {
                  GROUP BY po_item_id
               ) batches ON batches.po_item_id = poi.po_item_id
              WHERE poi.po_id IN ({$placeholders})
-              GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.returned_quantity, batches.inventory_added
+              GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, piii.unit_cost, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.returned_quantity, returns.replacement_pending_quantity, batches.inventory_added
              ORDER BY poi.po_id, poi.po_item_id"
         );
         $itemsStatement->execute($poIds);
@@ -201,9 +231,9 @@ try {
         $itemsByPo = [];
         foreach ($itemsStatement->fetchAll(PDO::FETCH_ASSOC) as $item) {
             $quantity = (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
-            $price = (float) $item['price'];
+            $price = $item['price'] === null ? 0.0 : (float) $item['price'];
             $returnedQuantity = (int) $item['returned_quantity'];
-            $item['line_total'] = round((float) $item['stored_line_total'], 2);
+            $item['line_total'] = $item['stored_line_total'] === null ? null : round((float) $item['stored_line_total'], 2);
             $item['cost_basis'] = 'base_unit';
             $baseUnitCost = $price;
             $item['returned_amount'] = round($returnedQuantity * $baseUnitCost, 2);
@@ -212,32 +242,49 @@ try {
 
         foreach ($orders as &$order) {
             $orderItems = $itemsByPo[cleanId($order['po_id'])] ?? [];
-            $totalAmount = 0;
             $returnedAmount = 0;
             $totalQuantity = 0;
 
             foreach ($orderItems as $item) {
-                $totalAmount += (float) $item['line_total'];
                 $returnedAmount += (float) $item['returned_amount'];
                 $totalQuantity += (int) ($item['inventory_qty_ordered'] ?: $item['quantity']);
             }
 
             $order['items'] = $orderItems;
+            $replacementPendingQuantity = array_sum(array_map(static fn(array $item): int => (int) ($item['replacement_pending_quantity'] ?? 0), $orderItems));
+            if ($replacementPendingQuantity > 0) $order['open_claim_badge'] = 'Replacement Pending - ' . $replacementPendingQuantity . ' pcs';
             $order['total_quantity'] = $totalQuantity;
-            $order['total_amount'] = $totalAmount;
+            $invoiceTotal = $order['invoice_total'] === null ? null : round((float) $order['invoice_total'], 2);
+            $legacyTotal = $order['legacy_total_amount'] === null ? null : round((float) $order['legacy_total_amount'], 2);
+            $order['invoice_total'] = $invoiceTotal;
+            $order['total_amount'] = $invoiceTotal ?? $legacyTotal;
+            $order['total_source'] = $invoiceTotal !== null ? 'supplier_invoice' : ($legacyTotal !== null ? 'legacy_po' : null);
+            $order['total_confirmed'] = $invoiceTotal !== null || $legacyTotal !== null;
             $order['returned_amount'] = $returnedAmount;
-            $order['final_payment'] = $totalAmount;
-            $adjustedPayable = round(max(0, (float) $order['final_payment'] - (float) ($order['supplier_credit_applied'] ?? 0)), 2);
+            $storedFinalPayment = round((float) ($order['stored_final_payment'] ?? 0), 2);
+            $order['final_payment'] = $invoiceTotal ?? ($storedFinalPayment > 0 ? $storedFinalPayment : $legacyTotal);
+            $payable = (float) ($order['final_payment'] ?? 0);
+            $adjustedPayable = round(max(0, $payable - (float) ($order['supplier_credit_applied'] ?? 0)), 2);
             $totalPaid = round((float) ($order['stored_total_paid'] ?? 0), 2);
+            $normalizedPaymentState = purchaseOrderNormalizedPaymentState(
+                $order['total_confirmed'] && $payable > 0 ? $adjustedPayable : null,
+                $totalPaid
+            );
             $paymentSummary = [
                 'total_paid' => $totalPaid,
                 'remaining_balance' => round(max(0, $adjustedPayable - $totalPaid), 2),
-                'payment_status' => purchaseOrderPaymentStatus($adjustedPayable, $totalPaid)
+                'payment_status' => $normalizedPaymentState === 'paid'
+                    ? 'Paid'
+                    : ($normalizedPaymentState === 'unpaid' ? 'Unpaid' : 'Awaiting Invoice')
             ];
             $order['total_paid'] = $paymentSummary['total_paid'];
             $order['remaining_balance'] = $paymentSummary['remaining_balance'];
             $order['payment_status'] = $paymentSummary['payment_status'];
-            $order['payment_state'] = $paymentSummary['payment_status'];
+            $order['payment_state'] = $normalizedPaymentState;
+            $order['receiving_record_available'] = (bool) ($order['receiving_record_available'] ?? false);
+            $order['invoice_recorded'] = (bool)($order['invoice_recorded'] ?? false);
+            $order['payment_available'] = in_array(($order['status'] ?? ''), ['Pending','Arrived','Delivered'], true) && $order['invoice_recorded'] && $payable > 0;
+            $order['payment_timing'] = ($order['status'] ?? '') === 'Pending' && $totalPaid > 0 ? 'Prepaid' : 'Standard';
             $order['item_names'] = array_map(static fn($item) => $item['product_name'], $orderItems);
             $order['brand_names'] = array_map(static fn($item) => $item['brand_name'], $orderItems);
             $order['quantities'] = array_map(static fn($item) => (int) ($item['purchase_qty'] ?: 1), $orderItems);
@@ -248,6 +295,13 @@ try {
             }
         }
         unset($order);
+    }
+
+    if ($paymentStatus !== '') {
+        $orders = array_values(array_filter($orders, static function (array $order) use ($paymentStatus): bool {
+            $wantedState = strtolower($paymentStatus);
+            return ($order['payment_state'] ?? 'awaiting_invoice') === $wantedState;
+        }));
     }
 
     $counts = array_fill_keys(purchaseOrderStatuses(), 0);

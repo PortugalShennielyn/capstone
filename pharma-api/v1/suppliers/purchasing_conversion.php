@@ -60,7 +60,7 @@ function syncSupplierProductUnitConversions(PDO $pdo, string $supplierProductId,
     $insert = $pdo->prepare(
         'INSERT INTO supplier_product_unit_conversions
             (conversion_id,supplier_product_id,unit_name,base_quantity,level_order,is_transfer_unit,is_selling_unit)
-         VALUES (UUID(),:supplier_product_id,:unit_name,:base_quantity,:level_order,:is_transfer_unit,0)'
+         VALUES (UUID(),:supplier_product_id,:unit_name,:base_quantity,:level_order,1,:is_selling_unit)'
     );
     foreach ($conversion['absolute_levels'] as $level) {
         $insert->execute([
@@ -68,7 +68,7 @@ function syncSupplierProductUnitConversions(PDO $pdo, string $supplierProductId,
             ':unit_name'=>$level['unit'],
             ':base_quantity'=>$level['base_quantity'],
             ':level_order'=>$level['level_order'],
-            ':is_transfer_unit'=>$level['base_quantity'] === 1 ? 1 : 0,
+            ':is_selling_unit'=>$level['base_quantity'] === 1 ? 1 : 0,
         ]);
     }
 }
@@ -128,7 +128,7 @@ function supplierPurchasingConversion(array $setup): array
             $summaryParts[] = number_format($running) . ' ' . purchasingQuantityUnitLabel($unit, $running);
         }
         $last = $levels[count($levels)-1]['unit'] ?? '';
-        if (strcasecmp($last, $inventoryUnit) !== 0) throw new InvalidArgumentException('The final supplier packaging level must be the Product Base Unit.');
+        if (strcasecmp($last, $inventoryUnit) !== 0) throw new InvalidArgumentException("Incomplete unit conversion. Configure how {$last} converts to {$inventoryUnit} before receiving or transferring stock.");
         $absolute = [];
         $factor = 1;
         for ($index = count($levels)-1; $index >= 0; $index--) {

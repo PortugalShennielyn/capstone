@@ -10,9 +10,23 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR(40) NOT NULL DEFAULT 'Unpaid'");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS approval_status ENUM('Pending','Approved','Rejected') NOT NULL DEFAULT 'Pending'");
     $pdo->exec("ALTER TABLE purchase_orders MODIFY approval_status ENUM('Pending','Approved','Revision Requested','Rejected') NOT NULL DEFAULT 'Pending'");
-    $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00");
+    $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS total_amount DECIMAL(12,2) NULL DEFAULT NULL");
+    $pdo->exec("ALTER TABLE purchase_orders MODIFY total_amount DECIMAL(12,2) NULL DEFAULT NULL");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS final_payment DECIMAL(12,2) NOT NULL DEFAULT 0.00");
-    $pdo->exec("ALTER TABLE purchase_orders MODIFY status VARCHAR(40) NOT NULL DEFAULT 'Pending'");
+    $pdo->exec("ALTER TABLE purchase_orders MODIFY status VARCHAR(40) NOT NULL DEFAULT 'Draft'");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS supplier_refunds (
+        refund_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+        claim_id CHAR(36) NOT NULL,
+        amount_due DECIMAL(12,2) NOT NULL,
+        amount_received DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        refund_status VARCHAR(30) NOT NULL DEFAULT 'Due',
+        received_date DATE NULL,
+        reference_number VARCHAR(100) NULL,
+        recorded_by CHAR(36) NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_supplier_refund_claim (claim_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS purchase_order_approval_audit (
             audit_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
@@ -30,6 +44,7 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
     $pdo->exec("UPDATE purchase_orders SET status = 'Delivered' WHERE status IN ('Return/Damage', 'Delivered with Return/Damage')");
+    $pdo->exec("UPDATE purchase_orders SET status = 'Pending' WHERE LOWER(TRIM(status)) = 'in transit'");
     $pdo->exec("UPDATE purchase_orders SET status = 'Cancelled' WHERE approval_status = 'Rejected' AND status = 'Pending'");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS product_name_snapshot VARCHAR(150) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS brand_name_snapshot VARCHAR(150) NULL");
@@ -43,6 +58,7 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS packaging_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price_snapshot DECIMAL(12,4) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items MODIFY unit_price_snapshot DECIMAL(12,4) NULL");
+    $pdo->exec("ALTER TABLE purchase_order_items MODIFY line_total DECIMAL(10,2) NULL DEFAULT NULL");
     $pdo->exec("ALTER TABLE inventory_batches MODIFY unit_cost DECIMAL(12,4) NOT NULL DEFAULT 0.0000");
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS supplier_products (
@@ -109,8 +125,8 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
 function purchaseOrderStatuses(): array
 {
     return [
+        'Draft',
         'Pending',
-        'In transit',
         'Arrived',
         'Delivered',
         'Cancelled'
@@ -120,8 +136,8 @@ function purchaseOrderStatuses(): array
 function activePurchaseOrderStatuses(): array
 {
     return [
+        'Draft',
         'Pending',
-        'In transit',
         'Arrived'
     ];
 }
@@ -654,6 +670,9 @@ function decoratePurchaseOrderReturnRecord(array $record): array
     $record['replacement_received_qty'] = (int) ($metadata['replacement_received_qty'] ?? 0);
     $record['replacement_outstanding_qty'] = max(0, $record['replacement_expected_qty'] - $record['replacement_received_qty']);
     $record['parent_return_id'] = $metadata['parent_return_id'] ?? null;
+    $record['requested_resolution_type'] = $metadata['requested_resolution_type'] ?? ($record['resolution_type'] ?? null);
+    $record['management_remarks'] = trim((string) ($metadata['management_remarks'] ?? ''));
+    $record['inspection_remarks'] = $record['remarks'];
     return $record;
 }
 ?>

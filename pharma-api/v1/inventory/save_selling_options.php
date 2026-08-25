@@ -40,6 +40,11 @@ try {
         if (!is_numeric($price) || (float) $price < 0) throw new InvalidArgumentException("Selling Price for {$unit} must be zero or greater.");
         $active = !empty($option['is_active']);
         $posEnabled = $active && !empty($option['pos_enabled']);
+        if ($posEnabled && ($baseQuantity !== 1 || mb_strtolower($unit) !== mb_strtolower($baseUnit))) {
+            throw new InvalidArgumentException(
+                "POS can only sell the Product Master inventory unit ({$baseUnit}). Package content and parent purchasing units are not POS selling units."
+            );
+        }
         $isDefault = $active && $posEnabled && !empty($option['is_default']);
         if ($isDefault) $defaultCount++;
         $normalized[] = [

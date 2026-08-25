@@ -1,0 +1,111 @@
+:root {
+    --bg-app: #f6f8fc;
+    --surface: #ffffff;
+    --surface-soft: #f1f5f9;
+    --sidebar: #1e293b;
+    --sidebar-hover: #273449;
+    --text-primary: #182233;
+    --text-secondary: #64748b;
+    --border: #dde4ee;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-soft: #eef2ff;
+    --teal: #0f766e;
+    --teal-soft: #ccfbf1;
+    --success: #15803d;
+    --success-soft: #dcfce7;
+    --warning-color: #b45309;
+    --warning-soft: #fef3c7;
+    --danger-color: #dc2626;
+    --danger-soft: #fee2e2;
+    --info: #0369a1;
+    --info-soft: #e0f2fe;
+    --drp-primary: #4f46e5;
+    --drp-primary-hover: #4338ca;
+    --drp-primary-soft: #eef2ff;
+    --drp-teal: #0f766e;
+    --drp-teal-soft: #ccfbf1;
+    --drp-success: #15803d;
+    --drp-success-soft: #dcfce7;
+    --drp-warning: #b45309;
+    --drp-warning-soft: #fef3c7;
+    --drp-danger: #dc2626;
+    --drp-danger-soft: #fee2e2;
+    --drp-info: #0369a1;
+    --drp-info-soft: #e0f2fe;
+    --drp-page: var(--bg-app);
+    --drp-surface: var(--surface);
+    --drp-surface-soft: var(--surface-soft);
+    --drp-border: var(--border);
+    --drp-text: var(--text-primary);
+    --drp-muted: var(--text-secondary);
+    --purple: var(--drp-primary);
+    --purple-dark: var(--drp-primary-hover);
+    --purple-soft: var(--drp-primary-soft);
+    --body-bg: var(--drp-page);
+    --border-soft: var(--drp-border);
+    --text-main: var(--drp-text);
+}
+
+body { background: var(--drp-page); color: var(--drp-text); }
+
+.btn-purple,
+.btn-primary,
+.primary-action {
+    --bs-btn-bg: var(--drp-primary);
+    --bs-btn-border-color: var(--drp-primary);
+    --bs-btn-hover-bg: var(--drp-primary-hover);
+    --bs-btn-hover-border-color: var(--drp-primary-hover);
+    background-color: var(--drp-primary);
+    border-color: var(--drp-primary);
+    color: #fff;
+}
+
+.btn-purple:hover,
+.btn-primary:hover { background-color: var(--drp-primary-hover); border-color: var(--drp-primary-hover); color:#fff; }
+
+.form-control,
+.form-select {
+    min-height: 40px;
+    border-color: var(--drp-border);
+    border-radius: 9px;
+    color: var(--drp-text);
+    font-size: 13px;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--drp-primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, .12);
+}
+
+.card,
+.panel,
+.products-workspace,
+.shelf-card,
+.queue-panel,
+.detail-panel {
+    border-color: var(--drp-border);
+    border-radius: 11px;
+    box-shadow: 0 5px 18px rgba(15, 23, 42, .045);
+}
+
+table.table thead th {
+    color: #526078;
+    background: #f8fafc;
+    border-bottom-color: var(--drp-border);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+table.table tbody td { border-bottom-color: #e9eef5; }
+table.table tbody tr:hover > td { background: #f8fafc; }
+
+.status-pill.is-available,
+.status-badge.status-safe { color: var(--drp-success); background: var(--drp-success-soft); }
+
+.page-body { padding: 20px; }
+
+@media (max-width: 850px) {
+    .page-body { padding: 14px; }
+}

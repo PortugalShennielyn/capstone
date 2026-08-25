@@ -256,14 +256,21 @@ function deleteBusinessHourException(PDO $pdo, string $date): void
 
 function fetchSystemSettings(PDO $pdo): array
 {
-    $stmt = $pdo->query(
-        "SELECT pharmacy_name, pharmacy_email, contact_number, tin_license_number,
-                pharmacy_address, website, timezone, logo_path,
-                grn_received_by_name, grn_approved_by_name
-         FROM system_settings
-         ORDER BY setting_id ASC
-         LIMIT 1"
-    );
+    $desiredColumns = [
+        'pharmacy_name', 'pharmacy_email', 'contact_number', 'tin_license_number',
+        'pharmacy_address', 'website', 'timezone', 'logo_path',
+        'grn_received_by_name', 'grn_approved_by_name',
+        'pr_prepared_name', 'pr_prepared_role', 'pr_reviewed_name', 'pr_reviewed_role',
+        'po_prepared_name', 'po_prepared_role', 'po_approved_name', 'po_approved_role',
+    ];
+    $availableColumns = array_column($pdo->query('SHOW COLUMNS FROM system_settings')->fetchAll(PDO::FETCH_ASSOC), 'Field');
+    $selectedColumns = array_values(array_intersect($desiredColumns, $availableColumns));
+    if (!$selectedColumns) return [];
+
+    $stmt = $pdo->query(sprintf(
+        'SELECT %s FROM system_settings ORDER BY setting_id ASC LIMIT 1',
+        implode(', ', array_map(static fn(string $column): string => '`' . $column . '`', $selectedColumns))
+    ));
 
     $row = $stmt->fetch() ?: [];
 
@@ -278,6 +285,14 @@ function fetchSystemSettings(PDO $pdo): array
         'logoName' => (string) ($row['logo_path'] ?? ''),
         'grnReceivedByName' => (string) ($row['grn_received_by_name'] ?? ''),
         'grnApprovedByName' => (string) ($row['grn_approved_by_name'] ?? ''),
+        'prPreparedName' => (string) ($row['pr_prepared_name'] ?? ''),
+        'prPreparedRole' => trim((string) ($row['pr_prepared_role'] ?? '')) ?: 'Manager',
+        'prReviewedName' => (string) ($row['pr_reviewed_name'] ?? ''),
+        'prReviewedRole' => trim((string) ($row['pr_reviewed_role'] ?? '')) ?: 'Supervisor',
+        'poPreparedName' => (string) ($row['po_prepared_name'] ?? ''),
+        'poPreparedRole' => trim((string) ($row['po_prepared_role'] ?? '')) ?: 'Manager',
+        'poApprovedName' => (string) ($row['po_approved_name'] ?? ''),
+        'poApprovedRole' => trim((string) ($row['po_approved_role'] ?? '')) ?: 'Supervisor',
     ];
 }
 

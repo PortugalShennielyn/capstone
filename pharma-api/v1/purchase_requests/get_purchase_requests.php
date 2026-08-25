@@ -5,6 +5,7 @@ require_once '../../config/require_auth.php';
 require_once 'purchase_request_helpers.php';
 require_once 'automatic_purchase_order_helpers.php';
 require_once '../inventory/inventory_stock_summary.php';
+require_once '../settings/settings_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     sendPurchaseRequestJson(false, 'Only GET requests are allowed.', null, 405);
@@ -12,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 try {
     ensurePurchaseRequestSchema($pdo);
+    $systemSettings = fetchSystemSettings($pdo);
     $status = trim((string) ($_GET['status'] ?? ''));
     $prId = trim((string) ($_GET['pr_id'] ?? ''));
     $conditions = [];
@@ -124,7 +126,15 @@ try {
     }
     unset($request);
 
-    sendPurchaseRequestJson(true, 'Purchase requests loaded.', ['requests' => $requests]);
+    sendPurchaseRequestJson(true, 'Purchase requests loaded.', [
+        'requests' => $requests,
+        'procurementDocumentSettings' => [
+            'prPreparedName' => $systemSettings['prPreparedName'] ?? '',
+            'prPreparedRole' => $systemSettings['prPreparedRole'] ?? 'Manager',
+            'prReviewedName' => $systemSettings['prReviewedName'] ?? '',
+            'prReviewedRole' => $systemSettings['prReviewedRole'] ?? 'Supervisor',
+        ],
+    ]);
 } catch (Throwable $e) {
     error_log('[PURCHASE REQUESTS] Unable to load requests: ' . $e->getMessage());
     sendPurchaseRequestJson(false, 'Unable to load purchase requests.', null, 500);

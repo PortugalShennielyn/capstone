@@ -22,16 +22,6 @@ try {
     ensurePurchaseOrderSchema($pdo);
 
     $returnId = cleanId($payload['return_id'] ?? null);
-    $action = trim((string) ($payload['action'] ?? 'update'));
-    $allowedReasons = [
-        'Expired',
-        'Broken package',
-        'Wrong item delivered',
-        'Incorrect quantity',
-        'Damaged during delivery',
-        'Other'
-    ];
-
     if ($returnId === '') {
         throw new InvalidArgumentException('Return/Damage id is required.');
     }
@@ -42,7 +32,10 @@ try {
             poi.po_id,
             por.po_item_id,
             por.affected_quantity AS return_quantity,
+            por.damage_reason,
+            por.disposition,
             por.unit_conversion_id,
+            por.resolution_type AS existing_resolution_type,
             por.remarks AS stored_remarks,
             poi.quantity AS ordered_quantity,
             COALESCE(poi.unit_price_snapshot,0) AS unit_price,
@@ -60,70 +53,75 @@ try {
         throw new InvalidArgumentException('Return/Damage record not found.');
     }
 
-    if ($action === 'resolve') {
-        $statement = $pdo->prepare(
-            "UPDATE supplier_claims
-             SET claim_status = 'Resolved', resolved_at = CURRENT_TIMESTAMP
-             WHERE claim_id = :return_id"
-        );
-        $statement->execute([':return_id' => $returnId]);
-
-        echo json_encode(['status' => 'success', 'message' => 'Return/Damage record marked as resolved.']);
-        exit();
-    }
-
-    $returnQuantity = (int) ($payload['return_quantity'] ?? 0);
-    $damageReason = trim((string) ($payload['damage_reason'] ?? ''));
-    $remarks = trim((string) ($payload['remarks'] ?? ''));
-    $disposition = trim((string) ($payload['disposition'] ?? ''));
     $resolutionType = trim((string) ($payload['resolution_type'] ?? '')) ?: null;
+    $confirmedAmount = round((float) ($payload['confirmed_amount'] ?? 0), 2);
+    $managementRemarks = trim((string) ($payload['management_remarks'] ?? ''));
     $parsedRemarks = parsePurchaseOrderReturnRemarks($record['stored_remarks'] ?? '');
-    $storedRemarks = empty($parsedRemarks['metadata']) ? $remarks : buildPurchaseOrderReturnRemarks($parsedRemarks['metadata'], $remarks);
-    $maxReturnQuantity = intdiv((int) $record['ordered_quantity'], max(1, (int) $record['base_quantity']));
-
-    if ($returnQuantity <= 0 || $returnQuantity > $maxReturnQuantity) {
-        throw new InvalidArgumentException('Return quantity must be greater than zero and cannot exceed the allowed damaged/ordered quantity.');
+    $updatedMetadata = $parsedRemarks['metadata'];
+    $updatedMetadata['requested_resolution_type'] = $updatedMetadata['requested_resolution_type'] ?? ($record['existing_resolution_type'] ?? null);
+    $updatedMetadata['management_remarks'] = $managementRemarks;
+    $updatedMetadata['supplier_adjustment'] = in_array($resolutionType, ['Current PO Credit','Next PO Credit'], true) ? $confirmedAmount : 0;
+    $updatedMetadata['resolution'] = supplierClaimLegacyResolution($resolutionType, $record['disposition'] ?? null);
+    if ($resolutionType === 'Replacement') {
+        $updatedMetadata['replacement_expected_qty'] = max((int) ($updatedMetadata['replacement_expected_qty'] ?? 0), (int) $record['return_quantity'] * max(1, (int) $record['base_quantity']));
     }
+    $storedRemarks = buildPurchaseOrderReturnRemarks($updatedMetadata, $parsedRemarks['remarks']);
 
-    if (!in_array($damageReason, $allowedReasons, true)) {
-        throw new InvalidArgumentException('A valid damage reason is required.');
-    }
-    if (!in_array($disposition, ['Return to Supplier','Hold/Quarantine','Dispose'], true)) throw new InvalidArgumentException('Select a valid physical disposition.');
     if ($resolutionType !== null && !in_array($resolutionType, ['Replacement','Current PO Credit','Next PO Credit'], true)) throw new InvalidArgumentException('Select a valid supplier resolution.');
+    if (in_array($resolutionType, ['Current PO Credit','Next PO Credit'], true) && $confirmedAmount <= 0) throw new InvalidArgumentException('Enter the positive amount confirmed by the supplier.');
 
     $pdo->beginTransaction();
 
+    if ($resolutionType === 'Current PO Credit') {
+        $otherDiscounts = $pdo->prepare("SELECT COALESCE(SUM(app.amount_applied),0) FROM supplier_credit_applications app INNER JOIN supplier_credits cr ON cr.credit_id=app.credit_id INNER JOIN supplier_claims sc ON sc.claim_id=cr.claim_id INNER JOIN purchase_order_items source_item ON source_item.po_item_id=sc.po_item_id WHERE app.po_id=:po_id AND source_item.po_id=:source_po_id AND sc.claim_id<>:claim_id AND sc.resolution_type IN ('Current PO Credit','Supplier Credit')");
+        $otherDiscounts->execute([':po_id' => $record['po_id'], ':source_po_id' => $record['po_id'], ':claim_id' => $returnId]);
+        if ((float) $otherDiscounts->fetchColumn() + $confirmedAmount > purchaseOrderEffectivePayable($pdo, cleanId($record['po_id']))) throw new InvalidArgumentException('Confirmed current-PO discounts cannot exceed the original PO total.');
+    }
+
     $statement = $pdo->prepare(
         "UPDATE supplier_claims
-         SET affected_quantity = :return_quantity,
-             damage_reason = :damage_reason,
-             disposition = :disposition,
-             resolution_type = :resolution_type,
+         SET resolution_type = :resolution_type,
              claim_status = :claim_status,
+             resolved_at = NULL,
              remarks = :remarks
          WHERE claim_id = :return_id"
     );
     $statement->execute([
-        ':return_quantity' => $returnQuantity,
-        ':damage_reason' => $damageReason,
-        ':disposition' => $disposition,
         ':resolution_type' => $resolutionType,
         ':claim_status' => supplierClaimStatus($resolutionType),
         ':remarks' => $storedRemarks,
         ':return_id' => $returnId
     ]);
 
+    $creditCheck=$pdo->prepare('SELECT cr.credit_id,cr.credit_amount,cr.credit_status,COALESCE(SUM(app.amount_applied),0) amount_applied FROM supplier_credits cr LEFT JOIN supplier_credit_applications app ON app.credit_id=cr.credit_id WHERE cr.claim_id=:claim_id GROUP BY cr.credit_id,cr.credit_amount,cr.credit_status LIMIT 1 FOR UPDATE');$creditCheck->execute([':claim_id'=>$returnId]);
+    $existingCredit=$creditCheck->fetch(PDO::FETCH_ASSOC)?:null;
+    if ($existingCredit && !in_array($resolutionType, ['Current PO Credit','Next PO Credit'], true)) throw new InvalidArgumentException('This claim already has a supplier credit. Reconcile that credit before changing to a non-credit resolution.');
+    if ($existingCredit && ($record['existing_resolution_type'] ?? null) !== $resolutionType) throw new InvalidArgumentException('A generated supplier credit cannot be changed between current-PO discount and future credit.');
     if (in_array($resolutionType, ['Current PO Credit','Next PO Credit'], true)) {
-        $creditCheck=$pdo->prepare('SELECT credit_id FROM supplier_credits WHERE claim_id=:claim_id LIMIT 1');$creditCheck->execute([':claim_id'=>$returnId]);
-        if(!$creditCheck->fetchColumn()){
-            $creditId=newUuid($pdo);$creditAmount=round($returnQuantity*(int)$record['base_quantity']*(float)$record['unit_price'],2);
-            if($creditAmount>0){$pdo->prepare("INSERT INTO supplier_credits(credit_id,claim_id,credit_amount,credit_status) VALUES(:credit_id,:claim_id,:amount,'Available')")->execute([':credit_id'=>$creditId,':claim_id'=>$returnId,':amount'=>$creditAmount]);if($resolutionType==='Current PO Credit'){$pdo->prepare('INSERT INTO supplier_credit_applications(application_id,credit_id,po_id,amount_applied) VALUES(:id,:credit_id,:po_id,:amount)')->execute([':id'=>newUuid($pdo),':credit_id'=>$creditId,':po_id'=>$record['po_id'],':amount'=>$creditAmount]);$pdo->prepare("UPDATE supplier_credits SET credit_status='Applied' WHERE credit_id=:credit_id")->execute([':credit_id'=>$creditId]);}}
+        if($existingCredit){
+            if((float)$existingCredit['amount_applied']>$confirmedAmount)throw new InvalidArgumentException('The confirmed amount is lower than credit already applied. Reconcile the applications first.');
+            $pdo->prepare('UPDATE supplier_credits SET credit_amount=:amount WHERE credit_id=:credit_id')->execute([':amount'=>$confirmedAmount,':credit_id'=>$existingCredit['credit_id']]);
+            if($resolutionType==='Current PO Credit'){
+                $application=$pdo->prepare('SELECT application_id FROM supplier_credit_applications WHERE credit_id=:credit_id AND po_id=:po_id LIMIT 1 FOR UPDATE');$application->execute([':credit_id'=>$existingCredit['credit_id'],':po_id'=>$record['po_id']]);$applicationId=$application->fetchColumn();
+                if($applicationId)$pdo->prepare('UPDATE supplier_credit_applications SET amount_applied=:amount,applied_at=CURRENT_TIMESTAMP,applied_by=:applied_by WHERE application_id=:id')->execute([':amount'=>$confirmedAmount,':applied_by'=>$_SESSION['user_id']??null,':id'=>$applicationId]);
+                else $pdo->prepare('INSERT INTO supplier_credit_applications(application_id,credit_id,po_id,amount_applied,applied_by) VALUES(:id,:credit_id,:po_id,:amount,:applied_by)')->execute([':id'=>newUuid($pdo),':credit_id'=>$existingCredit['credit_id'],':po_id'=>$record['po_id'],':amount'=>$confirmedAmount,':applied_by'=>$_SESSION['user_id']??null]);
+                $pdo->prepare("UPDATE supplier_credits SET credit_status='Applied' WHERE credit_id=:credit_id")->execute([':credit_id'=>$existingCredit['credit_id']]);
+            }
+            if($resolutionType==='Current PO Credit')$pdo->prepare("UPDATE supplier_claims SET claim_status='Credit Applied',resolved_at=CURRENT_TIMESTAMP WHERE claim_id=:claim_id")->execute([':claim_id'=>$returnId]);
+            if($resolutionType==='Next PO Credit')$pdo->prepare("UPDATE supplier_claims SET claim_status=:status,resolved_at=NULL WHERE claim_id=:claim_id")->execute([':status'=>((float)$existingCredit['amount_applied']>0?'Supplier Credit Partially Applied':'Credit Available'),':claim_id'=>$returnId]);
+        } else {
+            $creditId=newUuid($pdo);$creditAmount=$confirmedAmount;
+            if($creditAmount>0){$pdo->prepare("INSERT INTO supplier_credits(credit_id,claim_id,credit_amount,credit_status) VALUES(:credit_id,:claim_id,:amount,'Available')")->execute([':credit_id'=>$creditId,':claim_id'=>$returnId,':amount'=>$creditAmount]);if($resolutionType==='Current PO Credit'){$pdo->prepare('INSERT INTO supplier_credit_applications(application_id,credit_id,po_id,amount_applied,applied_by) VALUES(:id,:credit_id,:po_id,:amount,:applied_by)')->execute([':id'=>newUuid($pdo),':credit_id'=>$creditId,':po_id'=>$record['po_id'],':amount'=>$creditAmount,':applied_by'=>$_SESSION['user_id']??null]);$pdo->prepare("UPDATE supplier_credits SET credit_status='Applied' WHERE credit_id=:credit_id")->execute([':credit_id'=>$creditId]);}}
+            if($creditAmount>0 && $resolutionType==='Current PO Credit')$pdo->prepare("UPDATE supplier_claims SET claim_status='Credit Applied',resolved_at=CURRENT_TIMESTAMP WHERE claim_id=:claim_id")->execute([':claim_id'=>$returnId]);
+            if($creditAmount>0 && $resolutionType==='Next PO Credit')$pdo->prepare("UPDATE supplier_claims SET claim_status='Credit Available',resolved_at=NULL WHERE claim_id=:claim_id")->execute([':claim_id'=>$returnId]);
         }
     }
 
     synchronizePurchaseOrderPaymentStatus($pdo, cleanId($record['po_id']), purchaseOrderEffectivePayable($pdo, cleanId($record['po_id'])));
 
     $pdo->commit();
+
+    recordActivityLog($pdo, 'Return/Damage', 'Supplier Response', 'Supplier response recorded: ' . ($resolutionType ?: 'Awaiting Supplier Decision') . '.', $returnId);
 
     echo json_encode(['status' => 'success', 'message' => 'Return/Damage record updated successfully.']);
 } catch (InvalidArgumentException $e) {

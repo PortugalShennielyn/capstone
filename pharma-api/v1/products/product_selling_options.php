@@ -34,7 +34,9 @@ function productShelfBaseQuantity(PDO $pdo, string $productId): int
 
 function productSellingOptions(PDO $pdo, string $productId, bool $posOnly = false): array
 {
-    $where = $posOnly ? ' AND pso.is_active = 1 AND pso.pos_enabled = 1' : '';
+    // POS stock is canonical inventory stock. Packaging units may be used for
+    // purchasing and transfers, but customers buy the Product Master unit.
+    $where = $posOnly ? ' AND pso.is_active = 1 AND pso.pos_enabled = 1 AND pso.base_quantity = 1' : '';
     $statement = $pdo->prepare(
         "SELECT pso.selling_option_id, pso.product_id,
                 pso.unit_name AS unit, pso.base_quantity,
