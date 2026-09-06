@@ -8,6 +8,8 @@ const expiryChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastCha
 
 let expiryRows = [];
 let activeExpiryRow = null;
+let expiryPage = 1;
+let expiryPageSize = 10;
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -50,6 +52,8 @@ function joinedMeasurement(value, unit) {
 }
 
 function specification(row) {
+    const normalizedSpecification = meaningful(row.normalized_specification);
+    if (normalizedSpecification) return normalizedSpecification;
     if (String(row.category_name || '').toLowerCase() === 'medicine') {
         const strength = meaningful(row.strength) || joinedMeasurement(row.strength_value, row.strength_unit);
         return uniqueParts([
@@ -137,25 +141,67 @@ function initializeTooltips() {
     document.querySelectorAll('#table-expiry-monitoring [data-bs-toggle="tooltip"]').forEach((element) => bootstrap.Tooltip.getOrCreateInstance(element));
 }
 
-function renderExpiryRows(rows) {
+function applySearchHighlight() {
+    const input = document.getElementById('expirySearch');
+    const body = document.querySelector('#table-expiry-monitoring tbody');
+    if (!input || !body) return;
+    if (window.PharmacySearchHighlight) {
+        window.PharmacySearchHighlight.apply(body, input.value);
+        window.PharmacySearchHighlight.refresh(input);
+        requestAnimationFrame(() => window.PharmacySearchHighlight?.apply(body, input.value));
+        return;
+    }
+    window.addEventListener('pharmacy-search-highlight-ready', () => {
+        window.PharmacySearchHighlight?.apply(body, input.value);
+    }, { once: true });
+}
+
+function productReference(row) {
+    return `<span class="product-primary">${escapeHtml(meaningful(row.product_name) || 'Unnamed product')}</span><span class="product-secondary">${escapeHtml(productSecondary(row))}</span>`;
+}
+
+function productSecondary(row) {
+    return uniqueParts([row.brand_name, ...productSpecification(row).split('•')]).join(' • ') || '—';
+}
+
+function productSpecification(row) {
+    const specificationParts = specification(row).split('•');
+    return uniqueParts([
+        ...specificationParts,
+        row.inventory_unit_symbol || row.inventory_unit_name
+    ]).join(' • ') || '—';
+}
+
+function updatePagination(total, first, last) {
+    const count = document.getElementById('expiryRecordCount');
+    const previous = document.getElementById('expiryPreviousPage');
+    const next = document.getElementById('expiryNextPage');
+    const totalPages = Math.max(1, Math.ceil(total / expiryPageSize));
+    if (count) count.textContent = total ? `${first}–${last} of ${total} records` : '0 records';
+    if (previous) previous.disabled = expiryPage <= 1;
+    if (next) next.disabled = expiryPage >= totalPages;
+}
+
+function renderExpiryRows(rows, totalFiltered = rows.length) {
     const body = document.querySelector('#table-expiry-monitoring tbody');
     if (!body) return;
-    renderSummaryCards(rows);
     if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="12" class="empty-row">No received inventory batches found.</td></tr>';
+        const hasFilters = Boolean(document.getElementById('expirySearch')?.value.trim()
+            || document.getElementById('expiryStatusFilter')?.value
+            || document.getElementById('expiryCategoryFilter')?.value);
+        body.innerHTML = `<tr><td colspan="9" class="empty-row">${hasFilters ? 'No expiry records match the current filters.' : 'No received inventory batches found.'}</td></tr>`;
+        updatePagination(0, 0, 0);
+        applySearchHighlight();
         return;
     }
     body.innerHTML = rows.map((row) => `
         <tr data-batch-id="${escapeHtml(row.batch_id)}">
-            <td>${escapeHtml(row.product_name)}</td>
-            <td>${escapeHtml(row.brand_name)}</td>
-            <td>${escapeHtml(row.category_name)}</td>
-            <td>${escapeHtml(row.type_name)}</td>
-            <td title="${escapeHtml(row.batch_number)}">${escapeHtml(row.batch_number)}</td>
-            <td>${escapeHtml(row.received_quantity)}</td>
-            <td>${escapeHtml(row.available_quantity)}</td>
-            <td><div class="expiry-date-stack">${statusBadge(row.expiry_status)}<span>${escapeHtml(formatDate(row.expiry_date))}</span></div></td>
-            <td>${alertText(row.expiry_alert_days)}</td>
+            <td>${productReference(row)}</td>
+            <td><span class="batch-reference">${escapeHtml(meaningful(row.batch_number) || meaningful(row.batch_id) || '—')}</span></td>
+            <td><span class="batch-reference">${escapeHtml(meaningful(row.po_number) || '—')}</span></td>
+            <td>${escapeHtml(Number(row.storage_qty || 0))}</td>
+            <td>${escapeHtml(Number(row.shelf_qty || 0))}</td>
+            <td><div class="expiry-date-stack"><strong>${escapeHtml(row.expiry_date ? formatDate(row.expiry_date) : 'Not Recorded')}</strong><span>${row.expiry_date ? `Alert: ${escapeHtml(alertText(row.expiry_alert_days))}` : '—'}</span></div></td>
             <td>${daysText(row.days_until_expiry)}</td>
             <td>${statusBadge(row.expiry_status)}</td>
             <td class="expiry-action-cell">
@@ -166,28 +212,68 @@ function renderExpiryRows(rows) {
             </td>
         </tr>
     `).join('');
+    const first = (expiryPage - 1) * expiryPageSize + 1;
+    updatePagination(totalFiltered, first, first + rows.length - 1);
     window.dispatchEvent(new CustomEvent('drp:tables-updated'));
     initializeTooltips();
+    applySearchHighlight();
+}
+
+function filteredExpiryRows() {
+    const search = document.getElementById('expirySearch')?.value.trim().toLocaleLowerCase() || '';
+    const status = document.getElementById('expiryStatusFilter')?.value || '';
+    const category = document.getElementById('expiryCategoryFilter')?.value || '';
+    return expiryRows.filter((row) => {
+        if (status && String(row.expiry_status || 'Not Recorded') !== status) return false;
+        if (category && String(row.category_name || '') !== category) return false;
+        if (!search) return true;
+        return [row.product_name, row.brand_name, specification(row), row.inventory_unit_name, row.inventory_unit_symbol, row.batch_number, row.batch_id, row.po_number, row.category_name, row.type_name]
+            .some((value) => String(value ?? '').toLocaleLowerCase().includes(search));
+    });
+}
+
+function renderFilteredExpiryRows({ resetPage = false } = {}) {
+    if (resetPage) expiryPage = 1;
+    const filtered = filteredExpiryRows();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / expiryPageSize));
+    expiryPage = Math.min(expiryPage, totalPages);
+    const start = (expiryPage - 1) * expiryPageSize;
+    renderExpiryRows(filtered.slice(start, start + expiryPageSize), filtered.length);
+}
+
+function populateCategoryFilter(rows) {
+    const select = document.getElementById('expiryCategoryFilter');
+    if (!select) return;
+    const selected = select.value;
+    const categories = [...new Set(rows.map((row) => meaningful(row.category_name)).filter(Boolean))]
+        .sort((left, right) => left.localeCompare(right));
+    select.innerHTML = '<option value="">All categories</option>'
+        + categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
+    if (categories.includes(selected)) select.value = selected;
 }
 
 async function loadExpiryMonitoring() {
     try {
         const data = await fetchJson(`${API_BASE_URL}/inventory/get_expiry_monitoring.php?t=${Date.now()}`);
         expiryRows = data.data || [];
-        renderExpiryRows(expiryRows);
+        renderSummaryCards(expiryRows);
+        populateCategoryFilter(expiryRows);
+        renderFilteredExpiryRows();
         if (activeExpiryRow && document.getElementById('expiryDetailsModal')?.classList.contains('show')) {
             const refreshed = expiryRows.find((row) => String(row.batch_id) === String(activeExpiryRow.batch_id));
             if (refreshed) openExpiryDetails(refreshed.batch_id, false);
         }
     } catch (error) {
         expiryRows = [];
-        renderExpiryRows([]);
+        renderSummaryCards([]);
+        populateCategoryFilter([]);
+        renderFilteredExpiryRows();
         PharmaUtils.toast.error(error.message);
     }
 }
 
-function detailItem(label, value) {
-    return `<div class="expiry-detail-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(meaningful(value) || '—')}</strong></div>`;
+function detailField(label, value) {
+    return `<div class="expiry-info-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(meaningful(value) || '—')}</strong></div>`;
 }
 
 function openExpiryDetails(batchId, show = true) {
@@ -195,19 +281,32 @@ function openExpiryDetails(batchId, show = true) {
     if (!row) return;
     activeExpiryRow = row;
     const content = document.getElementById('expiryDetailsContent');
+    const damagedField = Number(row.damaged_qty || 0) > 0 ? detailField('Damaged Qty', row.damaged_qty) : '';
     if (content) content.innerHTML = `
-        <section class="expiry-detail-section"><h3>Product Identity</h3><div class="expiry-detail-grid">
-            ${detailItem('Brand', row.brand_name)}${detailItem('Product', row.product_name)}${detailItem('Specification', specification(row))}${detailItem('Category', row.category_name)}${detailItem('Product Type', row.type_name)}
-        </div></section>
-        <section class="expiry-detail-section"><h3>Batch Information</h3><div class="expiry-detail-grid">
-            ${detailItem('Batch Number', row.batch_number)}${detailItem('PO Number', row.po_number)}${detailItem('Supplier', row.supplier_name)}${detailItem('Received Date', formatDate(row.received_date))}${detailItem('Received Qty', row.received_quantity)}${detailItem('Storage Qty', row.storage_qty)}${detailItem('Shelf Qty', row.shelf_qty)}${detailItem('Damaged Qty', row.damaged_qty)}
-        </div></section>
-        <section class="expiry-detail-section"><h3>Expiry Information</h3><div class="expiry-detail-grid">
-            ${detailItem('Expiry Date', formatDate(row.expiry_date))}${detailItem('Days Remaining', daysText(row.days_until_expiry))}<div class="expiry-detail-item"><span>Expiry Status</span>${statusBadge(row.expiry_status)}</div>${detailItem('Alert Threshold', alertText(row.expiry_alert_days))}
-        </div></section>
-        <section class="expiry-detail-section mb-0"><h3>Inventory Summary</h3><div class="expiry-stock-grid">
-            ${detailItem('Storage', row.storage_qty)}${detailItem('Shelf', row.shelf_qty)}${detailItem('Damaged', row.damaged_qty)}
-        </div></section>`;
+        <section class="expiry-modal-section">
+            <h3>Product Identity</h3>
+            <div class="expiry-identity-grid">
+                <div class="expiry-identity-field"><span>Product / Brand</span><strong>${escapeHtml(meaningful(row.product_name) || 'Unnamed product')}</strong><span class="expiry-identity-brand">${escapeHtml(meaningful(row.brand_name) || '—')}</span></div>
+                <div class="expiry-identity-field"><span>Specification</span><div class="expiry-identity-specification">${escapeHtml(productSpecification(row))}</div></div>
+            </div>
+        </section>
+        <section class="expiry-modal-section">
+            <h3>Batch Information</h3>
+            <div class="expiry-info-grid">
+                ${detailField('Batch Number', row.batch_number)}${detailField('PO Number', row.po_number)}${detailField('Received Date', formatDate(row.received_date))}
+                ${detailField('Originally Received', row.received_quantity)}${detailField('Storage Qty', Number(row.storage_qty || 0))}${detailField('Shelf Qty', Number(row.shelf_qty || 0))}
+                ${detailField('Supplier', row.supplier_name)}${damagedField}
+            </div>
+        </section>
+        <section class="expiry-modal-section">
+            <h3>Expiry Information</h3>
+            <div class="expiry-info-grid expiry-info-grid-four">
+                ${detailField('Expiry Date', row.expiry_date ? formatDate(row.expiry_date) : 'Not Recorded')}
+                ${detailField('Alert Before', alertText(row.expiry_alert_days))}
+                ${detailField('Days Left', daysText(row.days_until_expiry))}
+                <div class="expiry-info-item"><span>Status</span><strong>${statusBadge(row.expiry_status)}</strong></div>
+            </div>
+        </section>`;
     if (show) bootstrap.Modal.getOrCreateInstance(document.getElementById('expiryDetailsModal')).show();
 }
 
@@ -216,8 +315,10 @@ function openEditExpiryModal(batchId) {
     if (!row) return;
     document.getElementById('editExpiryBatchId').value = row.batch_id;
     document.getElementById('editExpiryInventoryId').value = row.inventory_id || '';
-    document.getElementById('editExpiryProductName').textContent = `${row.brand_name || '—'} • ${row.product_name || '—'} • ${specification(row) || '—'}`;
+    document.getElementById('editExpiryProductName').textContent = meaningful(row.product_name) || 'Unnamed product';
+    document.getElementById('editExpiryProductMeta').textContent = productSecondary(row);
     document.getElementById('editExpiryBatchNumber').textContent = row.batch_number || '—';
+    document.getElementById('editExpiryPoNumber').textContent = row.po_number || '—';
     document.getElementById('editExpiryDateInput').value = row.expiry_date || '';
     setAlertControls(Number(row.expiry_alert_days || 30));
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editExpiryDateModal')).show();
@@ -285,7 +386,6 @@ function selectActionRow(button) {
 
 setTheme(localStorage.getItem('drpTheme') || 'light');
 document.getElementById('themeToggle')?.addEventListener('click', () => setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark'));
-document.getElementById('btnRefreshExpiry')?.addEventListener('click', loadExpiryMonitoring);
 document.getElementById('btnSaveExpiryDate')?.addEventListener('click', saveExpiryDate);
 document.getElementById('btnEditExpiryFromDetails')?.addEventListener('click', editFromDetails);
 document.getElementById('editExpiryAlertSelect')?.addEventListener('change', () => {
@@ -297,6 +397,25 @@ document.getElementById('table-expiry-monitoring')?.addEventListener('click', (e
     const editButton = event.target.closest('.edit-expiry-btn');
     if (viewButton) { selectActionRow(viewButton); openExpiryDetails(viewButton.dataset.batchId); }
     if (editButton) { selectActionRow(editButton); openEditExpiryModal(editButton.dataset.batchId); }
+});
+document.getElementById('expirySearch')?.addEventListener('input', () => renderFilteredExpiryRows({ resetPage: true }));
+document.getElementById('expirySearch')?.addEventListener('search', () => renderFilteredExpiryRows({ resetPage: true }));
+document.getElementById('expiryStatusFilter')?.addEventListener('change', () => renderFilteredExpiryRows({ resetPage: true }));
+document.getElementById('expiryCategoryFilter')?.addEventListener('change', () => renderFilteredExpiryRows({ resetPage: true }));
+document.getElementById('expiryPageSize')?.addEventListener('change', (event) => {
+    expiryPageSize = Number(event.target.value || 10);
+    renderFilteredExpiryRows({ resetPage: true });
+});
+document.getElementById('expiryPreviousPage')?.addEventListener('click', () => {
+    if (expiryPage <= 1) return;
+    expiryPage -= 1;
+    renderFilteredExpiryRows();
+});
+document.getElementById('expiryNextPage')?.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(filteredExpiryRows().length / expiryPageSize));
+    if (expiryPage >= totalPages) return;
+    expiryPage += 1;
+    renderFilteredExpiryRows();
 });
 expiryChannel?.addEventListener('message', () => loadExpiryMonitoring());
 window.addEventListener('storage', (event) => { if (event.key === EXPIRY_SYNC_KEY) loadExpiryMonitoring(); });

@@ -1,6 +1,13 @@
 (function bootstrapNavbarShell() {
     if (window.__drpNavbarBootstrap) return;
 
+    if (!document.querySelector('script[data-search-highlight-loader]')) {
+        const searchHighlightScript = document.createElement('script');
+        searchHighlightScript.src = './js/search_highlight.js?v=3';
+        searchHighlightScript.dataset.searchHighlightLoader = 'true';
+        document.head.appendChild(searchHighlightScript);
+    }
+
     const cacheKey = "drpNavbarHtml:v47";
     const expandedGroupsKey = "drpNavbarExpandedGroups";
     const supervisorNavigation = Object.freeze([

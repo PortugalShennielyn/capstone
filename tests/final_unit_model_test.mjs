@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { normalizeProductSpecificationValues, formatMeasurement } from '../pharma-frontend/js/modules/product_specification.js';
+import { normalizeProductSpecificationValues, formatMeasurement, formatProductSpecification } from '../pharma-frontend/js/modules/product_specification.js';
 import { purchasingConversion, purchasingCost, inventoryQuantityFromPurchase } from '../pharma-frontend/js/modules/purchasing_conversion.js';
 
 const units = [
@@ -20,6 +20,17 @@ const weight = normalizeProductSpecificationValues(
     units
 )[0];
 assert.equal(formatMeasurement(weight.value_number, weight.unit_symbol), '350 g');
+
+assert.equal(formatProductSpecification({
+    category_name: 'Medicine',
+    type_name: 'Powder for Suspension',
+    specifications: [
+        { specification_name: 'Strength', value_number: '250.0000', unit_symbol: 'mg' },
+        { specification_name: 'Strength Denominator', value_number: '5.0000', unit_symbol: 'mL' },
+        { specification_name: 'Volume', value_number: '60.0000', unit_symbol: 'mL' },
+        { specification_name: 'Package Type', value_text: 'Bottle' },
+    ],
+}), '250 mg/5 mL • Powder for Suspension • 60 mL');
 
 const carton = purchasingConversion({ purchase_unit: 'Carton', purchase_unit_contains: 24, inventory_unit: 'Bottles' });
 assert.equal(carton.summary, '1 Carton = 24 Bottles');

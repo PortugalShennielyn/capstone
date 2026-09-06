@@ -1142,7 +1142,11 @@ async function initializeNavbar(container) {
 }
 
 function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSession }) {
-    const topbar = document.querySelector('#mainWrapper > .topbar, .main-wrapper > .topbar');
+    const topbar = document.querySelector(
+        '#mainWrapper > .topbar, .main-wrapper > .topbar, '
+        + '#mainWrapper > .cashier-topbar, .main-wrapper > .cashier-topbar, '
+        + '#mainWrapper > .shift-topbar, .main-wrapper > .shift-topbar'
+    );
     if (!topbar || topbar.dataset.drpSharedReady === 'true') return;
     topbar.dataset.drpSharedReady = 'true';
     topbar.classList.add('drp-shared-topbar');
@@ -1281,7 +1285,7 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         rebuild();
     }
 
-    const titleContext = topbar.querySelector('.page-title-mini, .page-title, .topbar-greeting');
+    const titleContext = topbar.querySelector('.page-title-mini, .page-title, .title-wrap, .topbar-greeting');
     const documentModuleTitle = document.title.split('|').pop()?.trim();
     const moduleTitle = documentModuleTitle || titleContext?.querySelector('strong')?.textContent?.trim() || 'Pharmacy';
     if (titleContext) titleContext.classList.add('topbar-greeting');
@@ -1293,7 +1297,10 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         openSidebarButton.setAttribute('aria-expanded', 'false');
         openSidebarButton.setAttribute('aria-label', 'Open sidebar');
         openSidebarButton.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i><span class="sidebar-tooltip" role="tooltip">Open sidebar</span>';
-        titleContext.insertAdjacentElement('beforebegin', openSidebarButton);
+        const moduleIcon = titleContext.previousElementSibling?.matches('.brand-tile, .page-icon')
+            ? titleContext.previousElementSibling
+            : titleContext;
+        moduleIcon.insertAdjacentElement('beforebegin', openSidebarButton);
     }
     const renderModuleTitle = () => {
         if (!titleContext) return;

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Return/Damage Highlight Runtime Test</title>
+    <link rel="stylesheet" href="../css/navbar.css?v=37">
+    <link rel="stylesheet" href="../css/return_damage_status.css?v=1">
+</head>
+<body>
+    <input id="returnSearch" type="search">
+    <select id="returnStatusFilter"><option value="">All statuses</option></select>
+    <select id="returnReasonFilter"><option value="">All reasons</option></select>
+    <select id="returnPageSize"><option value="10">10</option></select>
+    <table id="table-return-damage">
+        <thead><tr><th>Reference</th><th>Supplier</th><th>Product</th><th>Ordered</th><th>Accepted</th><th>Returned</th><th>Issue</th><th>Resolution</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+    </table>
+    <span id="returnPageSummary"></span>
+    <button id="returnPrevPage" type="button">Previous</button>
+    <button id="returnNextPage" type="button">Next</button>
+    <script>
+        const baseRecord = {
+            return_id:'test-return', po_number:'PO-20260824-155244-4AF0CB', supplier_name:'kianen Marketing',
+            product_name:'EQ Dry Disposable Baby Diapers', brand_name:'EQ', unit:'Pack', packaging:'Pack',
+            ordered_quantity:50, accepted_quantity:48, return_quantity:2, affected_unit_name:'Pack',
+            damage_reason:'Delivery Damage', disposition:'Return to Supplier', resolution_type:'Next PO Credit',
+            return_status:'Awaiting Supplier Credit', return_date:'2026-08-24', replacement_outstanding_qty:0
+        };
+        const testRecords = [
+            {...baseRecord,return_id:'decision',supplier_name:'Decision Supplier',resolution_type:'',return_status:'Open'},
+            {...baseRecord,return_id:'replacement-waiting',supplier_name:'Replacement Waiting',resolution_type:'Replacement',return_status:'Awaiting Replacement',replacement_expected_qty:2,replacement_received_qty:0,replacement_outstanding_qty:2},
+            {...baseRecord,return_id:'credit-waiting'},
+            {...baseRecord,return_id:'discount-waiting',supplier_name:'Discount Waiting',resolution_type:'Current PO Credit',return_status:'Awaiting Discount Confirmation'},
+            {...baseRecord,return_id:'replacement-complete',supplier_name:'Replacement Complete',resolution_type:'Replacement',return_status:'Replacement Received',replacement_expected_qty:2,replacement_received_qty:2,replacement_outstanding_qty:0},
+            {...baseRecord,return_id:'credit-available',supplier_name:'Credit Available',credit_amount:100,credit_remaining:100,credit_applied:0,credit_status:'Available',return_status:'Credit Available'},
+            {...baseRecord,return_id:'discount-applied',supplier_name:'Discount Applied',resolution_type:'Current PO Credit',credit_amount:100,credit_remaining:0,credit_applied:100,credit_status:'Applied',return_status:'Credit Applied'},
+            {...baseRecord,return_id:'completed',supplier_name:'Completed Supplier',resolution_type:'Refund',return_status:'Completed'}
+        ];
+        window.fetch = async () => new Response(JSON.stringify({status:'success',returns:testRecords}), {
+            status:200,
+            headers:{'Content-Type':'application/json'}
+        });
+    </script>
+    <script src="../js/search_highlight.js?v=3"></script>
+    <script type="module" src="../js/modules/return_damage.js?v=15"></script>
+</body>
+</html>

@@ -14,16 +14,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $payload = json_decode(file_get_contents('php://input'), true);
 $supplierProductId = cleanId($payload['supplier_product_id'] ?? null);
 $purchaseUnit = trim((string) ($payload['purchase_unit'] ?? ''));
-$contains = $payload['purchase_unit_contains'] ?? ($payload['units_per_purchase_unit'] ?? null);
-$innerUnit = '';
-$unitsPerInner = null;
-
-if ($supplierProductId === '' || $purchaseUnit === ''
-    || !is_numeric($contains) || (int) $contains < 1 || (float)$contains !== (float)(int)$contains
-    || ($innerUnit !== '' && (!is_numeric($unitsPerInner) || (int) $unitsPerInner < 1 || (float)$unitsPerInner !== (float)(int)$unitsPerInner))) {
+if ($supplierProductId === '' || $purchaseUnit === '') {
     http_response_code(422);
-    echo json_encode(['status' => 'error', 'message' => 'A valid final purchase-unit conversion is required.']);
-    exit();
+    echo json_encode(['status'=>'error','message'=>'Supplier product and Purchase Unit are required.']);
+    exit;
 }
 
 try {
@@ -34,24 +28,12 @@ try {
     $savedHierarchy = $savedStatement->fetch(PDO::FETCH_ASSOC);
     if (!$savedHierarchy) throw new InvalidArgumentException('Supplier product assignment was not found.');
     $inventoryUnit = productInventoryUnitForSupplier($pdo,(string)$savedHierarchy['product_id'])['unit_name'];
-    validateSupplierPurchasingHierarchyUnits($pdo, [
-        'purchase_unit' => $purchaseUnit,
-        'inner_unit' => $innerUnit,
-        'inventory_unit' => $inventoryUnit,
-        'purchase_unit_contains' => $contains,
-    ], $savedHierarchy);
-    $conversionSetup = [
-        'purchase_unit' => $purchaseUnit,
-        'purchase_unit_contains' => (int) $contains,
-        'inner_unit' => $innerUnit,
-        'units_per_inner_unit' => $unitsPerInner,
-        'inventory_unit' => $inventoryUnit,
-        'units_per_purchase_unit' => (int) $contains,
-    ];
-    $conversion = supplierPurchasingConversion($conversionSetup);
-    foreach (array_slice($conversion['hierarchy_levels'], 1, -1) as $level) {
-        validateSupplierPurchasingUnit($pdo, (string)$level['unit'], 'Packaging Unit', null, 'inner');
+    if (!array_key_exists('hierarchy_levels', $payload)) {
+        $existing = supplierProductPurchasingHierarchy($pdo, $supplierProductId);
+        if (count($existing['hierarchy_levels'] ?? []) > 1) throw new InvalidArgumentException('Send the complete saved packaging breakdown when editing this assignment.');
     }
+    $conversion = supplierPurchasingSetupFromPayload($pdo, $payload, $inventoryUnit);
+    $purchaseUnit = $conversion['purchase_unit'];
     $pdo->beginTransaction();
     $statement = $pdo->prepare(
         'UPDATE supplier_products
@@ -72,15 +54,7 @@ try {
         ':units_per_purchase_unit' => $conversion['base_qty_per_purchase_unit'],
         ':supplier_product_id' => $supplierProductId
     ]);
-    syncSupplierProductUnitConversions($pdo,$supplierProductId,[
-        'purchase_unit'=>$purchaseUnit,
-        'purchase_unit_contains'=>(int)$contains,
-        'inner_unit'=>$innerUnit,
-        'units_per_inner_unit'=>$conversion['units_per_inner_unit'],
-        'inventory_unit'=>$inventoryUnit,
-        'units_per_purchase_unit'=>$conversion['base_qty_per_purchase_unit'],
-        'hierarchy_levels'=>$conversion['hierarchy_levels'],
-    ]);
+    syncSupplierProductUnitConversions($pdo,$supplierProductId,$conversion);
     if ($statement->rowCount() === 0) {
         $check = $pdo->prepare('SELECT COUNT(*) FROM supplier_products WHERE supplier_product_id = :supplier_product_id');
         $check->execute([':supplier_product_id' => $supplierProductId]);

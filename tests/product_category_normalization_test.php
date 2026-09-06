@@ -56,8 +56,13 @@ assertCategoryNormalization($brokenTypeSpecifications === 0, 'Product Type speci
 
 $productsJs = file_get_contents(__DIR__ . '/../pharma-frontend/js/modules/products.js');
 assertCategoryNormalization(
-    str_contains($productsJs, '<td>${escapeHtml(dash(product.type_name))}</td>'),
-    'The Product Master Type column must render product.type_name.'
+    str_contains($productsJs, "const value = isMedicine(product) ? product.generic_name : product.product_name;"),
+    'The Product Master Product column must use Generic Name only for Medicine.'
+);
+$productsHtml = file_get_contents(__DIR__ . '/../pharma-frontend/products.html');
+assertCategoryNormalization(
+    !preg_match('/<th>\s*(?:Product Type|Generic Name|Prescription\/?OTC|Barcode)\s*<\/th>/i', $productsHtml),
+    'The Product Master must not expose duplicate Type, Generic Name, Classification, or Barcode columns.'
 );
 assertCategoryNormalization(
     !str_contains($productsJs, '⚙ Customize Categories</option>'),
@@ -69,4 +74,3 @@ echo 'Categories: ' . implode(', ', $actualNames) . "\n";
 echo 'Products checked: ' . (int) $pdo->query('SELECT COUNT(*) FROM product')->fetchColumn() . "\n";
 echo 'Product Types checked: ' . (int) $pdo->query('SELECT COUNT(*) FROM product_types')->fetchColumn() . "\n";
 echo 'Type specification links checked: ' . (int) $pdo->query('SELECT COUNT(*) FROM product_type_specifications')->fetchColumn() . "\n";
-

@@ -1,0 +1,35 @@
+.status-awaiting-decision {
+    color: #8a4b08;
+    background: #fff2cc;
+}
+
+.status-awaiting-replacement {
+    color: #9a4d05;
+    background: #ffead5;
+}
+
+.status-awaiting-credit {
+    color: #175cd3;
+    background: #e8f1ff;
+}
+
+.status-awaiting-discount {
+    color: #6941c6;
+    background: #f1ebff;
+}
+
+.status-replacement-complete,
+.status-completed {
+    color: #147a4b;
+    background: #dcf7e9;
+}
+
+.status-credit-available {
+    color: #0e6075;
+    background: #cff4f8;
+}
+
+.status-discount-applied {
+    color: #5b21b6;
+    background: #e9ddff;
+}

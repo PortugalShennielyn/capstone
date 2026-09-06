@@ -57,7 +57,7 @@ function rowHtml(item, index) {
     const inventoryUnit = item.unit || 'units';
     const detail = [item.brand_name, specification(item)].filter(Boolean).join(' · ');
     const normalizedInventoryUnit = contentUnitLabel(inventoryUnit, conversion);
-    return `<tr><td class="center">${index + 1}</td><td class="product"><strong>${escapeHtml(item.product_name || '-')}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ''}</td><td class="center"><strong>${number(orderQty)}</strong></td><td class="center">${escapeHtml(purchaseUnit)}</td><td class="center">1 ${escapeHtml(purchaseUnit)} = ${number(conversion)} ${escapeHtml(normalizedInventoryUnit)}</td></tr>`;
+    return `<tr><td class="center">${index + 1}</td><td class="product"><strong>${escapeHtml(item.product_name || '-')}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ''}${item.pr_approved_qty == null ? '' : `<span>PR Approved: ${number(item.pr_approved_qty)} ${escapeHtml(item.pr_unit)}</span>`}</td><td class="center"><strong>${number(orderQty)}</strong></td><td class="center">${escapeHtml(purchaseUnit)}</td><td class="center">1 ${escapeHtml(purchaseUnit)} = ${number(conversion)} ${escapeHtml(normalizedInventoryUnit)}</td></tr>`;
 }
 
 function createPage(order, first) {

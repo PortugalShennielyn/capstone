@@ -52,7 +52,7 @@
         .product-search-field .form-control { padding-left:36px; }
         .product-toolbar-field:not(.product-search-field) { flex:0 1 150px; }
         .product-toolbar-field.product-type-filter { flex-basis:155px; }
-        .product-toolbar-field.product-sort-filter { flex-basis:135px; }
+        .product-toolbar-field.product-medicine-filter { flex-basis:145px; }
         .product-master-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }
         .product-master-actions > .btn { height:38px; min-height:38px; padding:0 12px; white-space:nowrap; font-size:13px; }
         .product-table-wrapper { width:100%; max-width:100%; overflow:auto; border:0; border-radius:0!important; background:#fff; }
@@ -76,6 +76,9 @@
         .product-detail-list { display:grid; gap:5px; margin:0 0 10px; color:#4b5563; font-size:12px; font-weight:750; line-height:1.3; overflow-wrap:break-word; word-break:normal; }
         .product-detail-row { display:grid; gap:1px; min-width:0; }
         .product-detail-row span, .product-variant-label { color:#7b8494; font-size:10px; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }
+        .medicine-product-identity { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; }
+        .medicine-rx-badge { display:inline-flex; flex:0 0 auto; align-items:center; width:max-content; padding:2px 7px; border:1px solid #fca5a5; border-radius:999px; color:#b42318; background:#fef3f2; font-size:10px; font-weight:900; line-height:1.35; letter-spacing:.03em; vertical-align:middle; }
+        body.dark-mode .medicine-rx-badge { color:#fecaca; border-color:#991b1b; background:rgba(127,29,29,.35); }
         .product-detail-row strong { min-width:0; color:#374151; font-size:12px; font-weight:850; overflow-wrap:anywhere; }
         .product-variant-tabs { display:grid; gap:8px; margin:0 0 10px; }
         .product-variant-group { min-width:0; }
@@ -113,25 +116,28 @@
         .table-responsive { overflow-x:auto; }
         .product-master-container .product-table-wrapper.table-responsive,
         .product-master-container .product-table-wrapper.data-table-wrapper { height:auto!important; max-height:none!important; overflow:visible!important; }
-        .products-table { width:100%; min-width:1120px; margin:0; table-layout:auto; font-size:13px; font-weight:750; }
+        .products-table { width:100%; min-width:0; margin:0; table-layout:auto; font-size:13px; font-weight:750; }
         .products-table th { color:#596274; background:#f8f9fc; font-size:12px; font-weight:800; vertical-align:middle; }
         .products-table td { vertical-align:middle; white-space:normal; word-break:normal; overflow-wrap:break-word; }
         .products-table tbody tr { cursor:pointer; }
         .product-table-wrapper > .products-table.data-table-enhanced th { height:46px; padding:11px 14px!important; }
         .product-table-wrapper > .products-table.data-table-enhanced td { height:58px; padding:10px 14px!important; border-bottom-color:#edf0f4!important; }
         .product-table-wrapper > .products-table.data-table-enhanced tbody tr:hover td { background:#fafbfe!important; }
-        .products-table th:nth-child(1), .products-table td:nth-child(1) { width:64px; text-align:center; }
-        .products-table th:nth-child(2), .products-table td:nth-child(2) { width:90px; text-align:center; }
-        .products-table th:nth-child(3), .products-table td:nth-child(3) { min-width:150px; text-align:left; }
-        .products-table th:nth-child(4), .products-table td:nth-child(4) { min-width:190px; text-align:left; }
-        .products-table th:nth-child(5), .products-table td:nth-child(5) { min-width:120px; text-align:left; }
-        .products-table th:nth-child(6), .products-table td:nth-child(6) { min-width:220px; text-align:left; }
-        .products-table th:nth-child(7), .products-table td:nth-child(7) { min-width:135px; white-space:nowrap; text-align:center; }
-        .products-table th:nth-child(8), .products-table td:nth-child(8) { width:90px; text-align:center; }
-        .products-table th:nth-child(9), .products-table td:nth-child(9) { width:125px; white-space:nowrap; text-align:center; }
+        .products-table th:nth-child(1), .products-table td:nth-child(1) { width:48px; text-align:center; }
+        .products-table th:nth-child(2), .products-table td:nth-child(2) { width:13%; text-align:left; }
+        .products-table th:nth-child(3), .products-table td:nth-child(3) { width:17%; text-align:center; }
+        .products-table th:nth-child(4), .products-table td:nth-child(4) { min-width:210px; text-align:left; }
+        .products-table th:nth-child(5), .products-table td:nth-child(5) { width:145px; min-width:145px; text-align:center; }
+        .products-table th:nth-child(5) { white-space:nowrap; }
+        .products-table th:nth-child(6), .products-table td:nth-child(6) { width:120px; white-space:nowrap; text-align:center; }
+        .products-table th:nth-child(7), .products-table td:nth-child(7) { width:90px; text-align:center; }
+        .products-table th:nth-child(8), .products-table td:nth-child(8) { width:112px; min-width:112px; white-space:nowrap; text-align:center; }
         .product-clamp { display:-webkit-box; max-width:100%; min-width:0; line-height:1.35; white-space:normal; word-break:normal; overflow-wrap:break-word; overflow:hidden; text-overflow:ellipsis; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
         .product-actions { display:inline-flex; align-items:center; justify-content:center; gap:6px; flex-wrap:nowrap; white-space:nowrap; }
         .product-actions .btn-icon, .product-actions .product-barcode-toggle { width:32px; height:32px; min-width:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+        .catalog-specification { display:grid; gap:1px; font-size:12px; font-weight:750; line-height:1.3; white-space:normal; overflow-wrap:break-word; }
+        .catalog-specification > span { display:block; min-width:0; }
+        .product-container-cell { font-weight:750; }
         .product-table-wrapper > .products-table.data-table-enhanced th:last-child { background:#f8f9fc!important; }
         .product-table-wrapper > #table-products.data-table-enhanced thead th { position:sticky!important; top:var(--app-header-height)!important; z-index:1010!important; }
         .product-table-wrapper > #table-products.data-table-enhanced thead th:last-child { z-index:1012!important; }
@@ -229,18 +235,53 @@
         body.dark-mode .bulk-pricing-table tr.is-ineligible td { background:#2b1d24; }
         @media (max-width:991px) { #selectedPricingModal .modal-dialog { width:98vw; height:94vh; margin:3vh auto; } .bulk-pricing-toolbar { grid-template-columns:repeat(3,minmax(0,1fr)); } .bulk-pricing-search { grid-column:1/-1; justify-self:stretch; width:100%; } }
         @media (max-width:767px) { #editProductModal .modal-dialog { width:96vw; height:92vh; margin:4vh auto; } #editProductModal .modal-body { padding:14px; overflow-x:hidden; } .pricing-method-row,.pricing-view-grid { grid-template-columns:1fr; gap:12px; } .pricing-method-status { justify-content:flex-start; min-height:0; } .pricing-entry-field { max-width:none; } .pricing-summary-row { grid-template-columns:minmax(120px,.9fr) minmax(0,1.1fr); gap:10px; } .product-master-actions { width:100%; justify-content:stretch; } .product-master-actions .btn { flex:1 1 auto; } #selectedPricingModal .modal-dialog { width:100vw; height:100dvh; margin:0; } #selectedPricingModal .modal-content { border-radius:0; } #selectedPricingModal .modal-header,#selectedPricingModal .modal-footer { padding:12px; } #selectedPricingModal .modal-body { padding:10px 12px; } .bulk-pricing-toolbar { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .bulk-pricing-metric { padding:7px; } .bulk-pricing-footer-summary { width:100%; order:-1; } }
-        #addProductModal .modal-body { padding:18px 22px 20px; }
+        #addProductModal .modal-dialog { width:min(960px,calc(100vw - 24px)); height:min(94vh,820px); margin:3vh auto; }
+        #addProductModal .modal-header { padding:13px 18px; }
+        #addProductModal .modal-body { padding:14px 18px 16px; overflow-x:hidden; }
+        #addProductModal .modal-footer { padding:10px 18px; }
+        #addProductModal .add-product-section { padding:14px 16px; }
         .add-product-section + .add-product-section { margin-top:18px; padding-top:18px; border-top:1px solid var(--border-soft); }
         .add-product-section-title { margin:0 0 12px; color:#3f4754; font-size:14px; font-weight:800; }
         .add-product-section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
         .add-product-section-heading .add-product-section-title { margin:0; }
         #addVariationList { display:grid; gap:12px; }
-        #addVariationList .edit-variation-entry { padding:14px; }
+        #addVariationList .edit-variation-entry { padding:11px 12px; }
         #addVariationList .add-variant-purchasing { margin-top:16px; padding-top:14px; border-top:1px solid var(--border-soft); }
         #addVariationList .add-variant-subtitle { margin:0 0 10px; color:#596274; font-size:12px; font-weight:800; }
         body.dark-mode .add-product-section + .add-product-section,body.dark-mode #addVariationList .add-variant-purchasing { border-color:#334155; }
         body.dark-mode .add-product-section-title,body.dark-mode #addVariationList .add-variant-subtitle { color:#e5e7eb; }
-        #addProductModal .modal-dialog { width:min(980px,calc(100vw - 24px)); max-width:none; margin:12px auto; }
+        #addProductModal .modal-dialog { max-width:none; }
+        #addProductModal .add-product-section + .add-product-section { margin-top:12px; padding-top:14px; }
+        #addProductModal .add-product-section-title { margin-bottom:9px; }
+        #addProductModal .add-product-basic-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 14px; align-items:start; }
+        #addProductModal .add-product-basic-grid > .add-product-field { width:auto; min-width:0; }
+        #addProductModal .form-label { margin-bottom:5px; font-size:13px; line-height:1.25; }
+        #addProductModal .form-control,#addProductModal .form-select,#addProductModal .input-group-text { min-height:40px; height:40px; font-size:13px; }
+        #addProductModal .edit-variation-entry input[type="number"],#editProductModal .edit-variation-entry input[type="number"],#addProductModal .edit-variation-entry .input-group-text,#editProductModal .edit-variation-entry .input-group-text { height:42px; min-height:42px; border-color:#d7dce5; font-size:13px; line-height:1.2; }
+        #addProductModal .form-text,#editProductModal .edit-variation-entry .form-text { margin-top:4px; font-size:11px; line-height:1.3; }
+        #addProductModal .product-variants-toolbar { gap:10px; margin-bottom:9px; padding:8px 10px; }
+        #addProductModal .product-variants-toolbar strong { font-size:12px; }
+        #addProductModal .product-variants-toolbar small { margin-top:1px; font-size:10.5px; }
+        #addProductModal .product-variants-toolbar .btn { min-height:32px; padding:4px 9px; font-size:11.5px; white-space:nowrap; }
+        #addProductModal #addVariationList { gap:9px; }
+        #addProductModal #addVariationList .edit-variation-entry > .d-flex:first-child { margin-bottom:9px!important; }
+        #addProductModal .btn-customize-specifications { padding:4px 8px; font-size:11px; }
+        .dosage-form-control { width:100%; min-width:0; }
+        #addProductModal .dynamic-specification-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 14px; align-items:start; }
+        #addProductModal .is-medicine-variation .dynamic-specification-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        #addProductModal .is-medicine-variation .sku-strength-field { grid-column:span 2; }
+        #addProductModal .is-medicine-variation .sku-net-content-field,#addProductModal .is-medicine-variation .sku-package-field,#addProductModal .is-medicine-variation .permanent-inventory-unit,#addProductModal .is-medicine-variation .sku-selling-price-field,#addProductModal .is-medicine-variation .sku-barcode-field { grid-column:span 1; }
+        #addProductModal .medicine-strength-composer { grid-template-columns:minmax(85px,1fr) minmax(100px,120px) 20px minmax(70px,.8fr) minmax(100px,120px); gap:5px; }
+        #addProductModal .medicine-strength-field .form-select { min-width:0; padding-left:8px; padding-right:24px; }
+        #addProductModal .medicine-strength-composer input[type="number"] { padding-inline:8px; appearance:textfield; -moz-appearance:textfield; }
+        #addProductModal .medicine-strength-composer input[type="number"]::-webkit-inner-spin-button,#addProductModal .medicine-strength-composer input[type="number"]::-webkit-outer-spin-button { margin:0; -webkit-appearance:none; }
+        @media (max-width:991.98px) {
+            #addProductModal .add-product-basic-grid,#addProductModal .dynamic-specification-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            #addProductModal .is-medicine-variation .dynamic-specification-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            #addProductModal .is-medicine-variation .sku-strength-field { grid-column:1/-1; }
+            #addProductModal .is-medicine-variation .sku-net-content-field,#addProductModal .is-medicine-variation .sku-package-field,#addProductModal .is-medicine-variation .permanent-inventory-unit,#addProductModal .is-medicine-variation .sku-selling-price-field,#addProductModal .is-medicine-variation .sku-barcode-field { grid-column:span 1; }
+            #addProductModal .modal-dialog { width:calc(100vw - 20px); height:calc(100vh - 20px); margin:10px auto; }
+        }
         .product-customizer-modal { z-index:1070; }
         .product-customizer-modal + .modal-backdrop,.modal-backdrop.product-customizer-backdrop { z-index:1065; }
         .swal2-container.product-specification-confirmation { z-index:1090!important; }
@@ -248,19 +289,39 @@
         .product-customizer-modal .modal-content { max-height:calc(100vh - 24px); overflow:hidden; display:flex; flex-direction:column; }
         .product-customizer-modal .modal-header,.product-customizer-modal .modal-footer { flex:0 0 auto; background:var(--surface,#fff); }
         .product-customizer-modal .modal-body { min-height:0; overflow-y:auto; padding:14px 16px; }
+        #addProductTypeModal .modal-dialog { width:min(650px,calc(100vw - 32px)); height:auto; max-height:calc(100vh - 32px); margin:16px auto; }
+        #addProductTypeModal .modal-content { height:auto; max-height:calc(100vh - 32px); min-height:0; overflow:hidden; }
+        #addProductTypeModal .modal-header { position:relative; z-index:2; padding:14px 16px; }
+        #addProductTypeModal form { display:flex; flex:1 1 auto; flex-direction:column; min-height:0; overflow:hidden; }
+        #addProductTypeModal .modal-body { display:flex; flex:1 1 auto; flex-direction:column; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; padding:12px 16px; }
+        #addProductTypeModal .customizer-search { flex:0 0 auto; min-height:38px; }
+        #addProductTypeModal .customizer-list { flex:0 1 min(260px,32vh); min-height:96px; max-height:min(260px,32vh); overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; margin-bottom:10px!important; }
+        #addProductTypeModal .customizer-row { min-height:40px; padding:4px 9px; }
+        #addProductTypeModal #dosageFormPatternField { margin-top:10px!important; }
+        #addProductTypeModal .form-control,#addProductTypeModal .form-select { min-height:38px; }
+        #addProductTypeModal .modal-footer { position:relative; z-index:2; flex:0 0 auto; padding:12px 16px; background:var(--surface,#fff); }
+        #addProductModal.has-product-customizer-open .modal-body,#editProductModal.has-product-customizer-open .modal-body { overflow:hidden!important; }
+        .product-type-actions { display:flex; flex:0 0 auto; align-items:center; gap:6px; }
+        .product-type-actions .btn { width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:7px; font-size:14px; }
         #addMeasurementUnitModal .modal-dialog { width:min(800px,calc(100vw - 24px)); height:min(80vh,760px); }
         #addMeasurementUnitModal .modal-content,#addMeasurementUnitModal form { height:100%; min-height:0; }
         #addMeasurementUnitModal form { display:flex; flex-direction:column; }
         #addMeasurementUnitModal .modal-body { display:flex; flex:1 1 auto; flex-direction:column; overflow:hidden; }
         #addMeasurementUnitModal .customizer-list { flex:1 1 300px; min-height:220px; max-height:none; overflow:auto; }
-        .measurement-unit-table-header,#measurementUnitCustomizerList .measurement-unit-row { display:grid; grid-template-columns:90px minmax(150px,1fr) 110px minmax(250px,auto); align-items:center; gap:10px; }
+        .measurement-unit-table-header,#measurementUnitCustomizerList .measurement-unit-row { display:grid; grid-template-columns:minmax(170px,1fr) 100px 120px 85px; align-items:center; gap:8px; }
         .measurement-unit-table-header { position:sticky; z-index:2; top:0; padding:10px 11px; border-bottom:1px solid var(--border-soft,#e5e7eb); background:var(--surface,#fff); color:#475467; font-size:.75rem; font-weight:800; }
         .measurement-unit-table-header label { display:flex; align-items:center; gap:6px; margin:0; }
-        #measurementUnitCustomizerList .measurement-unit-row { justify-content:initial; }
+        #measurementUnitCustomizerList .measurement-unit-row { min-height:42px; justify-content:initial; padding:6px 10px; }
+        #measurementUnitCustomizerList .measurement-unit-row.is-selectable { cursor:pointer; }
+        #measurementUnitCustomizerList .measurement-unit-row.is-selectable:hover,#measurementUnitCustomizerList .measurement-unit-row.is-selectable:focus { outline:0; background:#f5f7ff; }
         .measurement-unit-name { min-width:0; overflow-wrap:anywhere; font-weight:650; }
+        .measurement-unit-symbol { color:#344054; font-weight:700; }
         .measurement-unit-group { color:#667085; font-size:.82rem; }
-        .measurement-unit-actions { display:flex; justify-content:flex-end; gap:4px; white-space:nowrap; }
-        .measurement-unit-protected { align-self:center; padding:0 5px; color:#98a2b3; font-size:.72rem; }
+        .measurement-unit-actions { display:flex; justify-content:center; gap:5px; white-space:nowrap; }
+        .measurement-unit-actions .btn { width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:7px; font-size:14px; }
+        .measurement-unit-actions .btn:disabled { opacity:.4; cursor:not-allowed; }
+        .system-measurement-unit-delete { display:inline-flex; border-radius:7px; cursor:not-allowed; }
+        .system-measurement-unit-delete .btn:disabled { pointer-events:none; }
         body.dark-mode .measurement-unit-table-header { background:#111827; color:#d0d5dd; }
         #customizeSpecificationsModal .modal-dialog { width:min(720px,calc(100vw - 24px)); }
         #customizeSpecificationsModal .modal-header,#customizeSpecificationsModal .modal-footer { padding:12px 16px; }
@@ -274,7 +335,7 @@
         .input-clear-button { position:absolute; top:50%; right:7px; width:24px; height:24px; display:none; align-items:center; justify-content:center; padding:0; transform:translateY(-50%); border:0; border-radius:50%; color:#667085; background:transparent; font-size:18px; line-height:1; }
         .clearable-input.has-value .input-clear-button { display:inline-flex; }
         .input-clear-button:hover { color:#111827; background:#eef1f6; }
-        @media(max-width:767.98px){.measurement-unit-list-tools{grid-template-columns:1fr}.measurement-unit-table-header,#measurementUnitCustomizerList .measurement-unit-row{grid-template-columns:34px minmax(130px,1fr) 80px}.measurement-unit-table-header>span:last-child,.measurement-unit-actions{grid-column:2/-1}.measurement-unit-table-header label span{display:none}.measurement-unit-actions{justify-content:flex-start;flex-wrap:wrap}}
+        @media(max-width:767.98px){.measurement-unit-list-tools{grid-template-columns:1fr}.measurement-unit-table-header,#measurementUnitCustomizerList .measurement-unit-row{grid-template-columns:minmax(120px,1fr) 70px 80px}.measurement-unit-table-header>span:last-child,.measurement-unit-actions{grid-column:1/-1}.measurement-unit-actions{justify-content:flex-start;flex-wrap:wrap}}
         .customizer-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 11px; border-bottom:1px solid var(--border-soft,#e5e7eb); }
         .customizer-row:last-child { border-bottom:0; }
         .customizer-row .btn { flex:0 0 auto; }
@@ -316,10 +377,75 @@
         @media (max-width:575px) { .specification-assignment-row { grid-template-columns:auto minmax(0,1fr) auto; } .specification-assignment-style { grid-column:2/4; } }
         .dynamic-specification-empty { padding:18px; border:1px dashed #cbd5e1; border-radius:10px; text-align:center; color:#64748b; }
         .dynamic-specification-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+        .sku-medicine-identity-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-bottom:14px; }
         .dynamic-specification-grid .specification-field { min-width:0; }
         .dynamic-specification-grid > .col-md-6 { width:100%; min-width:0; }
         .dynamic-specification-grid .input-group { flex-wrap:nowrap; }
-        @media (max-width:767px) { .dynamic-specification-grid,.specification-editor-grid,.specification-choice-list { grid-template-columns:1fr; } #addProductModal .modal-dialog { margin:8px auto; width:calc(100vw - 16px); height:calc(100vh - 16px); } #editProductModal .pricing-method-row,#editProductModal .pricing-view-grid { grid-template-columns:1fr; } }
+        .measurement-native-select { position:absolute!important; width:1px!important; height:1px!important; margin:0!important; padding:0!important; opacity:0!important; pointer-events:none!important; }
+        .measurement-select { position:relative; min-width:110px; flex:1 1 110px; }
+        .measurement-select-trigger { width:100%; height:42px; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 34px 0 12px; overflow:hidden; border:1px solid #d7dce5; border-radius:8px; background:#fff; color:#253044; font-size:13px; line-height:1.2; text-align:left; white-space:nowrap; text-overflow:ellipsis; }
+        .measurement-select-trigger::after { position:absolute; right:12px; top:50%; width:7px; height:7px; content:""; transform:translateY(-65%) rotate(45deg); border-right:2px solid #667085; border-bottom:2px solid #667085; }
+        .measurement-select-trigger:focus { outline:0; border-color:#7966ff; box-shadow:0 0 0 3px rgba(111,78,246,.13); }
+        .measurement-select-trigger[aria-expanded="true"] { border-color:#7966ff; }
+        .input-group>.measurement-select { min-width:110px; }
+        .input-group>.measurement-select>.measurement-select-trigger { border-top-left-radius:0; border-bottom-left-radius:0; }
+        .measurement-select-menu { position:fixed; z-index:1105; display:none; min-width:180px; overflow-y:auto; overscroll-behavior:contain; padding:4px; border:1px solid #d7dce5; border-radius:8px; background:#fff; box-shadow:0 12px 28px rgba(15,23,42,.18); }
+        .measurement-select-menu.show { display:block; }
+        .measurement-select-option { width:100%; min-height:36px; display:flex; align-items:center; padding:7px 10px; border:0; border-radius:6px; background:transparent; color:#253044; font-size:12.75px; line-height:1.2; text-align:left; white-space:nowrap; overflow:hidden; }
+        .measurement-select-option-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .measurement-select-option:hover,.measurement-select-option:focus,.measurement-select-option[aria-selected="true"] { outline:0; background:#f1efff; color:#4f36d8; }
+        .measurement-select-option.is-customize { gap:6px; border-top:1px solid #e5e7eb; border-radius:0 0 6px 6px; color:#4f36d8; font-size:12px; white-space:nowrap; }
+        .measurement-select-option.is-add-dosage-form { position:sticky; z-index:2; bottom:0; gap:6px; margin-top:4px; border-top:1px solid #e5e7eb; border-radius:0 0 6px 6px; background:#fff; color:#4f36d8; font-weight:600; }
+        body.dark-mode .measurement-select-trigger,body.dark-mode .measurement-select-menu { border-color:#475569; background:#1f2937; color:#f8fafc; }
+        body.dark-mode .measurement-select-option { color:#f8fafc; }
+        body.dark-mode .measurement-select-option:hover,body.dark-mode .measurement-select-option:focus,body.dark-mode .measurement-select-option[aria-selected="true"] { background:#312e81; }
+        body.dark-mode .measurement-select-option.is-add-dosage-form { border-color:#475569; background:#1f2937; color:#c4b5fd; }
+        .medicine-strength-composer { display:grid; grid-template-columns:minmax(56px,1fr) minmax(82px,96px) auto minmax(56px,.8fr) minmax(82px,96px); align-items:center; gap:6px; min-width:0; }
+        .medicine-strength-numerator,.medicine-strength-denominator { display:contents; }
+        .medicine-strength-divider { color:#64748b; font-weight:800; font-size:18px; text-align:center; }
+        .medicine-strength-field .measurement-select { min-width:110px; }
+        /* Compact Medicine SKU controls. Keep this scoped so other Product Master forms are unchanged. */
+        #addProductModal .is-medicine-variation *,#editProductModal .is-medicine-variation * { box-sizing:border-box; }
+        #addProductModal .is-medicine-variation .dynamic-specification-grid,#editProductModal .is-medicine-variation .dynamic-specification-grid { column-gap:18px; row-gap:12px; }
+        #addProductModal .is-medicine-variation .form-control,#addProductModal .is-medicine-variation .form-select,#addProductModal .is-medicine-variation .input-group-text,#addProductModal .is-medicine-variation .measurement-select-trigger,#editProductModal .is-medicine-variation .form-control,#editProductModal .is-medicine-variation .form-select,#editProductModal .is-medicine-variation .input-group-text,#editProductModal .is-medicine-variation .measurement-select-trigger { height:38px; min-height:38px; font-size:13px; line-height:1.25; }
+        #addProductModal .is-medicine-variation .dynamic-specification-grid > *,#editProductModal .is-medicine-variation .dynamic-specification-grid > *,#addProductModal .is-medicine-variation .input-group > *,#editProductModal .is-medicine-variation .input-group > * { min-width:0; }
+        #addProductModal .is-medicine-variation .medicine-strength-composer,#editProductModal .is-medicine-variation .medicine-strength-composer { grid-template-columns:minmax(80px,110px) minmax(86px,104px) 14px minmax(80px,110px) minmax(86px,104px); justify-content:start; gap:7px; width:100%; min-width:0; }
+        #addProductModal .is-medicine-variation .medicine-strength-field .measurement-select,#editProductModal .is-medicine-variation .medicine-strength-field .measurement-select { width:100%; min-width:0; max-width:104px; flex:0 1 104px; }
+        #addProductModal .is-medicine-variation input[type="number"],#editProductModal .is-medicine-variation input[type="number"] { min-width:0; padding-right:26px; appearance:auto; -moz-appearance:auto; }
+        #addProductModal .is-medicine-variation input[type="number"]::-webkit-inner-spin-button,#addProductModal .is-medicine-variation input[type="number"]::-webkit-outer-spin-button,#editProductModal .is-medicine-variation input[type="number"]::-webkit-inner-spin-button,#editProductModal .is-medicine-variation input[type="number"]::-webkit-outer-spin-button { margin:0; -webkit-appearance:inner-spin-button; opacity:1; }
+        #addProductModal .is-medicine-variation .sku-net-content-field .input-group,#editProductModal .is-medicine-variation .sku-net-content-field .input-group { display:flex; gap:0; width:100%; min-width:0; }
+        #addProductModal .is-medicine-variation .input-group,#editProductModal .is-medicine-variation .input-group,#addProductModal .is-medicine-variation .medicine-strength-composer,#editProductModal .is-medicine-variation .medicine-strength-composer { align-items:stretch; }
+        #addProductModal .is-medicine-variation .sku-net-content-field .input-group > .form-control,#editProductModal .is-medicine-variation .sku-net-content-field .input-group > .form-control { width:40%; min-width:0; flex:0 1 40%; }
+        #addProductModal .is-medicine-variation .sku-net-content-field .measurement-select,#editProductModal .is-medicine-variation .sku-net-content-field .measurement-select { width:60%; min-width:0; flex:1 1 60%; }
+        #addProductModal .is-medicine-variation .sku-medicine-identity-grid,#editProductModal .is-medicine-variation .sku-medicine-identity-grid { display:contents; }
+        #addProductModal .is-medicine-variation .dynamic-specification-grid,#editProductModal .is-medicine-variation .dynamic-specification-grid { grid-template-columns:minmax(210px,1.2fr) minmax(190px,1fr) minmax(180px,1fr) minmax(210px,1.1fr); grid-auto-flow:row dense; align-items:start; column-gap:14px; row-gap:10px; }
+        #addProductModal .is-medicine-variation .dynamic-specification-grid > *,#editProductModal .is-medicine-variation .dynamic-specification-grid > * { grid-column:auto; width:100%; min-width:0; max-width:none; align-self:start; }
+        #addProductModal .is-medicine-variation .sku-strength-field.is-simple-strength,#editProductModal .is-medicine-variation .sku-strength-field.is-simple-strength { max-width:240px; }
+        #addProductModal .is-medicine-variation .sku-strength-field.is-concentration-strength,#editProductModal .is-medicine-variation .sku-strength-field.is-concentration-strength { grid-column:span 2; max-width:466px; }
+        #addProductModal .is-medicine-variation .is-simple-strength .medicine-strength-composer,#editProductModal .is-medicine-variation .is-simple-strength .medicine-strength-composer { grid-template-columns:minmax(100px,115px) minmax(100px,115px); width:max-content; max-width:100%; }
+        #addProductModal .is-medicine-variation .sku-net-content-field,#editProductModal .is-medicine-variation .sku-net-content-field,#addProductModal .is-medicine-variation .sku-package-field,#editProductModal .is-medicine-variation .sku-package-field,#addProductModal .is-medicine-variation .sku-flavor-field,#editProductModal .is-medicine-variation .sku-flavor-field { max-width:220px; }
+        #addProductModal .is-medicine-variation .sku-pack-content-field,#editProductModal .is-medicine-variation .sku-pack-content-field { max-width:230px; }
+        #addProductModal .is-medicine-variation .sku-pack-content-field .input-group > .form-control,#editProductModal .is-medicine-variation .sku-pack-content-field .input-group > .form-control { width:42%; min-width:0; flex:0 1 42%; }
+        #addProductModal .is-medicine-variation .sku-pack-content-field .measurement-select,#editProductModal .is-medicine-variation .sku-pack-content-field .measurement-select { width:58%; min-width:0; flex:1 1 58%; }
+        #addProductModal .is-medicine-variation .permanent-inventory-unit,#editProductModal .is-medicine-variation .permanent-inventory-unit { max-width:220px; }
+        #addProductModal .is-medicine-variation .sku-selling-price-field,#editProductModal .is-medicine-variation .sku-selling-price-field { max-width:170px; }
+        #addProductModal .is-medicine-variation .sku-barcode-field,#editProductModal .is-medicine-variation .sku-barcode-field { max-width:260px; }
+        #addProductModal .is-medicine-variation,#editProductModal .is-medicine-variation { height:auto; min-height:0; padding:12px; }
+        #addProductModal .is-medicine-variation > .d-flex:first-child,#editProductModal .is-medicine-variation > .d-flex:first-child { min-height:0; margin-bottom:10px!important; }
+        #addProductModal .is-medicine-variation .form-text,#editProductModal .is-medicine-variation .form-text { max-width:230px; margin-top:4px; font-size:11px; line-height:1.22; }
+        #addProductModal.medicine-product-mode .modal-dialog,#editProductModal.medicine-product-mode .modal-dialog { height:auto; max-height:92vh; }
+        #addProductModal.medicine-product-mode .modal-content,#editProductModal.medicine-product-mode .modal-content { height:auto; max-height:92vh; }
+        #addProductModal.medicine-product-mode .modal-body,#editProductModal.medicine-product-mode .modal-body { flex:0 1 auto; }
+        @media (max-width:767px) { .dynamic-specification-grid,.specification-editor-grid,.specification-choice-list { grid-template-columns:1fr; } #addProductModal .add-product-basic-grid,#addProductModal .dynamic-specification-grid,#addProductModal .is-medicine-variation .dynamic-specification-grid { grid-template-columns:1fr; } #addProductModal .is-medicine-variation .sku-strength-field,#addProductModal .is-medicine-variation .sku-net-content-field,#addProductModal .is-medicine-variation .sku-package-field,#addProductModal .is-medicine-variation .permanent-inventory-unit,#addProductModal .is-medicine-variation .sku-selling-price-field,#addProductModal .is-medicine-variation .sku-barcode-field { grid-column:1/-1; } .medicine-strength-composer,#addProductModal .medicine-strength-composer { grid-template-columns:minmax(52px,1fr) minmax(78px,92px) auto minmax(52px,.8fr) minmax(78px,92px); } #addProductModal .modal-dialog { margin:8px auto; width:calc(100vw - 16px); height:calc(100vh - 16px); } #addProductModal .modal-header,#addProductModal .modal-footer { padding:11px 14px; } #addProductModal .modal-body { padding:12px; } #addProductModal .add-product-section { padding:12px; } #editProductModal .pricing-method-row,#editProductModal .pricing-view-grid { grid-template-columns:1fr; } }
+        @media (max-width:767px) { .sku-medicine-identity-grid { grid-template-columns:1fr; } }
+        @media (max-width:575.98px) { #addProductModal .medicine-strength-composer,#editProductModal .medicine-strength-composer { grid-template-columns:minmax(0,1fr) minmax(76px,96px); gap:5px 6px; } #addProductModal .medicine-strength-divider,#editProductModal .medicine-strength-divider { grid-column:1/-1; height:9px; font-size:15px; line-height:9px; } }
+        @media (max-width:991.98px) and (min-width:767.01px) {
+            #addProductModal .is-medicine-variation .dynamic-specification-grid,#editProductModal .is-medicine-variation .dynamic-specification-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        }
+        @media (max-width:767px) {
+            #addProductModal .is-medicine-variation .sku-medicine-identity-grid,#editProductModal .is-medicine-variation .sku-medicine-identity-grid,#addProductModal .is-medicine-variation .dynamic-specification-grid,#editProductModal .is-medicine-variation .dynamic-specification-grid { grid-template-columns:minmax(0,1fr); }
+            #addProductModal .is-medicine-variation .dynamic-specification-grid > *,#editProductModal .is-medicine-variation .dynamic-specification-grid > * { grid-column:1/-1!important; width:100%; max-width:none; }
+        }
         #productDetailsModal .modal-dialog { width:min(1050px,94vw); max-width:none; height:min(88vh,900px); margin:clamp(12px,3vh,28px) auto; }
         #productDetailsModal .modal-content { height:100%; overflow:hidden; border:0; border-radius:14px; background:#fff; box-shadow:0 24px 70px rgba(15,23,42,.22); }
         #productDetailsModal .modal-header { position:sticky; top:0; z-index:3; flex:0 0 auto; align-items:flex-start; padding:18px 22px 16px; border-bottom:1px solid #e6eaf1; background:#fff; }
@@ -456,12 +582,6 @@
                             </select>
                         </div>
                         <div class="product-toolbar-field">
-                            <label class="form-label" for="productTypeFilter">Product Type</label>
-                            <select class="form-select" id="productTypeFilter">
-                                <option value="">All Product Types</option>
-                            </select>
-                        </div>
-                        <div class="product-toolbar-field">
                             <label class="form-label" for="productStatusFilter">Product Status</label>
                             <select class="form-select" id="productStatusFilter">
                                 <option value="all" selected>All Products</option>
@@ -469,15 +589,12 @@
                                 <option value="Inactive">Inactive</option>
                             </select>
                         </div>
-                        <div class="product-toolbar-field product-sort-filter">
-                            <label class="form-label" for="productSortSelect">Sort By</label>
-                            <select class="form-select" id="productSortSelect">
-                                <option value="name-asc">Name A-Z</option>
-                                <option value="name-desc">Name Z-A</option>
-                                <option value="price-asc">Price Low to High</option>
-                                <option value="price-desc">Price High to Low</option>
-                                <option value="stock-asc">Stock Low to High</option>
-                                <option value="stock-desc">Stock High to Low</option>
+                        <div class="product-toolbar-field product-medicine-filter" id="medicineClassificationFilterWrap">
+                            <label class="form-label" for="medicineClassificationFilter">Medicine Type</label>
+                            <select class="form-select" id="medicineClassificationFilter">
+                                <option value="all" selected>All Medicines</option>
+                                <option value="prescription">Prescription</option>
+                                <option value="non-prescription">Non-Prescription</option>
                             </select>
                         </div>
                         <div class="product-master-actions">
@@ -497,22 +614,21 @@
                             <thead>
                                 <tr>
                                     <th class="text-center pricing-selection-column d-none"><input class="form-check-input" id="selectAllProductsForPricing" type="checkbox" aria-label="Select all visible eligible products"></th>
-                                    <th>Barcode</th>
                                     <th>Brand</th>
-                                    <th>Product</th>
-                                    <th>Type</th>
+                                    <th class="product-column">Product</th>
                                     <th>Specification</th>
+                                    <th>Pack / Container</th>
                                     <th>Selling Price</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr class="product-skeleton-row"><td colspan="9"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="9"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="9"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="9"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="9"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -532,33 +648,41 @@
                     <div class="modal-body">
                         <section class="add-product-section" aria-labelledby="addProductBasicHeading">
                             <h6 class="add-product-section-title" id="addProductBasicHeading">Basic Information</h6>
-                            <div class="row g-3">
-                                <div class="col-md-6">
+                            <div class="add-product-basic-grid">
+                                <div class="add-product-field">
                                     <label class="form-label" for="productCategory">Category <span class="text-danger">*</span></label>
                                     <select class="form-select" id="productCategory" required>
                                         <option value="" disabled selected>Select category...</option>
                                     </select>
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label" for="productType">Product Type <span class="text-danger">*</span></label>
+                                <div class="add-product-field" id="productTypeField">
+                                    <label class="form-label" for="productType"><span id="productTypeLabel">Product Type</span> <span class="text-danger">*</span></label>
                                     <select class="form-select" id="productType" required disabled>
                                         <option value="" disabled selected>Select category first...</option>
                                     </select>
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label" for="productBrandName">Brand Name</label>
+                                <div class="add-product-field medicine-basic-field medicine-classification-basic-field d-none">
+                                    <label class="form-label" for="productMedicineClassification">Medicine Classification <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="productMedicineClassification" disabled><option value="">Select classification...</option></select>
+                                </div>
+                                <div class="add-product-field medicine-basic-field d-none">
+                                    <label class="form-label" for="productGenericName">Generic Name <span class="text-danger">*</span></label>
+                                    <input class="form-control" id="productGenericName" maxlength="150" disabled placeholder="e.g. Amoxicillin">
+                                </div>
+                                <div class="add-product-field">
+                                    <label class="form-label" id="productBrandLabel" for="productBrandName">Brand Name</label>
                                     <input class="form-control" id="productBrandName" required>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="add-product-field" id="productNameField">
                                     <label class="form-label" for="productName">Product Name</label>
                                     <input class="form-control" id="productName" required>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="add-product-field">
                                     <label class="form-label" for="productStatus">Status</label>
                                     <select class="form-select" id="productStatus"><option>Active</option><option>Inactive</option></select>
                                 </div>
-                                <div class="col-md-6"><label class="form-label" for="productPricingMethod">Pricing Method</label><select class="form-select" id="productPricingMethod"><option value="manual">Fixed / Manual price</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option></select></div>
-                                <div class="col-md-6 d-none" id="productCustomMarkupWrap"><label class="form-label" for="productCustomMarkup">Custom Markup Percentage</label><input class="form-control" id="productCustomMarkup" type="number" min="0" step=".01" placeholder="Only for Custom markup"></div>
+                                <div class="add-product-field"><label class="form-label" for="productPricingMethod">Pricing Method</label><select class="form-select" id="productPricingMethod"><option value="manual">Fixed / Manual price</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option></select></div>
+                                <div class="add-product-field d-none" id="productCustomMarkupWrap"><label class="form-label" for="productCustomMarkup">Custom Markup Percentage</label><input class="form-control" id="productCustomMarkup" type="number" min="0" step=".01" placeholder="Only for Custom markup"></div>
                             </div>
                         </section>
                         <section class="add-product-section" aria-labelledby="addProductDetailsHeading">
@@ -640,15 +764,16 @@
     <div class="modal fade product-customizer-modal" id="addProductTypeModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header"><div><h5 class="modal-title fw-bold">Customize Product Types</h5><small class="text-muted" id="productTypeCustomizerCategory"></small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-header"><div><h5 class="modal-title fw-bold" id="productTypeCustomizerTitle">Customize Product Types</h5><small class="text-muted" id="productTypeCustomizerCategory"></small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form id="addProductTypeForm">
                     <div class="modal-body">
                         <input type="hidden" id="newProductTypeCategory"><input type="hidden" id="customProductTypeId">
-                        <input class="form-control customizer-search mb-2" data-target="productTypeCustomizerList" placeholder="Search Product Types"><div class="customizer-list mb-3" id="productTypeCustomizerList"></div>
-                        <label class="form-label" for="newProductTypeName">Product Type Name <span class="text-danger">*</span></label><input class="form-control" id="newProductTypeName" maxlength="80" required>
+                        <input class="form-control customizer-search mb-2" id="productTypeCustomizerSearch" data-target="productTypeCustomizerList" placeholder="Search Product Types"><div class="customizer-list mb-3" id="productTypeCustomizerList"></div>
+                        <div class="small fw-bold text-muted mb-2" id="productTypeFormMode">Add Product Type</div><label class="form-label" id="newProductTypeNameLabel" for="newProductTypeName">Product Type Name <span class="text-danger">*</span></label><input class="form-control" id="newProductTypeName" maxlength="80" required>
+                        <div class="mt-3 d-none" id="dosageFormPatternField"><label class="form-label" for="dosageFormSpecificationPattern">Specification Pattern <span class="text-danger">*</span></label><select class="form-select" id="dosageFormSpecificationPattern"><option value="simple_strength">Simple Strength</option><option value="concentration_ratio">Concentration / Ratio</option><option value="percentage">Percentage</option><option value="dose_based">Dose-Based</option><option value="custom">Custom</option></select><div class="form-text">You can fine-tune fields later with Customize Specifications.</div></div>
                         <div class="product-field-error d-none" id="customProductTypeError"></div>
                     </div>
-                    <div class="modal-footer justify-content-between"><button class="btn btn-danger d-none" id="btnDeleteSelectedMeasurementUnits" type="button" disabled><i class="fa-solid fa-trash me-1"></i>Delete Selected</button><div class="d-flex gap-2 ms-auto"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit">Save</button></div></div>
+                    <div class="modal-footer"><button class="btn btn-light" type="button" id="btnCancelProductTypeEdit">Cancel</button><button class="btn btn-purple" type="submit" id="btnSaveProductType">Save</button></div>
                 </form>
             </div>
         </div>
@@ -673,7 +798,7 @@
                 <div class="modal-header"><h5 class="modal-title fw-bold">Customize Measurement Units</h5><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form id="addMeasurementUnitForm">
                     <div class="modal-body"><div class="measurement-unit-list-tools"><div class="clearable-input"><input class="form-control customizer-search" id="measurementUnitSearch" data-target="measurementUnitCustomizerList" placeholder="Search measurement units"><button class="input-clear-button" type="button" data-clear-input="measurementUnitSearch" aria-label="Clear measurement-unit search">×</button></div><select class="form-select" id="measurementUnitGroupFilter" aria-label="Filter measurement units by group"><option value="">All Measurement Groups</option></select></div><div class="customizer-list mb-3" id="measurementUnitCustomizerList"></div><input type="hidden" id="customMeasurementUnitId"><div class="row g-2"><div class="col-sm-5"><label class="form-label" for="newMeasurementUnitName">Unit Name</label><div class="clearable-input"><input class="form-control" id="newMeasurementUnitName" required><button class="input-clear-button" type="button" data-clear-input="newMeasurementUnitName" aria-label="Clear Unit Name">×</button></div></div><div class="col-sm-3"><label class="form-label" for="newMeasurementUnitSymbol">Symbol</label><div class="clearable-input"><input class="form-control" id="newMeasurementUnitSymbol" required><button class="input-clear-button" type="button" data-clear-input="newMeasurementUnitSymbol" aria-label="Clear Symbol">×</button></div></div><div class="col-sm-4"><label class="form-label" for="newMeasurementUnitGroup">Measurement Group</label><select class="form-select" id="newMeasurementUnitGroup" required></select></div></div><div class="product-field-error d-none" id="customMeasurementUnitError"></div></div>
-                    <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit">Save</button></div>
+                    <div class="modal-footer"><button class="btn btn-light" type="button" id="btnCancelMeasurementUnit" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit" id="btnSaveMeasurementUnit">Save</button></div>
                 </form>
             </div>
         </div>
@@ -694,17 +819,25 @@
                                 <label class="form-label" for="editProductCategory">Category</label>
                                 <select class="form-select" id="editProductCategory" required></select>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="editProductType">Product Type</label>
+                            <div class="col-md-6" id="editProductTypeField">
+                                <label class="form-label" for="editProductType"><span id="editProductTypeLabel">Product Type</span> <span class="text-danger">*</span></label>
                                 <select class="form-select" id="editProductType" required></select>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label" for="editProductBrand">Brand Name</label>
+                                <label class="form-label" id="editProductBrandLabel" for="editProductBrand">Brand Name</label>
                                 <input class="form-control" id="editProductBrand" required>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-6" id="editProductNameField">
                                 <label class="form-label" for="editProductName">Product Name</label>
                                 <input class="form-control" id="editProductName" required>
+                            </div>
+                            <div class="col-md-6 edit-medicine-basic-field medicine-classification-basic-field d-none">
+                                <label class="form-label" for="editProductMedicineClassification">Medicine Classification <span class="text-danger">*</span></label>
+                                <select class="form-select" id="editProductMedicineClassification" disabled><option value="">Select classification...</option></select>
+                            </div>
+                            <div class="col-md-6 edit-medicine-basic-field d-none">
+                                <label class="form-label" for="editProductGenericName">Generic Name <span class="text-danger">*</span></label>
+                                <input class="form-control" id="editProductGenericName" maxlength="150" disabled>
                             </div>
                             <div class="col-md-6"><label class="form-label" for="editProductStatus">Status</label><select class="form-select" id="editProductStatus" disabled><option>Active</option><option>Inactive</option></select><div class="form-text">Use the Activate/Deactivate action in the product table to change status.</div></div>
                         </div></section>
@@ -720,7 +853,7 @@
                                 <div class="pricing-summary-card"><dl class="pricing-summary-list"><div class="pricing-summary-row"><dt>Calculated Selling Price</dt><dd id="editPricingCustomCalculated">—</dd></div><div class="pricing-summary-row"><dt>Active Selling Price</dt><dd class="pricing-active-amount" id="editPricingCustomCurrent">—</dd></div><div class="pricing-summary-row"><dt>Price Difference</dt><dd id="editPricingCustomDifference">—</dd></div><div class="pricing-summary-row"><dt>Price Status</dt><dd><span class="pricing-inline-badge" id="editPricingCustomStatus">—</span></dd></div></dl></div>
                             </div>
                             <div id="editManualPricingView" class="pricing-view-grid d-none">
-                                <div class="pricing-entry-column"><p class="small text-muted mb-2">Edit the authoritative selling price inside the Product SKU Details card below.</p><dl class="pricing-entry-list"><div class="pricing-summary-row"><dt>Cost Basis</dt><dd id="editPricingManualCost">—</dd></div></dl></div>
+                                <div class="pricing-entry-column"><p class="small text-muted mb-2">Edit the authoritative selling price inside the sellable SKU section below.</p><dl class="pricing-entry-list"><div class="pricing-summary-row"><dt>Cost Basis</dt><dd id="editPricingManualCost">—</dd></div></dl></div>
                                 <div class="pricing-summary-card"><dl class="pricing-summary-list"><div class="pricing-summary-row"><dt>Active Selling Price</dt><dd class="pricing-active-amount" id="editPricingManualCurrent">—</dd></div><div class="pricing-summary-row"><dt>Gross Amount per Unit</dt><dd id="editPricingManualGross">—</dd></div><div class="pricing-summary-row"><dt>Pricing Protection</dt><dd><span class="pricing-inline-badge" id="editPricingManualStatus">Manual price protected</span></dd></div></dl></div>
                             </div>
                             <div class="pricing-action-row"><div class="pricing-action-note" id="editPricingActionNote">Saving does not overwrite the active price unless you explicitly apply the calculation.</div><button class="btn btn-sm btn-outline-primary" id="btnApplyCalculatedPrice" type="button"><i class="fa-solid fa-check me-1"></i>Apply Calculated Price</button></div>
@@ -765,7 +898,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js?v=8';
-        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=57';
+        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=84';
 
         verifySession().then((user) => {
             if (!user) return;

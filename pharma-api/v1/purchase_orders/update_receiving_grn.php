@@ -154,11 +154,11 @@ try {
     foreach ($poItemsStatement->fetchAll(PDO::FETCH_ASSOC) as $row) $poItems[cleanId($row['po_item_id'])] = $row;
     if (count($items) !== count($poItems)) throw new InvalidArgumentException('Every original PO item must remain in the corrected GRN.');
 
-    $receivingItemUpdate = $pdo->prepare('UPDATE purchase_order_receiving_items SET received_quantity=:quantity, accepted_quantity=:accepted, damaged_quantity=:damaged WHERE receiving_id=:receiving_id AND po_item_id=:po_item_id');
+    $receivingItemUpdate = $pdo->prepare('UPDATE purchase_order_receiving_items SET received_quantity=:quantity, accepted_quantity=:accepted, damaged_quantity=:damaged, missing_quantity=:missing WHERE receiving_id=:receiving_id AND po_item_id=:po_item_id');
     $receivingItemSelect = $pdo->prepare('SELECT receiving_item_id FROM purchase_order_receiving_items WHERE receiving_id=:receiving_id AND po_item_id=:po_item_id LIMIT 1');
     $claimSelect = $pdo->prepare("SELECT * FROM supplier_claims WHERE po_item_id=:po_item_id AND COALESCE(resolution_type,'')<>'replacement_damage_event' ORDER BY created_at,claim_id LIMIT 1 FOR UPDATE");
-    $claimUpdate = $pdo->prepare('UPDATE supplier_claims SET damaged_quantity=:damaged_quantity,damaged_unit_conversion_id=:damaged_conversion,action_quantity=:action_quantity,action_unit_conversion_id=:action_conversion,affected_quantity=:affected_quantity,unit_conversion_id=:conversion_id,damage_reason=:reason,disposition=:disposition,resolution_type=:resolution,claim_status=:status,remarks=:remarks,resolved_at=:resolved_at WHERE claim_id=:claim_id');
-    $claimInsert = $pdo->prepare('INSERT INTO supplier_claims(claim_id,po_item_id,damaged_quantity,damaged_unit_conversion_id,action_quantity,action_unit_conversion_id,affected_quantity,unit_conversion_id,damage_reason,disposition,resolution_type,claim_status,reported_by,remarks) VALUES(:claim_id,:po_item_id,:damaged_quantity,:damaged_conversion,:action_quantity,:action_conversion,:affected_quantity,:conversion_id,:reason,:disposition,:resolution,:status,:reported_by,:remarks)');
+    $claimUpdate = $pdo->prepare('UPDATE supplier_claims SET damaged_quantity=:damaged_quantity,damaged_unit_conversion_id=:damaged_conversion,action_quantity=:action_quantity,action_unit_conversion_id=:action_conversion,affected_quantity=:affected_quantity,unit_conversion_id=:conversion_id,damage_reason=:reason,disposition=:disposition,resolution_type=:resolution,requested_resolution_type=COALESCE(requested_resolution_type,:requested_resolution),claim_status=:status,remarks=:remarks,resolved_at=:resolved_at WHERE claim_id=:claim_id');
+    $claimInsert = $pdo->prepare('INSERT INTO supplier_claims(claim_id,po_item_id,damaged_quantity,damaged_unit_conversion_id,action_quantity,action_unit_conversion_id,affected_quantity,unit_conversion_id,damage_reason,disposition,resolution_type,requested_resolution_type,claim_status,reported_by,remarks) VALUES(:claim_id,:po_item_id,:damaged_quantity,:damaged_conversion,:action_quantity,:action_conversion,:affected_quantity,:conversion_id,:reason,:disposition,:resolution,:requested_resolution,:status,:reported_by,:remarks)');
     $damageDelete = $pdo->prepare('DELETE FROM supplier_claim_damage_lines WHERE claim_id=:claim_id');
     $damageInsert = $pdo->prepare('INSERT INTO supplier_claim_damage_lines(damage_line_id,claim_id,receiving_item_id,sequence_no,affected_unit_conversion_id,affected_quantity,damaged_quantity,damaged_unit_conversion_id,inventory_batch_id) VALUES(:id,:claim_id,:receiving_item_id,:sequence,:affected_conversion,1,:quantity,:damaged_conversion,:inventory_batch_id)');
     $newPayable = 0.0;
@@ -245,7 +245,7 @@ try {
         }
         unset($damageLine);
         if ($allocated !== $accepted) throw new InvalidArgumentException("Batch quantities for {$poItem['product_name']} must equal the corrected accepted quantity of {$accepted}.");
-        $receivingItemUpdate->execute([':quantity' => $received, ':accepted' => $accepted, ':damaged' => $damagedBase, ':receiving_id' => $receivingId, ':po_item_id' => $poItemId]);
+        $receivingItemUpdate->execute([':quantity' => $received, ':accepted' => $accepted, ':damaged' => $damagedBase, ':missing' => $missing, ':receiving_id' => $receivingId, ':po_item_id' => $poItemId]);
         $receivingItemSelect->execute([':receiving_id' => $receivingId, ':po_item_id' => $poItemId]);
         $receivingItemId = cleanId($receivingItemSelect->fetchColumn());
         if ($receivingItemId === '') throw new RuntimeException('The receiving item could not be resolved for its affected-package details.');
@@ -254,17 +254,11 @@ try {
         $claim = $claimSelect->fetch(PDO::FETCH_ASSOC) ?: null;
         if ($claim || $hasItemIssue) {
             $claimId = $claim ? cleanId($claim['claim_id']) : newUuid($pdo);
-            $parsedRemarks = $claim ? parsePurchaseOrderReturnRemarks($claim['remarks'] ?? '') : ['metadata' => [], 'remarks' => ''];
-            $replacementReceived = (int) ($parsedRemarks['metadata']['replacement_received_qty'] ?? 0);
+            $replacementReceivedStatement = $pdo->prepare("SELECT COALESCE(SUM(ri.accepted_quantity),0) FROM purchase_order_receiving r INNER JOIN purchase_order_receiving_items ri ON ri.receiving_id=r.receiving_id WHERE r.claim_id=:claim_id AND r.receiving_type='Replacement'");
+            $replacementReceivedStatement->execute([':claim_id' => $claimId]);
+            $replacementReceived = (int) $replacementReceivedStatement->fetchColumn();
             $replacementExpected = $resolution === 'Replacement' ? $affected : 0;
             if ($replacementReceived > $replacementExpected) throw new InvalidArgumentException('Replacement already received exceeds the corrected replacement claim quantity. Correct the replacement record first.');
-            $metadataResolution = $resolutionLegacy === 'replacement' ? 'return_for_replacement' : $resolutionLegacy;
-            $metadata = array_merge($parsedRemarks['metadata'], [
-                'version' => 1, 'resolution' => $metadataResolution, 'delivered_quantity' => $received,
-                'damaged_quantity' => $damagedBase, 'missing_quantity' => $missing,
-                'supplier_adjustment' => $confirmedAdjustment,
-                'replacement_expected_qty' => $replacementExpected, 'replacement_received_qty' => $replacementReceived,
-            ]);
             $status = !$hasItemIssue ? 'Corrected / Resolved' : ($replacementExpected > 0 && $replacementReceived >= $replacementExpected ? 'Replacement Received / Resolved' : supplierClaimStatus($resolution));
             $defaultConversion = $actionBase > 0 ? $actionConversion : $damagedConversion;
             $storedAffectedQuantity = $actionQuantity ?: $damagedQuantity;
@@ -277,8 +271,8 @@ try {
                 ':action_quantity' => $hasItemIssue ? $actionQuantity : 0, ':action_conversion' => $actionConversion,
                 ':affected_quantity' => $affected > 0 ? $storedAffectedQuantity : 0,
                 ':conversion_id' => $defaultConversion, ':reason' => $hasItemIssue ? $issueType : ($claim['damage_reason'] ?? 'Corrected GRN'),
-                ':disposition' => $disposition, ':resolution' => $resolution, ':status' => $status,
-                ':remarks' => buildPurchaseOrderReturnRemarks($metadata, $itemRemarks), ':resolved_at' => str_contains($status, 'Resolved') ? date('Y-m-d H:i:s') : null,
+                ':disposition' => $disposition, ':resolution' => $resolution, ':requested_resolution' => $resolution, ':status' => $status,
+                ':remarks' => $itemRemarks ?: null, ':resolved_at' => str_contains($status, 'Resolved') ? date('Y-m-d H:i:s') : null,
             ];
             if ($claim) {
                 $claimUpdate->execute($claimParams + [':claim_id' => $claimId]);

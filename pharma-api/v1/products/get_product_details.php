@@ -2,6 +2,8 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'product_pricing_schema.php';
+require_once 'supplier_invoice_pricing.php';
+require_once 'product_customization_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
@@ -17,6 +19,7 @@ if (!$productId) {
 }
 
 try {
+    ensureProductCustomizationSchema($pdo);
     $statement = $pdo->prepare(
         "SELECT
             p.product_id,
@@ -33,6 +36,8 @@ try {
             pc.category_name,
             pt.type_name,
             md.generic_name,
+            classification_values.medicine_classification,
+            classification_values.medicine_classification_badge,
             md.strength,
             md.strength_value,
             md.strength_unit,
@@ -65,6 +70,17 @@ try {
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id=p.inventory_unit_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         LEFT JOIN (
+            SELECT psv.product_id,
+                   psv.value_text AS medicine_classification,
+                   CASE
+                       WHEN LOWER(TRIM(psv.value_text)) = 'prescription (rx)' THEN 'Rx'
+                       ELSE NULL
+                   END AS medicine_classification_badge
+            FROM product_specification_values psv
+            INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
+            WHERE LOWER(TRIM(ps.specification_name))='medicine classification'
+         ) classification_values ON classification_values.product_id=p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
          LEFT JOIN (
@@ -98,16 +114,11 @@ try {
          LEFT JOIN (
             SELECT
                 poi.product_id,
-                SUM(GREATEST(
-                    CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks, 17), CHAR(10), 1), '$.replacement_expected_qty')), '0') AS SIGNED)
-                    - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED),
-                    0
-                )) AS replacement_pending_quantity
+                SUM(GREATEST(por.replacement_expected_qty - por.replacement_received_qty, 0)) AS replacement_pending_quantity
             FROM supplier_claim_legacy_projection por
             INNER JOIN purchase_order_items poi ON poi.po_item_id = por.po_item_id
-            WHERE por.remarks LIKE '[RETURN_META_V1]%'
-              AND poi.product_id = :replacement_product_id
-              AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks, 17), CHAR(10), 1), '$.resolution')) = 'return_for_replacement'
+            WHERE poi.product_id = :replacement_product_id
+              AND por.resolution_type = 'Replacement'
             GROUP BY poi.product_id
          ) replacements ON replacements.product_id = p.product_id
          WHERE p.product_id = :product_id
@@ -175,6 +186,8 @@ try {
         'status' => strcasecmp(trim((string) ($row['status'] ?? 'Active')), 'Inactive') === 0 ? 'Inactive' : 'Active',
         'created_at' => $row['created_at'] ?? null,
         'generic_name' => $row['generic_name'] ?? null,
+        'medicine_classification' => $row['medicine_classification'] ?? null,
+        'medicine_classification_badge' => $row['medicine_classification_badge'] ?? null,
         'strength' => $row['strength'] ?? null,
         'strength_value' => $row['strength_value'] ?? null,
         'strength_unit' => $row['strength_unit'] ?? null,
@@ -223,6 +236,7 @@ try {
             'inventory_summary' => $inventorySummary,
             'specifications' => $specifications,
             'pricing' => $pricing,
+            'supplier_invoice_pricing' => supplierInvoicePricingSuggestions($pdo, $productId),
         ],
     ]);
 } catch (Throwable $error) {

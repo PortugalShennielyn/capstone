@@ -26,7 +26,7 @@ $orderStatement = $pdo->prepare("SELECT po_id,po_number,status,total_amount,fina
     $itemStatement = $pdo->prepare('SELECT po_item_id,COALESCE(NULLIF(inventory_qty_ordered,0),quantity) ordered_quantity,COALESCE(unit_price_snapshot,0) unit_price FROM purchase_order_items WHERE po_id=:po_id');
     $itemStatement->execute([':po_id'=>$poId]);
     $poItems=[]; foreach ($itemStatement->fetchAll(PDO::FETCH_ASSOC) as $row) $poItems[cleanId($row['po_item_id'])]=$row;
-    $insertClaim=$pdo->prepare('INSERT INTO supplier_claims (claim_id,po_item_id,inventory_batch_id,affected_quantity,unit_conversion_id,damage_reason,disposition,resolution_type,claim_status,reported_by,remarks) VALUES (:claim_id,:po_item_id,:batch_id,:quantity,:conversion_id,:reason,:disposition,:resolution,:status,:reported_by,:remarks)');
+    $insertClaim=$pdo->prepare('INSERT INTO supplier_claims (claim_id,po_item_id,inventory_batch_id,affected_quantity,unit_conversion_id,damage_reason,disposition,resolution_type,requested_resolution_type,claim_status,reported_by,remarks) VALUES (:claim_id,:po_item_id,:batch_id,:quantity,:conversion_id,:reason,:disposition,:resolution,:requested_resolution,:status,:reported_by,:remarks)');
     $insertCredit=$pdo->prepare("INSERT INTO supplier_credits (credit_id,claim_id,credit_amount,credit_status) VALUES (:credit_id,:claim_id,:amount,'Available')");
     $insertApplication=$pdo->prepare('INSERT INTO supplier_credit_applications (application_id,credit_id,po_id,amount_applied,applied_by) VALUES (:application_id,:credit_id,:po_id,:amount,:applied_by)');
     $currentCreditTotal=0.0;
@@ -61,9 +61,7 @@ $orderStatement = $pdo->prepare("SELECT po_id,po_number,status,total_amount,fina
             $pdo->prepare('UPDATE inventory_batches SET storage_qty=storage_qty-:storage_qty,shelf_qty=shelf_qty-:shelf_qty,damaged_qty=damaged_qty+:affected_qty WHERE batch_id=:batch_id')->execute([':storage_qty'=>$fromStorage,':shelf_qty'=>$fromShelf,':affected_qty'=>$affectedBase,':batch_id'=>$batchId]);
         }
         $claimId=newUuid($pdo);
-        $claimMetadata=['version'=>1,'resolution'=>supplierClaimLegacyResolution($resolution,$disposition),'delivered_quantity'=>0,'damaged_quantity'=>$affectedBase,'missing_quantity'=>0,'supplier_adjustment'=>$confirmedAmount,'replacement_expected_qty'=>$resolution==='Replacement'?$affectedBase:0,'replacement_received_qty'=>0,'parent_return_id'=>null];
-        $storedRemarks=buildPurchaseOrderReturnRemarks($claimMetadata,$remarks);
-        $insertClaim->execute([':claim_id'=>$claimId,':po_item_id'=>$poItemId,':batch_id'=>$batchId,':quantity'=>$quantity,':conversion_id'=>$conversionId,':reason'=>$reason,':disposition'=>$disposition,':resolution'=>$resolution,':status'=>supplierClaimStatus($resolution),':reported_by'=>$_SESSION['user_id']??null,':remarks'=>$storedRemarks]);
+        $insertClaim->execute([':claim_id'=>$claimId,':po_item_id'=>$poItemId,':batch_id'=>$batchId,':quantity'=>$quantity,':conversion_id'=>$conversionId,':reason'=>$reason,':disposition'=>$disposition,':resolution'=>$resolution,':requested_resolution'=>$resolution,':status'=>supplierClaimStatus($resolution),':reported_by'=>$_SESSION['user_id']??null,':remarks'=>$remarks ?: null]);
         if (in_array($resolution,['Current PO Credit','Next PO Credit'],true)) {
             $amount=$confirmedAmount;
             if ($amount>0) {

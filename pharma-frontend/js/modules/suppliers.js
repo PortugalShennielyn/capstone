@@ -529,6 +529,7 @@ function renderSupplierProducts(rows) {
             </tr>
         `).join('')
         : '<tr><td colspan="6" class="text-center text-muted py-4">No supplier products found.</td></tr>';
+    window.PharmacySearchHighlight?.apply(body, document.getElementById('supplierProductSearch')?.value || '');
 }
 
 function setSupplierEditText(id, value) {

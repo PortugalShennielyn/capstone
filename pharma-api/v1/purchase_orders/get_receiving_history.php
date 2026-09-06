@@ -11,19 +11,28 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
-    $statement = $pdo->query(
-        'SELECT por.po_id
+    $poId = cleanId($_GET['po_id'] ?? null);
+    $poFilter = $poId !== '' ? ' AND por.po_id = :po_id' : '';
+    $statement = $pdo->prepare(
+        'SELECT por.receiving_id, por.po_id
          FROM purchase_order_receiving por
          WHERE EXISTS (SELECT 1 FROM purchase_order_receiving_items pori WHERE pori.receiving_id = por.receiving_id)
+           AND por.inspection_status = \'Confirmed\'' . $poFilter . '
          ORDER BY por.received_date DESC, por.receiving_id DESC'
     );
+    $statement->execute($poId !== '' ? [':po_id' => $poId] : []);
     $history = [];
-    foreach ($statement->fetchAll(PDO::FETCH_COLUMN) as $poId) {
-        $details = buildPurchaseOrderReceivingDetails($pdo, cleanId($poId));
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $receiving) {
+        $details = buildPurchaseOrderReceivingDetails(
+            $pdo,
+            cleanId($receiving['po_id'] ?? null),
+            cleanId($receiving['receiving_id'] ?? null)
+        );
         if (!$details) continue;
         $firstItem = $details['items'][0] ?? [];
         $history[] = [
-            'po_id' => $details['po_id'], 'grn_number' => $details['grn_number'], 'po_number' => $details['po_number'],
+            'receiving_id' => $details['receiving_id'], 'po_id' => $details['po_id'],
+            'grn_number' => $details['grn_number'], 'po_number' => $details['po_number'],
             'supplier_name' => $details['supplier_name'], 'arrival_date' => $details['expected_delivery_date'],
             'received_date' => $details['received_date'], 'products' => $details['products'],
             'product_name' => $firstItem['product_name'] ?? '', 'brand_name' => $firstItem['brand_name'] ?? '',

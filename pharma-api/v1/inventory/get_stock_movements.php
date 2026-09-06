@@ -324,16 +324,13 @@ try {
     );
     $returnStatement->execute([':product_id' => $productId]);
     foreach ($returnStatement->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $parsed = movementParseStoredRemarks($row['remarks'] ?? '');
-        $metadata = $parsed['metadata'];
-        $resolution = (string) ($metadata['resolution'] ?? '');
         $quantity = (int) ($row['return_quantity'] ?? 0);
-        $isSupplierReturn = in_array($resolution, ['return_for_credit', 'return_for_replacement'], true);
-        $isRejected = $resolution === 'reject_without_replacement';
+        $isSupplierReturn = ($row['disposition'] ?? '') === 'Return to Supplier';
+        $isRejected = in_array(($row['disposition'] ?? ''), ['Dispose', 'Quarantine'], true);
         $movementCode = $isSupplierReturn ? 'return_to_supplier' : 'damaged';
         $movementLabel = $isSupplierReturn ? 'Returned' : ($isRejected ? 'Rejected' : 'Damaged');
         $toLocation = $isSupplierReturn ? 'Supplier' : 'Damaged';
-        $reason = movementResolutionLabel($resolution, $row['damage_reason'] ?? 'Damaged stock');
+        $reason = (string) ($row['resolution_type'] ?? $row['damage_reason'] ?? 'Damaged stock');
         $movements[] = movementRecord([
             'movement_id' => 'return:' . $row['return_id'],
             'movement_date' => $row['created_at'],
@@ -351,17 +348,17 @@ try {
             'to_location' => $toLocation,
             'user_name' => movementUserName($row),
             'reason' => $reason,
-            'remarks' => $parsed['remarks'],
+            'remarks' => $row['remarks'] ?? '',
             'details' => [
                 'po_number' => $row['po_number'] ?? null,
                 'supplier' => $row['supplier_name'] ?? null,
                 'return_status' => $row['return_status'] ?? null,
                 'return_resolution' => $reason,
-                'delivered_quantity' => (int) ($metadata['delivered_quantity'] ?? 0),
-                'damaged_quantity' => (int) ($metadata['damaged_quantity'] ?? $quantity),
-                'missing_quantity' => (int) ($metadata['missing_quantity'] ?? 0),
-                'replacement_expected_quantity' => (int) ($metadata['replacement_expected_qty'] ?? 0),
-                'replacement_received_quantity' => (int) ($metadata['replacement_received_qty'] ?? 0),
+                'delivered_quantity' => (int) ($row['delivered_quantity'] ?? 0),
+                'damaged_quantity' => (int) ($row['damaged_quantity'] ?? 0),
+                'missing_quantity' => (int) ($row['missing_quantity'] ?? 0),
+                'replacement_expected_quantity' => (int) ($row['replacement_expected_qty'] ?? 0),
+                'replacement_received_quantity' => (int) ($row['replacement_received_qty'] ?? 0),
             ],
         ]);
     }

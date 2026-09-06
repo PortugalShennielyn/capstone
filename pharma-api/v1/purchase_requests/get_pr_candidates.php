@@ -12,10 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 try {
+    ensurePurchaseRequestSchema($pdo);
     $stockSql = inventoryStockSummarySql();
     $stmt = $pdo->query(
         "SELECT DISTINCT
-            p.product_id, p.product_name, p.brand_name, p.barcode, p.status AS product_status,
+            p.product_id,
+            COALESCE(NULLIF(TRIM(md.generic_name), ''), p.product_name) AS product_name,
+            p.brand_name, p.barcode, p.status AS product_status,
             pc.category_name, pt.type_name,
             md.generic_name, md.strength, md.strength_value, md.strength_unit,
             md.net_content_value, md.net_content_unit, md.dosage_form,
@@ -69,6 +72,7 @@ try {
             p.brand_name, p.product_name"
     );
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $packageOptions = purchaseRequestSupplierOptions($pdo, array_column($rows, 'product_id'));
     if ($rows) {
         $productIds = array_column($rows, 'product_id');
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
@@ -93,6 +97,9 @@ try {
             $specificationsByProduct[$specification['product_id']][] = $specification;
         }
         foreach ($rows as &$row) {
+            $row['packaging_units'] = purchaseRequestPackagingUnits($packageOptions[$row['product_id']] ?? []);
+            $row['supplier_options'] = $packageOptions[$row['product_id']] ?? [];
+            $row['purchase_unit'] = purchaseRequestConfiguredUnit($row['supplier_options']);
             $row['specifications'] = $specificationsByProduct[$row['product_id']] ?? [];
             $row['base_inventory_unit'] = trim((string) ($row['base_inventory_unit'] ?? '')) ?: null;
             $row['base_unit_allows_decimal'] = $row['base_inventory_unit'] !== null

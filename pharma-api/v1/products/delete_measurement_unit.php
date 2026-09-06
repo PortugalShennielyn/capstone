@@ -5,7 +5,7 @@ require_once 'product_customization_schema.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode(['status' => 'error', 'message' => 'Only POST requests are allowed.']);
+    echo json_encode(['status' => 'error', 'success' => false, 'code' => 'METHOD_NOT_ALLOWED', 'message' => 'Only POST requests are allowed.']);
     exit();
 }
 
@@ -14,26 +14,30 @@ $requestedIds = is_array($payload['measurement_unit_ids'] ?? null)
     ? $payload['measurement_unit_ids']
     : [$payload['measurement_unit_id'] ?? null];
 $unitIds = array_values(array_unique(array_filter(array_map('cleanId', $requestedIds))));
-if (!$unitIds || count($unitIds) > 100) {
+$validUuid = static fn(string $id): bool => preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $id) === 1;
+if (!$unitIds || count($unitIds) > 100 || count(array_filter($unitIds, $validUuid)) !== count($unitIds)) {
     http_response_code(422);
-    echo json_encode(['status' => 'error', 'message' => 'Select between 1 and 100 valid measurement units.']);
+    echo json_encode(['status' => 'error', 'success' => false, 'code' => 'INVALID_MEASUREMENT_UNIT_ID', 'message' => 'A valid measurement unit ID is required.']);
     exit();
 }
 
 try {
+    ensureProductCustomizationSchema($pdo);
     $idPlaceholders = implode(',', array_fill(0, count($unitIds), '?'));
     $statement = $pdo->prepare(
         "SELECT measurement_unit_id, unit_name,
                 COALESCE(NULLIF(unit_symbol, ''), unit_name) AS unit_symbol,
                 measurement_group, is_active, is_system
          FROM product_measurement_units
-         WHERE measurement_unit_id IN ({$idPlaceholders}) AND measurement_group <> 'Packaging'"
+         WHERE measurement_unit_id IN ({$idPlaceholders})
+           AND measurement_group <> 'Packaging'
+           AND is_active = 1"
     );
     $statement->execute($unitIds);
     $units = $statement->fetchAll(PDO::FETCH_ASSOC);
-    if (count($units) !== count($unitIds)) throw new InvalidArgumentException('One or more measurement units were not found.');
+    if (count($units) !== count($unitIds)) throw new DomainException('Measurement unit not found.', 1001);
     foreach ($units as $unit) {
-        if ((int) $unit['is_system'] === 1) throw new InvalidArgumentException('System measurement units cannot be removed.');
+        if ((int) $unit['is_system'] === 1) throw new DomainException('Built-in measurement unit cannot be deleted.', 1002);
     }
 
     $byId = [];
@@ -49,16 +53,31 @@ try {
     }
     unset($unit);
 
-    $direct = $pdo->prepare(
-        "SELECT measurement_unit_id, COUNT(*) AS reference_count, COUNT(DISTINCT product_id) AS usage_count
-         FROM product_specification_values
-         WHERE measurement_unit_id IN ({$idPlaceholders}) GROUP BY measurement_unit_id"
-    );
-    $direct->execute($unitIds);
-    foreach ($direct->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        if (!isset($byId[$row['measurement_unit_id']])) continue;
-        $byId[$row['measurement_unit_id']]['usage_count'] = (int) $row['usage_count'];
-        $byId[$row['measurement_unit_id']]['reference_count'] += (int) $row['reference_count'];
+    // Resolve every normalized ID reference dynamically so new Product,
+    // Supplier, Inventory, PO, receiving, transfer, or POS tables are covered
+    // without adding another hard-coded unit relationship.
+    $idReferenceColumns = $pdo->query(
+        "SELECT table_name, column_name
+         FROM information_schema.columns
+         WHERE table_schema = DATABASE()
+           AND column_name IN ('measurement_unit_id', 'inventory_unit_id')
+           AND table_name <> 'product_measurement_units'"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($idReferenceColumns as $referenceColumn) {
+        $table = str_replace('`', '``', (string) $referenceColumn['table_name']);
+        $column = str_replace('`', '``', (string) $referenceColumn['column_name']);
+        $referenceQuery = $pdo->prepare(
+            "SELECT `{$column}` AS measurement_unit_id, COUNT(*) AS reference_count
+             FROM `{$table}` WHERE `{$column}` IN ({$idPlaceholders}) GROUP BY `{$column}`"
+        );
+        $referenceQuery->execute($unitIds);
+        foreach ($referenceQuery->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (!isset($byId[$row['measurement_unit_id']])) continue;
+            $byId[$row['measurement_unit_id']]['reference_count'] += (int) $row['reference_count'];
+            if ($table === 'product_specification_values') {
+                $byId[$row['measurement_unit_id']]['usage_count'] += (int) $row['reference_count'];
+            }
+        }
     }
 
     // Legacy and supplier records store unit labels rather than unit IDs. Check
@@ -73,7 +92,13 @@ try {
         ['product_variations_backup', 'weight_unit'], ['product_variations_backup', 'pack_content_unit'],
         ['supplier_products', 'purchase_unit'], ['supplier_products', 'inner_unit'],
         ['supplier_products', 'inventory_unit'], ['purchase_order_items', 'purchase_unit_snapshot'],
-        ['purchase_order_items', 'unit_snapshot'], ['purchase_request_items', 'unit_label_at_request']
+        ['purchase_order_items', 'unit_snapshot'], ['purchase_request_items', 'unit_label_at_request'],
+        ['inventory_transfers', 'base_unit'], ['inventory_transfers', 'selected_unit'],
+        ['product_selling_options', 'unit_name'], ['sales_order_items', 'selected_unit'],
+        ['supplier_product_unit_conversions', 'unit_name'],
+        ['supplier_claim_legacy_projection', 'action_unit_name'],
+        ['supplier_claim_legacy_projection', 'affected_unit_name'],
+        ['supplier_claim_legacy_projection', 'damaged_unit_name']
     ];
     $schemaRows = $pdo->query(
         "SELECT table_name, column_name FROM information_schema.columns
@@ -100,12 +125,20 @@ try {
         }
     }
 
+    $referencedUnits = array_values(array_filter($units, static fn(array $unit): bool => (int) ($unit['reference_count'] ?? 0) > 0));
+    if ($referencedUnits) {
+        throw new DomainException('This measurement unit cannot be deleted because it is currently being used.', 1003);
+    }
+
     $pdo->beginTransaction();
     $archive = $pdo->prepare(
         "UPDATE product_measurement_units SET is_active = 0
          WHERE measurement_unit_id IN ({$idPlaceholders}) AND is_system = 0"
     );
     $archive->execute($unitIds);
+    if ($archive->rowCount() !== count($unitIds)) {
+        throw new RuntimeException('Measurement unit archive did not update every requested row.');
+    }
     foreach ($units as &$unit) $unit['is_active'] = 0;
     unset($unit);
     $pdo->commit();
@@ -113,18 +146,31 @@ try {
     $count = count($units);
     echo json_encode([
         'status' => 'success',
+        'success' => true,
         'message' => $count === 1
-            ? 'Measurement unit removed from future selections. Existing records keep their saved value.'
-            : "{$count} measurement units removed from future selections. Existing records keep their saved values.",
+            ? 'Measurement unit deleted successfully.'
+            : "{$count} measurement units deleted successfully.",
         'unit' => $count === 1 ? $units[0] : null,
         'units' => $units,
     ]);
-} catch (InvalidArgumentException $error) {
+} catch (DomainException $error) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     http_response_code(400);
-    echo json_encode(['status' => 'error', 'message' => $error->getMessage()]);
+    $codes = [
+        1001 => 'UNIT_NOT_FOUND',
+        1002 => 'SYSTEM_UNIT',
+        1003 => 'UNIT_IN_USE',
+    ];
+    echo json_encode([
+        'status' => 'error',
+        'success' => false,
+        'code' => $codes[$error->getCode()] ?? 'DELETE_REJECTED',
+        'message' => $error->getMessage(),
+    ]);
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('Measurement unit deletion failed: ' . $error->getMessage());
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Unable to remove measurement units.']);
+    echo json_encode(['status' => 'error', 'success' => false, 'code' => 'DELETE_FAILED', 'message' => 'Unable to delete measurement unit.']);
 }
 ?>

@@ -70,10 +70,11 @@ try {
     $productId = cleanId($payload['product_id'] ?? null);
     $categoryId = cleanId($payload['category_id'] ?? null);
     $typeId = cleanId($payload['type_id'] ?? null);
-    $brandName = requiredProductField($payload, 'brand_name');
-    $productName = requiredProductField($payload, 'product_name');
+    $brandName = trim((string) ($payload['brand_name'] ?? ''));
+    $productName = trim((string) ($payload['product_name'] ?? ''));
     $productStatus = normalizeProductStatus($payload['status'] ?? 'Active');
     $variation = (isset($payload['variations'][0]) && is_array($payload['variations'][0])) ? $payload['variations'][0] : $payload;
+    $typeId = cleanId($variation['type_id'] ?? $typeId);
     $inventoryUnit = requiredProductInventoryUnit($pdo, $variation['inventory_unit_id'] ?? null);
     $detailSchema = strtolower(trim((string) ($variation['detail_schema'] ?? '')));
     $pricingMethod = normalizePricingMethod($payload['pricing_method'] ?? 'manual');
@@ -95,19 +96,40 @@ try {
         throw new InvalidArgumentException('A valid product type is required for the selected category.');
     }
 
-    $categoryStatement = $pdo->prepare('SELECT category_name FROM product_categories WHERE category_id = :category_id LIMIT 1');
-    $categoryStatement->execute([':category_id' => $categoryId]);
-    $categoryName = (string) $categoryStatement->fetchColumn();
-    if ($categoryName === '') {
+    $categoryStatement = $pdo->prepare(
+        'SELECT pc.category_name, pt.type_name
+         FROM product_categories pc
+         INNER JOIN product_types pt ON pt.category_id=pc.category_id AND pt.type_id=:type_id
+         WHERE pc.category_id=:category_id LIMIT 1'
+    );
+    $categoryStatement->execute([':category_id' => $categoryId, ':type_id' => $typeId]);
+    $categoryType = $categoryStatement->fetch(PDO::FETCH_ASSOC);
+    $categoryName = trim((string) ($categoryType['category_name'] ?? ''));
+    $typeName = trim((string) ($categoryType['type_name'] ?? ''));
+    if ($categoryName === '' || $typeName === '') {
         throw new InvalidArgumentException('A valid product category is required.');
+    }
+    if ($categoryName === 'Medicine') {
+        // Validate the canonical identity now. The legacy non-null Product Name
+        // is preserved below; Medicine displays read medicine_details.generic_name.
+        requiredMedicineGenericName($payload['generic_name'] ?? null);
+    } else {
+        $brandName = requiredProductField($payload, 'brand_name');
+        $productName = requiredProductField($payload, 'product_name');
     }
     $hasDynamicConfiguration = count(getTypeSpecificationConfiguration($pdo, $typeId)) > 0;
 
-    $existingStatement = $pdo->prepare('SELECT price, pricing_method, custom_markup_percentage FROM product WHERE product_id = :product_id LIMIT 1');
+    $existingStatement = $pdo->prepare('SELECT price, pricing_method, custom_markup_percentage, inventory_unit_id, product_name FROM product WHERE product_id = :product_id LIMIT 1');
     $existingStatement->execute([':product_id' => $productId]);
     $existingPricing = $existingStatement->fetch(PDO::FETCH_ASSOC);
     if (!$existingPricing) {
         throw new InvalidArgumentException('Product not found.');
+    }
+    if ($categoryName === 'Medicine') {
+        $existingProductName = trim((string) ($existingPricing['product_name'] ?? ''));
+        $productName = $existingProductName !== ''
+            ? $existingProductName
+            : ($brandName !== '' ? $brandName : requiredMedicineGenericName($payload['generic_name'] ?? null));
     }
     $price = round((float) $existingPricing['price'], 2);
     $applyCalculatedPrice = !empty($payload['apply_calculated_price']) && $pricingMethod !== 'manual';
@@ -131,7 +153,15 @@ try {
         $price = calculatedSellingPrice((float) $basis['unit_cost'], $markup);
     }
     $barcode = cleanUpdateField($variation, 'barcode') ?? cleanUpdateField($payload, 'barcode') ?? ('AUTO-' . strtoupper(bin2hex(random_bytes(6))));
-    $specificationValues = validateAndNormalizeSpecificationValues($pdo, $typeId, is_array($variation['specifications'] ?? null) ? $variation['specifications'] : [], $productId);
+    $submittedSpecifications = is_array($variation['specifications'] ?? null) ? $variation['specifications'] : [];
+    $submittedSpecifications = withMedicineClassificationSpecification(
+        $pdo,
+        $categoryName,
+        $submittedSpecifications,
+        $variation['medicine_classification'] ?? $payload['medicine_classification'] ?? null
+    );
+    $specificationValues = validateAndNormalizeSpecificationValues($pdo, $typeId, $submittedSpecifications, $productId);
+    $medicineDetails = requiredMedicineDetails($pdo, $categoryName, $typeName, $payload, $variation, $specificationValues, $typeId);
     if ($hasDynamicConfiguration && dynamicProductIdentityExists($pdo, $categoryId, $typeId, $brandName, $productName, $specificationValues, $productId)) {
         throw new InvalidArgumentException('This exact product and specification already exists in Product Master.');
     }
@@ -151,14 +181,17 @@ try {
     $supplierRowsStatement = $pdo->prepare('SELECT * FROM supplier_products WHERE product_id=:product_id FOR UPDATE');
     $supplierRowsStatement->execute([':product_id'=>$productId]);
     $supplierRows = $supplierRowsStatement->fetchAll(PDO::FETCH_ASSOC);
-    foreach ($supplierRows as $supplierRow) {
-        $conversion = supplierPurchasingConversion($supplierRow);
-        $newBase = strtolower(trim((string)$inventoryUnit['unit_name']));
-        if ($newBase === strtolower(trim((string)$conversion['purchase_unit'])) && (int)$conversion['base_qty_per_purchase_unit'] > 1) {
-            throw new InvalidArgumentException('This unit is already used as a multi-unit Purchase Unit by a supplier. Update that supplier packaging hierarchy before changing the Product Base Unit.');
-        }
-        if (!empty($conversion['inner_unit']) && $newBase === strtolower(trim((string)$conversion['inner_unit'])) && (int)$conversion['units_per_inner_unit'] > 1) {
-            throw new InvalidArgumentException('This unit is already used as a multi-unit Inner Unit by a supplier. Update that supplier packaging hierarchy before changing the Product Base Unit.');
+    $inventoryUnitChanged = cleanId($existingPricing['inventory_unit_id'] ?? null) !== cleanId($inventoryUnit['measurement_unit_id']);
+    if ($inventoryUnitChanged) {
+        foreach ($supplierRows as $supplierRow) {
+            $conversion = supplierPurchasingConversion($supplierRow);
+            $newBase = strtolower(trim((string)$inventoryUnit['unit_name']));
+            if ($newBase === strtolower(trim((string)$conversion['purchase_unit'])) && (int)$conversion['base_qty_per_purchase_unit'] > 1) {
+                throw new InvalidArgumentException('This unit is already used as a multi-unit Purchase Unit by a supplier. Update that supplier packaging hierarchy before changing the Product Base Unit.');
+            }
+            if (!empty($conversion['inner_unit']) && $newBase === strtolower(trim((string)$conversion['inner_unit'])) && (int)$conversion['units_per_inner_unit'] > 1) {
+                throw new InvalidArgumentException('This unit is already used as a multi-unit Inner Unit by a supplier. Update that supplier packaging hierarchy before changing the Product Base Unit.');
+            }
         }
     }
 
@@ -190,23 +223,25 @@ try {
         ':product_id' => $productId
     ]);
     syncProductDefaultSellingPrice($pdo, $productId, (float)$price);
-    foreach ($supplierRows as $supplierRow) {
-        $supplierRow['inventory_unit'] = $inventoryUnit['unit_name'];
-        $pdo->prepare('UPDATE supplier_products SET inventory_unit=:unit WHERE supplier_product_id=:id')->execute([
-            ':unit'=>$inventoryUnit['unit_name'],':id'=>$supplierRow['supplier_product_id']
-        ]);
-        syncSupplierProductUnitConversions($pdo,(string)$supplierRow['supplier_product_id'],$supplierRow);
+    if ($inventoryUnitChanged) {
+        foreach ($supplierRows as $supplierRow) {
+            $supplierRow['inventory_unit'] = $inventoryUnit['unit_name'];
+            $pdo->prepare('UPDATE supplier_products SET inventory_unit=:unit WHERE supplier_product_id=:id')->execute([
+                ':unit'=>$inventoryUnit['unit_name'],':id'=>$supplierRow['supplier_product_id']
+            ]);
+            syncSupplierProductUnitConversions($pdo,(string)$supplierRow['supplier_product_id'],$supplierRow);
+        }
     }
 
-    if (!$hasDynamicConfiguration && $categoryName === 'Medicine' && in_array($detailSchema, ['', 'medicine'], true)) {
-        $genericName = cleanUpdateField($payload, 'generic_name') ?? cleanUpdateField($variation, 'generic_name');
-        $strengthValue = cleanUpdateNumber($variation, 'strength_value');
-        $strengthUnit = cleanUpdateField($variation, 'strength_unit');
-        $strength = cleanUpdateField($variation, 'strength') ?? joinUpdateParts($strengthValue, $strengthUnit);
-        $dosageForm = cleanUpdateField($variation, 'dosage_form');
-        $netContentValue = cleanUpdateNumber($variation, 'net_content_value') ?? cleanUpdateNumber($variation, 'volume_value');
-        $netContentUnit = cleanUpdateField($variation, 'net_content_unit') ?? cleanUpdateField($variation, 'volume_unit');
-        $packageType = cleanUpdateField($variation, 'package_type');
+    if ($categoryName === 'Medicine') {
+        $genericName = $medicineDetails['generic_name'];
+        $strengthValue = $medicineDetails['strength_value'];
+        $strengthUnit = $medicineDetails['strength_unit'];
+        $strength = $medicineDetails['strength'];
+        $dosageForm = $medicineDetails['dosage_form'];
+        $netContentValue = $medicineDetails['net_content_value'];
+        $netContentUnit = $medicineDetails['net_content_unit'];
+        $packageType = $medicineDetails['package_type'];
         $exists = $pdo->prepare('SELECT medicine_detail_id FROM medicine_details WHERE product_id = :product_id LIMIT 1');
         $exists->execute([':product_id' => $productId]);
         if (cleanId($exists->fetchColumn()) !== '') {
@@ -272,7 +307,11 @@ try {
         $pdo->prepare('DELETE FROM grocery_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
     }
 
-    if ($hasDynamicConfiguration && array_key_exists('specifications', $variation)) {
+    if ($categoryName !== 'Medicine') {
+        $pdo->prepare('DELETE FROM medicine_details WHERE product_id = :product_id')->execute([':product_id' => $productId]);
+    }
+
+    if ($hasDynamicConfiguration && (array_key_exists('specifications', $variation) || $categoryName === 'Medicine')) {
         saveProductSpecificationValues($pdo, $productId, $specificationValues);
     }
     $pdo->commit();

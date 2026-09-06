@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/purchase_order_invoice_helpers.php';
+
 function purchaseOrderPaymentTableExists(PDO $pdo): bool
 {
     $statement = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_order_payments'");
@@ -114,20 +116,18 @@ function buildPurchaseOrderPaymentDetails(PDO $pdo, string $poId): ?array
     $details['total_amount'] = $details['invoice_total'] === null ? null : round((float) $details['invoice_total'], 2);
     $details['invoice_discount'] = round((float) ($details['invoice_discount'] ?? 0), 2);
     $details['invoice_other_charges'] = round((float) ($details['invoice_other_charges'] ?? 0), 2);
+    $invoice = $details['invoice_recorded'] ? purchaseOrderInvoice($pdo, $poId) : null;
+    $details['invoice_items'] = $invoice['items'] ?? [];
+    $details['invoice_subtotal'] = round((float) ($invoice['subtotal'] ?? 0), 2);
     $effectivePayable = $details['total_amount'] ?? 0.0;
     $details['final_payment'] = $effectivePayable;
     $details['payment'] = purchaseOrderPaymentSummary($pdo, $poId, $effectivePayable);
     $details['payment']['payments'] = purchaseOrderPaymentHistory($pdo, $poId);
 
     $replacementStatement = $pdo->prepare(
-        "SELECT COALESCE(SUM(GREATEST(
-                    CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(sc.remarks, 17), CHAR(10), 1), '$.replacement_expected_qty')), '0') AS SIGNED)
-                    - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(sc.remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED), 0)), 0)
-         FROM supplier_claims sc
-         INNER JOIN purchase_order_items poi ON poi.po_item_id = sc.po_item_id
-         WHERE poi.po_id = :po_id
-           AND sc.remarks LIKE '[RETURN_META_V1]%'
-           AND sc.resolution_type = 'Replacement'"
+        "SELECT COALESCE(SUM(GREATEST(sc.replacement_expected_qty - sc.replacement_received_qty, 0)), 0)
+         FROM supplier_claim_legacy_projection sc
+         WHERE sc.po_id = :po_id AND sc.resolution_type = 'Replacement'"
     );
     $replacementStatement->execute([':po_id' => $poId]);
     $futureCreditStatement = $pdo->prepare(

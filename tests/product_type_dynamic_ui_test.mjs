@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const products = await readFile(new URL('../pharma-frontend/js/modules/products.js', import.meta.url), 'utf8');
+const page = await readFile(new URL('../pharma-frontend/products.html', import.meta.url), 'utf8');
+const schema = await readFile(new URL('../pharma-api/v1/products/product_customization_schema.php', import.meta.url), 'utf8');
+const categorySchema = await readFile(new URL('../pharma-api/v1/products/product_category_schema.php', import.meta.url), 'utf8');
+
+assert.match(products, /delete_product_type\.php/);
+assert.match(products, /const label = medicine \? 'Dosage Form' : 'Product Type'/);
+assert.match(products, /title="Edit \$\{label\}" aria-label="Edit \$\{label\}"/);
+assert.match(products, /title="Delete \$\{label\}" aria-label="Delete \$\{label\}"/);
+assert.match(products, /renderProductTypeCustomizerRows/);
+assert.doesNotMatch(products, /btn-add-dosage-form/);
+assert.match(products, /data-action="add-dosage-form"/);
+assert.match(products, /openProductTypeCustomizer\(\{ mode, sourceButton: select \}\)/);
+assert.match(products, /'\.edit-var-weight-unit', '\.edit-var-pack-content-unit', '\.medicine-sku-type'/);
+assert.match(page, /\.measurement-select-option\.is-add-dosage-form \{ position:sticky;/);
+assert.match(products, /specification_pattern: medicine && !editing/);
+assert.match(products, /cachedProductTypes\(categoryId, true\)/);
+assert.match(products, /variations\[targetIndex\]\.type_id = response\.type\.type_id/);
+assert.match(products, /variations\[index\]\.specifications = \[\]/);
+assert.match(products, /variations\[targetIndex\]\.specifications = \[\]/);
+assert.match(products, /referenceCache\.typesByCategory\.delete/);
+assert.match(products, /configurationTypeId === selectedTypeId/);
+assert.match(products, /name !== 'medicine classification' && !name\.startsWith\('strength denominator'\)/);
+assert.doesNotMatch(products, /<span class="fw-bold small text-muted">Product SKU Details<\/span>/);
+assert.match(page, /#addProductTypeModal \.customizer-list \{ flex:0 1 min\(260px,32vh\); min-height:96px; max-height:min\(260px,32vh\); overflow-y:auto; overflow-x:hidden;/);
+assert.match(page, /id="productTypeFormMode"/);
+assert.match(page, /id="btnSaveProductType"/);
+assert.match(page, /id="dosageFormSpecificationPattern"/);
+assert.match(page, />Simple Strength<\/option>/);
+assert.match(page, />Concentration \/ Ratio<\/option>/);
+assert.match(schema, /suggestedProductTypeSpecifications/);
+assert.match(schema, /function assignMedicineDosageFormPattern/);
+assert.match(schema, /'simple_strength'[\s\S]*\['Pack Content', null\]/);
+assert.match(schema, /'powder for suspension'/);
+assert.match(schema, /'Strength Denominator Weight'/);
+assert.match(categorySchema, /pt\.is_active = 1/);
+assert.doesNotMatch(categorySchema.slice(categorySchema.indexOf('$medicineTypes'), categorySchema.indexOf('$groceryTypes')), /'Device\/Equipment'|'Medical Supply'|'First Aid'|'Nebulizer'/);
+
+console.log('Product Type dynamic UI integration tests passed.');

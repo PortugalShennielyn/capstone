@@ -42,6 +42,7 @@ $createdUnitId = '';
 $createdVolumeUnitId = '';
 $bulkUnitIds = [];
 $borrowedValue = null;
+$legacyReferenceId = '';
 $measuredSaveSeconds = null;
 $passed = false;
 
@@ -60,12 +61,30 @@ $pdo->prepare('INSERT INTO auth_sessions (auth_session_id, php_session_id, user_
     ->execute([$authSessionId, $phpSessionId, $user['user_id'], hash('sha256', $tabToken), '127.0.0.1', 'Codex measurement unit workflow test']);
 
 try {
-    $existingGram = $pdo->query("SELECT measurement_unit_id FROM product_measurement_units WHERE measurement_group = 'Weight' AND (LOWER(TRIM(unit_name)) IN ('g', 'gram', 'grams') OR LOWER(TRIM(COALESCE(unit_symbol, ''))) = 'g') LIMIT 1")->fetchColumn();
+    $invalidDelete = unitApi('POST', 'products/delete_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
+        'measurement_unit_id' => 'not-a-valid-id',
+    ]);
+    unitAssert($invalidDelete['status'] === 422, 'An invalid measurement-unit ID was accepted.');
+    unitAssert(($invalidDelete['body']['success'] ?? true) === false, 'Invalid-ID deletion did not report success=false.');
+    unitAssert(($invalidDelete['body']['code'] ?? '') === 'INVALID_MEASUREMENT_UNIT_ID', 'Invalid-ID deletion did not return a clear error code.');
+
+    $existingGramRow = $pdo->query("SELECT measurement_unit_id, unit_name, unit_symbol, measurement_group FROM product_measurement_units WHERE measurement_group = 'Weight' AND (LOWER(TRIM(unit_name)) IN ('g', 'gram', 'grams') OR LOWER(TRIM(COALESCE(unit_symbol, ''))) = 'g') LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: null;
+    $existingGram = $existingGramRow['measurement_unit_id'] ?? null;
     if ($existingGram) {
         $gramDuplicate = unitApi('POST', 'products/add_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
             'unit_name' => 'grams', 'unit_symbol' => 'g', 'measurement_group' => 'Weight',
         ]);
         unitAssert($gramDuplicate['status'] === 400, 'The existing Weight g/grams equivalent was duplicated.');
+
+        $systemEdit = unitApi('POST', 'products/add_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
+            'measurement_unit_id' => $existingGram,
+            'unit_name' => $existingGramRow['unit_name'],
+            'unit_symbol' => 'changed-symbol',
+            'measurement_group' => 'Volume',
+        ]);
+        unitAssert($systemEdit['status'] === 200, 'Editing a system unit display name failed.');
+        unitAssert(($systemEdit['body']['unit']['unit_symbol'] ?? null) === $existingGramRow['unit_symbol'], 'A system unit symbol was changed.');
+        unitAssert(($systemEdit['body']['unit']['measurement_group'] ?? null) === $existingGramRow['measurement_group'], 'A system unit group was changed.');
     }
 
     $suffix = strtoupper(bin2hex(random_bytes(3)));
@@ -75,7 +94,7 @@ try {
         'unit_name' => $name, 'unit_symbol' => $symbol, 'measurement_group' => 'Weight',
     ]);
     $measuredSaveSeconds = $created['elapsed'];
-    unitAssert($created['status'] === 200, 'Creating a measurement unit failed.');
+    unitAssert($created['status'] === 200, "Creating {$name} ({$symbol}) failed: " . json_encode($created));
     $createdUnitId = (string) ($created['body']['unit']['measurement_unit_id'] ?? '');
     unitAssert($createdUnitId !== '', 'The create response did not return the new unit id.');
     unitAssert((int) ($created['body']['unit']['is_system'] ?? 1) === 0, 'A custom unit was incorrectly marked as a system unit.');
@@ -109,35 +128,57 @@ try {
     ]);
     unitAssert($duplicate['status'] === 400, 'A duplicate unit symbol was not rejected.');
 
+    $updatedName = 'Updated ' . $name;
+    $updated = unitApi('POST', 'products/add_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
+        'measurement_unit_id' => $createdUnitId,
+        'unit_name' => $updatedName,
+        'unit_symbol' => $symbol,
+        'measurement_group' => 'Weight',
+    ]);
+    unitAssert($updated['status'] === 200, 'Updating a custom unit by measurement_unit_id failed.');
+    unitAssert(($updated['body']['unit']['measurement_unit_id'] ?? '') === $createdUnitId, 'Editing created a duplicate measurement-unit row.');
+    unitAssert(($updated['body']['unit']['unit_name'] ?? '') === $updatedName, 'The edited unit name was not persisted.');
+    unitAssert(($updated['body']['message'] ?? '') === 'Measurement unit updated successfully.', 'The edit API did not report an update.');
+
     $borrowedValue = $pdo->query("SELECT psv.product_id, psv.specification_id, psv.measurement_unit_id, pts.type_id, psv.value_number FROM product_specification_values psv INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id INNER JOIN product_type_specifications pts ON pts.specification_id = psv.specification_id INNER JOIN product p ON p.product_id = psv.product_id AND p.type_id = pts.type_id WHERE ps.field_style = 'Number with Unit' AND ps.measurement_group = 'Weight' LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($borrowedValue) {
         $pdo->prepare('UPDATE product_specification_values SET measurement_unit_id = ? WHERE product_id = ? AND specification_id = ?')
             ->execute([$createdUnitId, $borrowedValue['product_id'], $borrowedValue['specification_id']]);
+    } else {
+        $legacyReferenceId = newUuid($pdo);
+        $pdo->prepare("INSERT INTO entity_dimensions (dimension_id, entity_type, entity_id, dimension_type, numeric_value, unit) VALUES (?, 'CodexMeasurementUnitTest', ?, 'unit_reference', 1, ?)")
+            ->execute([$legacyReferenceId, newUuid($pdo), $symbol]);
     }
 
-    $archived = unitApi('POST', 'products/delete_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
+    $deleteAttempt = unitApi('POST', 'products/delete_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
         'measurement_unit_id' => $createdUnitId,
     ]);
-    unitAssert($archived['status'] === 200, 'Archiving a custom unit failed.');
-    unitAssert((int) ($archived['body']['unit']['is_active'] ?? 1) === 0, 'The custom unit was not archived.');
-    if ($borrowedValue) unitAssert((int) ($archived['body']['unit']['usage_count'] ?? 0) >= 1, 'Usage warning data was not returned.');
+    if ($borrowedValue || $legacyReferenceId !== '') {
+        unitAssert($deleteAttempt['status'] === 400, 'A referenced custom unit was incorrectly deleted.');
+        unitAssert(($deleteAttempt['body']['success'] ?? true) === false, 'Referenced-unit deletion did not report success=false.');
+        unitAssert(($deleteAttempt['body']['code'] ?? '') === 'UNIT_IN_USE', 'Referenced-unit deletion did not return UNIT_IN_USE.');
+        unitAssert((string) ($deleteAttempt['body']['message'] ?? '') === 'This measurement unit cannot be deleted because it is currently being used.', 'Referenced-unit deletion did not return the required message.');
+        if ($borrowedValue) {
+            $pdo->prepare('UPDATE product_specification_values SET measurement_unit_id = ? WHERE product_id = ? AND specification_id = ?')
+                ->execute([$borrowedValue['measurement_unit_id'], $borrowedValue['product_id'], $borrowedValue['specification_id']]);
+            $borrowedValue = null;
+        }
+        if ($legacyReferenceId !== '') {
+            $pdo->prepare('DELETE FROM entity_dimensions WHERE dimension_id = ?')->execute([$legacyReferenceId]);
+            $legacyReferenceId = '';
+        }
+        $deleteAttempt = unitApi('POST', 'products/delete_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
+            'measurement_unit_id' => $createdUnitId,
+        ]);
+    }
+    unitAssert($deleteAttempt['status'] === 200, 'Deleting an unreferenced custom unit failed.');
+    unitAssert(($deleteAttempt['body']['success'] ?? false) === true, 'Successful deletion did not report success=true.');
+    unitAssert((int) ($deleteAttempt['body']['unit']['is_active'] ?? 1) === 0, 'The custom unit was not archived after deletion.');
 
     $activeUnits = unitApi('GET', 'products/get_measurement_units.php', compact('phpSessionId', 'tabToken'));
-    unitAssert(!in_array($createdUnitId, array_column($activeUnits['body']['units'] ?? [], 'measurement_unit_id'), true), 'An archived unit remained in the normal unit list.');
+    unitAssert(!in_array($createdUnitId, array_column($activeUnits['body']['units'] ?? [], 'measurement_unit_id'), true), 'A deleted unit remained in the normal unit list.');
     $allUnits = unitApi('GET', 'products/get_measurement_units.php?include_inactive=1', compact('phpSessionId', 'tabToken'));
-    unitAssert(in_array($createdUnitId, array_column($allUnits['body']['units'] ?? [], 'measurement_unit_id'), true), 'An archived unit could not be resolved for existing products.');
-
-    if ($borrowedValue) {
-        $normalized = validateAndNormalizeSpecificationValues($pdo, (string) $borrowedValue['type_id'], [[
-            'specification_id' => $borrowedValue['specification_id'],
-            'value_number' => $borrowedValue['value_number'] ?: '1',
-            'measurement_unit_id' => $createdUnitId,
-        ]], (string) $borrowedValue['product_id']);
-        unitAssert(($normalized[0]['measurement_unit_id'] ?? '') === $createdUnitId, 'An existing archived unit could not survive a no-op product edit.');
-        $pdo->prepare('UPDATE product_specification_values SET measurement_unit_id = ? WHERE product_id = ? AND specification_id = ?')
-            ->execute([$borrowedValue['measurement_unit_id'], $borrowedValue['product_id'], $borrowedValue['specification_id']]);
-        $borrowedValue = null;
-    }
+    unitAssert(in_array($createdUnitId, array_column($allUnits['body']['units'] ?? [], 'measurement_unit_id'), true), 'A deleted unit could not be resolved in audit data.');
 
     $reactivated = unitApi('POST', 'products/add_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
         'unit_name' => $name, 'unit_symbol' => $symbol, 'measurement_group' => 'Weight',
@@ -148,6 +189,8 @@ try {
     if ($existingGram) {
         $systemDelete = unitApi('POST', 'products/delete_measurement_unit.php', compact('phpSessionId', 'tabToken'), ['measurement_unit_id' => $existingGram]);
         unitAssert($systemDelete['status'] === 400, 'A protected system measurement unit could be removed.');
+        unitAssert(($systemDelete['body']['code'] ?? '') === 'SYSTEM_UNIT', 'Protected-unit deletion did not return SYSTEM_UNIT.');
+        unitAssert(($systemDelete['body']['message'] ?? '') === 'Built-in measurement unit cannot be deleted.', 'Protected-unit deletion did not explain why it is disabled.');
     }
 
     foreach (['Weight' => 'g', 'Volume' => 'L'] as $group => $expectedSymbol) {
@@ -160,6 +203,8 @@ try {
     foreach ($expectedVolumeSymbols as $expectedSymbol) {
         unitAssert(in_array(strtolower($expectedSymbol), array_map('strtolower', $volumeSymbols), true), "The central Volume catalog is missing {$expectedSymbol}.");
     }
+    $microliter = $pdo->query("SELECT unit_name, unit_symbol, measurement_group FROM product_measurement_units WHERE unit_symbol='µL' AND is_active=1 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    unitAssert(($microliter['unit_name'] ?? '') === 'Microliter' && ($microliter['measurement_group'] ?? '') === 'Volume', 'The UTF-8 Microliter master record is not normalized.');
 
     $volumeSuffix = strtolower(bin2hex(random_bytes(3)));
     $volumeCreated = unitApi('POST', 'products/add_measurement_unit.php', compact('phpSessionId', 'tabToken'), [
@@ -178,6 +223,7 @@ try {
     }
     $archivedVolume = unitApi('POST', 'products/delete_measurement_unit.php', compact('phpSessionId', 'tabToken'), ['measurement_unit_id' => $createdVolumeUnitId]);
     unitAssert($archivedVolume['status'] === 200, 'Archiving the custom Volume unit failed.');
+    unitAssert(($archivedVolume['body']['message'] ?? '') === 'Measurement unit deleted successfully.', 'Custom Volume deletion did not return the required success message.');
     $activeAfterArchive = unitApi('GET', 'products/get_measurement_units.php', compact('phpSessionId', 'tabToken'));
     unitAssert(!in_array($createdVolumeUnitId, array_column($activeAfterArchive['body']['units'] ?? [], 'measurement_unit_id'), true), 'Archived Volume unit remained available for new selections.');
 
@@ -204,6 +250,9 @@ try {
     if ($borrowedValue) {
         $pdo->prepare('UPDATE product_specification_values SET measurement_unit_id = ? WHERE product_id = ? AND specification_id = ?')
             ->execute([$borrowedValue['measurement_unit_id'], $borrowedValue['product_id'], $borrowedValue['specification_id']]);
+    }
+    if ($legacyReferenceId !== '') {
+        $pdo->prepare('DELETE FROM entity_dimensions WHERE dimension_id = ?')->execute([$legacyReferenceId]);
     }
     if ($createdUnitId !== '') {
         $pdo->prepare('DELETE FROM product_measurement_units WHERE measurement_unit_id = ?')->execute([$createdUnitId]);

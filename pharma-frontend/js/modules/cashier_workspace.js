@@ -422,6 +422,7 @@ async function loadQueue() {
                 : `<a class="action-link" href="cashier_pos.html?order_id=${encodeURIComponent(row.order_id)}"><i class="fa-solid fa-folder-open"></i>Open</a>`}</td>
         </tr>
     `).join('') : '<tr class="empty-row"><td colspan="9">No queue orders found.</td></tr>';
+    window.PharmacySearchHighlight?.apply(tbody, document.getElementById('cashierSearch')?.value || '');
 }
 
 async function loadReport(type) {
@@ -452,6 +453,7 @@ async function loadReport(type) {
                 <td>${esc(dt(row.cancelled_at))}</td><td>${badge(row.status)}</td>
             </tr>
         `).join('') : '<tr class="empty-row"><td colspan="9">No cancelled or voided sales found.</td></tr>';
+        window.PharmacySearchHighlight?.apply(tbody, document.getElementById('cashierSearch')?.value || '');
         return;
     }
 
@@ -467,6 +469,7 @@ async function loadReport(type) {
             <td class="action-col"><button class="action-link icon-action" type="button" data-view-receipt data-order-id="${esc(row.order_id)}" title="View Receipt" aria-label="View Receipt"><i class="fa-regular fa-eye"></i></button></td>
         </tr>
     `).join('') : `<tr class="empty-row"><td colspan="${usesDynamicReportTable ? reportColumns(type).length : (type === 'receipts' ? 11 : 10)}">${document.getElementById('cashierSearch')?.value || state.dateStart || state.dateEnd || state.paymentMethod ? 'No transactions match the selected filters.' : 'No completed cashier transactions found.'}</td></tr>`;
+    window.PharmacySearchHighlight?.apply(tbody, document.getElementById('cashierSearch')?.value || '');
     renderPagination(data.pagination || {});
 }
 

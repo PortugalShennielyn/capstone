@@ -67,7 +67,7 @@ function supervisorPeriod(): array
 function supervisorSpecificationSql(string $alias = 'p'): string
 {
     return "TRIM(CONCAT_WS(' · ',
-        NULLIF(CONCAT_WS(' ', NULLIF(md.generic_name,''), COALESCE(NULLIF(CONCAT_WS(' ',md.strength_value,md.strength_unit),''),NULLIF(md.strength,''))), ''),
+        NULLIF(CONCAT_WS(' ', NULLIF(md.generic_name,''), COALESCE(NULLIF(md.strength,''),NULLIF(CONCAT_WS(' ',md.strength_value,md.strength_unit),''))), ''),
         NULLIF(CONCAT_WS(' ',gd.variant,gd.size,gd.net_weight,gd.unit),''),
         NULLIF(COALESCE(md.dosage_form,gd.package_type,md.package_type),'')))";
 }

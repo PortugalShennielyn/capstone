@@ -18,12 +18,12 @@ try {
     ensurePurchaseOrderSchema($pdo);
     ensurePurchaseOrderInvoiceSchema($pdo);
     $status = trim((string) ($_GET['status'] ?? ''));
-    $paymentStatus = trim((string) ($_GET['payment_status'] ?? ''));
+    $paymentStatusFilter = trim((string) ($_GET['payment_status'] ?? ''));
     $scope = trim((string) ($_GET['scope'] ?? 'active'));
     $whereClause = '';
     $params = [];
 
-    if ($paymentStatus !== '' && !in_array($paymentStatus, ['Paid', 'Unpaid'], true)) {
+    if ($paymentStatusFilter !== '' && !in_array($paymentStatusFilter, ['Paid', 'Partially Paid', 'Unpaid'], true)) {
         throw new InvalidArgumentException('Invalid payment status filter.');
     }
 
@@ -39,7 +39,7 @@ try {
     } elseif ($scope === 'all') {
         $whereClause = '';
     } else {
-        $whereClause = "WHERE po.status IN ('Draft', 'Pending', 'Delivered') AND po.approval_status <> 'Rejected'";
+        $whereClause = "WHERE po.status IN ('Draft', 'Pending', 'Arrived', 'Delivered') AND po.approval_status <> 'Rejected'";
     }
 
     $statement = $pdo->prepare(
@@ -162,7 +162,7 @@ try {
                 COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
                 COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
                 COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
-                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength, '') AS strength,
+                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
                 COALESCE(md.strength_value, md.strength) AS strength_value,
                 md.strength_unit AS strength_unit,
                 md.dosage_form AS dosage_form,
@@ -188,7 +188,7 @@ try {
                 COALESCE(returns.replacement_pending_quantity, 0) AS replacement_pending_quantity,
                 COALESCE(batches.inventory_added, 0) AS inventory_added
              FROM purchase_order_items poi
-             INNER JOIN product p ON p.product_id = poi.product_id
+             LEFT JOIN product p ON p.product_id = poi.product_id
              LEFT JOIN product_categories pc ON pc.category_id = p.category_id
              LEFT JOIN product_types pt ON pt.type_id = p.type_id
              LEFT JOIN medicine_details md ON md.product_id = p.product_id
@@ -197,23 +197,8 @@ try {
              LEFT JOIN purchase_order_invoice_items piii ON piii.po_item_id = poi.po_item_id
              LEFT JOIN (
                  SELECT po_item_id,
-                        SUM(CASE
-                            WHEN remarks LIKE '[RETURN_META_V1]%'
-                             AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) IN ('return_for_credit', 'return_for_replacement')
-                            THEN CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.damaged_quantity')), return_quantity) AS SIGNED)
-                            WHEN remarks NOT LIKE '[RETURN_META_V1]%' THEN return_quantity
-                            ELSE 0
-                        END) AS returned_quantity,
-                        SUM(CASE
-                            WHEN remarks LIKE '[RETURN_META_V1]%'
-                             AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) = 'return_for_replacement'
-                            THEN GREATEST(
-                                CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_expected_qty')), '0') AS SIGNED)
-                                - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED),
-                                0
-                            )
-                            ELSE 0
-                        END) AS replacement_pending_quantity
+                        SUM(CASE WHEN disposition = 'Return to Supplier' THEN return_quantity ELSE 0 END) AS returned_quantity,
+                        SUM(CASE WHEN resolution_type = 'Replacement' THEN GREATEST(replacement_expected_qty - replacement_received_qty, 0) ELSE 0 END) AS replacement_pending_quantity
                  FROM supplier_claim_legacy_projection
                  GROUP BY po_item_id
               ) returns ON returns.po_item_id = poi.po_item_id
@@ -266,16 +251,14 @@ try {
             $payable = (float) ($order['final_payment'] ?? 0);
             $adjustedPayable = round(max(0, $payable - (float) ($order['supplier_credit_applied'] ?? 0)), 2);
             $totalPaid = round((float) ($order['stored_total_paid'] ?? 0), 2);
-            $normalizedPaymentState = purchaseOrderNormalizedPaymentState(
-                $order['total_confirmed'] && $payable > 0 ? $adjustedPayable : null,
-                $totalPaid
-            );
+            $computedPaymentStatus = $invoiceTotal !== null && $payable > 0
+                ? purchaseOrderPaymentStatus($adjustedPayable, $totalPaid)
+                : 'Awaiting Invoice';
+            $normalizedPaymentState = strtolower(str_replace(' ', '_', $computedPaymentStatus));
             $paymentSummary = [
                 'total_paid' => $totalPaid,
                 'remaining_balance' => round(max(0, $adjustedPayable - $totalPaid), 2),
-                'payment_status' => $normalizedPaymentState === 'paid'
-                    ? 'Paid'
-                    : ($normalizedPaymentState === 'unpaid' ? 'Unpaid' : 'Awaiting Invoice')
+                'payment_status' => $computedPaymentStatus
             ];
             $order['total_paid'] = $paymentSummary['total_paid'];
             $order['remaining_balance'] = $paymentSummary['remaining_balance'];
@@ -297,9 +280,9 @@ try {
         unset($order);
     }
 
-    if ($paymentStatus !== '') {
-        $orders = array_values(array_filter($orders, static function (array $order) use ($paymentStatus): bool {
-            $wantedState = strtolower($paymentStatus);
+    if ($paymentStatusFilter !== '') {
+        $orders = array_values(array_filter($orders, static function (array $order) use ($paymentStatusFilter): bool {
+            $wantedState = strtolower(str_replace(' ', '_', $paymentStatusFilter));
             return ($order['payment_state'] ?? 'awaiting_invoice') === $wantedState;
         }));
     }

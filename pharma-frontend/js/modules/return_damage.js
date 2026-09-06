@@ -14,7 +14,18 @@ const REASON_META = [
     { key:'other', label:'Other', color:'#64748b', aliases:['other'] }
 ];
 
-const RESOLUTION_LABELS = { 'Replacement':'Replacement', 'Current PO Credit':'Current PO Adjustment', 'Next PO Credit':'Credit Next PO' };
+const RESOLUTION_LABELS = { 'Replacement':'Replacement', 'Current PO Credit':'Current PO Discount', 'Next PO Credit':'Credit Next PO' };
+const WORKFLOW_STATUS_CLASSES = Object.freeze({
+    awaiting_supplier_decision:'status-awaiting-decision',
+    awaiting_replacement:'status-awaiting-replacement',
+    awaiting_supplier_credit:'status-awaiting-credit',
+    awaiting_discount_confirmation:'status-awaiting-discount',
+    replacement_received:'status-replacement-complete',
+    credit_available:'status-credit-available',
+    discount_applied:'status-discount-applied',
+    completed:'status-completed',
+    problem:'status-problem'
+});
 
 let activeReturnDamage = null;
 let replacementReceivingRequestKey = '';
@@ -24,6 +35,7 @@ let currentPage = 1;
 let pageSize = 10;
 let searchTimer = null;
 let lastEditTrigger = null;
+let highlightReadyListenerPending = false;
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -56,28 +68,91 @@ function displayReason(value) {
 
 function recordStatus(record) { return String(record.return_status || record.purchase_order_status || 'Awaiting supplier action'); }
 
-function statusPresentation(record) {
+function pendingWorkflowPresentation(resolutionType) {
+    if (resolutionType === 'Replacement') return { key:'awaiting_replacement', label:'Awaiting Replacement', complete:false };
+    if (resolutionType === 'Current PO Credit') return { key:'awaiting_discount_confirmation', label:'Awaiting Discount Confirmation', complete:false };
+    if (resolutionType === 'Next PO Credit') return { key:'awaiting_supplier_credit', label:'Awaiting Supplier Credit', complete:false };
+    return { key:'awaiting_supplier_decision', label:'Awaiting Supplier Decision', complete:false };
+}
+
+function workflowStatusClass(workflow) {
+    return WORKFLOW_STATUS_CLASSES[workflow?.key] || WORKFLOW_STATUS_CLASSES.awaiting_supplier_decision;
+}
+
+function workflowStatusBadge(workflow) {
+    return `<span class="status-pill ${workflowStatusClass(workflow)}">${escapeHtml(workflow.label)}</span>`;
+}
+
+function statusPresentation(record, resolutionOverride = undefined) {
+    const storedResolution = String(record.resolution_type || '');
+    const resolutionType = resolutionOverride === undefined ? storedResolution : String(resolutionOverride || '');
+    if (!resolutionType || resolutionType !== storedResolution) return pendingWorkflowPresentation(resolutionType);
+
     const raw = recordStatus(record);
     const value = raw.toLowerCase();
-    const creditRemaining = Number(record.credit_remaining || 0);
-    if (record.resolution_type === 'Next PO Credit' && creditRemaining > 0) return { label:'Credit available', tone:'info' };
-    if (record.resolution_type === 'Next PO Credit' && record.credit_status === 'Partially Applied') return { label:'Credit partly used', tone:'info' };
-    if (value.includes('credit applied')) return { label:'Credit applied', tone:'success' };
-    if (value.includes('resolved') || value.includes('received') && !value.includes('partially')) return { label:'Resolved', tone:'success' };
-    if (value.includes('credit') && value.includes('available')) return { label:'Credit available', tone:'info' };
-    if (value.includes('replac')) return { label:value.includes('partial') ? 'Replacement partly received' : 'Awaiting replacement', tone:'waiting' };
-    if (value.includes('cancel')) return { label:'Cancelled', tone:'problem' };
-    if (value.includes('credit')) return { label:'Credit pending', tone:'waiting' };
-    return { label:raw === 'Open' ? 'Awaiting supplier action' : raw, tone:'waiting' };
+    if (value.includes('cancel')) return { key:'problem', label:'Cancelled', complete:false };
+
+    if (resolutionType === 'Replacement') {
+        const expected = Math.max(0, Number(record.replacement_expected_qty || 0));
+        const received = Math.max(0, Number(record.replacement_received_qty || 0));
+        const outstanding = Math.max(0, Number(record.replacement_outstanding_qty ?? Math.max(0, expected - received)));
+        const completed = expected > 0
+            ? received >= expected && outstanding === 0
+            : (value.includes('received') || value.includes('resolved')) && !value.includes('partial');
+        if (completed) return { key:'replacement_received', label:'Replacement Received', complete:true };
+        if (received > 0 || value.includes('partial')) return { key:'awaiting_replacement', label:'Replacement Partly Received', complete:false };
+        return pendingWorkflowPresentation(resolutionType);
+    }
+
+    if (resolutionType === 'Next PO Credit') {
+        if (isLegacyUnconfirmedPenny(record)) return pendingWorkflowPresentation(resolutionType);
+        const confirmed = confirmedCreditAmount(record);
+        const applied = Math.max(0, Number(record.credit_applied || 0));
+        const remaining = confirmed === null ? 0 : Math.max(0, Number(record.credit_remaining ?? confirmed));
+        if (confirmed !== null && remaining === 0 && (applied > 0 || value.includes('applied'))) {
+            return { key:'credit_available', label:'Credit Applied', complete:true };
+        }
+        if (record.credit_status === 'Partially Applied' || applied > 0) return { key:'credit_available', label:'Credit Partly Used', complete:false };
+        if (confirmed !== null || remaining > 0 || value.includes('available')) return { key:'credit_available', label:'Credit Available', complete:false };
+        return pendingWorkflowPresentation(resolutionType);
+    }
+
+    if (resolutionType === 'Current PO Credit') {
+        const confirmed = confirmedCreditAmount(record);
+        if (confirmed !== null && (record.credit_status === 'Applied' || value.includes('applied'))) {
+            return { key:'discount_applied', label:'Discount Applied', complete:true };
+        }
+        return pendingWorkflowPresentation(resolutionType);
+    }
+
+    if (value.includes('resolved') || value.includes('received') || value.includes('completed')) return { key:'completed', label:value.includes('completed') ? 'Completed' : 'Resolved', complete:true };
+    return { key:'awaiting_supplier_decision', label:raw === 'Open' ? 'Awaiting Supplier Decision' : raw, complete:false };
 }
 
 function resolutionLabel(record) { return RESOLUTION_LABELS[record.resolution_type] || (record.resolution_type ? record.resolution_type : 'Awaiting decision'); }
 
+function renderManageWorkflowStatus() {
+    const resolution = document.getElementById('edit-claim-resolution')?.value || '';
+    const workflow = statusPresentation(activeReturnDamage || {}, resolution);
+    const target = document.getElementById('editWorkflowStatus');
+    if (target) target.innerHTML = workflowStatusBadge(workflow);
+}
+
 function productSpecification(record) {
-    return [record.brand_name, record.variant_flavor, record.unit].filter((value) => value && !['N/A','None'].includes(String(value))).join(' • ') || 'Product specification unavailable';
+    const specification = [record.variant_flavor, record.strength, record.size_value]
+        .find((value) => value && !['N/A','None'].includes(String(value)));
+    return [record.brand_name, specification, record.unit].filter((value) => value && !['N/A','None'].includes(String(value))).join(' • ') || 'Product specification unavailable';
 }
 
 function quantityUnit(record) { return record.affected_unit_name || record.unit || 'unit'; }
+
+function quantityLabel(value, unit, showDashForZero = false) {
+    if (value === null || value === undefined || value === '') return '—';
+    const quantity = Number(value || 0);
+    if (showDashForZero && quantity <= 0) return '—';
+    const displayValue = Number.isFinite(quantity) ? quantity.toLocaleString('en-US') : String(value ?? '—');
+    return [displayValue, unit].filter((part) => part !== null && part !== undefined && String(part).trim() && !['N/A','None'].includes(String(part))).join(' ') || '—';
+}
 
 function requestedResolutionLabel(record) {
     const value = record.requested_resolution_type || record.resolution_type || '';
@@ -85,6 +160,26 @@ function requestedResolutionLabel(record) {
 }
 
 function money(value) { return `₱${Number(value || 0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+
+function isLegacyUnconfirmedPenny(record) {
+    return record.unconfirmed_credit_placeholder === true || Number(record.credit_amount) === 0.01
+        && Number(record.supplier_adjustment) === 0.01
+        && Number(record.credit_applied || 0) === 0
+        && record.credit_status === 'Available'
+        && record.return_status === 'Resolved / Credit Issued';
+}
+
+function confirmedCreditAmount(record) {
+    const amount = Number(record.credit_amount);
+    return Number.isFinite(amount) && amount > 0 && !isLegacyUnconfirmedPenny(record) ? amount : null;
+}
+
+function remainingCreditAmount(record) {
+    const confirmed = confirmedCreditAmount(record);
+    if (confirmed === null) return null;
+    const remaining = Number(record.credit_remaining);
+    return Number.isFinite(remaining) ? Math.max(0, remaining) : confirmed;
+}
 
 function formatDateTime(value) {
     if (!value) return '';
@@ -115,6 +210,23 @@ function filteredRecords() {
     });
 }
 
+function applyReturnDamageSearchHighlight() {
+    const body = document.querySelector('#table-return-damage tbody');
+    const input = document.getElementById('returnSearch');
+    if (!body || !input) return;
+    if (window.PharmacySearchHighlight) {
+        highlightReadyListenerPending = false;
+        window.PharmacySearchHighlight.apply(body, input.value);
+        return;
+    }
+    if (highlightReadyListenerPending) return;
+    highlightReadyListenerPending = true;
+    window.addEventListener('pharmacy-search-highlight-ready', () => {
+        highlightReadyListenerPending = false;
+        applyReturnDamageSearchHighlight();
+    }, { once:true });
+}
+
 function renderReturnDamageRecords() {
     const body = document.querySelector('#table-return-damage tbody');
     if (!body) return;
@@ -124,15 +236,17 @@ function renderReturnDamageRecords() {
     const start = (currentPage - 1) * pageSize;
     const records = filtered.slice(start,start + pageSize);
     if (!records.length) {
-        body.innerHTML = '<tr><td colspan="7" class="empty-row">No return/damage records match the current filters.</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" class="empty-row">No return/damage records match the current filters.</td></tr>';
         updatePagination(filtered.length,0,0);
+        applyReturnDamageSearchHighlight();
         return;
     }
 
     body.innerHTML = records.map((record) => {
         const status = statusPresentation(record);
-        const unit = quantityUnit(record);
-        const isResolved = status.label === 'Resolved' || status.label === 'Credit applied';
+        const returnedUnit = quantityUnit(record);
+        const orderedUnit = record.unit || record.packaging || '';
+        const isResolved = status.complete === true;
         const manageAction = isResolved ? '' : `<button class="btn btn-sm btn-outline-secondary edit-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="Manage return/damage" aria-label="Manage return/damage"><i class="fa-solid fa-sliders"></i></button>`;
         const replacementAction = record.resolution_type === 'Replacement' && Number(record.replacement_outstanding_qty || 0) > 0
             ? `<button class="btn btn-sm btn-outline-success replacement-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="Receive replacement" aria-label="Receive replacement"><i class="fa-solid fa-box-open"></i></button>` : '';
@@ -141,10 +255,12 @@ function renderReturnDamageRecords() {
         <tr>
             <td data-label="Reference"><div class="cell-primary">${escapeHtml(record.po_number)}</div><div class="cell-secondary">${formatDate(record.return_date)}</div></td>
             <td data-label="Supplier"><div class="cell-primary">${escapeHtml(record.supplier_name)}</div></td>
-            <td data-label="Product"><div class="cell-primary">${escapeHtml(record.product_name)}</div><div class="cell-secondary">${escapeHtml(productSpecification(record))}</div></td>
-            <td data-label="Quantity"><div class="quantity-grid"><span>Ordered <strong>${escapeHtml(record.ordered_quantity)}</strong></span><span>Received <strong>${escapeHtml(record.received_quantity)}</strong></span><span>Accepted <strong>${escapeHtml(record.accepted_quantity ?? '—')}</strong></span><span>Affected <strong>${escapeHtml(record.affected_quantity || record.damaged_quantity)} ${escapeHtml(unit)}</strong></span><span>Returned <strong>${escapeHtml(record.return_quantity)} ${escapeHtml(unit)}</strong></span></div></td>
+            <td data-label="Product"><div class="cell-primary product-name">${escapeHtml(record.product_name)}</div><div class="cell-secondary">${escapeHtml(productSpecification(record))}</div></td>
+            <td data-label="Ordered"><span class="quantity-value">${escapeHtml(quantityLabel(record.ordered_quantity, orderedUnit))}</span></td>
+            <td data-label="Accepted"><span class="quantity-value">${escapeHtml(quantityLabel(record.accepted_quantity, orderedUnit))}</span></td>
+            <td data-label="Returned"><span class="quantity-value">${escapeHtml(quantityLabel(record.return_quantity, returnedUnit, true))}</span></td>
             <td data-label="Issue"><div class="cell-primary">${escapeHtml(displayReason(record.damage_reason))}</div>${record.remarks ? `<div class="cell-secondary">${escapeHtml(record.remarks)}</div>` : ''}</td>
-            <td data-label="Resolution"><div class="cell-primary">${escapeHtml(resolutionLabel(record))}</div><span class="status-pill status-${status.tone}">${escapeHtml(status.label)}</span></td>
+            <td data-label="Resolution"><div class="cell-primary">${escapeHtml(resolutionLabel(record))}</div>${workflowStatusBadge(status)}</td>
             <td data-label="Actions">
                 <div class="return-actions">
                     <button class="btn btn-sm btn-outline-primary view-return-btn" type="button" data-return-id="${escapeHtml(record.return_id)}" title="View details" aria-label="View details">
@@ -158,6 +274,7 @@ function renderReturnDamageRecords() {
     `;
     }).join('');
     updatePagination(filtered.length,start + 1,start + records.length);
+    applyReturnDamageSearchHighlight();
 }
 
 function updatePagination(total,first,last) {
@@ -191,13 +308,15 @@ async function loadReturnDamageRecords() {
 function updateClaimConfirmedAmountUi(resolutionId, wrapperId) {
     const resolution = document.getElementById(resolutionId)?.value || '';
     const wrapper = document.getElementById(wrapperId);
-    wrapper?.classList.toggle('d-none', !['Current PO Credit', 'Next PO Credit'].includes(resolution));
+    const isMonetary = ['Current PO Credit', 'Next PO Credit'].includes(resolution);
+    const isNextPo = resolution === 'Next PO Credit';
+    wrapper?.classList.toggle('d-none', !isMonetary);
+    document.getElementById('editRemainingCreditWrap')?.classList.toggle('d-none', !isNextPo);
     if (resolutionId === 'edit-claim-resolution') {
-        const isNextPo = resolution === 'Next PO Credit';
         document.getElementById('editConfirmedAmountLabel').textContent = isNextPo ? 'Confirmed Credit Amount' : 'Confirmed Discount Amount';
         document.getElementById('editConfirmedAmountHelp').textContent = isNextPo
-            ? 'Amount confirmed by the supplier. This credit will be available for a future PO.'
-            : 'Amount confirmed by the supplier for adjustment against the current PO.';
+            ? 'Leave blank until the supplier confirms the actual credit amount.'
+            : 'Leave blank until the supplier confirms the actual discount amount.';
     }
 }
 
@@ -212,13 +331,16 @@ async function openViewModal(returnId) {
         activeReturnDamage = record;
         const status = statusPresentation(record);
         const unit = quantityUnit(record);
+        const orderedUnit = record.unit || unit;
+        const confirmedAmount = confirmedCreditAmount(record);
+        const remainingAmount = remainingCreditAmount(record);
         document.getElementById('viewReturnDamageSubtitle').textContent = `${record.po_number} • ${record.supplier_name} • ${formatDate(record.return_date)}${record.delivery_receipt_no ? ` • DR No. ${record.delivery_receipt_no}` : ''}`;
         const activities = Array.isArray(record.activities) ? record.activities : [];
         document.getElementById('viewReturnDamageDetails').innerHTML = `
-            <section class="issue-section"><div class="issue-product-row"><div><h3>Product &amp; Inspection</h3><div class="issue-product-name">${escapeHtml(record.product_name)}</div><div class="cell-secondary">${escapeHtml(productSpecification(record))}</div></div><span class="status-pill status-${status.tone}">${escapeHtml(status.label)}</span></div>
-                <div class="issue-quantity-row"><div><span>Ordered</span><strong>${escapeHtml(record.ordered_quantity)} ${escapeHtml(record.unit || unit)}</strong></div><div><span>Received</span><strong>${escapeHtml(record.received_quantity)} ${escapeHtml(record.unit || unit)}</strong></div><div><span>Accepted</span><strong>${escapeHtml(record.accepted_quantity ?? '—')} ${escapeHtml(record.unit || unit)}</strong></div><div><span>Affected</span><strong>${escapeHtml(record.affected_quantity)} ${escapeHtml(unit)}</strong></div><div><span>Returned</span><strong>${escapeHtml(record.return_quantity)} ${escapeHtml(unit)}</strong></div></div></section>
+            <section class="issue-section"><div class="issue-product-row"><div><h3>Product &amp; Inspection</h3><div class="issue-product-name">${escapeHtml(record.product_name)}</div><div class="cell-secondary">${escapeHtml(productSpecification(record))}</div></div>${workflowStatusBadge(status)}</div>
+                <div class="issue-quantity-row"><div><span>Ordered</span><strong>${escapeHtml(quantityLabel(record.ordered_quantity, orderedUnit))}</strong></div><div><span>Accepted</span><strong>${escapeHtml(quantityLabel(record.accepted_quantity, orderedUnit))}</strong></div><div><span>Returned</span><strong>${escapeHtml(quantityLabel(record.return_quantity, unit, true))}</strong></div></div></section>
             <section class="issue-section"><h3>Issue</h3><dl class="definition-grid"><div><dt>Reason</dt><dd>${escapeHtml(displayReason(record.damage_reason))}</dd></div><div><dt>Physical Disposition</dt><dd>${escapeHtml(record.disposition || 'Not recorded')}</dd></div><div><dt>Requested Resolution</dt><dd>${escapeHtml(requestedResolutionLabel(record))}</dd></div><div><dt>Delivery Receipt</dt><dd>${escapeHtml(record.delivery_receipt_no || '—')}</dd></div><div class="wide"><dt>Inspection Remarks</dt><dd>${escapeHtml(record.inspection_remarks || record.remarks || '—')}</dd></div></dl></section>
-            <section class="issue-section"><h3>Supplier Resolution</h3><dl class="definition-grid"><div><dt>Supplier Confirmed</dt><dd>${escapeHtml(resolutionLabel(record))}</dd></div><div><dt>Status</dt><dd><span class="status-pill status-${status.tone}">${escapeHtml(status.label)}</span></dd></div>${Number(record.credit_amount || record.supplier_adjustment || 0) > 0 ? `<div><dt>Confirmed Amount</dt><dd>${money(record.credit_amount || record.supplier_adjustment)}</dd></div><div><dt>Remaining Credit</dt><dd>${money(record.credit_remaining)}</dd></div>` : ''}${record.management_remarks ? `<div class="wide"><dt>Management Notes</dt><dd>${escapeHtml(record.management_remarks)}</dd></div>` : ''}</dl></section>
+            <section class="issue-section"><h3>Supplier Resolution</h3><dl class="definition-grid"><div><dt>Supplier Confirmed</dt><dd>${escapeHtml(resolutionLabel(record))}</dd></div><div><dt>Status</dt><dd>${workflowStatusBadge(status)}</dd></div><div><dt>Confirmed Amount</dt><dd>${confirmedAmount === null ? '—' : money(confirmedAmount)}</dd></div><div><dt>Remaining Credit</dt><dd>${remainingAmount === null ? '—' : money(remainingAmount)}</dd></div>${record.management_remarks ? `<div class="wide"><dt>Management Notes</dt><dd>${escapeHtml(record.management_remarks)}</dd></div>` : ''}</dl></section>
             ${activities.length ? `<section class="issue-section"><h3>Activity</h3><ol class="activity-timeline">${activities.map(event => `<li><strong>${escapeHtml(formatDateTime(event.created_at))}</strong> — ${escapeHtml(event.description)}</li>`).join('')}</ol></section>` : ''}`;
         bootstrap.Modal.getOrCreateInstance(document.getElementById('viewReturnDamageModal')).show();
     } catch (error) {
@@ -230,19 +352,24 @@ async function openEditModal(returnId) {
     try {
         activeReturnDamage = await getReturnDamageDetails(returnId);
         document.getElementById('edit-return-id').value = activeReturnDamage.return_id;
-        document.getElementById('editReturnDamageSubtitle').textContent = `${activeReturnDamage.po_number} • ${activeReturnDamage.supplier_name} • ${formatDate(activeReturnDamage.return_date)}`;
+        document.getElementById('editModalPo').textContent = activeReturnDamage.po_number;
+        document.getElementById('editModalSupplier').textContent = activeReturnDamage.supplier_name;
+        document.getElementById('editModalDate').textContent = formatDate(activeReturnDamage.return_date);
         const unit = quantityUnit(activeReturnDamage);
+        const orderedUnit = activeReturnDamage.unit || unit;
         document.getElementById('manageInspectionEvidence').innerHTML = `
-            <div class="wide"><dt>Product</dt><dd>${escapeHtml(activeReturnDamage.product_name)}<div class="cell-secondary">${escapeHtml(productSpecification(activeReturnDamage))}</div></dd></div>
-            <div><dt>PO</dt><dd>${escapeHtml(activeReturnDamage.po_number)}</dd></div><div><dt>Delivery Receipt</dt><dd>${escapeHtml(activeReturnDamage.delivery_receipt_no || '—')}</dd></div>
-            <div><dt>Ordered</dt><dd>${escapeHtml(activeReturnDamage.ordered_quantity)} ${escapeHtml(activeReturnDamage.unit || unit)}</dd></div><div><dt>Received</dt><dd>${escapeHtml(activeReturnDamage.received_quantity)} ${escapeHtml(activeReturnDamage.unit || unit)}</dd></div>
-            <div><dt>Accepted</dt><dd>${escapeHtml(activeReturnDamage.accepted_quantity ?? '—')} ${escapeHtml(activeReturnDamage.unit || unit)}</dd></div><div><dt>Affected</dt><dd>${escapeHtml(activeReturnDamage.affected_quantity)} ${escapeHtml(unit)}</dd></div>
-            <div><dt>Returned</dt><dd>${escapeHtml(activeReturnDamage.return_quantity)} ${escapeHtml(unit)}</dd></div><div><dt>Issue</dt><dd>${escapeHtml(displayReason(activeReturnDamage.damage_reason))}</dd></div>
-            <div><dt>Disposition</dt><dd>${escapeHtml(activeReturnDamage.disposition || 'Not recorded')}</dd></div><div class="wide"><dt>Inspection Remarks</dt><dd>${escapeHtml(activeReturnDamage.inspection_remarks || activeReturnDamage.remarks || '—')}</dd></div>`;
+            <div class="manage-product-block"><span class="manage-field-label">Product</span><p class="manage-field-value manage-product-name">${escapeHtml(activeReturnDamage.product_name)}</p><div class="cell-secondary">${escapeHtml(productSpecification(activeReturnDamage))}</div></div>
+            <div class="manage-detail-row manage-reference-grid"><div><span class="manage-field-label">PO Reference</span><p class="manage-field-value">${escapeHtml(activeReturnDamage.po_number)}</p></div><div><span class="manage-field-label">Delivery Receipt</span><p class="manage-field-value">${escapeHtml(activeReturnDamage.delivery_receipt_no || '—')}</p></div><div><span class="manage-field-label">Issue</span><p class="manage-field-value">${escapeHtml(displayReason(activeReturnDamage.damage_reason))}</p></div><div><span class="manage-field-label">Physical Disposition</span><p class="manage-field-value">${escapeHtml(activeReturnDamage.disposition || 'Not recorded')}</p></div></div>
+            <div class="manage-detail-row manage-quantities"><div><span class="manage-field-label">Ordered</span><p class="manage-field-value">${escapeHtml(quantityLabel(activeReturnDamage.ordered_quantity, orderedUnit))}</p></div><div><span class="manage-field-label">Accepted</span><p class="manage-field-value">${escapeHtml(quantityLabel(activeReturnDamage.accepted_quantity, orderedUnit))}</p></div><div><span class="manage-field-label">Returned</span><p class="manage-field-value">${escapeHtml(quantityLabel(activeReturnDamage.return_quantity, unit, true))}</p></div></div>
+            <div class="manage-remarks-row"><span class="manage-field-label">Inspection Remarks</span><p class="manage-field-value">${escapeHtml(activeReturnDamage.inspection_remarks || activeReturnDamage.remarks || '—')}</p></div>`;
         document.getElementById('manageRequestedResolution').textContent = requestedResolutionLabel(activeReturnDamage);
-        document.getElementById('editWorkflowStatus').innerHTML = `<span class="status-pill status-${statusPresentation(activeReturnDamage).tone}">${escapeHtml(statusPresentation(activeReturnDamage).label)}</span>`;
         document.getElementById('edit-claim-resolution').value = activeReturnDamage.resolution_type || '';
-        document.getElementById('edit-claim-confirmed-amount').value = Number(activeReturnDamage.supplier_adjustment || 0) > 0 ? Number(activeReturnDamage.supplier_adjustment).toFixed(2) : '';
+        renderManageWorkflowStatus();
+        const confirmedAmount = confirmedCreditAmount(activeReturnDamage);
+        document.getElementById('edit-claim-confirmed-amount').value = confirmedAmount === null ? '' : confirmedAmount.toFixed(2);
+        const remainingAmount = remainingCreditAmount(activeReturnDamage);
+        document.getElementById('editRemainingCredit').textContent = remainingAmount === null ? '—' : money(remainingAmount);
+        document.getElementById('editConfirmedAmountError').textContent = '';
         updateClaimConfirmedAmountUi('edit-claim-resolution', 'editClaimConfirmedAmountWrap');
         document.getElementById('edit-return-remarks').value = activeReturnDamage.management_remarks || '';
         bootstrap.Modal.getOrCreateInstance(document.getElementById('editReturnDamageModal')).show();
@@ -255,10 +382,22 @@ async function saveReturnDamageEdit() {
     const button = document.getElementById('btnSaveReturnDamageEdit');
     try {
         const returnId = document.getElementById('edit-return-id')?.value;
+        const resolutionType = document.getElementById('edit-claim-resolution')?.value || '';
+        const amountInput = document.getElementById('edit-claim-confirmed-amount');
+        const amountRaw = amountInput?.value.trim() || '';
+        const confirmedAmount = amountRaw === '' ? null : Number(amountRaw);
+        const isMonetary = ['Current PO Credit', 'Next PO Credit'].includes(resolutionType);
+        const amountError = document.getElementById('editConfirmedAmountError');
+        if (isMonetary && amountRaw !== '' && (!Number.isFinite(confirmedAmount) || confirmedAmount <= 0)) {
+            amountError.textContent = 'Enter a valid positive amount confirmed by the supplier, or leave it blank while awaiting confirmation.';
+            amountInput.focus();
+            return;
+        }
+        amountError.textContent = '';
         const payload = {
             return_id: returnId,
-            resolution_type: document.getElementById('edit-claim-resolution')?.value || '',
-            confirmed_amount: Number(document.getElementById('edit-claim-confirmed-amount')?.value || 0),
+            resolution_type: resolutionType,
+            confirmed_amount: isMonetary ? confirmedAmount : null,
             management_remarks: document.getElementById('edit-return-remarks')?.value || ''
         };
 
@@ -368,7 +507,7 @@ function initReturnDamage() {
     document.getElementById('returnPrevPage')?.addEventListener('click', () => { if (currentPage > 1) { currentPage -= 1; renderReturnDamageRecords(); } });
     document.getElementById('returnNextPage')?.addEventListener('click', () => { if (currentPage * pageSize < filteredRecords().length) { currentPage += 1; renderReturnDamageRecords(); } });
     document.getElementById('btnSaveReturnDamageEdit')?.addEventListener('click', saveReturnDamageEdit);
-    document.getElementById('edit-claim-resolution')?.addEventListener('change', () => updateClaimConfirmedAmountUi('edit-claim-resolution', 'editClaimConfirmedAmountWrap'));
+    document.getElementById('edit-claim-resolution')?.addEventListener('change', () => { updateClaimConfirmedAmountUi('edit-claim-resolution', 'editClaimConfirmedAmountWrap'); renderManageWorkflowStatus(); });
     document.getElementById('btnSaveReplacementArrival')?.addEventListener('click', saveReplacementArrival);
     document.getElementById('btnAddReplacementBatch')?.addEventListener('click', () => {
         document.getElementById('replacementBatchList')?.insertAdjacentHTML('beforeend', replacementBatchRow());

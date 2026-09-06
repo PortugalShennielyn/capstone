@@ -126,8 +126,262 @@ function ensureProductCustomizationSchema(PDO $pdo): void
     if ((int) $pdo->query('SELECT COUNT(*) FROM product_specifications')->fetchColumn() === 0) {
         seedProductSpecifications($pdo);
     }
+    normalizeProductMeasurementUnits($pdo);
+    ensureMedicineProductMasterConfiguration($pdo);
     repairLegacyBeverageContentMapping($pdo);
     migrateProductTypeSpecificationLabels($pdo);
+}
+
+function ensureMedicineProductMasterConfiguration(PDO $pdo): void
+{
+    $medicineCategoryId = $pdo->query(
+        "SELECT category_id FROM product_categories WHERE LOWER(TRIM(category_name)) = 'medicine' LIMIT 1"
+    )->fetchColumn();
+    if (!$medicineCategoryId) return;
+
+    $classificationId = $pdo->query(
+        "SELECT specification_id FROM product_specifications
+         WHERE LOWER(TRIM(specification_name)) = 'medicine classification' LIMIT 1"
+    )->fetchColumn();
+    if (!$classificationId) {
+        $classificationId = newUuid($pdo);
+        $statement = $pdo->prepare(
+            "INSERT INTO product_specifications
+                (specification_id, specification_name, field_style, measurement_group, allow_custom_value)
+             VALUES (:id, 'Medicine Classification', 'Selection List', NULL, 0)"
+        );
+        $statement->execute([':id' => $classificationId]);
+    }
+
+    $choice = $pdo->prepare(
+        'INSERT IGNORE INTO product_specification_choices
+            (choice_id, specification_id, choice_value, sort_order)
+         VALUES (:choice_id, :specification_id, :choice_value, :sort_order)'
+    );
+    foreach ([1 => 'Prescription (Rx)', 2 => 'OTC'] as $sortOrder => $choiceValue) {
+        $choice->execute([
+            ':choice_id' => newUuid($pdo),
+            ':specification_id' => $classificationId,
+            ':choice_value' => $choiceValue,
+            ':sort_order' => $sortOrder,
+        ]);
+    }
+
+    $strengthDenominatorId = $pdo->query(
+        "SELECT specification_id FROM product_specifications
+         WHERE LOWER(TRIM(specification_name)) = 'strength denominator' LIMIT 1"
+    )->fetchColumn();
+    if (!$strengthDenominatorId) {
+        $strengthDenominatorId = newUuid($pdo);
+        $statement = $pdo->prepare(
+            "INSERT INTO product_specifications
+                (specification_id, specification_name, field_style, measurement_group, allow_custom_value)
+             VALUES (:id, 'Strength Denominator', 'Number with Unit', 'Volume', 0)"
+        );
+        $statement->execute([':id' => $strengthDenominatorId]);
+    }
+    $strengthDenominatorWeightId = $pdo->query(
+        "SELECT specification_id FROM product_specifications
+         WHERE LOWER(TRIM(specification_name)) = 'strength denominator weight' LIMIT 1"
+    )->fetchColumn();
+    if (!$strengthDenominatorWeightId) {
+        $strengthDenominatorWeightId = newUuid($pdo);
+        $statement = $pdo->prepare(
+            "INSERT INTO product_specifications
+                (specification_id, specification_name, field_style, measurement_group, allow_custom_value)
+             VALUES (:id, 'Strength Denominator Weight', 'Number with Unit', 'Weight', 0)"
+        );
+        $statement->execute([':id' => $strengthDenominatorWeightId]);
+    }
+    $packageTypeId = $pdo->query(
+        "SELECT specification_id FROM product_specifications
+         WHERE LOWER(TRIM(specification_name)) = 'package type' LIMIT 1"
+    )->fetchColumn();
+    if (!$packageTypeId) {
+        $packageTypeId = newUuid($pdo);
+        $statement = $pdo->prepare(
+            "INSERT INTO product_specifications
+                (specification_id, specification_name, field_style, measurement_group, allow_custom_value)
+             VALUES (:id, 'Package Type', 'Selection List', NULL, 1)"
+        );
+        $statement->execute([':id' => $packageTypeId]);
+    }
+    $medicineTypes = $pdo->prepare('SELECT type_id FROM product_types WHERE category_id = :category_id');
+    $medicineTypes->execute([':category_id' => $medicineCategoryId]);
+    $assign = $pdo->prepare(
+        'INSERT IGNORE INTO product_type_specifications
+            (type_id, specification_id, display_label, sort_order)
+         VALUES (:type_id, :specification_id, :display_label, :sort_order)'
+    );
+    foreach ($medicineTypes->fetchAll(PDO::FETCH_COLUMN) as $typeId) {
+        $assign->execute([
+            ':type_id' => $typeId,
+            ':specification_id' => $classificationId,
+            ':display_label' => 'Medicine Classification',
+            ':sort_order' => 0,
+        ]);
+    }
+}
+
+function productSpecificationIdByName(PDO $pdo, string $name): string
+{
+    $statement = $pdo->prepare(
+        'SELECT specification_id FROM product_specifications
+         WHERE LOWER(TRIM(specification_name)) = LOWER(TRIM(:name)) LIMIT 1'
+    );
+    $statement->execute([':name' => $name]);
+    return cleanId($statement->fetchColumn());
+}
+
+function withMedicineClassificationSpecification(PDO $pdo, string $categoryName, array $submitted, $classification): array
+{
+    if (strcasecmp(trim($categoryName), 'Medicine') !== 0) return $submitted;
+
+    $classification = trim((string) $classification);
+    if ($classification === '') {
+        throw new InvalidArgumentException('Medicine Classification is required for Medicine products.');
+    }
+    $classificationId = productSpecificationIdByName($pdo, 'Medicine Classification');
+    if ($classificationId === '') {
+        throw new RuntimeException('Medicine Classification configuration is unavailable.');
+    }
+    $valid = $pdo->prepare(
+        'SELECT choice_value FROM product_specification_choices
+         WHERE specification_id = :specification_id
+           AND LOWER(TRIM(choice_value)) = LOWER(TRIM(:choice_value)) LIMIT 1'
+    );
+    $valid->execute([':specification_id' => $classificationId, ':choice_value' => $classification]);
+    $canonicalValue = $valid->fetchColumn();
+    if (!$canonicalValue) {
+        throw new InvalidArgumentException('Medicine Classification must be Prescription (Rx) or OTC.');
+    }
+
+    $submitted = array_values(array_filter($submitted, static function ($value) use ($classificationId): bool {
+        return !is_array($value) || cleanId($value['specification_id'] ?? null) !== $classificationId;
+    }));
+    $submitted[] = [
+        'specification_id' => $classificationId,
+        'value_text' => $canonicalValue,
+        'value_number' => null,
+        'measurement_unit_id' => null,
+    ];
+    return $submitted;
+}
+
+function normalizedSpecificationValueByName(PDO $pdo, array $values, string $name): ?array
+{
+    $specificationId = productSpecificationIdByName($pdo, $name);
+    if ($specificationId === '') return null;
+    foreach ($values as $value) {
+        if (cleanId($value['specification_id'] ?? null) === $specificationId) return $value;
+    }
+    return null;
+}
+
+function requiredMedicineGenericName($value): string
+{
+    $genericName = trim((string) ($value ?? ''));
+    $classificationToken = strtolower((string) preg_replace('/[^a-z]+/i', '', $genericName));
+    if (
+        $genericName === ''
+        || strcasecmp($genericName, 'N/A') === 0
+        || $genericName === '-'
+        || in_array($classificationToken, ['otc', 'rx', 'prescription', 'prescriptionrx'], true)
+    ) {
+        throw new InvalidArgumentException('Generic Name / Active Ingredient is required for Medicine products and cannot be an Rx/OTC classification.');
+    }
+    return $genericName;
+}
+
+function requiredMedicineDetails(
+    PDO $pdo,
+    string $categoryName,
+    string $typeName,
+    array $payload,
+    array $variation,
+    array $specificationValues,
+    string $typeId = ''
+): ?array {
+    if (strcasecmp(trim($categoryName), 'Medicine') !== 0) return null;
+
+    $genericName = requiredMedicineGenericName($payload['generic_name'] ?? null);
+
+    $strength = normalizedSpecificationValueByName($pdo, $specificationValues, 'Strength');
+    $strengthValue = trim((string) ($strength['value_number'] ?? ''));
+    $strengthUnitId = cleanId($strength['measurement_unit_id'] ?? null);
+    if ($strengthValue === '' || !is_numeric($strengthValue) || (float) $strengthValue <= 0) {
+        throw new InvalidArgumentException('Strength is required for Medicine products and must be greater than 0.');
+    }
+    if ($strengthUnitId === '') {
+        throw new InvalidArgumentException('Strength Unit is required for Medicine products.');
+    }
+    $unitStatement = $pdo->prepare(
+        "SELECT COALESCE(NULLIF(unit_symbol, ''), unit_name) FROM product_measurement_units
+         WHERE measurement_unit_id = :unit_id AND is_active = 1 LIMIT 1"
+    );
+    $unitStatement->execute([':unit_id' => $strengthUnitId]);
+    $strengthUnit = trim((string) $unitStatement->fetchColumn());
+    if ($strengthUnit === '') {
+        throw new InvalidArgumentException('Strength Unit must be selected from the active units configured for this dosage form.');
+    }
+    $dosageForm = trim($typeName);
+    if (strcasecmp($dosageForm, 'Medicine') === 0) {
+        $dosage = normalizedSpecificationValueByName($pdo, $specificationValues, 'Dosage Form');
+        $dosageForm = trim((string) ($dosage['value_text'] ?? ''));
+    }
+    if ($dosageForm === '') {
+        throw new InvalidArgumentException('Dosage Form is required for Medicine products.');
+    }
+
+    $denominator = normalizedSpecificationValueByName($pdo, $specificationValues, 'Strength Denominator')
+        ?? normalizedSpecificationValueByName($pdo, $specificationValues, 'Strength Denominator Weight');
+    $denominatorValue = trim((string) ($denominator['value_number'] ?? ''));
+    $denominatorUnit = '';
+    $denominatorGroup = '';
+    if (!empty($denominator['measurement_unit_id'])) {
+        $denominatorUnitStatement = $pdo->prepare(
+            "SELECT COALESCE(NULLIF(unit_symbol, ''), unit_name) AS unit_label, measurement_group FROM product_measurement_units
+             WHERE measurement_unit_id = :unit_id AND is_active = 1 LIMIT 1"
+        );
+        $denominatorUnitStatement->execute([':unit_id' => $denominator['measurement_unit_id']]);
+        $denominatorUnitRecord = $denominatorUnitStatement->fetch(PDO::FETCH_ASSOC) ?: [];
+        $denominatorUnit = trim((string) ($denominatorUnitRecord['unit_label'] ?? ''));
+        $denominatorGroup = trim((string) ($denominatorUnitRecord['measurement_group'] ?? ''));
+    }
+    $configuredSpecifications = $typeId !== '' ? getTypeSpecificationConfiguration($pdo, $typeId) : [];
+    $usesConcentration = count(array_filter($configuredSpecifications, static function (array $definition): bool {
+        return str_starts_with(strtolower(trim((string) ($definition['specification_name'] ?? ''))), 'strength denominator');
+    })) > 0;
+    if ($usesConcentration && ($denominatorValue === '' || !is_numeric($denominatorValue) || (float) $denominatorValue <= 0 || $denominatorUnit === '')) {
+        throw new InvalidArgumentException('Concentration Strength requires the denominator value and unit configured for this dosage form.');
+    }
+    $strengthDisplay = trim($strengthValue . ' ' . $strengthUnit);
+    if ($denominatorValue !== '' && $denominatorUnit !== '') {
+        $strengthDisplay .= ' / ' . $denominatorValue . ' ' . $denominatorUnit;
+    }
+
+    $package = normalizedSpecificationValueByName($pdo, $specificationValues, 'Package Type');
+    $volume = normalizedSpecificationValueByName($pdo, $specificationValues, 'Volume');
+    $volumeUnit = null;
+    if (!empty($volume['measurement_unit_id'])) {
+        $volumeUnitStatement = $pdo->prepare(
+            "SELECT COALESCE(NULLIF(unit_symbol, ''), unit_name) FROM product_measurement_units
+             WHERE measurement_unit_id = :unit_id LIMIT 1"
+        );
+        $volumeUnitStatement->execute([':unit_id' => $volume['measurement_unit_id']]);
+        $volumeUnit = $volumeUnitStatement->fetchColumn() ?: null;
+    }
+
+    return [
+        'generic_name' => $genericName,
+        'strength_value' => $strengthValue,
+        'strength_unit' => $strengthUnit,
+        'strength' => $strengthDisplay,
+        'dosage_form' => $dosageForm,
+        'package_type' => trim((string) ($package['value_text'] ?? '')) ?: null,
+        'net_content_value' => $volume['value_number'] ?? null,
+        'net_content_unit' => $volumeUnit,
+    ];
 }
 
 function ensureProductTypeUniqueness(PDO $pdo): void
@@ -187,8 +441,7 @@ function seedMeasurementGroups(PDO $pdo): void
         'tablespoon' => ['tbsp', 'Volume'], 'cup' => ['cup', 'Volume'],
         'pint' => ['pt', 'Volume'], 'quart' => ['qt', 'Volume'], 'gallon' => ['gal', 'Volume'],
         'microgram' => ['mcg', 'Weight'],
-        'mcg' => ['mcg', 'Strength'], '%' => ['%', 'Strength'], 'iu' => ['IU', 'Strength'],
-        'mg/ml' => ['mg/mL', 'Strength'], 'mg/5ml' => ['mg/5mL', 'Strength'],
+        'mcg' => ['mcg', 'Weight'], '%' => ['%', 'General Size'], 'iu' => ['IU', 'General Size'],
         'pcs' => ['pcs', 'Count'], 'tablet' => ['tablet', 'Count'], 'capsule' => ['capsule', 'Count'],
         'sachet' => ['sachet', 'Count'], 'strip' => ['strip', 'Count']
     ];
@@ -242,20 +495,11 @@ function seedMeasurementGroups(PDO $pdo): void
             $insert->execute([':id' => newUuid($pdo), ':unit_name' => $symbol, ':unit_symbol' => $symbol, ':measurement_group' => $group]);
         }
     }
-    foreach ([['mg', 'mg', 'Strength'], ['g', 'g', 'Strength']] as [$name, $symbol, $group]) {
-        $exists = $pdo->prepare(
-            'SELECT measurement_unit_id
-             FROM product_measurement_units
-             WHERE measurement_group = :measurement_group
-               AND (LOWER(TRIM(unit_name)) = :unit_name OR LOWER(TRIM(COALESCE(unit_symbol, \'\'))) = :unit_symbol)
-             LIMIT 1'
-        );
-        $exists->execute([':measurement_group' => $group, ':unit_name' => $name, ':unit_symbol' => strtolower($symbol)]);
-        if (!$exists->fetchColumn()) {
-            $insert = $pdo->prepare('INSERT INTO product_measurement_units (measurement_unit_id, unit_name, unit_symbol, measurement_group, is_active, is_system) VALUES (:id, :unit_name, :unit_symbol, :measurement_group, 1, 1)');
-            $insert->execute([':id' => newUuid($pdo), ':unit_name' => $name, ':unit_symbol' => $symbol, ':measurement_group' => $group]);
-        }
-    }
+    $pdo->exec(
+        "UPDATE product_measurement_units
+         SET unit_name = 'Microliter', unit_symbol = 'µL', measurement_group = 'Volume'
+         WHERE measurement_group = 'Volume' AND is_system = 1 AND unit_symbol = 'µL'"
+    );
     foreach (['ampule', 'bag', 'bottle', 'box', 'bundle', 'can', 'carton', 'case', 'jar', 'pack', 'pc', 'piece', 'pouch', 'roll', 'sachet', 'stab', 'strip', 'tray', 'tube', 'vial'] as $name) {
         $exists = $pdo->prepare(
             "SELECT measurement_unit_id FROM product_measurement_units
@@ -269,6 +513,94 @@ function seedMeasurementGroups(PDO $pdo): void
             $insert->execute([':id' => newUuid($pdo), ':name' => ucfirst($name), ':symbol' => $name]);
         }
     }
+
+    // A concentration is a value/unit pair divided by another value/unit
+    // pair. Preserve historical rows for foreign keys, but do not expose a
+    // compound expression as a reusable measurement unit.
+    $pdo->exec(
+        "UPDATE product_measurement_units
+         SET is_active = 0
+         WHERE measurement_group = 'Strength'
+           AND (unit_name REGEXP '[0-9]' OR unit_symbol REGEXP '[0-9]' OR unit_name LIKE '%/%' OR unit_symbol LIKE '%/%')"
+    );
+}
+
+function normalizeProductMeasurementUnits(PDO $pdo): void
+{
+    $canonicalStatement = $pdo->prepare(
+        "SELECT measurement_unit_id FROM product_measurement_units
+         WHERE measurement_group = :measurement_group
+           AND LOWER(TRIM(COALESCE(NULLIF(unit_symbol, ''), unit_name))) = :symbol
+         ORDER BY is_active DESC, is_system DESC LIMIT 1"
+    );
+    $duplicatesStatement = $pdo->prepare(
+        "SELECT measurement_unit_id FROM product_measurement_units
+         WHERE measurement_group = :measurement_group
+           AND LOWER(TRIM(COALESCE(NULLIF(unit_symbol, ''), unit_name))) = :symbol
+           AND measurement_unit_id <> :canonical_id"
+    );
+    $replaceSpecificationReference = $pdo->prepare(
+        'UPDATE product_specification_values SET measurement_unit_id = :canonical_id WHERE measurement_unit_id = :duplicate_id'
+    );
+    $replaceInventoryReference = $pdo->prepare(
+        'UPDATE product SET inventory_unit_id = :canonical_id WHERE inventory_unit_id = :duplicate_id'
+    );
+    $archive = $pdo->prepare(
+        'UPDATE product_measurement_units SET is_active = 0 WHERE measurement_unit_id = :duplicate_id'
+    );
+
+    foreach (['mg', 'g', 'mcg'] as $symbol) {
+        $canonicalStatement->execute([':measurement_group' => 'Weight', ':symbol' => $symbol]);
+        $canonicalId = cleanId($canonicalStatement->fetchColumn());
+        if ($canonicalId === '') continue;
+        $duplicatesStatement->execute([
+            ':measurement_group' => 'Strength',
+            ':symbol' => $symbol,
+            ':canonical_id' => $canonicalId,
+        ]);
+        foreach ($duplicatesStatement->fetchAll(PDO::FETCH_COLUMN) as $duplicateId) {
+            $replaceSpecificationReference->execute([':canonical_id' => $canonicalId, ':duplicate_id' => $duplicateId]);
+            $replaceInventoryReference->execute([':canonical_id' => $canonicalId, ':duplicate_id' => $duplicateId]);
+            $archive->execute([':duplicate_id' => $duplicateId]);
+        }
+    }
+
+    // Repair the historical misspelled milliliter row only after redirecting
+    // any normalized foreign-key references to the canonical Volume mL row.
+    $canonicalStatement->execute([':measurement_group' => 'Volume', ':symbol' => 'ml']);
+    $canonicalMlId = cleanId($canonicalStatement->fetchColumn());
+    if ($canonicalMlId !== '') {
+        $duplicatesStatement->execute([
+            ':measurement_group' => 'Weight',
+            ':symbol' => 'ml',
+            ':canonical_id' => $canonicalMlId,
+        ]);
+        foreach ($duplicatesStatement->fetchAll(PDO::FETCH_COLUMN) as $duplicateId) {
+            $replaceSpecificationReference->execute([':canonical_id' => $canonicalMlId, ':duplicate_id' => $duplicateId]);
+            $replaceInventoryReference->execute([':canonical_id' => $canonicalMlId, ':duplicate_id' => $duplicateId]);
+            $archive->execute([':duplicate_id' => $duplicateId]);
+        }
+    }
+
+    foreach (['iu', '%'] as $symbol) {
+        $canonicalStatement->execute([':measurement_group' => 'General Size', ':symbol' => $symbol]);
+        $canonicalId = cleanId($canonicalStatement->fetchColumn());
+        if ($canonicalId === '') continue;
+        $duplicatesStatement->execute([
+            ':measurement_group' => 'Strength',
+            ':symbol' => $symbol,
+            ':canonical_id' => $canonicalId,
+        ]);
+        foreach ($duplicatesStatement->fetchAll(PDO::FETCH_COLUMN) as $duplicateId) {
+            $replaceSpecificationReference->execute([':canonical_id' => $canonicalId, ':duplicate_id' => $duplicateId]);
+            $replaceInventoryReference->execute([':canonical_id' => $canonicalId, ':duplicate_id' => $duplicateId]);
+            $archive->execute([':duplicate_id' => $duplicateId]);
+        }
+    }
+    $pdo->exec(
+        "UPDATE product_specifications SET measurement_group = 'Weight'
+         WHERE LOWER(TRIM(specification_name)) = 'strength'"
+    );
 }
 
 function seedPackageTypes(PDO $pdo): void
@@ -296,7 +628,7 @@ function seedProductSpecifications(PDO $pdo): void
         'Variant' => ['Text Entry', null, 1, []],
         'Volume' => ['Number with Unit', 'Volume', 1, []],
         'Net Weight' => ['Number with Unit', 'Weight', 1, []],
-        'Strength' => ['Number with Unit', 'Strength', 1, []],
+        'Strength' => ['Number with Unit', 'Weight', 1, []],
         'Tablet Count' => ['Number with Unit', 'Count', 1, []],
         'Pack Content' => ['Number with Unit', 'Count', 1, []],
         'Package Type' => ['Selection List', null, 1, []],
@@ -333,33 +665,94 @@ function suggestedProductTypeSpecifications(string $categoryName, string $typeNa
 {
     $category = strtolower(trim($categoryName));
     $type = strtolower(trim($typeName));
-    $specific = [
-        'beverage' => [['Flavor', null], ['Volume', 'Net Content'], ['Package Type', null], ['Pack Content', null]],
-        'biscuits' => [['Flavor', null], ['Net Weight', null], ['Package Type', null], ['Pack Content', null]],
-        'bread/bakery' => [['Variant', null], ['Net Weight', null], ['Package Type', null], ['Pack Content', null]],
-        'canned goods' => [['Flavor', null], ['Net Weight', null], ['Package Type', null], ['Pack Content', null]],
-        'tablet' => [['Strength', null], ['Tablet Count', null], ['Pack Content', null]],
-        'capsule' => [['Strength', null], ['Pack Content', null]],
-        'syrup' => [['Flavor', null], ['Strength', null], ['Volume', 'Net Content'], ['Package Type', null]],
-        'suspension' => [['Flavor', null], ['Strength', null], ['Volume', 'Net Content'], ['Package Type', null]],
-        'solution' => [['Strength', null], ['Volume', 'Net Content'], ['Package Type', null]],
-        'drops' => [['Volume', 'Net Content'], ['Package Type', null]],
-        'device/equipment' => [['Model', null], ['Material', null], ['Size', null], ['Package Type', null]],
-        'medical supply' => [['Variant', null], ['Material', null], ['Size', null], ['Package Type', null]],
-        'first aid' => [['Variant', null], ['Size', null], ['Package Type', null]],
-        'first aid supply' => [['Variant', null], ['Size', null], ['Package Type', null]],
-        'personal protective equipment' => [['Variant', null], ['Material', null], ['Size', null], ['Sterile Status', null], ['Package Type', null]],
-    ];
-    if (isset($specific[$type])) {
-        return $specific[$type];
+    if ($category === 'medicine') {
+        $base = [['Medicine Classification', null], ['Strength', null]];
+        if (in_array($type, ['powder for suspension', 'syrup', 'suspension', 'solution', 'drops', 'injection'], true)) {
+            return array_merge($base, [['Strength Denominator', null], ['Volume', 'Net Content'], ['Package Type', 'Package / Container']]);
+        }
+        if (in_array($type, ['cream', 'ointment', 'gel', 'lotion'], true)) {
+            return array_merge($base, [['Strength Denominator Weight', null], ['Net Weight', 'Net Content'], ['Package Type', 'Package / Container']]);
+        }
+        if ($type === 'inhaler') {
+            return array_merge($base, [['Pack Content', 'Doses / Actuations'], ['Package Type', 'Package / Container']]);
+        }
+        return array_merge($base, [['Package Type', 'Package / Container']]);
     }
+    $grocery = [
+        'beverage' => [['Flavor', null], ['Volume', 'Net Content'], ['Package Type', 'Package / Container'], ['Pack Content', null]],
+        'biscuits' => [['Flavor', null], ['Net Weight', null], ['Package Type', 'Package / Container'], ['Pack Content', null]],
+        'bread/bakery' => [['Variant', null], ['Net Weight', null], ['Package Type', 'Package / Container'], ['Pack Content', null]],
+        'canned goods' => [['Flavor', null], ['Net Weight', 'Net Content'], ['Package Type', 'Package / Container'], ['Pack Content', null]],
+    ];
+    if ($category === 'grocery' && isset($grocery[$type])) return $grocery[$type];
     if ($category === 'grocery') {
-        return [['Volume', 'Net Content'], ['Package Type', null], ['Pack Content', null]];
+        return [['Variant', null], ['Net Weight', 'Net Content'], ['Package Type', 'Package / Container'], ['Pack Content', null]];
     }
     if (in_array($category, ['medical supply', 'medical supplies'], true)) {
-        return [['Variant', null], ['Size', null], ['Material', null], ['Sterile Status', null], ['Package Type', null]];
+        if ($type === 'device/equipment') return [['Model', null], ['Size', null], ['Material', null], ['Package Type', 'Package / Container']];
+        if (in_array($type, ['first aid', 'first aid supply'], true)) return [['Variant', null], ['Size', null], ['Pack Content', 'Quantity per Package'], ['Package Type', 'Package / Container']];
+        return [['Variant', null], ['Size', null], ['Material', null], ['Sterile Status', null], ['Pack Content', 'Quantity per Package'], ['Package Type', 'Package / Container']];
     }
-    return [['Strength', null], ['Package Type', null], ['Pack Content', null]];
+    return [['Variant', null], ['Package Type', 'Package / Container']];
+}
+
+function medicineDosageFormSpecificationPattern(string $pattern): array
+{
+    $patterns = [
+        'simple_strength' => [
+            ['Medicine Classification', null], ['Strength', null],
+            ['Package Type', 'Package / Container'], ['Pack Content', null],
+        ],
+        'concentration_ratio' => [
+            ['Medicine Classification', null], ['Strength', null], ['Strength Denominator', null],
+            ['Volume', 'Net Content'], ['Package Type', 'Package / Container'], ['Flavor', null],
+        ],
+        'percentage' => [
+            ['Medicine Classification', null], ['Strength', null],
+            ['Net Weight', 'Net Content'], ['Package Type', 'Package / Container'],
+        ],
+        'dose_based' => [
+            ['Medicine Classification', null], ['Strength', null],
+            ['Pack Content', 'Doses / Actuations'], ['Package Type', 'Package / Container'],
+        ],
+        'custom' => [
+            ['Medicine Classification', null], ['Strength', null],
+        ],
+    ];
+    if (!isset($patterns[$pattern])) {
+        throw new InvalidArgumentException('Select a valid Specification Pattern.');
+    }
+    return $patterns[$pattern];
+}
+
+function assignMedicineDosageFormPattern(PDO $pdo, string $typeId, string $pattern): void
+{
+    $definitions = medicineDosageFormSpecificationPattern($pattern);
+    $find = $pdo->prepare(
+        'SELECT specification_id FROM product_specifications
+         WHERE LOWER(TRIM(specification_name)) = LOWER(TRIM(:name)) LIMIT 1'
+    );
+    $insert = $pdo->prepare(
+        'INSERT INTO product_type_specifications
+            (type_id, specification_id, display_label, sort_order)
+         VALUES (:type_id, :specification_id, :display_label, :sort_order)'
+    );
+
+    $pdo->prepare('DELETE FROM product_type_specifications WHERE type_id = :type_id')
+        ->execute([':type_id' => $typeId]);
+    foreach ($definitions as $index => [$name, $label]) {
+        $find->execute([':name' => $name]);
+        $specificationId = cleanId($find->fetchColumn());
+        if ($specificationId === '') {
+            throw new RuntimeException("The {$name} specification is unavailable.");
+        }
+        $insert->execute([
+            ':type_id' => $typeId,
+            ':specification_id' => $specificationId,
+            ':display_label' => $label,
+            ':sort_order' => $index,
+        ]);
+    }
 }
 
 function assignSuggestedProductTypeTemplate(PDO $pdo, string $typeId, ?array $specificationIds = null): bool
@@ -570,7 +963,35 @@ function validateAndNormalizeSpecificationValues(PDO $pdo, string $typeId, array
                 throw new InvalidArgumentException($definition['specification_name'] . ' must use one of its configured choices.');
             }
         }
-        if ($definition['field_style'] === 'Number with Unit') {
+        $isPackageType = strcasecmp(trim((string) ($definition['specification_name'] ?? '')), 'Package Type') === 0;
+        if ($isPackageType) {
+            if ($unitId === '' && $text !== '') {
+                $packageLookup = $pdo->prepare(
+                    "SELECT measurement_unit_id, unit_name FROM product_measurement_units
+                     WHERE measurement_group = 'Count' AND is_active = 1
+                       AND (LOWER(TRIM(unit_name)) = LOWER(TRIM(:label)) OR LOWER(TRIM(COALESCE(unit_symbol, ''))) = LOWER(TRIM(:symbol)))
+                     LIMIT 1"
+                );
+                $packageLookup->execute([':label' => $text, ':symbol' => $text]);
+                $packageUnit = $packageLookup->fetch(PDO::FETCH_ASSOC);
+                if ($packageUnit) {
+                    $unitId = cleanId($packageUnit['measurement_unit_id']);
+                    $text = trim((string) $packageUnit['unit_name']);
+                }
+            }
+            if ($unitId !== '') {
+                $packageLookup = $pdo->prepare(
+                    "SELECT measurement_unit_id, unit_name FROM product_measurement_units
+                     WHERE measurement_unit_id = :unit_id AND measurement_group = 'Count' AND is_active = 1 LIMIT 1"
+                );
+                $packageLookup->execute([':unit_id' => $unitId]);
+                $packageUnit = $packageLookup->fetch(PDO::FETCH_ASSOC);
+                if (!$packageUnit) {
+                    throw new InvalidArgumentException('Package / Container must be selected from the active Count measurement units.');
+                }
+                $text = trim((string) $packageUnit['unit_name']);
+            }
+        } elseif ($definition['field_style'] === 'Number with Unit') {
             if ($unitId === '') {
                 throw new InvalidArgumentException($definition['specification_name'] . ' requires a measurement unit when a value is entered.');
             }

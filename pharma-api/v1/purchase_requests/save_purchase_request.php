@@ -38,6 +38,7 @@ try {
             (pr_item_id, pr_id, product_id, stock_qty_at_request, requested_qty, unit_label_at_request)
          VALUES (:pr_item_id, :pr_id, :product_id, :current_stock, :requested_qty, :unit)'
     );
+    $packageOptions = purchaseRequestSupplierOptions($pdo, array_column($items, 'product_id'));
     $seen = [];
     $validated = [];
     foreach ($items as $item) {
@@ -52,14 +53,19 @@ try {
         if ($baseInventoryUnit === null) {
             throw new InvalidArgumentException($product['product_name'] . ' cannot be requested because its base inventory unit is not configured. Fix the Product Master configuration first.');
         }
-        $qty = positivePurchaseRequestQuantity($item['requested_qty'] ?? null, $baseInventoryUnit);
+        $requestUnit = purchaseRequestConfiguredUnit($packageOptions[$productId] ?? []);
+        if ($requestUnit === null) {
+            throw new InvalidArgumentException($product['product_name'] . ' does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
+        }
+        $requestUnit = validatePurchaseRequestPackage($packageOptions[$productId] ?? [], $item['requested_qty'] ?? null, $requestUnit);
+        $qty = positivePurchaseRequestQuantity($item['requested_qty'] ?? null, $requestUnit);
         assertNoActivePurchaseRequestConflict($pdo, $productId, (string) $product['product_name'], $prId);
         $stockStmt->execute([':product_id' => $productId]);
         $validated[] = [
             'product_id' => $productId,
             'current_stock' => (float) ($stockStmt->fetchColumn() ?: 0),
             'requested_qty' => $qty,
-            'unit' => $baseInventoryUnit,
+            'unit' => $requestUnit,
         ];
     }
 

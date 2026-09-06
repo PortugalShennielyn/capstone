@@ -1,9 +1,11 @@
 <?php
 
 require_once __DIR__ . '/../../config/id_helpers.php';
+require_once __DIR__ . '/../suppliers/purchasing_conversion.php';
 
 function ensurePurchaseRequestSchema(PDO $pdo): void
 {
+    ensureSupplierPurchasingConversionSchema($pdo);
     $migration = __DIR__ . '/../../migrations/20260807_create_purchase_requests.sql';
     if (!is_file($migration)) {
         throw new RuntimeException('Purchase request migration is missing.');
@@ -192,13 +194,20 @@ function purchaseRequestById(PDO $pdo, string $prId, bool $forUpdate = false): ?
 
 function purchaseRequestItems(PDO $pdo, string $prId): array
 {
+    return purchaseRequestItemsForRequests($pdo, [$prId]);
+}
+
+function purchaseRequestItemsForRequests(PDO $pdo, array $prIds): array
+{
+    if (!$prIds) return [];
+    $placeholders = implode(',', array_fill(0, count($prIds), '?'));
     $stmt = $pdo->prepare(
         'SELECT pri.*,
                 pri.stock_qty_at_request AS current_stock_snapshot,
                 pri.unit_label_at_request AS unit_snapshot,
-                p.product_name, p.brand_name,
+                p.product_name, p.brand_name, pmu.unit_name AS base_inventory_unit,
                 TRIM(CONCAT_WS(" · ",
-                    NULLIF(CONCAT_WS(" ", NULLIF(md.generic_name,""), COALESCE(NULLIF(CONCAT_WS(" ",md.strength_value,md.strength_unit),""),NULLIF(md.strength,""))), ""),
+                    NULLIF(CONCAT_WS(" ", NULLIF(md.generic_name,""), COALESCE(NULLIF(md.strength,""),NULLIF(CONCAT_WS(" ",md.strength_value,md.strength_unit),""))), ""),
                     NULLIF(CONCAT_WS(" ",gd.variant,gd.size,gd.net_weight,gd.unit),""),
                     NULLIF(COALESCE(md.dosage_form,gd.package_type,md.package_type),""))) AS specification,
                 COALESCE(NULLIF(pri.unit_label_at_request, ""), "pcs") AS unit,
@@ -207,17 +216,28 @@ function purchaseRequestItems(PDO $pdo, string $prId): array
                     THEN poi.inventory_qty_ordered ELSE 0 END), 0) AS ordered_qty
          FROM purchase_request_items pri
          INNER JOIN product p ON p.product_id = pri.product_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = p.inventory_unit_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          LEFT JOIN purchase_order_items poi ON poi.pr_item_id = pri.pr_item_id
          LEFT JOIN purchase_orders po ON po.po_id = poi.po_id
-         WHERE pri.pr_id = :pr_id
+         WHERE pri.pr_id IN (' . $placeholders . ')
          GROUP BY pri.pr_item_id
          ORDER BY pri.created_at, pri.pr_item_id'
     );
-    $stmt->execute([':pr_id' => $prId]);
+    $stmt->execute($prIds);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $options = purchaseRequestSupplierOptions($pdo, array_column($items, 'product_id'));
     foreach ($items as &$item) {
+        $item['packaging_units'] = purchaseRequestPackagingUnits($options[$item['product_id']] ?? []);
+        $factor = strcasecmp((string)$item['unit'], (string)$item['base_inventory_unit']) === 0 ? 1 : null;
+        foreach ($item['packaging_units'] as $level) {
+            if (strcasecmp($level['unit'], (string)$item['unit']) === 0) $factor = (int)$level['base_quantity'];
+        }
+        $item['request_unit_base_quantity'] = $factor;
+        $item['requested_base_qty'] = $factor === null ? null : (float)$item['requested_qty'] * $factor;
+        $item['approved_base_qty'] = $factor === null || $item['approved_qty'] === null ? null : (float)$item['approved_qty'] * $factor;
+        $item['ordered_qty'] = $factor ? (float)$item['ordered_qty'] / $factor : 0;
         $authorizedQty = $item['approved_qty'] !== null ? (float) $item['approved_qty'] : (float) $item['requested_qty'];
         $item['remaining_qty'] = max(0, $authorizedQty - (float) $item['ordered_qty']);
     }
@@ -337,7 +357,7 @@ function activePurchaseRequestConflict(PDO $pdo, string $productId, ?string $exc
               AND pr.status IN ({$statusPlaceholders})
               AND (
                 pr.status <> 'Approved'
-                OR pri.requested_qty > COALESCE((
+                OR 0 = COALESCE((
                     SELECT SUM(poi.inventory_qty_ordered)
                     FROM purchase_order_items poi
                     INNER JOIN purchase_orders po ON po.po_id = poi.po_id
@@ -467,4 +487,99 @@ function purchaseRequestProcurementByProducts(PDO $pdo, array $productIds): arra
     return $result;
 }
 
-?>
+
+
+function purchaseRequestSupplierOptions(PDO $pdo, array $productIds, bool $forUpdate = false): array
+{
+    $productIds = array_values(array_unique(array_filter(array_map('cleanId', $productIds))));
+    if (!$productIds) return [];
+
+    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+    $stmt = $pdo->prepare(
+        "SELECT sp.supplier_product_id, sp.product_id, sp.supplier_id, s.supplier_name,
+                s.address AS supplier_address, s.phone AS supplier_phone, s.email AS supplier_email,
+                sp.purchase_unit, sp.purchase_unit_contains, sp.inner_unit, sp.units_per_inner_unit,
+                sp.inventory_unit, sp.units_per_purchase_unit
+         FROM supplier_products sp
+         INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
+         WHERE sp.product_id IN ({$placeholders})
+           AND s.archived_at IS NULL
+         ORDER BY sp.product_id, s.supplier_name, sp.supplier_product_id" . ($forUpdate ? ' FOR UPDATE' : '')
+    );
+    $stmt->execute($productIds);
+    $options = [];
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $hierarchies = supplierProductPurchasingHierarchies($pdo, array_column($rows, 'supplier_product_id'));
+    foreach ($rows as $row) {
+        $row = array_replace($row, $hierarchies[$row['supplier_product_id']] ?? []);
+        $options[(string) $row['product_id']][] = enrichSupplierPurchasingSetup($row);
+    }
+    return $options;
+}
+
+
+// The existing unit label applies to requested and approved quantities.
+// Reject ambiguous labels rather than choosing a supplier's factor silently.
+function purchaseRequestPackagingUnits(array $options): array
+{
+    $units = [];
+    foreach ($options as $option) {
+        foreach ($option['absolute_levels'] as $level) {
+            $key = strtolower(trim($level['unit']));
+            $units[$key]['factors'][(int)$level['base_quantity']] = true;
+            $units[$key]['level'] = $level;
+        }
+    }
+    return array_values(array_map(static fn(array $entry): array => $entry['level'],
+        array_filter($units, static fn(array $entry): bool => count($entry['factors']) === 1)));
+}
+
+function purchaseRequestConfiguredUnit(array $options): ?string
+{
+    $units = [];
+    foreach ($options as $option) {
+        $unit = trim((string) ($option['purchase_unit'] ?? ''));
+        if ($unit !== '') $units[strtolower($unit)] = $unit;
+    }
+    return count($units) === 1 ? array_values($units)[0] : null;
+}
+
+function purchaseRequestExactOrderQuantity($quantity, string $unit, array $setup): int
+{
+    $conversion = supplierPurchasingConversion($setup);
+    $factor = null;
+    foreach ($conversion['absolute_levels'] as $level) {
+        if (strcasecmp(trim($unit), $level['unit']) === 0) $factor = (int)$level['base_quantity'];
+    }
+    if ($factor === null) throw new InvalidArgumentException("The requested unit {$unit} is not in this supplier's packaging setup.");
+    $base = inventoryQuantityForPurchaseQuantity($quantity, $factor);
+    $purchaseFactor = (int)$conversion['base_qty_per_purchase_unit'];
+    if ($base <= 0 || $base % $purchaseFactor !== 0) {
+        throw new InvalidArgumentException("{$quantity} {$unit} cannot be ordered using the supplier's configured purchase unit. " . $conversion['summary']);
+    }
+    return intdiv($base, $purchaseFactor);
+}
+
+function validatePurchaseRequestPackage(array $options, $quantity, string $unit): string
+{
+    $configuredUnit = purchaseRequestConfiguredUnit($options);
+    if ($configuredUnit === null) {
+        throw new InvalidArgumentException('The selected product does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
+    }
+    if (strcasecmp(trim($unit), $configuredUnit) !== 0) {
+        throw new InvalidArgumentException('The requested unit is controlled by Supplier Product Setup and must be ' . $configuredUnit . '.');
+    }
+    $canonical = null;
+    foreach (purchaseRequestPackagingUnits($options) as $level) {
+        if (strcasecmp(trim($unit), $level['unit']) === 0) $canonical = $level['unit'];
+    }
+    if ($canonical === null) throw new InvalidArgumentException('Select an unambiguous unit from the supplier packaging setup.');
+    $error = null;
+    foreach ($options as $option) {
+        try {
+            purchaseRequestExactOrderQuantity($quantity, $canonical, $option);
+            return $canonical;
+        } catch (InvalidArgumentException $exception) { $error = $exception; }
+    }
+    throw $error ?? new InvalidArgumentException('No active supplier packaging setup is available.');
+}

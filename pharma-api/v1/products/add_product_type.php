@@ -27,52 +27,62 @@ try {
         throw new InvalidArgumentException('A valid category is required.');
     }
 
-    $categoryCheck = $pdo->prepare('SELECT category_id FROM product_categories WHERE category_id = :category_id LIMIT 1');
+    $categoryCheck = $pdo->prepare('SELECT category_id, category_name FROM product_categories WHERE category_id = :category_id LIMIT 1');
     $categoryCheck->execute([':category_id' => $categoryId]);
-    if (cleanId($categoryCheck->fetchColumn()) === '') {
+    $category = $categoryCheck->fetch(PDO::FETCH_ASSOC);
+    if (!$category) {
         throw new InvalidArgumentException('A valid category is required.');
+    }
+    $isMedicine = strcasecmp(trim((string) $category['category_name']), 'Medicine') === 0;
+    $specificationPattern = trim((string) ($payload['specification_pattern'] ?? ''));
+    if ($isMedicine && $typeId === '') {
+        medicineDosageFormSpecificationPattern($specificationPattern);
     }
 
     $matchingType = findProductTypeByNormalizedName($pdo, $categoryId, $typeName, $typeId);
-    $reused = false;
-    if ($matchingType && $typeId !== '') {
-        throw new InvalidArgumentException('A Product Type with this name already exists in the selected Category.');
-    }
     if ($matchingType) {
-        $typeId = $matchingType['type_id'];
-        $typeName = $matchingType['type_name'];
-        $reused = true;
+        throw new InvalidArgumentException($isMedicine
+            ? 'A Dosage Form with this name already exists.'
+            : 'A Product Type with this name already exists in the selected Category.');
     }
 
-    if ($typeId !== '' && !$reused) {
-        $statement = $pdo->prepare('UPDATE product_types SET type_name = :type_name WHERE type_id = :type_id AND category_id = :category_id');
+    $pdo->beginTransaction();
+    if ($typeId !== '') {
+        $statement = $pdo->prepare('UPDATE product_types SET type_name = :type_name, is_active = 1 WHERE type_id = :type_id AND category_id = :category_id');
         $statement->execute([':type_id' => $typeId, ':category_id' => $categoryId, ':type_name' => $typeName]);
         $exists = $pdo->prepare('SELECT type_id FROM product_types WHERE type_id = :type_id AND category_id = :category_id');
         $exists->execute([':type_id' => $typeId, ':category_id' => $categoryId]);
         if (!$exists->fetchColumn()) {
             throw new InvalidArgumentException('Product Type not found under the selected Category.');
         }
-    } elseif (!$reused) {
+    } else {
         $typeId = newUuid($pdo);
         $statement = $pdo->prepare('INSERT INTO product_types (type_id, category_id, type_name) VALUES (:type_id, :category_id, :type_name)');
         $statement->execute([':type_id' => $typeId, ':category_id' => $categoryId, ':type_name' => $typeName]);
     }
-    assignSuggestedProductTypeTemplate($pdo, $typeId);
+    if ($isMedicine && $specificationPattern !== '') {
+        assignMedicineDosageFormPattern($pdo, $typeId, $specificationPattern);
+    } else {
+        assignSuggestedProductTypeTemplate($pdo, $typeId);
+    }
+    $pdo->commit();
 
     echo json_encode([
         'status' => 'success',
-        'message' => $reused ? 'Existing Product Type selected.' : 'Product type saved successfully.',
-        'reused_existing' => $reused,
+        'message' => $isMedicine ? 'Dosage Form saved successfully.' : 'Product Type saved successfully.',
         'type' => [
             'type_id' => $typeId,
             'category_id' => $categoryId,
-            'type_name' => $typeName
+            'type_name' => $typeName,
+            'specification_pattern' => $isMedicine ? $specificationPattern : null,
         ]
     ]);
 } catch (InvalidArgumentException $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to save product type.']);
 }

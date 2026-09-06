@@ -77,7 +77,7 @@ try {
             COALESCE(gd.pack_content, msd.pack_content) AS pack_content_unit,
             p.price, p.barcode, NULL AS sku, 0 AS stock,
             COALESCE(md.strength_value, md.strength) AS strength_size_value,
-            COALESCE(NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength) AS strength_size_display
+            COALESCE(NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), '')) AS strength_size_display
          FROM supplier_products sp
          INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
          INNER JOIN product p ON p.product_id = sp.product_id

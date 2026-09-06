@@ -1,6 +1,7 @@
 <?php
 
 const INVENTORY_LOW_STOCK_THRESHOLD = 30;
+const INVENTORY_SHELF_MINIMUM_THRESHOLD = 10;
 
 /**
  * Returns the authoritative per-product inventory aggregation used by both
@@ -13,16 +14,19 @@ const INVENTORY_LOW_STOCK_THRESHOLD = 30;
 function inventoryStockSummarySql(): string
 {
     $threshold = INVENTORY_LOW_STOCK_THRESHOLD;
+    $shelfMinimum = INVENTORY_SHELF_MINIMUM_THRESHOLD;
 
     return "SELECT
             totals.*,
             totals.storage_quantity + totals.shelf_quantity AS total_quantity,
+            totals.current_storage_quantity + totals.current_shelf_quantity AS current_stock_quantity,
             {$threshold} AS reorder_level,
+            {$shelfMinimum} AS shelf_minimum,
             CASE
-                WHEN totals.storage_quantity + totals.shelf_quantity = 0 THEN 'Out of Stock'
-                WHEN totals.storage_quantity + totals.shelf_quantity > 0
-                 AND totals.storage_quantity + totals.shelf_quantity <= {$threshold} THEN 'Low Stock'
-                WHEN totals.storage_quantity + totals.shelf_quantity > {$threshold} THEN 'In Stock'
+                WHEN totals.current_storage_quantity + totals.current_shelf_quantity = 0 THEN 'Out of Stock'
+                WHEN totals.current_storage_quantity + totals.current_shelf_quantity > 0
+                 AND totals.current_storage_quantity + totals.current_shelf_quantity <= {$threshold} THEN 'Low Stock'
+                WHEN totals.current_storage_quantity + totals.current_shelf_quantity > {$threshold} THEN 'In Stock'
                 ELSE 'Inventory Data Issue'
             END AS stock_status
         FROM (
@@ -30,13 +34,10 @@ function inventoryStockSummarySql(): string
                 ib.product_id,
                 SUM(CASE WHEN ib.batch_status = 'active' THEN ib.storage_qty ELSE 0 END) AS storage_quantity,
                 SUM(CASE WHEN ib.batch_status = 'active' THEN COALESCE(selling.shelf_qty, 0) ELSE 0 END) AS shelf_quantity,
+                SUM(CASE WHEN ib.batch_status = 'active' AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE()) THEN ib.storage_qty ELSE 0 END) AS current_storage_quantity,
+                SUM(CASE WHEN ib.batch_status = 'active' AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE()) THEN COALESCE(selling.shelf_qty, 0) ELSE 0 END) AS current_shelf_quantity,
                 SUM(CASE WHEN ib.batch_status = 'active' THEN ib.damaged_qty ELSE 0 END) AS damaged_quantity,
                 SUM(CASE WHEN ib.batch_status = 'active' THEN ib.returned_qty ELSE 0 END) AS returned_quantity,
-                SUM(CASE
-                    WHEN ib.batch_status = 'active' AND (ib.expiry_date IS NULL OR ib.expiry_date >= CURDATE())
-                    THEN ib.storage_qty + COALESCE(selling.shelf_qty, 0)
-                    ELSE 0
-                END) AS current_stock_quantity,
                 MIN(CASE
                     WHEN ib.batch_status = 'active'
                      AND (ib.storage_qty + COALESCE(selling.shelf_qty, 0)) > 0
