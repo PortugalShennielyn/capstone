@@ -3,32 +3,6 @@
 require_once __DIR__ . '/purchase_request_helpers.php';
 require_once __DIR__ . '/../purchase_orders/purchase_order_helpers.php';
 
-function purchaseRequestSupplierOptions(PDO $pdo, array $productIds): array
-{
-    ensureSupplierPurchasingConversionSchema($pdo);
-    $productIds = array_values(array_unique(array_filter(array_map('cleanId', $productIds))));
-    if (!$productIds) return [];
-
-    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
-    $stmt = $pdo->prepare(
-        "SELECT sp.supplier_product_id, sp.product_id, sp.supplier_id, s.supplier_name,
-                s.address AS supplier_address, s.phone AS supplier_phone, s.email AS supplier_email,
-                sp.purchase_unit, sp.purchase_unit_contains, sp.inner_unit, sp.units_per_inner_unit,
-                sp.inventory_unit, sp.units_per_purchase_unit
-         FROM supplier_products sp
-         INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
-         WHERE sp.product_id IN ({$placeholders})
-           AND s.archived_at IS NULL
-         ORDER BY sp.product_id, s.supplier_name, sp.supplier_product_id"
-    );
-    $stmt->execute($productIds);
-    $options = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $options[(string) $row['product_id']][] = enrichSupplierPurchasingSetup($row);
-    }
-    return $options;
-}
-
 function purchaseRequestProductDetails(PDO $pdo, array $productIds): array
 {
     $productIds = array_values(array_unique(array_filter(array_map('cleanId', $productIds))));
@@ -147,24 +121,16 @@ function automaticPurchaseOrderNumber(): string
 function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, array $assignments, array $supplierEtas = []): array
 {
     if (!$pdo->inTransaction()) ensureSupplierPurchasingConversionSchema($pdo);
+    if (($request['status'] ?? '') !== 'Approved') throw new InvalidArgumentException('Only Supervisor-approved requests can generate purchase orders.');
     $prId = cleanId($request['pr_id'] ?? null);
     $requestItems = purchaseRequestItems($pdo, $prId);
     if (!$requestItems) throw new InvalidArgumentException('The purchase request has no items to approve.');
     $productSnapshots = purchaseRequestProductSnapshots($pdo, array_column($requestItems, 'product_id'));
 
-    $activeSetupCheck = $pdo->prepare(
-        'SELECT COUNT(*) FROM supplier_products sp
-         INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
-         WHERE sp.product_id = :product_id AND s.archived_at IS NULL'
-    );
-    foreach ($requestItems as $requestItem) {
-        $activeSetupCheck->execute([':product_id' => cleanId($requestItem['product_id'] ?? null)]);
-        if ((int) $activeSetupCheck->fetchColumn() === 0) {
-            throw new InvalidArgumentException(
-                'Cannot generate PO for ' . ($requestItem['product_name'] ?? 'this product') .
-                ' because no active supplier purchasing setup is assigned.'
-            );
-        }
+    $supplierOptions = purchaseRequestSupplierOptions($pdo, array_column($requestItems, 'product_id'), true);
+    $setupsById = [];
+    foreach ($supplierOptions as $options) {
+        foreach ($options as $option) $setupsById[$option['supplier_product_id']] = $option;
     }
 
     $assignmentByItem = [];
@@ -176,19 +142,6 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         $assignmentByItem[$prItemId] = $assignment;
     }
 
-    $supplierProductStmt = $pdo->prepare(
-        "SELECT sp.supplier_product_id, sp.supplier_id, sp.product_id,
-                sp.purchase_unit, sp.purchase_unit_contains, sp.inner_unit, sp.units_per_inner_unit,
-                sp.inventory_unit, sp.units_per_purchase_unit,
-                s.supplier_name
-         FROM supplier_products sp
-         INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
-         WHERE sp.supplier_product_id = :supplier_product_id
-           AND sp.product_id = :product_id
-           AND s.archived_at IS NULL
-         LIMIT 1 FOR UPDATE"
-    );
-
     $groups = [];
     foreach ($requestItems as $requestItem) {
         $prItemId = cleanId($requestItem['pr_item_id']);
@@ -196,12 +149,13 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         if (!$assignment) throw new InvalidArgumentException('Select a supplier for every requested product.');
 
         $supplierProductId = cleanId($assignment['supplier_product_id'] ?? null);
-        $supplierProductStmt->execute([
-            ':supplier_product_id' => $supplierProductId,
-            ':product_id' => cleanId($requestItem['product_id']),
-        ]);
-        $setup = $supplierProductStmt->fetch(PDO::FETCH_ASSOC);
-        if (!$setup) throw new InvalidArgumentException('A selected supplier-product assignment is no longer available.');
+        $setup = $setupsById[$supplierProductId] ?? null;
+        if (!$setup || $setup['product_id'] !== $requestItem['product_id']) {
+            throw new InvalidArgumentException('A selected supplier-product assignment is no longer available.');
+        }
+        if ($requestItem['request_unit_base_quantity'] === null) {
+            throw new InvalidArgumentException('The approved request unit has an ambiguous or missing packaging conversion.');
+        }
 
         $purchaseUnit = trim((string) ($setup['purchase_unit'] ?? ''));
         $inventoryUnit = trim((string) ($setup['inventory_unit'] ?? ''));
@@ -210,13 +164,13 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         if ($inventoryUnit === '') throw new InvalidArgumentException('Inventory Unit is required for every approved product.');
         if ($conversion <= 0) throw new InvalidArgumentException('Units per Purchase Unit must be greater than zero.');
 
-        // The Supervisor-approved base quantity is the immutable purchasing
+        // The Supervisor-approved request quantity is the immutable purchasing
         // authority. Never trust or accept an order quantity from the browser.
         if ($requestItem['approved_qty'] === null || (float) $requestItem['approved_qty'] <= 0) {
             throw new InvalidArgumentException('Every approved product must have a valid Supervisor-approved quantity.');
         }
         $approvedQty = (float) $requestItem['approved_qty'];
-        $orderQty = (int) ceil($approvedQty / $conversion);
+        $orderQty = purchaseRequestExactOrderQuantity($approvedQty, (string)$requestItem['unit'], $setup);
 
         $snapshot = $productSnapshots[cleanId($requestItem['product_id'])] ?? null;
         if (!$snapshot || strcasecmp((string) ($snapshot['product_status'] ?? ''), 'Active') !== 0) {
@@ -250,15 +204,11 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         'INSERT INTO purchase_order_items
             (po_item_id, po_id, pr_item_id, product_id, quantity, purchase_qty,
              purchase_unit_snapshot, units_per_purchase_unit_snapshot, inventory_qty_ordered,
-             product_name_snapshot, brand_name_snapshot, category_name_snapshot, type_name_snapshot,
-             generic_name_snapshot, variant_flavor_snapshot, strength_snapshot, size_value_snapshot,
-             unit_snapshot, packaging_snapshot, unit_price_snapshot, line_total)
+             unit_snapshot, unit_price_snapshot, line_total)
          VALUES
             (:po_item_id, :po_id, :pr_item_id, :product_id, :quantity, :purchase_qty,
              :purchase_unit, :conversion, :inventory_qty_ordered,
-             :product_name, :brand_name, :category_name, :type_name,
-             :generic_name, :variant_flavor, :strength, :size_value,
-             :unit, :packaging, :unit_cost, :line_total)'
+             :unit, :unit_cost, :line_total)'
     );
     $generated = [];
     foreach ($groups as $supplierId => $group) {
@@ -281,11 +231,7 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
                 ':product_id' => $requestItem['product_id'], ':quantity' => $item['expected_base_qty'],
                 ':purchase_qty' => $item['order_qty'], ':purchase_unit' => $item['purchase_unit'],
                 ':conversion' => $item['conversion'], ':inventory_qty_ordered' => $item['expected_base_qty'],
-                ':product_name' => $snapshot['product_name'], ':brand_name' => $snapshot['brand_name'],
-                ':category_name' => $snapshot['category_name'], ':type_name' => $snapshot['type_name'],
-                ':generic_name' => $snapshot['generic_name'], ':variant_flavor' => $snapshot['variant_flavor'],
-                ':strength' => $snapshot['strength'], ':size_value' => $snapshot['size_value'],
-                ':unit' => $item['inventory_unit'], ':packaging' => $snapshot['packaging'],
+                ':unit' => $item['inventory_unit'],
                 ':unit_cost' => null, ':line_total' => null,
             ]);
         }

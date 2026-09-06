@@ -110,6 +110,8 @@ try {
         "SELECT
             poi.po_item_id,
             poi.product_id,
+            pri.requested_qty AS pr_requested_qty, pri.approved_qty AS pr_approved_qty,
+            pri.unit_label_at_request AS pr_unit,
             p.status AS product_status,
             poi.quantity,
             poi.purchase_qty,
@@ -131,7 +133,7 @@ try {
             COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
             COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
             COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
-            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength, '') AS strength,
+            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
             COALESCE(md.strength_value, md.strength) AS strength_value,
             md.strength_unit AS strength_unit,
             md.dosage_form AS dosage_form,
@@ -164,7 +166,8 @@ try {
             COALESCE(inv.damaged_qty, 0) AS damaged_qty,
             COALESCE(inv.storage_qty, 0) + COALESCE(inv.shelf_qty, 0) + COALESCE(inv.damaged_qty, 0) AS total_qty
          FROM purchase_order_items poi
-         INNER JOIN product p ON p.product_id = poi.product_id
+         LEFT JOIN purchase_request_items pri ON pri.pr_item_id = poi.pr_item_id
+         LEFT JOIN product p ON p.product_id = poi.product_id
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
@@ -175,23 +178,8 @@ try {
             SELECT
                 po_item_id,
                 SUM(return_quantity) AS return_quantity,
-                SUM(CASE
-                    WHEN damage_reason = 'Returned during receiving' THEN return_quantity
-                    WHEN remarks LIKE '[RETURN_META_V1]%'
-                         AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) IN ('return_for_credit', 'reject_without_replacement')
-                    THEN return_quantity
-                    ELSE 0
-                END) AS supplier_credit_quantity,
-                SUM(CASE
-                    WHEN remarks LIKE '[RETURN_META_V1]%'
-                         AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.resolution')) = 'return_for_replacement'
-                    THEN GREATEST(
-                        CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_expected_qty')), '0') AS SIGNED)
-                        - CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(remarks, 17), CHAR(10), 1), '$.replacement_received_qty')), '0') AS SIGNED),
-                        0
-                    )
-                    ELSE 0
-                END) AS replacement_pending_quantity,
+                SUM(CASE WHEN resolution_type IN ('Current PO Credit','Next PO Credit','Supplier Credit') THEN return_quantity ELSE 0 END) AS supplier_credit_quantity,
+                SUM(CASE WHEN resolution_type = 'Replacement' THEN GREATEST(replacement_expected_qty - replacement_received_qty, 0) ELSE 0 END) AS replacement_pending_quantity,
                 GROUP_CONCAT(damage_reason ORDER BY return_id SEPARATOR ', ') AS return_reasons,
             GROUP_CONCAT(NULLIF(remarks, '') ORDER BY return_id SEPARATOR '; ') AS return_remarks
             FROM supplier_claim_legacy_projection

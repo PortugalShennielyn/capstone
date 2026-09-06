@@ -84,6 +84,23 @@ body {
 .print-button { width: 88px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; color: #fff; border-color: var(--shift-purple); background: var(--shift-purple); }
 .print-button:disabled { cursor: not-allowed; opacity: .55; }
 
+.shift-topbar.drp-shared-topbar .title-wrap {
+    min-width: 145px;
+    flex: 0 1 190px;
+}
+
+.shift-topbar.drp-shared-topbar .header-controls {
+    min-width: 0;
+    flex: 1 1 auto;
+    margin-left: auto;
+    flex-wrap: nowrap;
+}
+
+.shift-topbar.drp-shared-topbar .cashier-select { width: 180px; }
+.shift-topbar.drp-shared-topbar .date-range-wrap { width: 220px; flex-basis: 220px; }
+.shift-topbar.drp-shared-topbar .print-button { width: 78px; }
+.shift-topbar.drp-shared-topbar .topbar-right { flex: 0 0 auto; margin-left: 0; }
+
 .date-range-popover {
     position: absolute;
     top: 46px;

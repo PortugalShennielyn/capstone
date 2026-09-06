@@ -75,7 +75,7 @@ function supplierPurchasingUnitAllowedForContext(PDO $pdo, string $value, string
     if (!$unit) return false;
     $group = normalizedSupplierPurchasingUnit((string)($unit['measurement_group'] ?? ''));
     if ($context === 'purchase') {
-        return in_array(normalizedSupplierPurchasingUnit((string)$unit['unit_name']), ['box', 'carton'], true);
+        return in_array($group, ['count', 'packaging'], true);
     }
     return $context === 'inventory' ? $group === 'count' : in_array($group,['count','packaging'],true);
 }
@@ -88,9 +88,38 @@ function validateSupplierPurchasingUnit(PDO $pdo, string $value, string $label, 
         throw new InvalidArgumentException("Please select a valid {$label}.");
     }
     if ($context !== '' ? supplierPurchasingUnitAllowedForContext($pdo, $clean, $context) : supplierPurchasingUnitIsConfigured($pdo, $clean)) return;
-    if ($context === 'purchase') throw new InvalidArgumentException('Purchase Unit must be Box or Carton.');
+    if ($context === 'purchase') throw new InvalidArgumentException('Purchase Unit must be selected from the available unit list.');
     if ($saved !== '' && normalizedSupplierPurchasingUnit($clean) === normalizedSupplierPurchasingUnit($saved)) return;
     throw new InvalidArgumentException("{$label} must be selected from the available unit list.");
+}
+
+/** Resolve the complete submitted chain from the unit master in one query. */
+function supplierPurchasingSetupFromPayload(PDO $pdo, array $payload, string $baseUnit): array
+{
+    $records = $pdo->query("SELECT unit_name,unit_symbol FROM product_measurement_units WHERE is_active=1 AND measurement_group IN ('Count','Packaging') ORDER BY measurement_group,unit_name")->fetchAll(PDO::FETCH_ASSOC);
+    $units = [];
+    foreach ($records as $record) {
+        foreach ([$record['unit_name'], $record['unit_symbol']] as $alias) {
+            if (trim((string)$alias)!=='') $units[mb_strtolower(trim($alias))] = $record['unit_name'];
+        }
+    }
+    $resolve = static function ($value) use ($units): string {
+        if (!is_string($value) || !isset($units[mb_strtolower(trim($value))])) throw new InvalidArgumentException('Select packaging units from the available unit list.');
+        return $units[mb_strtolower(trim($value))];
+    };
+    $purchase = $resolve($payload['purchase_unit'] ?? null);
+    $base = $resolve($baseUnit);
+    if (array_key_exists('hierarchy_levels', $payload)) {
+        if (!is_array($payload['hierarchy_levels']) || !$payload['hierarchy_levels']) throw new InvalidArgumentException('Complete the packaging breakdown through the Product Base Unit.');
+        $levels = [];
+        foreach ($payload['hierarchy_levels'] as $level) {
+            if (!is_array($level)) throw new InvalidArgumentException('Invalid packaging level.');
+            $levels[] = ['unit'=>$resolve($level['unit'] ?? null), 'quantity'=>positivePurchasingFactor($level['quantity'] ?? null, 'Packaging quantity')];
+        }
+    } else {
+        $levels = [['unit'=>$base,'quantity'=>positivePurchasingFactor($payload['purchase_unit_contains'] ?? $payload['units_per_purchase_unit'] ?? null,'Packaging quantity')]];
+    }
+    return supplierPurchasingConversion(['purchase_unit'=>$purchase,'inventory_unit'=>$base,'hierarchy_levels'=>$levels]);
 }
 
 function validateSupplierPurchasingHierarchyUnits(PDO $pdo, array $submitted, array $saved = []): void

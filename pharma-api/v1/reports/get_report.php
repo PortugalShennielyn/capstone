@@ -14,7 +14,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 function reportProductSpecificationSql(string $alias = 'p'): string
 {
     return "TRIM(CONCAT_WS(' · ',
-        NULLIF(CONCAT_WS(' ', NULLIF(md.generic_name,''), COALESCE(NULLIF(CONCAT_WS(' ',md.strength_value,md.strength_unit),''),NULLIF(md.strength,''))), ''),
+        NULLIF(CONCAT_WS(' ', NULLIF(md.generic_name,''), COALESCE(NULLIF(md.strength,''),NULLIF(CONCAT_WS(' ',md.strength_value,md.strength_unit),''))), ''),
         NULLIF(CONCAT_WS(' ',gd.variant,gd.size,gd.net_weight,gd.unit),''),
         NULLIF(COALESCE(md.dosage_form,gd.package_type,md.package_type),'')))";
 }
@@ -206,8 +206,8 @@ function purchaseAggregateSql(): string
     return "LEFT JOIN (SELECT po_id,COUNT(*) items,SUM(COALESCE(NULLIF(inventory_qty_ordered,0),quantity)) ordered_qty,SUM(line_total) item_total FROM purchase_order_items GROUP BY po_id) item ON item.po_id=po.po_id
       LEFT JOIN (SELECT pr.po_id,MAX(pr.received_date) received_date,SUM(pri.received_quantity) received_qty,SUM(pri.damaged_quantity) damaged_qty FROM purchase_order_receiving pr JOIN purchase_order_receiving_item_summary pri ON pri.receiving_id=pr.receiving_id GROUP BY pr.po_id) rec ON rec.po_id=po.po_id
       LEFT JOIN (SELECT por.po_id,
-        SUM(CASE WHEN por.remarks LIKE '[RETURN_META_V1]%' AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks,17),CHAR(10),1),'$.resolution')) IN ('return_for_credit','return_for_replacement') THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks,17),CHAR(10),1),'$.damaged_quantity')),por.return_quantity) WHEN por.remarks NOT LIKE '[RETURN_META_V1]%' THEN por.return_quantity ELSE 0 END) returned_qty,
-        SUM(CASE WHEN por.remarks LIKE '[RETURN_META_V1]%' AND JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks,17),CHAR(10),1),'$.resolution'))='reject_without_replacement' THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT(SUBSTRING_INDEX(SUBSTRING(por.remarks,17),CHAR(10),1),'$.damaged_quantity')),por.return_quantity) ELSE 0 END) rejected_qty
+        SUM(CASE WHEN por.disposition='Return to Supplier' THEN por.return_quantity ELSE 0 END) returned_qty,
+        SUM(CASE WHEN por.disposition IN ('Dispose','Quarantine') THEN por.action_base_quantity ELSE 0 END) rejected_qty
         FROM supplier_claim_legacy_projection por GROUP BY por.po_id) ret ON ret.po_id=po.po_id
       LEFT JOIN (SELECT po_id,SUM(amount) amount_paid FROM purchase_order_payments GROUP BY po_id) pay ON pay.po_id=po.po_id";
 }

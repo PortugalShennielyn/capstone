@@ -35,19 +35,9 @@ try {
     ensureSupplierProductInventoryUnitColumn($pdo);
     ensureSupplierPurchasingConversionSchema($pdo);
     $inventoryUnit = productInventoryUnitForSupplier($pdo,$productId)['unit_name'];
-    if (strcasecmp($purchaseUnit, $inventoryUnit) === 0) {
-        $unitsPerPurchaseUnit = 1;
-    } elseif (!is_numeric($unitsPerPurchaseUnitRaw) || (float) $unitsPerPurchaseUnitRaw <= 0
-        || (float)$unitsPerPurchaseUnitRaw !== (float)(int)$unitsPerPurchaseUnitRaw) {
-        throw new InvalidArgumentException("Contents per {$purchaseUnit} must be a positive whole number.");
-    } else {
-        $unitsPerPurchaseUnit = (int) $unitsPerPurchaseUnitRaw;
-    }
-    validateSupplierPurchasingHierarchyUnits($pdo, [
-        'purchase_unit' => $purchaseUnit,
-        'inventory_unit' => $inventoryUnit,
-        'units_per_purchase_unit' => $unitsPerPurchaseUnit,
-    ]);
+    $conversion = supplierPurchasingSetupFromPayload($pdo, $payload, $inventoryUnit);
+    $purchaseUnit = $conversion['purchase_unit'];
+    $unitsPerPurchaseUnit = $conversion['base_qty_per_purchase_unit'];
 
     $supplierCheck = $pdo->prepare('SELECT COUNT(*) FROM suppliers WHERE supplier_id = :supplier_id AND archived_at IS NULL');
     $supplierCheck->execute([':supplier_id' => $supplierId]);
@@ -81,36 +71,39 @@ try {
         exit();
     }
 
+    $pdo->beginTransaction();
     $statement = $pdo->prepare(
-        'INSERT INTO supplier_products (supplier_id, product_id, purchase_unit, purchase_unit_contains, inventory_unit, units_per_purchase_unit)
-         VALUES (:supplier_id, :product_id, :purchase_unit, :purchase_unit_contains, :inventory_unit, :units_per_purchase_unit)'
+        'INSERT INTO supplier_products (supplier_id, product_id, purchase_unit, purchase_unit_contains, inner_unit, units_per_inner_unit, inventory_unit, units_per_purchase_unit)
+         VALUES (:supplier_id, :product_id, :purchase_unit, :purchase_unit_contains, :inner_unit, :units_per_inner_unit, :inventory_unit, :units_per_purchase_unit)'
     );
     $statement->execute([
         ':supplier_id' => $supplierId,
         ':product_id' => $productId,
         ':purchase_unit' => $purchaseUnit !== '' ? $purchaseUnit : null,
-        ':purchase_unit_contains' => $unitsPerPurchaseUnit,
+        ':purchase_unit_contains' => $conversion['contains'],
+        ':inner_unit' => $conversion['inner_unit'] ?: null,
+        ':units_per_inner_unit' => $conversion['units_per_inner_unit'],
         ':inventory_unit' => $inventoryUnit,
         ':units_per_purchase_unit' => $unitsPerPurchaseUnit
     ]);
     $idStatement = $pdo->prepare('SELECT supplier_product_id FROM supplier_products WHERE supplier_id=:supplier_id AND product_id=:product_id LIMIT 1');
     $idStatement->execute([':supplier_id'=>$supplierId,':product_id'=>$productId]);
     $supplierProductId = (string)$idStatement->fetchColumn();
-    syncSupplierProductUnitConversions($pdo,$supplierProductId,[
-        'purchase_unit'=>$purchaseUnit,
-        'purchase_unit_contains'=>$unitsPerPurchaseUnit,
-        'inventory_unit'=>$inventoryUnit,
-        'units_per_purchase_unit'=>$unitsPerPurchaseUnit,
-    ]);
+    syncSupplierProductUnitConversions($pdo,$supplierProductId,$conversion);
+    $pdo->commit();
 
     echo json_encode([
         'status' => 'success',
-        'message' => 'Product assigned to supplier successfully.'
+        'message' => 'Product assigned to supplier successfully.',
+        'supplier_product_id' => $supplierProductId,
+        'conversion' => $conversion
     ]);
 } catch (InvalidArgumentException $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     http_response_code(422);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
-} catch (PDOException $e) {
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to assign product to supplier.']);
 }

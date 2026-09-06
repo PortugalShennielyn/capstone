@@ -80,7 +80,6 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
 
     return [
         'variant' => cleanSkuField($variation, 'variant_name') ?? cleanSkuField($variation, 'variant_flavor') ?? cleanSkuField($variation, 'variation_name'),
-        'generic_name' => cleanSkuField($variation, 'generic_name'),
         'strength_value' => cleanSkuNumber($variation, 'strength_value'),
         'strength_unit' => cleanSkuField($variation, 'strength_unit'),
         'strength' => cleanSkuField($variation, 'strength') ?? joinSkuParts(cleanSkuNumber($variation, 'strength_value'), cleanSkuField($variation, 'strength_unit')),
@@ -103,7 +102,7 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
             ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
             : (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)
                 ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuField($variation, 'material') || cleanSkuField($variation, 'sterile_status') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
-            : !(cleanSkuField($variation, 'generic_name') || cleanSkuNumber($variation, 'strength_value') || cleanSkuField($variation, 'strength_unit') || cleanSkuField($variation, 'dosage_form') || cleanSkuNumber($variation, 'net_content_value') || cleanSkuNumber($variation, 'volume_value') || cleanSkuField($variation, 'net_content_unit') || cleanSkuField($variation, 'volume_unit') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging'))
+            : !(cleanSkuNumber($variation, 'strength_value') || cleanSkuField($variation, 'strength_unit') || cleanSkuField($variation, 'dosage_form') || cleanSkuNumber($variation, 'net_content_value') || cleanSkuNumber($variation, 'volume_value') || cleanSkuField($variation, 'net_content_unit') || cleanSkuField($variation, 'volume_unit') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging'))
             )
     ];
 }
@@ -219,8 +218,8 @@ try {
     }
     $categoryId = cleanId($payload['category_id'] ?? null);
     $typeId = cleanId($payload['type_id'] ?? null);
-    $brandName = requiredProductField($payload, 'brand_name');
-    $productName = requiredProductField($payload, 'product_name');
+    $brandName = trim((string) ($payload['brand_name'] ?? ''));
+    $productName = trim((string) ($payload['product_name'] ?? ''));
     $productStatus = normalizeProductStatus($payload['status'] ?? 'Active');
     $fallbackPrice = $payload['price'] ?? null;
     $pricingMethod = normalizePricingMethod($payload['pricing_method'] ?? 'manual');
@@ -250,29 +249,62 @@ try {
         throw new InvalidArgumentException('A valid product type is required for the selected category.');
     }
 
-    $categoryStatement = $pdo->prepare('SELECT category_name FROM product_categories WHERE category_id = :category_id LIMIT 1');
-    $categoryStatement->execute([':category_id' => $categoryId]);
-    $categoryName = (string) $categoryStatement->fetchColumn();
-    if ($categoryName === '') {
+    $categoryStatement = $pdo->prepare(
+        'SELECT pc.category_name, pt.type_name
+         FROM product_categories pc
+         INNER JOIN product_types pt ON pt.category_id=pc.category_id AND pt.type_id=:type_id AND pt.is_active=1
+         WHERE pc.category_id=:category_id LIMIT 1'
+    );
+    $categoryStatement->execute([':category_id' => $categoryId, ':type_id' => $typeId]);
+    $categoryType = $categoryStatement->fetch(PDO::FETCH_ASSOC);
+    $categoryName = trim((string) ($categoryType['category_name'] ?? ''));
+    $typeName = trim((string) ($categoryType['type_name'] ?? ''));
+    if ($categoryName === '' || $typeName === '') {
         throw new InvalidArgumentException('A valid product category is required.');
     }
-    $hasDynamicConfiguration = count(getTypeSpecificationConfiguration($pdo, $typeId)) > 0;
-
+    if ($categoryName === 'Medicine') {
+        // product.product_name remains populated only for compatibility with
+        // existing modules; medicine_details.generic_name is canonical.
+        $genericName = requiredMedicineGenericName($payload['generic_name'] ?? null);
+        $productName = $brandName !== '' ? $brandName : $genericName;
+    } else {
+        $brandName = requiredProductField($payload, 'brand_name');
+        $productName = requiredProductField($payload, 'product_name');
+    }
     $rawVariations = isset($payload['variations']) && is_array($payload['variations']) && count($payload['variations']) > 0
         ? $payload['variations']
         : [$payload];
 
     $skuRows = [];
+    $skuTypeStatement = $pdo->prepare(
+        'SELECT type_name FROM product_types WHERE type_id=:type_id AND category_id=:category_id AND is_active=1 LIMIT 1'
+    );
     foreach ($rawVariations as $variation) {
         if (!is_array($variation) || !empty($variation['delete'])) {
             continue;
         }
-        $variation['generic_name'] = cleanSkuField($variation, 'generic_name') ?? cleanSkuField($payload, 'generic_name');
         $sku = normalizeSkuVariation($variation, $categoryName, $fallbackPrice, $productStatus);
+        $skuTypeId = cleanId($variation['type_id'] ?? $typeId);
+        $skuTypeStatement->execute([':type_id' => $skuTypeId, ':category_id' => $categoryId]);
+        $skuTypeName = trim((string) $skuTypeStatement->fetchColumn());
+        if ($skuTypeId === '' || $skuTypeName === '') {
+            throw new InvalidArgumentException('Each sellable SKU requires a valid Product Type / Dosage Form for the selected category.');
+        }
+        $sku['type_id'] = $skuTypeId;
+        $sku['type_name'] = $skuTypeName;
+        $sku['has_dynamic_configuration'] = count(getTypeSpecificationConfiguration($pdo, $skuTypeId)) > 0;
         $inventoryUnit = requiredProductInventoryUnit($pdo, $sku['inventory_unit_id']);
         $sku['inventory_unit_id'] = $inventoryUnit['measurement_unit_id'];
         $sku['inventory_unit_name'] = $inventoryUnit['unit_name'];
-        $sku['specifications'] = validateAndNormalizeSpecificationValues($pdo, $typeId, is_array($variation['specifications'] ?? null) ? $variation['specifications'] : []);
+        $submittedSpecifications = is_array($variation['specifications'] ?? null) ? $variation['specifications'] : [];
+        $submittedSpecifications = withMedicineClassificationSpecification(
+            $pdo,
+            $categoryName,
+            $submittedSpecifications,
+            $variation['medicine_classification'] ?? $payload['medicine_classification'] ?? null
+        );
+        $sku['specifications'] = validateAndNormalizeSpecificationValues($pdo, $skuTypeId, $submittedSpecifications);
+        $sku['medicine_details'] = requiredMedicineDetails($pdo, $categoryName, $skuTypeName, $payload, $variation, $sku['specifications'], $skuTypeId);
         $skuRows[] = $sku;
     }
 
@@ -282,15 +314,15 @@ try {
 
     $submittedCombinations = [];
     foreach ($skuRows as $sku) {
-        $signature = specificationValueSignature($sku['specifications']);
+        $signature = $sku['type_id'] . '|' . specificationValueSignature($sku['specifications']);
         if (isset($submittedCombinations[$signature])) {
             throw new InvalidArgumentException('Two variants have the same specification combination.');
         }
         $submittedCombinations[$signature] = true;
-        if (($hasDynamicConfiguration && dynamicProductIdentityExists($pdo, $categoryId, $typeId, $brandName, $productName, $sku['specifications'])) || (!$hasDynamicConfiguration && productIdentityExists(
+        if (($sku['has_dynamic_configuration'] && dynamicProductIdentityExists($pdo, $categoryId, $sku['type_id'], $brandName, $productName, $sku['specifications'])) || (!$sku['has_dynamic_configuration'] && productIdentityExists(
             $pdo,
             $categoryId,
-            $typeId,
+            $sku['type_id'],
             $brandName,
             $productName,
             $categoryName,
@@ -355,7 +387,7 @@ try {
             ':brand_name' => $brandName,
             ':product_name' => $productName,
             ':category_id' => $categoryId,
-            ':type_id' => $typeId,
+            ':type_id' => $sku['type_id'],
             ':inventory_unit_id' => $sku['inventory_unit_id'],
             ':price' => $sku['price'],
             ':pricing_method' => $pricingMethod,
@@ -363,20 +395,21 @@ try {
             ':status' => $productStatus
         ]);
 
-        if (!$hasDynamicConfiguration && $categoryName === 'Medicine') {
+        if ($categoryName === 'Medicine') {
+            $medicine = $sku['medicine_details'];
             $medicineInsert->execute([
                 ':medicine_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
-                ':generic_name' => $sku['generic_name'] ?? cleanSkuField($payload, 'generic_name'),
-                ':strength_value' => $sku['strength_value'],
-                ':strength_unit' => $sku['strength_unit'],
-                ':strength' => $sku['strength'],
-                ':dosage_form' => $sku['dosage_form'],
-                ':net_content_value' => $sku['net_content_value'],
-                ':net_content_unit' => $sku['net_content_unit'],
-                ':package_type' => $sku['medicine_package_type']
+                ':generic_name' => $medicine['generic_name'],
+                ':strength_value' => $medicine['strength_value'],
+                ':strength_unit' => $medicine['strength_unit'],
+                ':strength' => $medicine['strength'],
+                ':dosage_form' => $medicine['dosage_form'],
+                ':net_content_value' => $medicine['net_content_value'],
+                ':net_content_unit' => $medicine['net_content_unit'],
+                ':package_type' => $medicine['package_type']
             ]);
-        } elseif (!$hasDynamicConfiguration && $categoryName === 'Grocery') {
+        } elseif (!$sku['has_dynamic_configuration'] && $categoryName === 'Grocery') {
             $groceryInsert->execute([
                 ':grocery_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,
@@ -387,7 +420,7 @@ try {
                 ':package_type' => $sku['grocery_package_type'],
                 ':pack_content' => $sku['pack_content']
             ]);
-        } elseif (!$hasDynamicConfiguration && in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
+        } elseif (!$sku['has_dynamic_configuration'] && in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)) {
             $medicalSupplyInsert->execute([
                 ':medical_supply_detail_id' => newUuid($pdo),
                 ':product_id' => $productId,

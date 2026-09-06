@@ -19,6 +19,7 @@ function ensurePurchaseOrderInvoiceSchema(PDO $pdo): void
         invoice_item_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
         invoice_id CHAR(36) NOT NULL,
         po_item_id CHAR(36) NOT NULL,
+        invoice_qty DECIMAL(12,4) NOT NULL,
         unit_cost DECIMAL(12,4) NOT NULL,
         UNIQUE KEY uq_purchase_order_invoice_line (invoice_id, po_item_id),
         KEY idx_purchase_order_invoice_item_po_line (po_item_id)
@@ -27,7 +28,6 @@ function ensurePurchaseOrderInvoiceSchema(PDO $pdo): void
 
 function purchaseOrderInvoice(PDO $pdo, string $poId): ?array
 {
-    ensurePurchaseOrderInvoiceSchema($pdo);
     $statement = $pdo->prepare(
         'SELECT poi.invoice_id, poi.po_id, poi.invoice_number, poi.invoice_date,
                 poi.discount, poi.other_charges, poi.supplier_invoice_total,
@@ -43,25 +43,63 @@ function purchaseOrderInvoice(PDO $pdo, string $poId): ?array
     $invoice = $statement->fetch(PDO::FETCH_ASSOC);
     if (!$invoice) return null;
     $items = $pdo->prepare(
-        'SELECT piii.invoice_item_id, piii.invoice_id, piii.po_item_id, piii.unit_cost,
+        'SELECT piii.invoice_item_id, piii.invoice_id, piii.po_item_id, piii.unit_cost, piii.invoice_qty,
                 poi.product_id, poi.purchase_qty AS order_qty,
                 COALESCE(NULLIF(TRIM(poi.purchase_unit_snapshot), \'\'), \'pcs\') AS purchase_unit,
-                COALESCE(NULLIF(TRIM(poi.product_name_snapshot), \'\'), p.product_name) AS product_name,
+                COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), \'\'), NULLIF(TRIM(md.generic_name), \'\'), p.product_name) AS product_name,
+                COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), \'\'), NULLIF(TRIM(md.generic_name), \'\'), p.product_name) AS generic_name,
                 COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), \'\'), p.brand_name) AS brand_name,
-                ROUND(poi.purchase_qty * piii.unit_cost, 2) AS line_total
+                COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), \'\'), NULLIF(TRIM(poi.variant_flavor_snapshot), \'\'), \'\') AS generic_or_variant,
+                COALESCE(NULLIF(TRIM(poi.strength_snapshot), \'\'), \'\') AS strength,
+                COALESCE(NULLIF(TRIM(poi.size_value_snapshot), \'\'), \'\') AS size_value,
+                COALESCE(NULLIF(TRIM(poi.unit_snapshot), \'\'), \'\') AS unit,
+                COALESCE(NULLIF(TRIM(poi.packaging_snapshot), \'\'), \'\') AS packaging,
+                ROUND(piii.invoice_qty * piii.unit_cost, 2) AS line_total
          FROM purchase_order_invoice_items piii
          INNER JOIN purchase_order_items poi ON poi.po_item_id = piii.po_item_id
          INNER JOIN product p ON p.product_id = poi.product_id
+         LEFT JOIN medicine_details md ON md.product_id = p.product_id
          WHERE piii.invoice_id = :invoice_id
          ORDER BY poi.po_item_id'
     );
     $items->execute([':invoice_id' => $invoice['invoice_id']]);
     $invoice['items'] = $items->fetchAll(PDO::FETCH_ASSOC);
+    $productIds = array_values(array_unique(array_filter(array_column($invoice['items'], 'product_id'))));
+    $specificationsByProduct = [];
+    if ($productIds) {
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        $specificationStatement = $pdo->prepare(
+            "SELECT psv.product_id, psv.value_text, psv.value_number,
+                    COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name, '') AS unit_symbol
+             FROM product_specification_values psv
+             INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+             LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = psv.measurement_unit_id
+             WHERE psv.product_id IN ({$placeholders})
+             ORDER BY psv.product_id, ps.specification_name"
+        );
+        $specificationStatement->execute($productIds);
+        foreach ($specificationStatement->fetchAll(PDO::FETCH_ASSOC) as $specification) {
+            $value = trim((string) ($specification['value_text'] ?? ''));
+            if ($value === '' && $specification['value_number'] !== null && $specification['value_number'] !== '') {
+                $number = rtrim(rtrim((string) $specification['value_number'], '0'), '.');
+                $value = trim(($number === '' ? '0' : $number) . ' ' . (string) ($specification['unit_symbol'] ?? ''));
+            }
+            if ($value !== '') $specificationsByProduct[(string) $specification['product_id']][] = $value;
+        }
+    }
     $subtotal = 0.0;
     foreach ($invoice['items'] as &$item) {
         $item['order_qty'] = (int) $item['order_qty'];
+        $item['invoice_qty'] = (float) $item['invoice_qty'];
         $item['unit_cost'] = round((float) $item['unit_cost'], 4);
         $item['line_total'] = round((float) $item['line_total'], 2);
+        $item['specification'] = implode(' • ', array_values(array_unique(array_filter(array_map(
+            static fn($value): string => trim((string) $value),
+            array_merge(
+                [$item['generic_or_variant'] ?? '', $item['strength'] ?? '', $item['size_value'] ?? '', $item['packaging'] ?? ''],
+                $specificationsByProduct[(string) ($item['product_id'] ?? '')] ?? []
+            )
+        )))));
         $subtotal += $item['line_total'];
     }
     unset($item);

@@ -9,7 +9,6 @@ require_once '../suppliers/purchasing_conversion.php';
 
 const RECEIVING_DRAFT_PREFIX = "[INSPECTION_DRAFT_V1]\n";
 const RECEIVING_META_PREFIX = "[RECEIVING_META_V1]\n";
-const RETURN_META_PREFIX = "[RETURN_META_V1]";
 
 function receiveResponse(bool $success, string $message, string $error = '', array $extra = [], int $httpCode = 200): void
 {
@@ -52,12 +51,6 @@ function receiveDate($value, string $label, bool $required = false): ?string
         throw new InvalidArgumentException("{$label} must be a valid date.");
     }
     return $date;
-}
-
-function receiveReturnRemarks(array $metadata, string $remarks): string
-{
-    return RETURN_META_PREFIX . json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-        . "\n" . trim($remarks);
 }
 
 function receiveStatusForResolution(string $resolution): string
@@ -395,10 +388,10 @@ try {
         $statement->execute([':receiving_id' => $receivingId, ':po_id' => $poId, ':remarks' => $storedReceivingRemarks, ':inspected_by' => $_SESSION['user_id'] ?? null, ':delivered_by_name' => $deliveredByName, ':delivery_receipt_no' => $deliveryReceiptNo]);
     }
 
-    $receiveItemStatement = $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, received_quantity, accepted_quantity, damaged_quantity) VALUES (:id, :receiving_id, :po_item_id, :received, :accepted, :damaged)');
+    $receiveItemStatement = $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, received_quantity, accepted_quantity, damaged_quantity, missing_quantity) VALUES (:id, :receiving_id, :po_item_id, :received, :accepted, :damaged, :missing)');
     $inventoryStatement = $pdo->prepare("INSERT INTO product_inventory (inventory_id, receiving_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, expiry_date, status) VALUES (:id, :receiving_id, :product_id, :batch_number, :quantity, :remaining, :expiry, :expiry_copy, :status)");
     $batchStatement = $pdo->prepare("INSERT INTO inventory_batches (batch_id, legacy_inventory_id, po_id, po_item_id, product_id, supplier_id, received_date, expiry_date, received_qty, storage_qty, shelf_qty, damaged_qty, returned_qty, unit_cost, batch_status) VALUES (:batch_id, :inventory_id, :po_id, :po_item_id, :product_id, :supplier_id, CURRENT_TIMESTAMP, :expiry, :received, :storage, 0, :damaged, :returned, :unit_cost, :status)");
-    $claimStatement = $pdo->prepare('INSERT INTO supplier_claims (claim_id, po_item_id, damaged_quantity, damaged_unit_conversion_id, action_quantity, action_unit_conversion_id, affected_quantity, unit_conversion_id, damage_reason, disposition, resolution_type, claim_status, reported_by, remarks) VALUES (:id, :po_item_id, :damaged_quantity, :damaged_conversion_id, :action_quantity, :action_conversion_id, :quantity, :conversion_id, :reason, :disposition, :resolution, :status, :reported_by, :remarks)');
+    $claimStatement = $pdo->prepare('INSERT INTO supplier_claims (claim_id, po_item_id, damaged_quantity, damaged_unit_conversion_id, action_quantity, action_unit_conversion_id, affected_quantity, unit_conversion_id, damage_reason, disposition, resolution_type, requested_resolution_type, claim_status, reported_by, remarks) VALUES (:id, :po_item_id, :damaged_quantity, :damaged_conversion_id, :action_quantity, :action_conversion_id, :quantity, :conversion_id, :reason, :disposition, :resolution, :requested_resolution, :status, :reported_by, :remarks)');
     $damageLineStatement = $pdo->prepare('INSERT INTO supplier_claim_damage_lines (damage_line_id, claim_id, receiving_item_id, sequence_no, affected_unit_conversion_id, affected_quantity, damaged_quantity, damaged_unit_conversion_id, inventory_batch_id) VALUES (:id, :claim_id, :receiving_item_id, :sequence_no, :affected_conversion_id, :affected_quantity, :damaged_quantity, :damaged_conversion_id, :inventory_batch_id)');
     $creditStatement = $pdo->prepare("INSERT INTO supplier_credits (credit_id, claim_id, credit_amount, credit_status) VALUES (:credit_id, :claim_id, :amount, :status)");
     $creditApplicationStatement = $pdo->prepare('INSERT INTO supplier_credit_applications (application_id, credit_id, po_id, amount_applied, applied_by) VALUES (:id, :credit_id, :po_id, :amount, :applied_by)');
@@ -412,7 +405,7 @@ try {
         $inventoryBatchIds = [];
         $receiveItemStatement->execute([
             ':id' => $receivingItemId, ':receiving_id' => $receivingId, ':po_item_id' => $validated['poItemId'],
-            ':received' => $validated['delivered'], ':accepted' => $validated['accepted'], ':damaged' => $validated['damaged']
+            ':received' => $validated['delivered'], ':accepted' => $validated['accepted'], ':damaged' => $validated['damaged'], ':missing' => $validated['missing']
         ]);
 
         foreach ($validated['validatedBatches'] as $batchIndex => $batch) {
@@ -459,18 +452,6 @@ try {
         }
 
         if ($validated['affected'] > 0) {
-            $metadataResolution = $validated['resolution'] === 'replacement'
-                ? 'return_for_replacement'
-                : $validated['resolution'];
-            $metadata = [
-                'version' => 1, 'resolution' => $metadataResolution, 'delivered_quantity' => $validated['delivered'],
-                'damaged_quantity' => $validated['damaged'], 'missing_quantity' => $validated['missing'],
-                'supplier_adjustment' => $validated['confirmedAdjustment'],
-                'replacement_expected_qty' => $validated['resolution'] === 'replacement' ? $validated['affected'] : 0,
-                'replacement_received_qty' => 0, 'parent_return_id' => null,
-                'requested_resolution_type' => supplierClaimResolutionFromLegacy($validated['resolution']),
-                'management_remarks' => ''
-            ];
             $claimId = newUuid($pdo);
             $resolutionType = supplierClaimResolutionFromLegacy($validated['resolution']);
             $claimStatement->execute([
@@ -478,9 +459,9 @@ try {
                 ':damaged_quantity' => $validated['damagedQuantity'], ':damaged_conversion_id' => $validated['damagedUnitConversionId'],
                 ':action_quantity' => $validated['actionQuantity'], ':action_conversion_id' => $validated['actionUnitConversionId'],
                 ':conversion_id' => $validated['claimUnitConversionId'], ':reason' => $validated['claimIssueType'],
-                ':disposition' => supplierClaimDispositionFromLegacy($validated['disposition']), ':resolution' => $resolutionType,
+                ':disposition' => supplierClaimDispositionFromLegacy($validated['disposition']), ':resolution' => $resolutionType, ':requested_resolution' => $resolutionType,
                 ':status' => supplierClaimStatus($resolutionType), ':reported_by' => $_SESSION['user_id'] ?? null,
-                ':remarks' => receiveReturnRemarks($metadata, $validated['itemRemarks'])
+                ':remarks' => trim($validated['itemRemarks']) ?: null
             ]);
             foreach ($validated['validatedDamageLines'] as $damageLine) {
                 $damageLineStatement->execute([

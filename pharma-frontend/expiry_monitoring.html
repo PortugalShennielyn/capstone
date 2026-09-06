@@ -35,73 +35,84 @@
         .page-body { padding:clamp(22px, 2vw, 34px); }
         .workspace { width:100%; max-width:1580px; margin:0 auto; padding-inline:clamp(8px, 1.1vw, 18px); }
         body.navbar-sidebar-collapsed .workspace { max-width:1680px; padding-inline:clamp(10px, 1.4vw, 24px); }
-        .card, .summary-card { border:1px solid var(--border-soft); border-radius:10px; box-shadow:0 10px 28px rgba(15,23,42,.05); }
-        .summary-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; }
-        .expiry-summary-grid { flex:1 1 auto; display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:clamp(12px,1.2vw,18px); }
-        .summary-card { min-height:112px; display:flex; flex-direction:column; justify-content:center; padding:20px 18px; background:#fff; border-left:5px solid var(--summary-color,#f59e0b); }
-        .summary-card strong { display:block; font-size:1.75rem; font-weight:800; line-height:1; }
-        .summary-card p { margin:10px 0 0; color:#596274; font-size:.9rem; font-weight:800; line-height:1.25; }
+        .card, .summary-card { border:1px solid var(--border-soft); border-radius:10px; box-shadow:0 8px 22px rgba(15,23,42,.045); }
+        .expiry-summary-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; margin-bottom:18px; }
+        .summary-card { height:84px; display:flex; flex-direction:column; justify-content:center; padding:14px 18px; background:#fff; border-left:4px solid var(--summary-color,#7c3aed); }
+        .summary-card strong { display:block; font-size:1.55rem; font-weight:800; line-height:1; }
+        .summary-card p { margin:7px 0 0; color:#596274; font-size:.82rem; font-weight:750; line-height:1.2; }
         .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-color:#fff; --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
-        .section-title { color:var(--text-main); font-size:1.05rem; font-weight:800; }
-        .table-responsive { border-radius:10px; overflow-x:auto; overflow-y:hidden; }
-        .expiry-table { width:max-content; min-width:1730px; margin-bottom:0; table-layout:fixed; }
-        .expiry-table th { padding:14px 14px; color:#596274; background:#f8f9fc; font-size:13px; font-weight:800; line-height:1.18; text-align:center; vertical-align:middle; }
-        .expiry-table td { padding:16px 14px; color:var(--text-main); font-size:13px; font-weight:750; line-height:1.34; text-align:center; vertical-align:middle; }
-        .expiry-table th:nth-child(1), .expiry-table td:nth-child(1) { min-width:180px; width:180px; }
-        .expiry-table th:nth-child(2), .expiry-table td:nth-child(2) { min-width:130px; width:130px; }
-        .expiry-table th:nth-child(3), .expiry-table td:nth-child(3) { min-width:120px; width:120px; }
-        .expiry-table th:nth-child(4), .expiry-table td:nth-child(4) { min-width:130px; width:130px; }
-        .expiry-table th:nth-child(5), .expiry-table td:nth-child(5) { min-width:220px; width:220px; }
-        .expiry-table th:nth-child(6), .expiry-table td:nth-child(6),
-        .expiry-table th:nth-child(7), .expiry-table td:nth-child(7) { min-width:120px; width:120px; text-align:center; }
-        .expiry-table th:nth-child(8), .expiry-table td:nth-child(8) { min-width:130px; width:130px; white-space:nowrap; }
-        .expiry-table th:nth-child(9), .expiry-table td:nth-child(9) { min-width:140px; width:140px; white-space:nowrap; }
-        .expiry-table th:nth-child(10), .expiry-table td:nth-child(10) { min-width:140px; width:140px; text-align:center; }
-        .expiry-table th:nth-child(11), .expiry-table td:nth-child(11) { min-width:150px; width:150px; text-align:center; }
-        .expiry-table th:nth-child(12), .expiry-table td:nth-child(12) { width:112px!important; min-width:112px!important; max-width:112px!important; position:sticky!important; right:0!important; z-index:13!important; border-left:1px solid #dde3ec!important; background:#fff!important; background-clip:padding-box!important; box-shadow:-8px 0 14px rgba(15,23,42,.09)!important; text-align:center!important; }
-        .expiry-table thead th:nth-child(12) { z-index:16!important; background:#f8f9fc!important; }
-        .expiry-table tbody tr:hover td { background:#f8fafc!important; }
-        .expiry-table tbody tr:hover td:nth-child(12) { background:#f8fafc!important; }
-        .expiry-table tbody tr.is-selected td { background:#f5f2ff!important; }
-        .expiry-table tbody tr.is-selected td:nth-child(12) { background:#f5f2ff!important; box-shadow:inset 3px 0 0 #8b5cf6,-8px 0 14px rgba(15,23,42,.09)!important; }
-        #table-expiry-monitoring.data-table-enhanced th:nth-child(12),#table-expiry-monitoring.data-table-enhanced td:nth-child(12) { width:112px!important; min-width:112px!important; max-width:112px!important; position:sticky!important; right:0!important; z-index:13!important; background:#fff!important; background-clip:padding-box!important; border-left:1px solid #dde3ec!important; box-shadow:-8px 0 14px rgba(15,23,42,.09)!important; }
-        #table-expiry-monitoring.data-table-enhanced thead th:nth-child(12) { z-index:16!important; background:#f8f9fc!important; }
-        #table-expiry-monitoring.data-table-enhanced tbody tr:hover td:nth-child(12) { background:#f8fafc!important; }
-        #table-expiry-monitoring.data-table-enhanced tbody tr.is-selected td:nth-child(12) { background:#f5f2ff!important; }
-        .expiry-table td:nth-child(2),
-        .expiry-table td:nth-child(5) { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .expiry-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+        .expiry-search { position:relative; flex:0 1 480px; width:480px; max-width:480px; min-width:290px; }
+        .expiry-search i { position:absolute; top:50%; left:14px; color:#8a94a6; transform:translateY(-50%); pointer-events:none; }
+        .expiry-search .form-control { height:42px; padding-left:40px; border-color:#dfe4ec; border-radius:9px; font-size:13px; }
+        .expiry-toolbar .form-select { width:auto; min-width:160px; height:42px; border-color:#dfe4ec; border-radius:9px; font-size:13px; font-weight:600; }
+        .expiry-table-card { overflow:visible; padding:0; background:#fff; }
+        .expiry-table-shell { width:100%; overflow:visible; border-radius:10px 10px 0 0; }
+        .expiry-table { width:100%!important; min-width:0!important; margin:0; table-layout:fixed!important; border-collapse:separate; border-spacing:0; }
+        .expiry-table th { padding:12px 10px!important; color:#596274; background:#f8f9fc; font-size:13px!important; font-weight:700; line-height:1.2; text-align:left!important; vertical-align:middle; }
+        .expiry-table td { height:66px; padding:12px 10px!important; color:var(--text-main); background:#fff; font-size:13px!important; font-weight:650; line-height:1.35; text-align:left!important; vertical-align:middle; border-color:#edf0f5; }
+        .expiry-table th:nth-child(4), .expiry-table td:nth-child(4), .expiry-table th:nth-child(5), .expiry-table td:nth-child(5), .expiry-table th:nth-child(7), .expiry-table td:nth-child(7), .expiry-table th:nth-child(8), .expiry-table td:nth-child(8), .expiry-table th:nth-child(9), .expiry-table td:nth-child(9) { text-align:center!important; }
+        .product-primary { display:block; color:var(--text-main); font-size:14px; font-weight:700; line-height:1.3; overflow-wrap:anywhere; }
+        .product-secondary, .cell-secondary { display:block; margin-top:4px; color:#778195; font-size:12.5px; font-weight:550; line-height:1.3; overflow-wrap:anywhere; }
+        .batch-reference { color:#344054; font-size:12.5px; font-weight:700; line-height:1.3; overflow-wrap:anywhere; word-break:break-word; }
+        .expiry-table th:nth-child(9), .expiry-table td:nth-child(9) { position:sticky; right:0; z-index:3; border-left:1px solid #e3e8f0; background:#fff; background-clip:padding-box; box-shadow:-7px 0 12px rgba(15,23,42,.06); }
+        .expiry-table thead th:nth-child(9) { z-index:5; background:#f8f9fc; }
+        .expiry-table tbody tr:hover td { background:#f8fafc; }
+        .expiry-table tbody tr:hover td:nth-child(9) { background:#f8fafc; }
+        .expiry-table tbody tr.is-selected td { background:#f5f2ff; }
+        .expiry-table tbody tr.is-selected td:nth-child(9) { background:#f5f2ff; box-shadow:inset 3px 0 0 #8b5cf6,-7px 0 12px rgba(15,23,42,.06); }
         .expiry-actions { display:inline-flex; justify-content:center; align-items:center; gap:7px; white-space:nowrap; }
         .expiry-actions .btn { width:32px; height:32px; min-width:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:8px; background:#fff; }
         .empty-row { padding:42px 16px !important; color:#8790a1 !important; text-align:center; }
-        .expiry-date-stack { display:flex; flex-direction:column; align-items:center; gap:4px; white-space:nowrap; }
-        .expiry-date-stack > span:last-child { color:#64748b; font-size:11px; font-weight:700; }
+        .expiry-date-stack { display:flex; flex-direction:column; align-items:flex-start; gap:3px; }
+        .expiry-date-stack > strong { font-size:12.75px; font-weight:700; }
+        .expiry-date-stack > span { color:#778195; font-size:11.5px; font-weight:600; }
         .expiry-status-badge { display:inline-flex; align-items:center; justify-content:center; gap:5px; padding:5px 8px; border-radius:999px; white-space:nowrap; font-size:11px; font-weight:800; line-height:1.15; }
         .expiry-status-badge.safe { color:#166534; background:#dcfce7; }
         .expiry-status-badge.expiring-soon { color:#92400e; background:#fef3c7; }
         .expiry-status-badge.expired { color:#991b1b; background:#fee2e2; }
         .expiry-status-badge.not-recorded { color:#475569; background:#f1f5f9; }
-        .detail-box { padding:12px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
-        .detail-box span { display:block; color:#7b8494; font-size:.78rem; font-weight:800; text-transform:uppercase; }
-        .detail-box strong { display:block; margin-top:4px; color:var(--text-main); font-size:.95rem; font-weight:800; }
-        .expiry-detail-section { margin-bottom:18px; }
-        .expiry-detail-section h3 { margin:0 0 9px; color:#344054; font-size:.78rem; font-weight:850; letter-spacing:.02em; }
-        .expiry-detail-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
-        .expiry-stock-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
-        .expiry-detail-item { min-width:0; padding:10px 11px; border:1px solid #e5e9f1; border-radius:8px; background:#f8fafc; }
-        .expiry-detail-item > span:first-child { display:block; color:#7b8494; font-size:.65rem; font-weight:800; text-transform:uppercase; }
-        .expiry-detail-item > strong { display:block; margin-top:3px; overflow-wrap:anywhere; color:var(--text-main); font-size:.76rem; font-weight:800; }
+        #expiryDetailsModal .modal-dialog { width:min(1050px,90vw); max-width:1050px; }
+        #editExpiryDateModal .modal-dialog { width:min(780px,88vw); max-width:780px; }
+        .expiry-modal-section { padding:18px 0; border-bottom:1px solid var(--border-soft); }
+        .expiry-modal-section:first-child { padding-top:2px; }
+        .expiry-modal-section:last-child { padding-bottom:2px; border-bottom:0; }
+        .expiry-modal-section h3 { margin:0 0 14px; color:#344054; font-size:.82rem; font-weight:800; }
+        .expiry-identity-summary { padding:2px 0; }
+        .expiry-identity-summary .product-primary { font-size:15px; }
+        .expiry-identity-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+        .expiry-identity-field { min-width:0; padding:8px 0 12px; border-bottom:1px solid #edf0f5; }
+        .expiry-identity-field > span:first-child { display:block; margin-bottom:6px; color:#7b8494; font-size:.65rem; font-weight:800; letter-spacing:.02em; text-transform:uppercase; }
+        .expiry-identity-field strong { display:block; color:var(--text-main); font-size:14.5px; font-weight:650; overflow-wrap:anywhere; }
+        .expiry-identity-brand { display:block; margin-top:3px; color:#778195; font-size:12.75px; font-weight:550; }
+        .expiry-identity-specification { color:var(--text-main); font-size:14px; font-weight:550; overflow-wrap:anywhere; }
+        .expiry-info-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); column-gap:28px; row-gap:0; }
+        .expiry-info-grid.expiry-info-grid-four { grid-template-columns:repeat(4,minmax(0,1fr)); }
+        .expiry-info-item { min-width:0; padding:11px 0; border-bottom:1px solid #edf0f5; }
+        .expiry-info-item > span:first-child { display:block; color:#7b8494; font-size:.65rem; font-weight:800; letter-spacing:.02em; text-transform:uppercase; }
+        .expiry-info-item > strong { display:block; margin-top:4px; overflow-wrap:anywhere; color:var(--text-main); font-size:.8rem; font-weight:750; }
+        .expiry-edit-summary { padding:12px 0 16px; border-bottom:1px solid var(--border-soft); }
+        .expiry-edit-label { display:block; margin-bottom:5px; color:#7b8494; font-size:.66rem; font-weight:800; letter-spacing:.02em; text-transform:uppercase; }
+        .expiry-edit-reference-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:28px; margin-top:15px; }
+        .expiry-edit-reference-grid strong { display:block; overflow-wrap:anywhere; font-size:.8rem; }
+        .expiry-settings-section { padding-top:18px; }
+        .expiry-settings-section h3 { margin:0 0 14px; color:#344054; font-size:.82rem; font-weight:800; }
+        .expiry-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
         #expiryDetailsModal .modal-footer { position:sticky; bottom:0; z-index:2; background:#fff; }
-        body.dark-mode .expiry-table th { background:#202b3d!important; color:#cbd5e1; }
-        body.dark-mode .expiry-table td, body.dark-mode .expiry-table td:nth-child(12), body.dark-mode #expiryDetailsModal .modal-footer { background:#182131!important; }
-        body.dark-mode #table-expiry-monitoring.data-table-enhanced th:nth-child(12),body.dark-mode #table-expiry-monitoring.data-table-enhanced td:nth-child(12) { background:#182131!important; border-left-color:#334155!important; }
-        body.dark-mode #table-expiry-monitoring.data-table-enhanced thead th:nth-child(12) { background:#202b3d!important; }
-        body.dark-mode #table-expiry-monitoring.data-table-enhanced tbody tr:hover td:nth-child(12) { background:#202b3d!important; }
-        body.dark-mode #table-expiry-monitoring.data-table-enhanced tbody tr.is-selected td:nth-child(12) { background:#29213f!important; }
-        body.dark-mode .expiry-table tbody tr:hover td, body.dark-mode .expiry-table tbody tr:hover td:nth-child(12) { background:#202b3d!important; }
-        body.dark-mode .expiry-table tbody tr.is-selected td, body.dark-mode .expiry-table tbody tr.is-selected td:nth-child(12) { background:#29213f!important; }
-        body.dark-mode .expiry-detail-item { background:#111827; border-color:#2b3546; }
-        @media (max-width:991.98px) { .page-body { padding:20px 14px; } .workspace { max-width:100%; padding-inline:0; } .expiry-detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-        @media (max-width:575.98px) { .expiry-detail-grid,.expiry-stock-grid { grid-template-columns:1fr; } }
+        .expiry-table-footer { min-height:50px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 14px; border-top:1px solid var(--border-soft); }
+        .expiry-record-count { color:#687386; font-size:12.5px; font-weight:600; }
+        .expiry-pagination-controls { display:flex; align-items:center; gap:9px; }
+        .expiry-pagination-controls label { display:flex; align-items:center; gap:7px; color:#687386; font-size:12.5px; font-weight:600; }
+        .expiry-pagination-controls .form-select { width:70px; height:34px; padding-top:4px; padding-bottom:4px; font-size:12.5px; }
+        .expiry-pagination-controls .btn { min-width:72px; height:34px; padding:5px 11px; font-size:12.5px; font-weight:650; }
+        body.dark-mode .expiry-table-card, body.dark-mode .expiry-table td, body.dark-mode .expiry-table td:nth-child(9), body.dark-mode #expiryDetailsModal .modal-footer { background:#182131; }
+        body.dark-mode .expiry-table th, body.dark-mode .expiry-table thead th:nth-child(9) { background:#202b3d; color:#cbd5e1; }
+        body.dark-mode .expiry-table tbody tr:hover td, body.dark-mode .expiry-table tbody tr:hover td:nth-child(9) { background:#202b3d; }
+        body.dark-mode .expiry-table tbody tr.is-selected td, body.dark-mode .expiry-table tbody tr.is-selected td:nth-child(9) { background:#29213f; }
+        @media (max-width:1100px) { .expiry-table th,.expiry-table td { padding-left:7px!important; padding-right:7px!important; font-size:12px!important; } .product-primary { font-size:13px; } .product-secondary,.cell-secondary { font-size:11.5px; } .expiry-actions { gap:5px; } .expiry-actions .btn { width:30px; height:30px; min-width:30px; } }
+        @media (max-width:991.98px) { .page-body { padding:20px 14px; } .workspace { max-width:100%; padding-inline:0; } .expiry-toolbar { flex-wrap:wrap; } .expiry-search { flex:1 1 100%; width:100%; max-width:none; } .expiry-summary-grid { gap:10px; } .summary-card { padding-inline:12px; } .expiry-info-grid,.expiry-info-grid.expiry-info-grid-four { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        @media (max-width:767.98px) { .expiry-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .expiry-table-footer { align-items:flex-start; flex-direction:column; } }
+        @media (max-width:575.98px) { .expiry-toolbar .form-select { flex:1 1 0; min-width:135px; } .expiry-identity-grid,.expiry-info-grid,.expiry-info-grid.expiry-info-grid-four,.expiry-edit-reference-grid,.expiry-settings-grid { grid-template-columns:1fr; } }
     </style>
 </head>
 <body>
@@ -127,50 +138,60 @@
 
         <section class="page-body">
             <div class="workspace">
-                <div class="summary-row">
-                    <div id="expirySummaryCards" class="expiry-summary-grid"></div>
-                    <button class="btn btn-purple" type="button" id="btnRefreshExpiry">
-                        <i class="fa-solid fa-rotate me-2"></i>Refresh
-                    </button>
+                <div id="expirySummaryCards" class="expiry-summary-grid">
+                    <div class="summary-card" style="--summary-color:#7c3aed"><strong>0</strong><p>Total Batches</p></div>
+                    <div class="summary-card" style="--summary-color:#16a34a"><strong>0</strong><p>Safe</p></div>
+                    <div class="summary-card" style="--summary-color:#d97706"><strong>0</strong><p>Expiring Soon</p></div>
+                    <div class="summary-card" style="--summary-color:#dc2626"><strong>0</strong><p>Expired</p></div>
+                    <div class="summary-card" style="--summary-color:#64748b"><strong>0</strong><p>Not Recorded</p></div>
                 </div>
 
-                <div class="card p-3">
-                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-                        <div>
-                            <h1 class="section-title mb-1">Expiry Monitoring</h1>
-                            <p class="text-muted small mb-0">Review received inventory batches with expiry dates.</p>
-                        </div>
+                <div class="expiry-toolbar" aria-label="Expiry monitoring filters">
+                    <div class="expiry-search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input id="expirySearch" class="form-control" type="search" placeholder="Search product, brand, batch or PO" aria-label="Search expiry records" data-search-highlight-target="#table-expiry-monitoring tbody">
                     </div>
-                    <div class="table-responsive">
-                        <table id="table-expiry-monitoring" class="table table-hover align-middle expiry-table">
+                    <select id="expiryStatusFilter" class="form-select" aria-label="Filter by expiry status"><option value="">All statuses</option><option value="Safe">Safe</option><option value="Expiring Soon">Expiring Soon</option><option value="Expired">Expired</option><option value="Not Recorded">Not Recorded</option></select>
+                    <select id="expiryCategoryFilter" class="form-select" aria-label="Filter by category"><option value="">All categories</option></select>
+                </div>
+
+                <div class="card expiry-table-card">
+                    <div class="expiry-table-shell">
+                        <table id="table-expiry-monitoring" class="table table-hover align-middle expiry-table" data-table-enhance="false">
+                            <colgroup><col style="width:20%"><col style="width:13%"><col style="width:12%"><col style="width:8%"><col style="width:8%"><col style="width:13%"><col style="width:8%"><col style="width:10%"><col style="width:8%"></colgroup>
                             <thead>
                                 <tr>
-                                    <th>Product Name</th>
-                                    <th>Brand Name</th>
-                                    <th>Category</th>
-                                    <th>Product Type</th>
-                                    <th>Batch / PO Number</th>
-                                    <th>Received Quantity</th>
-                                    <th>Available Quantity</th>
-                                    <th>Expiry Date</th>
-                                    <th>Alert Before</th>
-                                    <th>Days Until Expiry</th>
+                                    <th>Product</th>
+                                    <th>Batch Number</th>
+                                    <th>PO Number</th>
+                                    <th>Storage Qty</th>
+                                    <th>Shelf Qty</th>
+                                    <th>Expiry</th>
+                                    <th>Days Left</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="12" class="empty-row">Loading expiry records...</td></tr>
+                                <tr><td colspan="9" class="empty-row">Loading expiry records...</td></tr>
                             </tbody>
                         </table>
                     </div>
+                    <footer class="expiry-table-footer">
+                        <span id="expiryRecordCount" class="expiry-record-count">0 records</span>
+                        <div class="expiry-pagination-controls">
+                            <label for="expiryPageSize">Rows <select id="expiryPageSize" class="form-select form-select-sm"><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option></select></label>
+                            <button id="expiryPreviousPage" class="btn btn-light btn-sm" type="button">Previous</button>
+                            <button id="expiryNextPage" class="btn btn-light btn-sm" type="button">Next</button>
+                        </div>
+                    </footer>
                 </div>
             </div>
         </section>
     </main>
 
     <div class="modal fade" id="expiryDetailsModal" tabindex="-1" aria-labelledby="expiryDetailsModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
@@ -189,41 +210,47 @@
     </div>
 
     <div class="modal fade" id="editExpiryDateModal" tabindex="-1" aria-labelledby="editExpiryDateModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
                         <h2 class="modal-title fs-5 fw-bold" id="editExpiryDateModalLabel">Edit Expiry Date</h2>
-                        <p class="text-muted small mb-0 mt-1">Set the expiry date for this received inventory batch.</p>
+                        <p class="text-muted small mb-0 mt-1">Update expiry information for this received inventory batch.</p>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="editExpiryBatchId">
                     <input type="hidden" id="editExpiryInventoryId">
-                    <div class="detail-box mb-3">
-                        <span>Product</span>
-                        <strong id="editExpiryProductName">-</strong>
+                    <div class="expiry-edit-summary">
+                        <span class="expiry-edit-label">Product</span>
+                        <strong id="editExpiryProductName" class="product-primary">-</strong>
+                        <span id="editExpiryProductMeta" class="product-secondary">-</span>
+                        <div class="expiry-edit-reference-grid">
+                            <div><span class="expiry-edit-label">Batch Number</span><strong id="editExpiryBatchNumber">-</strong></div>
+                            <div><span class="expiry-edit-label">PO Number</span><strong id="editExpiryPoNumber">-</strong></div>
+                        </div>
                     </div>
-                    <div class="detail-box mb-3">
-                        <span>Batch / PO Number</span>
-                        <strong id="editExpiryBatchNumber">-</strong>
-                    </div>
-                    <label class="form-label fw-semibold" for="editExpiryDateInput">Expiry Date</label>
-                    <input id="editExpiryDateInput" class="form-control" type="date">
-                    <div class="form-text">Leave blank to mark this batch as No Expiry Date.</div>
-                    <label class="form-label fw-semibold mt-3" for="editExpiryAlertSelect">Alert Before Expiry</label>
-                    <select id="editExpiryAlertSelect" class="form-select">
-                        <option value="7">7 days before</option>
-                        <option value="15">15 days before</option>
-                        <option value="30" selected>30 days before</option>
-                        <option value="60">60 days before</option>
-                        <option value="custom">Custom days</option>
-                    </select>
-                    <div id="editExpiryCustomWrap" class="mt-2 d-none">
-                        <label class="form-label small fw-bold mb-1" for="editExpiryCustomDays">Custom days</label>
-                        <input id="editExpiryCustomDays" class="form-control" type="number" min="1" max="3650" value="30">
-                    </div>
+                    <section class="expiry-settings-section">
+                        <h3>Expiry Settings</h3>
+                        <div class="expiry-settings-grid">
+                            <div>
+                                <label class="form-label fw-semibold" for="editExpiryDateInput">Expiry Date</label>
+                                <input id="editExpiryDateInput" class="form-control" type="date">
+                            </div>
+                            <div>
+                                <label class="form-label fw-semibold" for="editExpiryAlertSelect">Alert Before Expiry</label>
+                                <select id="editExpiryAlertSelect" class="form-select">
+                                    <option value="7">7 days before</option><option value="15">15 days before</option><option value="30" selected>30 days before</option><option value="60">60 days before</option><option value="custom">Custom days</option>
+                                </select>
+                                <div id="editExpiryCustomWrap" class="mt-2 d-none">
+                                    <label class="form-label small fw-bold mb-1" for="editExpiryCustomDays">Custom days</label>
+                                    <input id="editExpiryCustomDays" class="form-control" type="number" min="1" max="3650" value="30">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-text mt-2">Leave blank if no expiry date is currently recorded.</div>
+                    </section>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
@@ -237,7 +264,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/expiry_monitoring.js?v=4"></script>
+    <script type="module" src="./js/modules/expiry_monitoring.js?v=8"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js?v=8';
         await verifySession();

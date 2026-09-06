@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit();
 }
 $poId = cleanId($_GET['po_id'] ?? null);
+$receivingId = cleanId($_GET['receiving_id'] ?? null);
 if ($poId === '') {
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'Purchase order id is required.']);
@@ -19,8 +20,8 @@ if ($poId === '') {
 }
 try {
     ensurePurchaseOrderReceivingRevisionSchema($pdo);
-    $details = buildPurchaseOrderReceivingDetails($pdo, $poId);
-    if (!$details) {
+    $details = buildPurchaseOrderReceivingDetails($pdo, $poId, $receivingId);
+    if (!$details && $receivingId === '') {
         $details = buildLegacyPurchaseOrderPaymentDetails($pdo, $poId);
         if (!$details) {
             http_response_code(404);
@@ -31,6 +32,14 @@ try {
             ]);
             exit();
         }
+    } elseif (!$details) {
+        http_response_code(404);
+        echo json_encode([
+            'status' => 'error',
+            'code' => 'RECEIVING_NOT_AVAILABLE',
+            'message' => 'The requested receiving record is not available for this purchase order.',
+        ]);
+        exit();
     }
     $settings = fetchSystemSettings($pdo);
     $details['pharmacy'] = [

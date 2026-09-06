@@ -2,6 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
+require_once 'expiry_status_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
@@ -30,6 +31,9 @@ try {
             ib.batch_status,
             p.product_name,
             p.brand_name,
+            inventory_unit.unit_name AS inventory_unit_name,
+            COALESCE(NULLIF(inventory_unit.unit_symbol, ''), inventory_unit.unit_name) AS inventory_unit_symbol,
+            specs.normalized_specification,
             md.generic_name,
             md.strength,
             md.strength_value,
@@ -48,6 +52,7 @@ try {
          FROM inventory_batches ib
          LEFT JOIN (SELECT source_batch_id, SUM(quantity_remaining) shelf_qty FROM product_selling_stock GROUP BY source_batch_id) selling ON selling.source_batch_id = ib.batch_id
          INNER JOIN product p ON p.product_id = ib.product_id
+         LEFT JOIN product_measurement_units inventory_unit ON inventory_unit.measurement_unit_id = p.inventory_unit_id
          LEFT JOIN product_inventory pi ON pi.inventory_id = ib.legacy_inventory_id
          LEFT JOIN purchase_order_items poi ON poi.po_item_id = ib.po_item_id
          LEFT JOIN purchase_orders po ON po.po_id = COALESCE(ib.po_id, poi.po_id)
@@ -57,6 +62,33 @@ try {
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
+         LEFT JOIN (
+            SELECT
+                psv.product_id,
+                GROUP_CONCAT(
+                    COALESCE(
+                        NULLIF(TRIM(psv.value_text), ''),
+                        NULLIF(TRIM(CONCAT(
+                            TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM CAST(psv.value_number AS CHAR))),
+                            CASE
+                                WHEN COALESCE(NULLIF(spec_unit.unit_symbol, ''), spec_unit.unit_name) IS NULL THEN ''
+                                ELSE CONCAT(' ', COALESCE(NULLIF(spec_unit.unit_symbol, ''), spec_unit.unit_name))
+                            END
+                        )), '')
+                    )
+                    ORDER BY COALESCE(pts.sort_order, 2147483647), ps.specification_name
+                    SEPARATOR ' • '
+                ) AS normalized_specification
+            FROM product_specification_values psv
+            INNER JOIN product specification_product ON specification_product.product_id = psv.product_id
+            INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+            LEFT JOIN product_type_specifications pts
+                ON pts.type_id = specification_product.type_id
+               AND pts.specification_id = psv.specification_id
+            LEFT JOIN product_measurement_units spec_unit ON spec_unit.measurement_unit_id = psv.measurement_unit_id
+            WHERE NULLIF(TRIM(psv.value_text), '') IS NOT NULL OR psv.value_number IS NOT NULL
+            GROUP BY psv.product_id
+         ) specs ON specs.product_id = p.product_id
          WHERE ib.received_qty > 0
             OR ib.storage_qty > 0
             OR COALESCE(selling.shelf_qty, 0) > 0
@@ -76,19 +108,13 @@ try {
         $row['available_quantity'] = (int) ($row['available_quantity'] ?? 0);
         $row['expiry_alert_days'] = (int) ($row['expiry_alert_days'] ?? 30);
 
-        if (empty($row['expiry_date'])) {
-            $row['expiry_status'] = 'Not Recorded';
+        $row['expiry_status'] = inventoryExpiryStatus(
+            $row['expiry_date'] ?? null,
+            $row['days_until_expiry'] ?? null,
+            $row['expiry_alert_days']
+        );
+        if ($row['expiry_status'] === 'Not Recorded') {
             $row['days_until_expiry'] = null;
-            return $row;
-        }
-
-        $days = (int) $row['days_until_expiry'];
-        if ($days < 0) {
-            $row['expiry_status'] = 'Expired';
-        } elseif ($days <= $row['expiry_alert_days']) {
-            $row['expiry_status'] = 'Expiring Soon';
-        } else {
-            $row['expiry_status'] = 'Safe';
         }
         return $row;
     }, $statement->fetchAll(PDO::FETCH_ASSOC));

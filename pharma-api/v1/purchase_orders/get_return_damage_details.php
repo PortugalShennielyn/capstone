@@ -57,7 +57,7 @@ try {
             COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
             COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
             COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
-            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength, 'N/A') AS strength,
+            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), 'N/A') AS strength,
             COALESCE(md.strength_value, md.strength) AS strength_value,
             md.strength_unit AS strength_unit,
             md.net_content_value,
@@ -82,7 +82,7 @@ try {
          LEFT JOIN product_types pt ON pt.type_id = p.type_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
-         LEFT JOIN (SELECT claim_id, MIN(receiving_item_id) AS receiving_item_id FROM supplier_claim_damage_lines WHERE receiving_item_id IS NOT NULL GROUP BY claim_id) claim_receiving ON claim_receiving.claim_id = por.return_id
+         LEFT JOIN (SELECT claim_id, MIN(receiving_item_id) AS receiving_item_id FROM supplier_claim_damage_lines WHERE receiving_item_id IS NOT NULL GROUP BY claim_id HAVING COUNT(DISTINCT receiving_item_id)=1) claim_receiving ON claim_receiving.claim_id = por.return_id
          LEFT JOIN purchase_order_receiving_items original_item ON original_item.receiving_item_id = claim_receiving.receiving_item_id
          LEFT JOIN purchase_order_receiving original_receiving ON original_receiving.receiving_id = original_item.receiving_id
          LEFT JOIN (SELECT cr.credit_id, cr.claim_id, cr.credit_amount, cr.credit_status, COALESCE(SUM(app.amount_applied),0) AS amount_applied FROM supplier_credits cr LEFT JOIN supplier_credit_applications app ON app.credit_id=cr.credit_id GROUP BY cr.credit_id,cr.claim_id,cr.credit_amount,cr.credit_status) credit ON credit.claim_id=por.return_id
@@ -160,6 +160,18 @@ try {
     }
 
     $record = decoratePurchaseOrderReturnRecord($record);
+    $legacyUnconfirmedPenny = (float) ($record['credit_amount'] ?? 0) === 0.01
+        && (float) ($record['supplier_adjustment'] ?? 0) === 0.01
+        && (float) ($record['credit_applied'] ?? 0) === 0.0
+        && ($record['credit_status'] ?? '') === 'Available'
+        && ($record['return_status'] ?? '') === 'Resolved / Credit Issued';
+    if ($legacyUnconfirmedPenny) {
+        $record['unconfirmed_credit_placeholder'] = true;
+        $record['credit_amount'] = null;
+        $record['credit_remaining'] = null;
+        $record['supplier_adjustment'] = 0.0;
+        $record['return_status'] = 'Awaiting Supplier Credit';
+    }
     $activities = [[
         'created_at' => $record['return_date'],
         'description' => 'Issue recorded during delivery inspection.'

@@ -13,20 +13,19 @@ import {
     formatMeasurement,
     formatMeasurementText,
     formatMeasurementValue,
+    formatProductCatalogSpecificationLines,
+    formatProductContainer,
     formatProductSpecification,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=8';
+} from './product_specification.js?v=14';
 import {
-    archiveMeasurementUnitCache,
     loadMeasurementUnits,
-    measurementUnitsForContext,
-    upsertMeasurementUnitCache
+    measurementUnitsForContext
 } from './measurement_units.js?v=4';
 
-const selectedMeasurementUnitIds = new Set();
 
 const PRODUCT_LIST_CACHE_KEY = 'productMasterFileCache:v1';
-const PRODUCT_LIST_CACHE_VERSION = 2;
+const PRODUCT_LIST_CACHE_VERSION = 4;
 const PRODUCT_LIST_CACHE_MAX_AGE_MS = 15 * 60 * 1000;
 
 function getValue(id) {
@@ -70,6 +69,7 @@ const productState = {
     packageTypes: [],
     measurementGroups: [],
     allSpecifications: [],
+    medicineClassifications: [],
     configurationTypeId: '',
     specifications: [],
     pricingSelectionMode: false,
@@ -85,7 +85,9 @@ const referenceCache = {
     configurationsByType: new Map(),
     configurationPromises: new Map(),
     suppliers: null,
-    supplierPromise: null
+    supplierPromise: null,
+    medicineClassifications: null,
+    medicineClassificationPromise: null
 };
 
 let activeProductDetailsId = null;
@@ -98,7 +100,9 @@ let editPricingApplyRequested = false;
 let selectedPricingPreviewRows = [];
 let selectedPricingEligibleProductIds = new Set();
 let selectedPricingSubmissionActive = false;
+let addProductSubmissionActive = false;
 let productsLoadPromise = null;
+let productTypeCustomizerTarget = { mode: 'add', variationIndex: 0 };
 
 function formatPrice(value) {
     return `\u20b1${Number(value || 0).toLocaleString('en-PH', {
@@ -310,7 +314,7 @@ function medicineSpecificationLabel(typeName = '') {
 
 function dash(value) {
     const clean = cleanCardText(value);
-    return clean || '-';
+    return clean || '—';
 }
 
 function productVariantGeneric(product) {
@@ -407,6 +411,24 @@ async function cachedProductTypes(categoryId = '', forceRefresh = false) {
         return types;
     }).finally(() => referenceCache.typePromises.delete(key));
     referenceCache.typePromises.set(key, promise);
+    return promise;
+}
+
+async function cachedMedicineClassifications(forceRefresh = false) {
+    if (!forceRefresh && referenceCache.medicineClassifications) return referenceCache.medicineClassifications;
+    if (!forceRefresh && referenceCache.medicineClassificationPromise) return referenceCache.medicineClassificationPromise;
+
+    const promise = PharmaUtils.safeFetch(`${API_BASE_URL}/products/get_medicine_classifications.php`, {
+        method: 'GET', credentials: 'include'
+    }).then(response => {
+        const rows = response?.classifications || [];
+        referenceCache.medicineClassifications = rows;
+        productState.medicineClassifications = rows;
+        return rows;
+    }).finally(() => {
+        if (referenceCache.medicineClassificationPromise === promise) referenceCache.medicineClassificationPromise = null;
+    });
+    referenceCache.medicineClassificationPromise = promise;
     return promise;
 }
 
@@ -529,12 +551,23 @@ function productSearchText(product) {
         variation.barcode,
         variation.sku
     ].join(' ')).join(' ');
+    const specificationText = (product.specifications || []).map(specification => [
+        specification.value_text,
+        specification.value_number,
+        specification.unit_name,
+        specification.unit_symbol
+    ].join(' ')).join(' ');
 
     return [
         product.product_name,
         product.brand_name,
         product.generic_name,
+        product.medicine_classification,
+        formatProductSpecification(product, ''),
         product.strength,
+        product.dosage_form,
+        product.net_content_value,
+        product.net_content_unit,
         product.variant,
         product.size,
         product.net_weight,
@@ -542,6 +575,7 @@ function productSearchText(product) {
         product.barcode,
         product.category_name,
         product.type_name,
+        specificationText,
         variationText
     ].join(' ').toLowerCase();
 }
@@ -631,8 +665,8 @@ function renderProductCard(product) {
             <div class="product-card-body">
                 <div class="product-card-head">
                     <div class="product-name-block">
-                        <h3 class="product-title">${escapeHtml(product.product_name || 'Unnamed Product')}</h3>
-                        <div class="product-brand">${escapeHtml(product.brand_name || 'No brand')}</div>
+                        <h3 class="product-title">${escapeHtml(productCatalogName(product))}${medicineRxBadge(product)}</h3>
+                        <div class="product-brand">${escapeHtml(dash(product.brand_name))}</div>
                     </div>
                     <div class="product-card-tools">
                         <button type="button" class="product-barcode-toggle" data-product-id="${escapeHtml(product.product_id)}" title="Show barcode" aria-label="Show barcode">
@@ -676,15 +710,18 @@ function refreshProductCard(productId) {
 function getFilteredProducts() {
     const searchValue = document.getElementById('productSearchInput')?.value.trim().toLowerCase() || '';
     const categoryValue = document.getElementById('productCategoryFilter')?.value || '';
-    const typeValue = document.getElementById('productTypeFilter')?.value || '';
+    const categoryName = document.getElementById('productCategoryFilter')?.selectedOptions?.[0]?.textContent?.trim().toLowerCase() || '';
+    const medicineClassValue = document.getElementById('medicineClassificationFilter')?.value || 'all';
+    const medicineFilterActive = medicineClassValue !== 'all' && (!categoryValue || categoryName === 'medicine');
     const statusValue = document.getElementById('productStatusFilter')?.value || 'all';
     const pricingValue = document.getElementById('productPricingFilter')?.value || 'all';
-    const sortValue = document.getElementById('productSortSelect')?.value || 'name-asc';
 
     const filtered = productState.products.filter(product => {
         const matchesSearch = !searchValue || productSearchText(product).includes(searchValue);
         const matchesCategory = !categoryValue || String(product.category_id) === String(categoryValue);
-        const matchesType = !typeValue || String(product.type_id) === String(typeValue);
+        const matchesMedicineClass = !medicineFilterActive
+            || medicineClassValue === 'all'
+            || medicineClassificationFilterValue(product) === medicineClassValue;
         const matchesStatus = statusValue === 'all' || String(product.status || 'Active') === statusValue;
         const pricing = product.pricing || {};
         const pricingMethod = product.pricing_method || pricing.pricing_method || 'manual';
@@ -693,35 +730,46 @@ function getFilteredProducts() {
             || (pricingValue === 'needs_update' && Boolean(pricing.category_pricing_eligible))
             || (pricingValue === 'no_cost' && !pricing.latest_cost_basis);
 
-        return matchesSearch && matchesCategory && matchesType && matchesStatus && matchesPricing;
+        return matchesSearch && matchesCategory && matchesMedicineClass && matchesStatus && matchesPricing;
     });
 
     filtered.sort((a, b) => {
-        const nameA = String(a.product_name || '').toLowerCase();
-        const nameB = String(b.product_name || '').toLowerCase();
-        const priceA = Number(a.price || 0);
-        const priceB = Number(b.price || 0);
-        const stockA = getProductStock(a);
-        const stockB = getProductStock(b);
-
-        switch (sortValue) {
-            case 'name-desc':
-                return nameB.localeCompare(nameA);
-            case 'price-asc':
-                return priceA - priceB;
-            case 'price-desc':
-                return priceB - priceA;
-            case 'stock-asc':
-                return stockA - stockB;
-            case 'stock-desc':
-                return stockB - stockA;
-            case 'name-asc':
-            default:
-                return nameA.localeCompare(nameB);
-        }
+        const nameA = productCatalogName(a).toLowerCase();
+        const nameB = productCatalogName(b).toLowerCase();
+        return nameA.localeCompare(nameB);
     });
 
     return filtered;
+}
+
+function productCatalogName(product) {
+    const value = isMedicine(product) ? product.generic_name : product.product_name;
+    return String(value || '').trim() || '—';
+}
+
+function isPrescriptionMedicine(product) {
+    return isMedicine(product)
+        && String(product.medicine_classification || '').trim().toLowerCase() === 'prescription (rx)';
+}
+
+function medicineClassificationFilterValue(product) {
+    const classification = String(product.medicine_classification || '').trim().toLowerCase();
+    if (classification === 'prescription (rx)') return 'prescription';
+    if (classification === 'otc' || classification === 'non-prescription' || classification === 'non prescription') {
+        return 'non-prescription';
+    }
+    return '';
+}
+
+function medicineRxBadge(product) {
+    return isPrescriptionMedicine(product)
+        ? '<span class="medicine-rx-badge" title="Prescription medicine">Rx</span>'
+        : '';
+}
+
+function productCatalogSpecification(product) {
+    const lines = formatProductCatalogSpecificationLines(product, '—');
+    return `<div class="catalog-specification">${lines.map(line => `<span>${escapeHtml(line)}</span>`).join('')}</div>`;
 }
 
 function renderProductCards() {
@@ -733,7 +781,7 @@ function renderProductCards() {
     document.getElementById('table-products')?.classList.toggle('pricing-selection-mode', productState.pricingSelectionMode);
 
     if (!products.length) {
-        tableBody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No products found.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No products found.</td></tr>';
         syncSelectedPricingControls();
         return;
     }
@@ -747,15 +795,10 @@ function renderProductCards() {
         return `
             <tr class="product-row" data-product-id="${escapeHtml(product.product_id)}">
                 <td class="text-center pricing-selection-column ${productState.pricingSelectionMode ? '' : 'd-none'}"><div class="pricing-selection-cell">${selectionStatus.eligible ? `<input class="form-check-input product-pricing-select" type="checkbox" value="${escapeHtml(product.product_id)}" aria-label="Select ${escapeHtml(product.product_name)} for category pricing" ${productState.selectedPricingProductIds.has(String(product.product_id)) ? 'checked' : ''}>` : `<input class="form-check-input" type="checkbox" aria-label="${escapeHtml(selectionStatus.label)}" disabled>`}<span class="pricing-selection-status ${selectionStatus.className}">${escapeHtml(selectionStatus.label)}</span></div></td>
-                <td>
-                    <button type="button" class="product-barcode-toggle" data-product-id="${escapeHtml(product.product_id)}" aria-label="Show barcode">
-                        <i class="fa-solid fa-barcode"></i>
-                    </button>
-                </td>
                 <td><span class="product-clamp">${escapeHtml(dash(product.brand_name))}</span></td>
-                <td><span class="product-clamp">${escapeHtml(dash(product.product_name))}</span></td>
-                <td>${escapeHtml(dash(product.type_name))}</td>
-                <td><span class="product-clamp">${escapeHtml(formatProductSpecification(product))}</span></td>
+                <td class="product-column"><div class="medicine-product-identity"><span class="product-clamp">${escapeHtml(productCatalogName(product))}</span>${medicineRxBadge(product)}</div></td>
+                <td>${productCatalogSpecification(product)}</td>
+                <td class="product-container-cell">${escapeHtml(formatProductContainer(product, '—'))}</td>
                 <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(product.price)}</span><span class="pricing-method-badge ${priceBadge.className}" title="${escapeHtml(priceBadge.title)}" aria-label="${escapeHtml(priceBadge.title)}">${priceBadge.code}</span></div></td>
                 <td><span class="badge ${isActive ? 'text-bg-success' : 'text-bg-secondary'}">${escapeHtml(status)}</span></td>
                 <td>
@@ -907,12 +950,10 @@ function renderProductDetails(payload) {
     if (!container) return;
 
     const product = payload.product || {};
-    const inventory = payload.inventory_summary || {};
-    const suppliers = Array.isArray(payload.suppliers) ? payload.suppliers : [];
     const pricing = payload.pricing || {};
     const productStatus = normalizedProductStatus(product.status);
     const productIsActive = productStatus === 'Active';
-    const identity = [product.brand_name, product.product_name].filter(Boolean).join(' \u00b7 ') || 'Product record';
+    const identity = [product.brand_name, productCatalogName(product)].filter(Boolean).join(' \u00b7 ') || 'Product record';
     const identityLine = document.getElementById('productDetailsIdentityLine');
     if (identityLine) identityLine.textContent = product.barcode ? `${identity} \u00b7 ${product.barcode}` : identity;
 
@@ -920,29 +961,31 @@ function renderProductDetails(payload) {
     if (inventoryLink) inventoryLink.href = `inventory.html?product_id=${encodeURIComponent(product.product_id || '')}`;
 
     const productRows = [
-        productDetailPair('Barcode', product.barcode),
-        productDetailPair('Brand', product.brand_name),
-        productDetailPair('Product Name', product.product_name),
+        productDetailPair(isMedicine(product) ? 'Brand Name' : 'Brand', product.brand_name),
+        ...(isMedicine(product) ? [
+            productDetailPair('Generic Name', product.generic_name),
+            productDetailPair('Medicine Classification', product.medicine_classification)
+        ] : [productDetailPair('Product Name', product.product_name)]),
         productDetailPair('Category', product.category_name),
-        productDetailPair('Product Type', product.type_name),
+        ...(!isMedicine(product) ? [productDetailPair('Product Type', product.type_name)] : []),
+        productDetailPair('Barcode', product.barcode),
         productDetailPair('Product Status', productStatus),
         productDetailPair('Created', formatProductDetailDate(product.created_at))
     ];
 
     const specificationRows = [];
-    if (Array.isArray(payload.specifications) && payload.specifications.length) {
+    if (isMedicine(product)) {
+        specificationRows.push(productDetailPair('Strength / Concentration', product.strength || productDetailCombinedValue(product.strength_value, product.strength_unit)));
+        specificationRows.push(productDetailPair('Dosage Form', product.dosage_form || product.type_name));
+        specificationRows.push(productDetailPair('Net Content', productDetailCombinedValue(product.net_content_value, product.net_content_unit)));
+        specificationRows.push(productDetailPair('Package / Container', product.package_type));
+    } else if (Array.isArray(payload.specifications) && payload.specifications.length) {
         payload.specifications.forEach(specification => {
             const value = specification.value_number !== null && specification.value_number !== ''
                 ? formatMeasurement(specification.value_number, specification.unit_symbol)
                 : specification.value_text;
             specificationRows.push(productDetailPair(specification.display_name || specification.specification_name, value));
         });
-    } else if (product.category_name === 'Medicine') {
-        specificationRows.push(productDetailPair('Generic Name', product.generic_name));
-        specificationRows.push(productDetailPair('Strength', product.strength || productDetailCombinedValue(product.strength_value, product.strength_unit)));
-        specificationRows.push(productDetailPair('Dosage Form', product.dosage_form));
-        specificationRows.push(productDetailPair('Net Content', productDetailCombinedValue(product.net_content_value, product.net_content_unit)));
-        specificationRows.push(productDetailPair('Container Type', product.package_type));
     } else if (product.category_name === 'Grocery') {
         specificationRows.push(productDetailPair(groceryVariantLabel(product.type_name), product.variant));
         if (product.type_name === 'Beverage') {
@@ -966,79 +1009,29 @@ function renderProductDetails(payload) {
 
     const inventoryUnit = product.inventory_unit_name || product.inventory_unit_symbol || pricing.inventory_unit || 'unit';
     specificationRows.push(productDetailPair('Selling / Inventory Unit', inventoryUnit));
-    const costBasis = pricing.latest_cost_basis || {};
     const pricingMethodLabel = { category_markup: 'Category markup', custom_markup: 'Custom markup', manual: 'Fixed / Manual price' }[pricing.pricing_method] || 'Fixed / Manual price';
     const pricingRows = [
         productDetailPair('Active Selling Price', `${formatPrice(pricing.active_selling_price ?? product.price)} per ${inventoryUnit}`),
-        productDetailPair('Pricing Method', pricingMethodLabel),
-        productDetailPair('Category', pricing.category_name || product.category_name),
-        productDetailPair('Applied Markup Percentage', `${Number(pricing.applied_markup_percentage || 0).toFixed(2)}%`),
-        productDetailPair('Latest Accepted Cost Basis', costBasis.unit_cost === undefined ? 'No accepted delivery' : `${formatPrice(costBasis.unit_cost)} per ${inventoryUnit}`),
-        productDetailPair('Calculated Selling Price', pricing.calculated_selling_price === null || pricing.calculated_selling_price === undefined ? 'Not available' : `${formatPrice(pricing.calculated_selling_price)} per ${inventoryUnit}`),
-        productDetailPair('Price Difference', pricing.price_difference === null || pricing.price_difference === undefined ? 'Not available' : formatPrice(pricing.price_difference)),
-        productDetailPair('Price Status', pricing.price_status),
-        productDetailPair('Last Price Update', formatProductDetailDate(pricing.last_price_update)),
-        productDetailPair('Price Source', pricing.price_source)
+        productDetailPair('Pricing Method', pricingMethodLabel)
     ];
-    const latestSupplier = suppliers.find(supplier => supplier.is_latest_accepted_supplier) || suppliers[0];
-    const supplierRows = latestSupplier ? [
-        productDetailPair('Supplier', `${latestSupplier.supplier_name || 'Not provided'}${latestSupplier.is_latest_accepted_supplier ? ' (latest accepted)' : ''}`),
-        productDetailPair('Purchase Unit', latestSupplier.purchase_unit),
-        productDetailPair('Product Base Unit', inventoryUnit),
-        productDetailPair(`Units per ${latestSupplier.purchase_unit || 'Purchase Unit'}`, `${latestSupplier.units_per_purchase_unit || 1} ${latestSupplier.inventory_unit || inventoryUnit}`),
-        productDetailPair('Supplier Cost per Inventory Unit', latestSupplier.supplier_cost_price === null ? 'Not provided' : `${formatPrice(latestSupplier.supplier_cost_price)} per ${latestSupplier.inventory_unit || inventoryUnit}`),
-        productDetailPair('Estimated Purchase Unit Cost', latestSupplier.supplier_cost_price === null ? 'Not provided' : `${formatPrice(latestSupplier.estimated_purchase_unit_cost)} per ${latestSupplier.purchase_unit || 'purchase unit'}`),
-        ...(suppliers.length > 1 ? [productDetailPair('Other Assigned Suppliers', suppliers.filter(supplier => supplier !== latestSupplier).map(supplier => supplier.supplier_name).join(', '))] : [])
-    ] : [productDetailPair('Supplier', 'Not provided')];
-    const inventoryRows = [
-        productDetailPair('Shelf Quantity', inventory.shelf_quantity ?? 0),
-        productDetailPair('Storage Quantity', inventory.storage_quantity ?? 0),
-        productDetailPair('Current On Hand', inventory.on_hand_quantity ?? 0),
-        productDetailPair('Nearest Expiry', formatProductDetailDate(inventory.nearest_expiry_date)),
-        productDetailPair('Active Batches', inventory.active_batch_count ?? 0)
-    ];
-
-    const damagedQuantity = Number(inventory.damaged_quantity || 0);
-    const returnedQuantity = Number(inventory.returned_quantity || 0);
-    const replacementPending = Number(inventory.replacement_pending_quantity || 0);
-    const exceptions = [
-        `<span class="product-exception ${damagedQuantity === 0 ? 'is-zero' : ''}" title="Units currently recorded as damaged and excluded from sellable on-hand stock"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>Damaged Quantity</span><strong>${escapeHtml(damagedQuantity)}</strong></span>`,
-        `<span class="product-exception is-returned ${returnedQuantity === 0 ? 'is-zero' : ''}" title="Units returned to the supplier; these are excluded from sellable on-hand stock"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Returned Quantity</span><strong>${escapeHtml(returnedQuantity)}</strong></span>`
-    ];
-    if (replacementPending > 0) {
-        exceptions.push(`<span class="product-exception is-pending" title="Replacement units still expected from the supplier"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span>Replacement Pending</span><strong>${escapeHtml(replacementPending)}</strong></span>`);
-    }
 
     const tags = [product.category_name, product.type_name, product.barcode].filter(Boolean);
     container.innerHTML = `
         <div class="product-details-overview">
             <div class="product-details-primary">
                 <div class="product-details-kicker">Product master record</div>
-                <h4 class="product-details-name">${escapeHtml(product.product_name || 'Unnamed product')}</h4>
+                <h4 class="product-details-name">${escapeHtml(productCatalogName(product))}${medicineRxBadge(product)}</h4>
                 <div class="product-details-brand">${escapeHtml(product.brand_name || 'Brand not provided')}</div>
                 <div class="product-details-tags">
                     ${tags.map((tag) => `<span class="product-details-tag">${escapeHtml(tag)}</span>`).join('')}
                     <span class="product-details-tag product-status-tag ${productIsActive ? 'is-active' : 'is-inactive'}">${escapeHtml(productStatus)}</span>
                 </div>
             </div>
-            <div class="product-details-stock-grid" aria-label="Current inventory summary">
-                <div class="product-details-stock-tile"><span>Shelf</span><strong>${escapeHtml(inventory.shelf_quantity ?? 0)}</strong></div>
-                <div class="product-details-stock-tile"><span>Storage</span><strong>${escapeHtml(inventory.storage_quantity ?? 0)}</strong></div>
-                <div class="product-details-stock-tile is-total" title="Shelf plus storage; damaged and returned units are excluded"><span>On Hand</span><strong>${escapeHtml(inventory.on_hand_quantity ?? 0)}</strong></div>
-                <div class="product-details-stock-tile"><span>Active Batches</span><strong>${escapeHtml(inventory.active_batch_count ?? 0)}</strong></div>
-            </div>
         </div>
         <div class="product-details-sections">
-            ${productDetailSection('Product Information', productRows)}
-            ${productDetailSection('Product Specification', specificationRows)}
+            ${productDetailSection('Product Identity', productRows)}
+            ${productDetailSection(isMedicine(product) ? 'Medicine Details' : 'Product Specification', specificationRows)}
             ${productDetailSection('Pricing', pricingRows)}
-            ${productDetailSection('Supplier Purchasing Setup', supplierRows)}
-            ${productDetailSection('Inventory Snapshot', inventoryRows)}
-            <section class="product-details-section">
-                <h6>Stock Exceptions</h6>
-                <p class="product-details-exception-note">These quantities are tracked separately and are not included in current on-hand stock.</p>
-                <div class="product-details-exceptions">${exceptions.join('')}</div>
-            </section>
         </div>
     `;
 }
@@ -1053,7 +1046,7 @@ function renderProductDetailsPreview(product) {
         <div class="product-details-overview">
             <div class="product-details-primary">
                 <div class="product-details-kicker">Product master record</div>
-                <h4 class="product-details-name">${escapeHtml(product.product_name || 'Unnamed product')}</h4>
+                <h4 class="product-details-name">${escapeHtml(productCatalogName(product))}${medicineRxBadge(product)}</h4>
                 <div class="product-details-brand">${escapeHtml(product.brand_name || 'Brand not provided')}</div>
                 <div class="product-details-tags">
                     ${tags.map(tag => `<span class="product-details-tag">${escapeHtml(tag)}</span>`).join('')}
@@ -1062,16 +1055,19 @@ function renderProductDetailsPreview(product) {
             </div>
         </div>
         <div class="product-details-sections">
-            ${productDetailSection('Available Product Information', [
+            ${productDetailSection('Product Identity', [
+                productDetailPair(isMedicine(product) ? 'Brand Name' : 'Brand', product.brand_name),
+                ...(isMedicine(product) ? [productDetailPair('Generic Name', product.generic_name), productDetailPair('Medicine Classification', product.medicine_classification)] : [productDetailPair('Product Name', product.product_name), productDetailPair('Product Type', product.type_name)]),
                 productDetailPair('Barcode', product.barcode),
-                productDetailPair('Product Type', product.type_name),
-                productDetailPair('Specification', formatProductSpecification(product)),
-                productDetailPair('Selling Price', formatPrice(product.price)),
                 productDetailPair('Product Status', status)
+            ])}
+            ${productDetailSection(isMedicine(product) ? 'Medicine Details' : 'Product Specification', [
+                productDetailPair('Specification', formatProductSpecification(product)),
+                productDetailPair('Selling / Inventory Unit', product.inventory_unit_name || product.inventory_unit_symbol)
             ])}
             <section class="product-details-section product-details-section-pending" aria-live="polite">
                 <h6>Verified Details</h6>
-                <div><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading current suppliers, pricing, and inventory...</div>
+                <div><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading current product and pricing details...</div>
             </section>
         </div>
     `;
@@ -1095,7 +1091,7 @@ async function openProductDetailsModal(productId, options = {}) {
     productDetailsAbortController?.abort();
     productDetailsAbortController = null;
     const identityLine = document.getElementById('productDetailsIdentityLine');
-    if (identityLine) identityLine.textContent = [product.brand_name, product.product_name].filter(Boolean).join(' \u00b7 ') || 'Loading product record...';
+    if (identityLine) identityLine.textContent = [product.brand_name, productCatalogName(product)].filter(Boolean).join(' \u00b7 ') || 'Loading product record...';
     const editButton = document.getElementById('productDetailsEditButton');
     if (editButton) editButton.disabled = true;
     bootstrap.Modal.getOrCreateInstance(modalElement).show();
@@ -1165,40 +1161,51 @@ async function populateProductCardFilters() {
             option.textContent = category.category_name;
             categoryFilter.appendChild(option);
         });
+        await populateMedicineClassificationSelects();
+        updateMedicineClassificationFilter();
     } catch (err) {
         console.warn('Failed to load product card filters:', err.message || err);
     }
 }
 
-async function loadProductTypeFilter(categoryId = '') {
-    const typeFilter = document.getElementById('productTypeFilter');
-    if (!typeFilter) return;
+async function populateMedicineClassificationSelects() {
+    const rows = await cachedMedicineClassifications();
+    const targets = [
+        ['productMedicineClassification', 'Select classification...'],
+        ['editProductMedicineClassification', 'Select classification...']
+    ];
+    targets.forEach(([id, placeholder]) => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const selected = select.value;
+        select.innerHTML = `<option value="">${placeholder}</option>${rows.map(row => `<option value="${escapeHtml(row.value)}">${escapeHtml(row.value)}</option>`).join('')}`;
+        if (rows.some(row => row.value === selected)) select.value = selected;
+    });
+}
 
-    const selectedType = typeFilter.value;
-    typeFilter.innerHTML = '<option value="">All Product Types</option>';
-
-    try {
-        productState.types = smartTypeList(categoryNameById(categoryId), await cachedProductTypes(categoryId), selectedType);
-        productState.types.forEach(type => {
-            const option = document.createElement('option');
-            option.value = type.type_id;
-            option.textContent = type.type_name;
-            option.dataset.categoryId = type.category_id;
-            typeFilter.appendChild(option);
-        });
-
-        if (selectedType && productState.types.some(type => String(type.type_id) === String(selectedType))) {
-            typeFilter.value = selectedType;
-        }
-    } catch (err) {
-        console.warn('Failed to load product type filter:', err.message || err);
+function updateMedicineClassificationFilter() {
+    const category = document.getElementById('productCategoryFilter')?.selectedOptions?.[0]?.textContent?.trim() || '';
+    const isMedicineCategory = category.toLowerCase() === 'medicine';
+    const isAllCategories = !category || category.toLowerCase() === 'all categories';
+    const supportsMedicineFilter = isAllCategories || isMedicineCategory;
+    const wrap = document.getElementById('medicineClassificationFilterWrap');
+    const select = document.getElementById('medicineClassificationFilter');
+    wrap?.classList.toggle('is-disabled', !supportsMedicineFilter);
+    if (select) {
+        select.disabled = !supportsMedicineFilter;
+        select.setAttribute('aria-disabled', String(!supportsMedicineFilter));
+        if (!supportsMedicineFilter) select.value = 'all';
     }
 }
 
-async function loadMeasurementUnitCache() {
-    const response = await loadMeasurementUnits();
+async function loadMeasurementUnitCache(options = {}) {
+    const response = await loadMeasurementUnits(options);
     productState.units = response.units;
     productState.measurementGroups = response.measurement_groups;
+    referenceCache.configurationsByType.forEach(configuration => {
+        configuration.units = response.units;
+        configuration.measurement_groups = response.measurement_groups;
+    });
     return productState.units;
 }
 
@@ -1224,10 +1231,10 @@ async function loadProductConfiguration(typeId = '', options = {}) {
 
     let promise = !options.forceRefresh ? referenceCache.configurationPromises.get(key) : null;
     if (!promise) {
-        const query = typeId ? `?type_id=${encodeURIComponent(typeId)}` : '';
+        const query = typeId ? `?type_id=${encodeURIComponent(typeId)}&include_units=0` : '?include_units=0';
         promise = Promise.all([
             PharmaUtils.safeFetch(`${API_BASE_URL}/products/get_product_configuration.php${query}`, {
-                method: 'GET', credentials: 'include'
+                method: 'GET', credentials: 'include', cache: 'no-store'
             }),
             loadMeasurementUnits({ forceRefresh: Boolean(options.forceRefresh) })
         ]).then(([response, measurementUnits]) => {
@@ -1247,35 +1254,65 @@ function invalidateProductConfiguration(typeId) {
     referenceCache.configurationPromises.delete(key);
 }
 
-function upsertMeasurementUnit(unit) {
-    const merge = units => {
-        const byId = new Map((Array.isArray(units) ? units : []).map(item => [String(item.measurement_unit_id), item]));
-        byId.set(String(unit.measurement_unit_id), unit);
-        return [...byId.values()].sort((left, right) =>
-            String(left.measurement_group || '').localeCompare(String(right.measurement_group || ''))
-            || String(left.unit_name || '').localeCompare(String(right.unit_name || ''))
-        );
-    };
-    productState.units = merge(productState.units);
-    upsertMeasurementUnitCache(unit);
-    referenceCache.configurationsByType.forEach(response => {
-        response.units = merge(response.units);
-    });
-}
-
-function archiveMeasurementUnit(unitId) {
-    const markArchived = units => (Array.isArray(units) ? units : []).map(unit =>
-        String(unit.measurement_unit_id) === String(unitId) ? { ...unit, is_active: 0 } : unit
-    );
-    productState.units = markArchived(productState.units);
-    referenceCache.configurationsByType.forEach(response => {
-        response.units = markArchived(response.units);
-    });
-    archiveMeasurementUnitCache(unitId);
-}
-
 function getSelectedAddCategoryName() {
     return document.getElementById('productCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
+}
+
+function setMedicineFields(mode, categoryName, { clear = true } = {}) {
+    const medicine = String(categoryName || '').trim().toLowerCase() === 'medicine';
+    const prefix = mode === 'edit' ? 'editProduct' : 'product';
+    document.getElementById(mode === 'edit' ? 'editProductModal' : 'addProductModal')?.classList.toggle('medicine-product-mode', medicine);
+    const selector = mode === 'edit' ? '.edit-medicine-basic-field' : '.medicine-basic-field';
+    document.querySelectorAll(selector).forEach(field => field.classList.toggle('d-none', !medicine));
+    document.querySelectorAll(`${selector}.medicine-classification-basic-field`).forEach(field => field.classList.toggle('d-none', medicine));
+    document.getElementById(mode === 'edit' ? 'editProductTypeField' : 'productTypeField')?.classList.toggle('d-none', medicine);
+    const classification = document.getElementById(`${prefix}MedicineClassification`);
+    const generic = document.getElementById(`${prefix}GenericName`);
+    const brand = document.getElementById(mode === 'edit' ? 'editProductBrand' : 'productBrandName');
+    const productName = document.getElementById(mode === 'edit' ? 'editProductName' : 'productName');
+    const productNameField = document.getElementById(mode === 'edit' ? 'editProductNameField' : 'productNameField');
+    const brandLabel = document.getElementById(mode === 'edit' ? 'editProductBrandLabel' : 'productBrandLabel');
+    [classification, generic].filter(Boolean).forEach(field => {
+        const skuOwnedClassification = field === classification && medicine;
+        field.disabled = !medicine || skuOwnedClassification;
+        field.required = medicine && !skuOwnedClassification;
+        if (!medicine && clear) field.value = '';
+    });
+    productNameField?.classList.toggle('d-none', medicine);
+    if (productName) {
+        productName.disabled = medicine;
+        productName.required = !medicine;
+        if (medicine && clear) productName.value = '';
+    }
+    if (brand) brand.required = !medicine;
+    if (brandLabel) brandLabel.textContent = 'Brand Name';
+    const label = document.getElementById(mode === 'edit' ? 'editProductTypeLabel' : 'productTypeLabel');
+    if (label) label.textContent = medicine ? 'Dosage Form' : 'Product Type';
+}
+
+function hasMeaningfulSkuValues(containerSelector) {
+    return Array.from(document.querySelectorAll(`${containerSelector} input, ${containerSelector} select`)).some(control => {
+        if (control.type === 'radio' || control.type === 'checkbox' || control.disabled) return false;
+        const value = String(control.value || '').trim();
+        return value !== '' && value !== CUSTOMIZE_OPTION;
+    });
+}
+
+async function confirmProductTypeValueLoss(select, containerSelector) {
+    const previousValue = select.dataset.previousValue || '';
+    const nextValue = select.value;
+    if (!previousValue || previousValue === nextValue || !hasMeaningfulSkuValues(containerSelector)) return true;
+    select.value = previousValue;
+    const result = await Swal.fire({
+        icon: 'warning',
+        title: 'Change Product Type?',
+        text: 'SKU details that do not apply to the new Product Type will be cleared.',
+        showCancelButton: true,
+        confirmButtonText: 'Change Product Type'
+    });
+    if (!result.isConfirmed) return false;
+    select.value = nextValue;
+    return true;
 }
 
 function selectedAddTypeName() {
@@ -1292,17 +1329,21 @@ function buildProductPayload() {
     const categoryName = getSelectedAddCategoryName();
 
     const pricingMethod = getValue('productPricingMethod') || 'manual';
+    const genericName = getValue('productGenericName');
+    const brandName = getValue('productBrandName');
     const payload = {
-        brand_name: getValue('productBrandName'),
-        product_name: getValue('productName'),
+        brand_name: brandName,
+        product_name: categoryName === 'Medicine' ? (brandName || genericName) : getValue('productName'),
         category_id: getValue('productCategory'),
-        type_id: getValue('productType'),
+        type_id: firstVariation.type_id || getValue('productType'),
         category_name: categoryName,
         product_type: selectedAddTypeName(),
         product_unit: getVariationProductUnit(firstVariation),
         unit: getVariationProductUnit(firstVariation),
         price: firstVariation.price || '0',
         barcode: firstVariation.barcode || '',
+        generic_name: genericName,
+        medicine_classification: firstVariation.medicine_classification || getValue('productMedicineClassification'),
         status: getValue('productStatus') || 'Active',
         pricing_method: pricingMethod,
         variations
@@ -1356,7 +1397,8 @@ async function populateAddTypes(categoryId = '', selectedTypeId = '') {
 
     try {
         typeSelect.innerHTML = `<option value="" disabled selected>Select product type...</option><option value="${CUSTOMIZE_OPTION}">⚙ Customize Product Types</option><option disabled>──────────</option>`;
-        smartTypeList(categoryNameById(categoryId), await cachedProductTypes(categoryId), selectedTypeId).forEach(type => {
+        productState.types = smartTypeList(categoryNameById(categoryId), await cachedProductTypes(categoryId), selectedTypeId);
+        productState.types.forEach(type => {
             const option = document.createElement('option');
             option.value = type.type_id;
             option.textContent = type.type_name;
@@ -1455,6 +1497,19 @@ function validateVisibleProductFields(form) {
         invalid.push(field);
     });
 
+    form.querySelectorAll('#productGenericName, #editProductGenericName').forEach((field) => {
+        if (field.disabled || field.closest('.d-none') || field.offsetParent === null || field.classList.contains('is-invalid')) return;
+        const normalized = String(field.value || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+        if (!['otc', 'rx', 'prescription', 'prescriptionrx'].includes(normalized)) return;
+        const error = document.createElement('div');
+        error.className = 'product-field-error';
+        error.textContent = 'Enter the actual generic name / active ingredient. Rx and OTC are classifications.';
+        field.insertAdjacentElement('afterend', error);
+        field.classList.add('is-invalid');
+        field.setAttribute('aria-invalid', 'true');
+        invalid.push(field);
+    });
+
     if (!invalid.length) return true;
     const first = invalid[0];
     first.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1471,6 +1526,7 @@ function initAddProductForm() {
     if (addProductForm.dataset.productControllerReady === '1') return;
     addProductForm.dataset.productControllerReady = '1';
     initProductCustomizers();
+    populateMedicineClassificationSelects().catch(err => console.warn('Failed to load medicine classifications:', err.message || err));
 
     loadMeasurementUnitCache().then(() => {
         renderAddVariations({ variations: collectAddVariations() }, getSelectedAddCategoryName());
@@ -1489,6 +1545,7 @@ function initAddProductForm() {
         productState.specifications = [];
         await populateAddTypes(event.target.value, '');
         const categoryName = getSelectedAddCategoryName();
+        setMedicineFields('add', categoryName);
         renderAddVariations({ variations: collectAddVariations() }, categoryName);
     });
 
@@ -1498,6 +1555,7 @@ function initAddProductForm() {
             openProductTypeCustomizer();
             return;
         }
+        if (!await confirmProductTypeValueLoss(event.target, '#addVariationList')) return;
         event.target.dataset.previousValue = event.target.value;
         await loadProductConfiguration(event.target.value);
         renderAddVariations({ variations: collectAddVariations() }, getSelectedAddCategoryName());
@@ -1506,7 +1564,8 @@ function initAddProductForm() {
     document.getElementById('btnCreateAnotherAddVariant')?.addEventListener('click', () => {
         const categoryName = getSelectedAddCategoryName();
         const typeName = selectedAddTypeName();
-        document.getElementById('addVariationList')?.insertAdjacentHTML('beforeend', editVariationEntry({}, categoryName, typeName, true, 'add'));
+        const existing = collectAddVariations().find(variation => !variation.delete) || {};
+        document.getElementById('addVariationList')?.insertAdjacentHTML('beforeend', editVariationEntry({ type_id: existing.type_id || getValue('productType'), medicine_classification: existing.medicine_classification || '' }, categoryName, typeName, true, 'add'));
         if (!document.querySelector('#addVariationList .edit-var-default:checked')) {
             document.querySelector('#addVariationList .edit-var-default')?.click();
         }
@@ -1514,7 +1573,8 @@ function initAddProductForm() {
 
     document.getElementById('addVariationList')?.addEventListener('click', (event) => {
         if (event.target.closest('.btn-customize-specifications')) {
-            openSpecificationCustomizer();
+            const skuTypeId = event.target.closest('.edit-variation-entry')?.querySelector('.medicine-sku-type')?.value;
+            Promise.resolve(skuTypeId ? loadProductConfiguration(skuTypeId) : null).then(() => openSpecificationCustomizer());
             return;
         }
         const removeButton = event.target.closest('.btn-remove-edit-variation');
@@ -1527,17 +1587,29 @@ function initAddProductForm() {
         }
     });
     document.getElementById('addVariationList')?.addEventListener('change', (event) => {
+        if (event.target.matches('.medicine-sku-type')) {
+            void handleMedicineSkuTypeChange(event, 'add');
+            return;
+        }
         handleSellableSkuCustomization(event, false);
     });
     document.getElementById('addVariationList')?.addEventListener('focusin', rememberCustomizationValue);
 
     addProductForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (addProductSubmissionActive) return;
         if (!validateVisibleProductFields(addProductForm)) return;
 
         const payload = buildProductPayload();
+        const saveButton = addProductForm.querySelector('button[type="submit"]');
+        const saveButtonHtml = saveButton?.innerHTML || '';
 
         try {
+            addProductSubmissionActive = true;
+            if (saveButton) {
+                saveButton.disabled = true;
+                saveButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Saving...';
+            }
             PharmaUtils.modal.loading('Saving Product...');
 
             const result = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/add_product.php`, {
@@ -1548,44 +1620,34 @@ function initAddProductForm() {
                 },
                 body: JSON.stringify(payload)
             });
+            // The create endpoint commits the entire product/SKU transaction before
+            // returning. Render only the authoritative joined catalog response so
+            // derived Medicine fields (including Package / Container) cannot be
+            // temporarily replaced by an incomplete optimistic object.
+            if (productsLoadPromise) await productsLoadPromise;
+            invalidateProductListCache();
+            await loadProductsTable({ skipCache: true, throwOnError: true });
             window.dispatchEvent(new CustomEvent('products:created', {
                 detail: { productIds: result.product_ids || [result.product_id].filter(Boolean) }
             }));
-
-            const createdIds = result.product_ids || [result.product_id].filter(Boolean);
-            const createdProducts = createdIds.map((productId, index) => {
-                const variation = payload.variations[index] || payload.variations[0] || {};
-                return {
-                    product_id: productId,
-                    brand_name: payload.brand_name,
-                    product_name: payload.product_name,
-                    category_id: payload.category_id,
-                    category_name: payload.category_name,
-                    type_id: payload.type_id,
-                    type_name: payload.product_type,
-                    status: payload.status,
-                    pricing_method: payload.pricing_method,
-                    custom_markup_percentage: payload.custom_markup_percentage ?? null,
-                    barcode: variation.barcode || '',
-                    price: variation.price || payload.price || 0,
-                    current_stock: 0,
-                    specifications: variation.specifications || [],
-                    variations: [variation]
-                };
-            });
-            commitLocalProductChanges(createdProducts, { prepend: true });
 
             PharmaUtils.modal.close();
             await PharmaUtils.modal.success('Product Saved', 'Item added to system master files successfully.');
 
             addProductForm.reset();
             document.getElementById('productType').disabled = true;
+            setMedicineFields('add', '');
             renderAddVariations();
             closeAddProductModal();
-            if (payload.pricing_method !== 'manual') reconcileProductsInBackground();
         } catch (err) {
             PharmaUtils.modal.close();
             PharmaUtils.modal.error('Failed to add product', err.message);
+        } finally {
+            addProductSubmissionActive = false;
+            if (saveButton) {
+                saveButton.disabled = false;
+                saveButton.innerHTML = saveButtonHtml;
+            }
         }
     });
 }
@@ -1641,13 +1703,14 @@ async function loadProductsTable(options = {}) {
             } else {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="text-center text-danger py-4">
+                        <td colspan="8" class="text-center text-danger py-4">
                             <div>${escapeHtml(err.message)}</div>
                             <button class="btn btn-sm btn-outline-primary mt-2 retry-products-btn" type="button">Retry</button>
                         </td>
                     </tr>
                 `;
             }
+            if (options?.throwOnError) throw err;
         } finally {
             productsLoadPromise = null;
         }
@@ -1708,13 +1771,25 @@ async function populateEditTypes(categoryId = '', selectedTypeId = '') {
     if (!categoryId) return;
 
     typeSelect.innerHTML = '<option value="" disabled>Select product type...</option>';
-    smartTypeList(categoryNameById(categoryId), await cachedProductTypes(categoryId), selectedTypeId).forEach(type => {
+    const availableTypes = smartTypeList(categoryNameById(categoryId), await cachedProductTypes(categoryId), selectedTypeId);
+    productState.types = availableTypes;
+    availableTypes.forEach(type => {
         const option = document.createElement('option');
         option.value = type.type_id;
         option.textContent = type.type_name;
         typeSelect.appendChild(option);
     });
+    if (selectedTypeId && !availableTypes.some(type => String(type.type_id) === String(selectedTypeId))) {
+        const historical = getProductById(getValue('editProductId'));
+        if (String(historical?.type_id || '') === String(selectedTypeId)) {
+            const option = document.createElement('option');
+            option.value = String(selectedTypeId);
+            option.textContent = `${historical.type_name || 'Historical Product Type'} (Archived)`;
+            typeSelect.appendChild(option);
+        }
+    }
     typeSelect.value = selectedTypeId ? String(selectedTypeId) : '';
+    typeSelect.dataset.previousValue = typeSelect.value;
     typeSelect.disabled = false;
 }
 
@@ -1761,7 +1836,8 @@ function populateSelectFromUnits(select, units, selectedUnitId) {
 }
 
 function toggleEditGenericField() {
-    return;
+    const categoryName = document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
+    setMedicineFields('edit', categoryName, { clear: false });
 }
 
 function optionList(options, selected = '') {
@@ -1778,18 +1854,15 @@ function datalist(id, options = []) {
 }
 
 function measurementUnitOptionList(group, selected = '') {
-    const unitNames = measurementUnitsForContext(productState.units, { group })
-        .map(unit => unit.unit_symbol || unit.unit_name);
     const normalizedSelected = String(selected || '').trim().toLowerCase();
-    const options = Array.from(new Set(unitNames.filter(Boolean)));
-    if (selected && !options.some(option => option.toLowerCase() === normalizedSelected)) {
-        options.unshift(selected);
-    }
+    const units = measurementUnitsForContext(productState.units, { group });
+    const selectedUnit = units.find(unit => String(unit.measurement_unit_id) === String(selected))
+        || units.find(unit => [unit.unit_symbol, unit.unit_name].some(value => String(value || '').trim().toLowerCase() === normalizedSelected));
     return [
         '<option value="">-</option>',
-        ...options.map(option => `<option value="${escapeHtml(option)}" ${String(option).toLowerCase() === normalizedSelected ? 'selected' : ''}>${escapeHtml(option)}</option>`),
+        ...units.map(unit => `<option value="${escapeHtml(unit.measurement_unit_id)}" ${String(unit.measurement_unit_id) === String(selectedUnit?.measurement_unit_id || '') ? 'selected' : ''}>${escapeHtml(unit.unit_symbol || unit.unit_name)}</option>`),
         '<option disabled>──────────</option>',
-        `<option value="${CUSTOMIZE_OPTION}">⚙ Customize / Add Measurement Units</option>`
+        `<option value="${CUSTOMIZE_OPTION}">⚙ Manage Units</option>`
     ].join('');
 }
 
@@ -1799,7 +1872,7 @@ function inventoryUnitField(variation = {}) {
         unit_symbol: variation.inventory_unit_symbol || '',
         measurement_group: 'Count'
     };
-    return `<div class="col-md-6 permanent-inventory-unit"><label class="form-label">Selling / Inventory Unit <span class="text-danger">*</span></label><select class="form-select edit-var-inventory-unit" required>${dynamicUnitOptions('Count', variation.inventory_unit_id || '', savedUnit)}</select><div class="form-text">Defines what quantity 1 means for stock, transfers, pricing, and POS.</div></div>`;
+    return `<div class="col-md-6 permanent-inventory-unit"><label class="form-label">Selling / Inventory Unit <span class="text-danger">*</span></label><select class="form-select edit-var-inventory-unit" required>${dynamicUnitOptions('Count', variation.inventory_unit_id || '', savedUnit)}</select><div class="form-text">Base unit for stock and sales.</div></div>`;
 }
 
 function specificationChoiceOptionList(selected = '', fallbackOptions = []) {
@@ -1834,20 +1907,217 @@ function dynamicUnitOptions(group, selectedId = '', savedUnit = {}) {
     const archivedLabel = savedUnit.unit_symbol || savedUnit.unit_name || savedUnit.measurement_unit_name || archivedUnit.unit_symbol || archivedUnit.unit_name || selectedId;
     return [
         '<option value="">Select unit...</option>',
-        ...units.map(unit => `<option value="${escapeHtml(unit.measurement_unit_id)}" ${String(unit.measurement_unit_id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(unit.unit_symbol || unit.unit_name)} — ${escapeHtml(unit.measurement_group)}</option>`),
+        ...units.map(unit => `<option value="${escapeHtml(unit.measurement_unit_id)}" ${String(unit.measurement_unit_id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(unit.unit_symbol || unit.unit_name)}</option>`),
         selectedId && !selectedIsAvailable && historicalUnitMatchesGroup ? `<option value="${escapeHtml(selectedId)}" selected>${escapeHtml(archivedLabel)} — archived</option>` : '',
         '<option disabled>──────────</option>',
-        `<option value="${CUSTOMIZE_OPTION}">⚙ Customize / Add Measurement Units</option>`
+        `<option value="${CUSTOMIZE_OPTION}">⚙ Manage Units</option>`
     ].filter(Boolean).join('');
+}
+
+const MEASUREMENT_SELECT_SELECTOR = [
+    '.dynamic-spec-unit', '.medicine-denominator-unit', '.dynamic-package-unit',
+    '.edit-var-inventory-unit', '.edit-var-strength-unit', '.edit-var-net-content-unit',
+    '.edit-var-weight-unit', '.edit-var-pack-content-unit', '.medicine-sku-type'
+].join(',');
+let activeMeasurementSelect = null;
+
+function measurementSelectPortal() {
+    let portal = document.getElementById('measurementSelectPortal');
+    if (portal) return portal;
+    portal = document.createElement('div');
+    portal.id = 'measurementSelectPortal';
+    portal.className = 'measurement-select-menu';
+    portal.setAttribute('role', 'listbox');
+    document.body.appendChild(portal);
+    portal.addEventListener('click', event => {
+        const optionButton = event.target.closest('.measurement-select-option');
+        if (!optionButton || !activeMeasurementSelect) return;
+        const select = activeMeasurementSelect;
+        if (optionButton.dataset.action === 'add-dosage-form') {
+            const mode = select.closest('#editVariationList') ? 'edit' : 'add';
+            closeMeasurementSelectMenu();
+            void openProductTypeCustomizer({ mode, sourceButton: select });
+            return;
+        }
+        const previousValue = select.value;
+        if (optionButton.dataset.value === CUSTOMIZE_OPTION) select.dataset.previousValue = previousValue;
+        select.value = optionButton.dataset.value;
+        if (select.value !== CUSTOMIZE_OPTION) select.dataset.previousValue = select.value;
+        syncMeasurementSelect(select);
+        closeMeasurementSelectMenu();
+        select.dispatchEvent(new Event('input', { bubbles:true }));
+        select.dispatchEvent(new Event('change', { bubbles:true }));
+    });
+    portal.addEventListener('keydown', event => {
+        const options = Array.from(portal.querySelectorAll('.measurement-select-option'));
+        const current = options.indexOf(document.activeElement);
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            const trigger = activeMeasurementSelect?._measurementTrigger;
+            closeMeasurementSelectMenu();
+            trigger?.focus();
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const direction = event.key === 'ArrowDown' ? 1 : -1;
+            options[(current + direction + options.length) % options.length]?.focus();
+        }
+    });
+    document.addEventListener('pointerdown', event => {
+        if (!activeMeasurementSelect || event.target.closest('#measurementSelectPortal,.measurement-select')) return;
+        closeMeasurementSelectMenu();
+    });
+    window.addEventListener('resize', closeMeasurementSelectMenu);
+    document.addEventListener('scroll', event => {
+        if (event.target instanceof Element && event.target.closest('#measurementSelectPortal')) return;
+        closeMeasurementSelectMenu();
+    }, true);
+    return portal;
+}
+
+function closeMeasurementSelectMenu() {
+    const portal = document.getElementById('measurementSelectPortal');
+    if (portal) {
+        portal.classList.remove('show');
+        portal.replaceChildren();
+    }
+    activeMeasurementSelect?._measurementTrigger?.setAttribute('aria-expanded', 'false');
+    activeMeasurementSelect = null;
+}
+
+function syncMeasurementSelect(select) {
+    const trigger = select?._measurementTrigger;
+    if (!trigger) return;
+    const selected = select.selectedOptions?.[0];
+    const label = selected?.textContent?.trim() || 'Select unit...';
+    if (trigger.textContent !== label) trigger.textContent = label;
+    trigger.disabled = select.disabled;
+    trigger.setAttribute('aria-required', select.required ? 'true' : 'false');
+}
+
+function calculateSelectMenuPlacement(rect, contentHeight, viewportWidth = window.innerWidth, viewportHeight = window.innerHeight, matchTriggerWidth = false) {
+    const viewportMargin = 12;
+    const triggerGap = 4;
+    const preferredMaxHeight = 280;
+    const spaceBelow = Math.max(0, viewportHeight - rect.bottom - viewportMargin - triggerGap);
+    const spaceAbove = Math.max(0, rect.top - viewportMargin - triggerGap);
+    const desiredHeight = Math.min(preferredMaxHeight, Math.max(0, contentHeight));
+    const openUpward = spaceBelow < desiredHeight && spaceAbove > spaceBelow;
+    const availableSpace = openUpward ? spaceAbove : spaceBelow;
+    const maxHeight = Math.max(0, Math.min(preferredMaxHeight, availableSpace));
+    const minimumWidth = matchTriggerWidth ? 140 : 180;
+    const width = Math.min(Math.max(rect.width, minimumWidth), Math.max(minimumWidth, viewportWidth - (viewportMargin * 2)));
+    const left = Math.max(viewportMargin, Math.min(rect.left, viewportWidth - width - viewportMargin));
+    const menuHeight = Math.min(contentHeight, maxHeight);
+    const top = openUpward
+        ? Math.max(viewportMargin, rect.top - triggerGap - menuHeight)
+        : Math.min(rect.bottom + triggerGap, viewportHeight - viewportMargin - menuHeight);
+    return { left, top, width, maxHeight, openUpward };
+}
+
+function openMeasurementSelectMenu(select) {
+    const trigger = select?._measurementTrigger;
+    if (!trigger || trigger.disabled) return;
+    if (activeMeasurementSelect === select) {
+        closeMeasurementSelectMenu();
+        return;
+    }
+    closeMeasurementSelectMenu();
+    activeMeasurementSelect = select;
+    const portal = measurementSelectPortal();
+    const dosageForm = select.matches('.medicine-sku-type');
+    const options = Array.from(select.options).map(option => {
+        if (option.disabled) return '<div class="measurement-select-separator" role="separator"></div>';
+        const selected = option.value === select.value;
+        const customize = option.value === CUSTOMIZE_OPTION;
+        const label = customize
+            ? '<i class="fa-solid fa-gear" aria-hidden="true"></i><span>Manage Units</span>'
+            : `<span class="measurement-select-option-label">${escapeHtml(option.textContent.trim())}</span>`;
+        return `<button class="measurement-select-option${customize ? ' is-customize' : ''}" type="button" role="option" aria-selected="${selected ? 'true' : 'false'}" data-value="${escapeHtml(option.value)}">${label}</button>`;
+    }).join('');
+    const addDosageFormAction = dosageForm
+        ? '<button class="measurement-select-option is-add-dosage-form" type="button" data-action="add-dosage-form"><i class="fa-solid fa-plus" aria-hidden="true"></i><span class="measurement-select-option-label">Add New Dosage Form...</span></button>'
+        : '';
+    portal.innerHTML = options + addDosageFormAction;
+    const rect = trigger.getBoundingClientRect();
+    portal.style.width = `${dosageForm ? Math.max(rect.width, 140) : Math.max(rect.width, 180)}px`;
+    portal.style.maxHeight = '280px';
+    portal.classList.add('show');
+    const placement = calculateSelectMenuPlacement(rect, portal.scrollHeight, window.innerWidth, window.innerHeight, dosageForm);
+    portal.style.width = `${placement.width}px`;
+    portal.style.maxHeight = `${placement.maxHeight}px`;
+    portal.style.left = `${placement.left}px`;
+    portal.style.top = `${placement.top}px`;
+    portal.dataset.placement = placement.openUpward ? 'top' : 'bottom';
+    trigger.setAttribute('aria-expanded', 'true');
+    portal.querySelector('[aria-selected="true"]')?.scrollIntoView({ block:'nearest' });
+}
+
+function enhanceMeasurementUnitSelect(select) {
+    if (!select || select._measurementTrigger) {
+        syncMeasurementSelect(select);
+        return;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'measurement-select';
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'measurement-select-trigger';
+    trigger.setAttribute('role', 'combobox');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', 'measurementSelectPortal');
+    const fieldLabel = select.closest('.sku-dosage-form-field,.specification-field,.permanent-inventory-unit,.col-md-6,.col-12')
+        ?.querySelector('.form-label')?.textContent?.replace('*', '')?.trim();
+    trigger.setAttribute('aria-label', select.matches('.medicine-sku-type') ? 'Dosage Form' : `${fieldLabel || 'Measurement'} unit`);
+    select.parentNode.insertBefore(wrapper, select);
+    wrapper.appendChild(select);
+    wrapper.appendChild(trigger);
+    select.classList.add('measurement-native-select');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+    select._measurementTrigger = trigger;
+    trigger.addEventListener('click', () => openMeasurementSelectMenu(select));
+    trigger.addEventListener('keydown', event => {
+        if (!['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        openMeasurementSelectMenu(select);
+        requestAnimationFrame(() => document.querySelector('#measurementSelectPortal .measurement-select-option')?.focus());
+    });
+    select.addEventListener('change', () => syncMeasurementSelect(select));
+    select.addEventListener('invalid', event => {
+        event.preventDefault();
+        trigger.focus();
+    });
+    syncMeasurementSelect(select);
+}
+
+function refreshMeasurementUnitDropdowns(root = document) {
+    if (root.matches?.(MEASUREMENT_SELECT_SELECTOR)) enhanceMeasurementUnitSelect(root);
+    root.querySelectorAll?.(MEASUREMENT_SELECT_SELECTOR).forEach(enhanceMeasurementUnitSelect);
+}
+
+function initMeasurementUnitDropdowns() {
+    refreshMeasurementUnitDropdowns();
+    ['addVariationList', 'editVariationList'].forEach(id => {
+        const container = document.getElementById(id);
+        if (!container || container.dataset.measurementObserverReady === '1') return;
+        container.dataset.measurementObserverReady = '1';
+        new MutationObserver(() => refreshMeasurementUnitDropdowns(container)).observe(container, { childList:true, subtree:true });
+    });
+    ['addProductForm', 'editProductForm'].forEach(id => document.getElementById(id)?.addEventListener('reset', () => {
+        setTimeout(() => refreshMeasurementUnitDropdowns(), 0);
+    }));
 }
 
 function measurementGroupForControl(control) {
     if (control.matches('.dynamic-spec-unit')) return control.dataset.measurementGroup || '';
+    if (control.matches('.dynamic-package-unit')) return 'Count';
     if (control.matches('.edit-var-inventory-unit')) return 'Count';
-    if (control.matches('.edit-var-strength-unit')) return 'Strength';
+    if (control.matches('.edit-var-strength-unit')) return 'Weight';
     if (control.matches('.edit-var-weight-unit')) return 'Weight';
     if (control.matches('.edit-var-pack-content-unit')) return 'Count';
     if (control.matches('.edit-var-net-content-unit')) return 'Volume';
+    if (control.matches('.medicine-denominator-unit')) return 'Volume';
     return '';
 }
 
@@ -1878,40 +2148,144 @@ function rememberCustomizationValue(event) {
     if (control && control.value !== CUSTOMIZE_OPTION) control.dataset.previousValue = control.value;
 }
 
-function dynamicSpecificationField(specification, variation, rowId) {
+function medicineStrengthField(specification, variation, mode = 'add', specifications = productState.specifications) {
+    const numerator = specificationValue(variation, specification.specification_id);
+    const denominatorDefinition = specifications.find(item =>
+        String(item.specification_name || '').trim().toLowerCase().startsWith('strength denominator')
+    );
+    const denominator = denominatorDefinition ? specificationValue(variation, denominatorDefinition.specification_id) : {};
+    const denominatorGroup = denominatorDefinition?.measurement_group || 'Volume';
+    const concentration = Boolean(denominatorDefinition);
+    const denominatorControls = concentration ? `<div class="medicine-strength-denominator">
+                <span class="medicine-strength-divider" aria-hidden="true">/</span>
+                <input class="form-control medicine-denominator-number" type="number" min="0.000001" step="any" value="${escapeHtml(formatMeasurementValue(denominator.value_number))}" placeholder="5" required>
+                <select class="form-select medicine-denominator-unit" data-measurement-group="${escapeHtml(denominatorGroup)}" required>${dynamicUnitOptions(denominatorGroup, denominator.measurement_unit_id, denominator)}</select>
+            </div>` : '';
+    return `<div class="specification-field medicine-strength-field sku-strength-field ${concentration ? 'is-concentration-strength' : 'is-simple-strength'}" data-specification-id="${escapeHtml(specification.specification_id)}" data-denominator-specification-id="${escapeHtml(denominatorDefinition?.specification_id || '')}" data-specification-name="Strength" data-field-style="Number with Unit">
+        <label class="form-label">Strength / Concentration <span class="text-danger">*</span></label>
+        <div class="medicine-strength-composer">
+            <div class="medicine-strength-numerator">
+                <input class="form-control dynamic-spec-number" type="number" min="0.000001" step="any" value="${escapeHtml(formatMeasurementValue(numerator.value_number))}" placeholder="250" required>
+                <select class="form-select dynamic-spec-unit" data-measurement-group="Weight" required>${dynamicUnitOptions('Weight', numerator.measurement_unit_id, numerator)}</select>
+            </div>
+            ${denominatorControls}
+        </div>
+        <div class="form-text medicine-strength-format-help">${concentration ? 'Concentration format: value unit / value unit.' : 'Simple strength format: value and unit.'}</div>
+    </div>`;
+}
+
+function activeUnitForLabel(label = '', group = '') {
+    const token = String(label || '').trim().toLowerCase();
+    if (!token) return null;
+    return measurementUnitsForContext(productState.units, { group }).find(unit =>
+        [unit.unit_name, unit.unit_symbol].some(value => String(value || '').trim().toLowerCase() === token)
+    ) || null;
+}
+
+function packageUnitOptions(value = {}) {
+    const savedLabel = String(value.value_text || '').trim();
+    const selectedId = value.measurement_unit_id || activeUnitForLabel(savedLabel, 'Count')?.measurement_unit_id || '';
+    return dynamicUnitOptions('Count', selectedId, {
+        measurement_group: 'Count',
+        unit_name: savedLabel,
+        unit_symbol: savedLabel,
+    });
+}
+
+function dynamicSpecificationField(specification, variation, rowId, mode = 'add', configuration = {}) {
     const value = specificationValue(variation, specification.specification_id);
-    const label = escapeHtml(specification.display_name || specification.specification_name);
-    const attributes = `data-specification-id="${escapeHtml(specification.specification_id)}" data-field-style="${escapeHtml(specification.field_style)}"`;
-    const helper = String(specification.specification_name || '').trim().toLowerCase() === 'pack content'
-        ? '<div class="form-text">Describes what is physically inside one Selling / Inventory Unit (for example, 44 pcs).</div>'
+    const specificationName = String(specification.specification_name || '').trim().toLowerCase();
+    const medicineCategory = String(document.getElementById(mode === 'edit' ? 'editProductCategory' : 'productCategory')?.selectedOptions?.[0]?.dataset.categoryName || '').toLowerCase() === 'medicine';
+    const medicineStrength = specificationName === 'strength'
+        && medicineCategory;
+    const medicineSemanticClass = medicineCategory
+        ? ({ volume: ' sku-net-content-field', flavor: ' sku-flavor-field', 'pack content': ' sku-pack-content-field', 'tablet count': ' sku-pack-content-field' }[specificationName] || '')
         : '';
+    const required = medicineStrength ? ' required' : '';
+    const label = `${escapeHtml(specification.display_name || specification.specification_name)}${medicineStrength ? ' <span class="text-danger">*</span>' : ''}`;
+    if (medicineStrength) return medicineStrengthField(specification, variation, mode, configuration.specifications || productState.specifications);
+    const attributes = `data-specification-id="${escapeHtml(specification.specification_id)}" data-specification-name="${escapeHtml(specification.specification_name)}" data-field-style="${escapeHtml(specification.field_style)}"`;
+    const helper = '';
+    if (specificationName === 'package type') {
+        return `<div class="specification-field sku-package-field" ${attributes}><label class="form-label">${label}</label><select class="form-select dynamic-package-unit" data-measurement-group="Count">${packageUnitOptions(value)}</select></div>`;
+    }
     if (specification.field_style === 'Number with Unit') {
-        return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><div class="input-group"><input class="form-control dynamic-spec-number" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(value.value_number))}"><select class="form-select dynamic-spec-unit" data-measurement-group="${escapeHtml(specification.measurement_group || '')}">${dynamicUnitOptions(specification.measurement_group, value.measurement_unit_id, value)}</select></div>${helper}</div>`;
+        const medicineVolume = medicineCategory && specificationName === 'volume';
+        return `<div class="specification-field${medicineVolume ? ' sku-net-content-field' : medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><div class="input-group"><input class="form-control dynamic-spec-number" type="number" min="0.000001" step="any" value="${escapeHtml(formatMeasurementValue(value.value_number))}"${required}><select class="form-select dynamic-spec-unit" data-measurement-group="${escapeHtml(specification.measurement_group || '')}"${required}>${dynamicUnitOptions(specification.measurement_group, value.measurement_unit_id, value)}</select></div>${helper}</div>`;
     }
     if (specification.field_style === 'Number Only') {
         return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-number" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(value.value_number))}"></div>`;
     }
     if (specification.field_style === 'Selection List') {
         const usesPackageChoices = specification.specification_name === 'Package Type';
-        const choiceSource = usesPackageChoices ? [...productState.packageTypes, ...(specification.choices || [])] : (specification.choices || []);
+        const choiceSource = usesPackageChoices ? [...(configuration.package_types || productState.packageTypes), ...(specification.choices || [])] : (specification.choices || []);
         const choices = Array.from(new Map(choiceSource.filter(Boolean).map(choice => [String(choice).trim().toLowerCase(), String(choice).trim()])).values());
         const savedChoice = String(value.value_text || '').trim();
         if (savedChoice && !choices.some(choice => choice.toLowerCase() === savedChoice.toLowerCase())) choices.unshift(savedChoice);
         if (specification.allow_custom_value) {
             const listId = `${rowId}-${specification.specification_id}`;
-            return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-text" list="${escapeHtml(listId)}" value="${escapeHtml(value.value_text ?? '')}" placeholder="Select or type"><datalist id="${escapeHtml(listId)}">${choices.map(choice => `<option value="${escapeHtml(choice)}"></option>`).join('')}<option value="${CUSTOMIZE_OPTION}" label="⚙ Customize / Add Specifications"></option></datalist></div>`;
+            return `<div class="specification-field${medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-text" list="${escapeHtml(listId)}" value="${escapeHtml(value.value_text ?? '')}" placeholder="Select or type"><datalist id="${escapeHtml(listId)}">${choices.map(choice => `<option value="${escapeHtml(choice)}"></option>`).join('')}<option value="${CUSTOMIZE_OPTION}" label="⚙ Customize / Add Specifications"></option></datalist></div>`;
         }
-        return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><select class="form-select dynamic-spec-text"><option value="">Select...</option>${choices.map(choice => `<option ${String(choice).toLowerCase() === String(value.value_text || '').toLowerCase() ? 'selected' : ''}>${escapeHtml(choice)}</option>`).join('')}<option disabled>──────────</option><option value="${CUSTOMIZE_OPTION}">⚙ Customize / Add Specifications</option></select></div>`;
+        return `<div class="specification-field${medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><select class="form-select dynamic-spec-text"><option value="">Select...</option>${choices.map(choice => `<option ${String(choice).toLowerCase() === String(value.value_text || '').toLowerCase() ? 'selected' : ''}>${escapeHtml(choice)}</option>`).join('')}<option disabled>──────────</option><option value="${CUSTOMIZE_OPTION}">⚙ Customize / Add Specifications</option></select></div>`;
     }
-    return `<div class="specification-field" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-text" value="${escapeHtml(value.value_text ?? '')}"></div>`;
+    return `<div class="specification-field${medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-text" value="${escapeHtml(value.value_text ?? '')}"></div>`;
+}
+
+function medicineSkuTypeOptions(selectedTypeId = '', mode = 'add', selectedTypeName = '') {
+    const categoryId = getValue(mode === 'edit' ? 'editProductCategory' : 'productCategory');
+    const types = referenceCache.typesByCategory.get(String(categoryId)) || productState.types || [];
+    const known = types.some(type => String(type.type_id) === String(selectedTypeId));
+    const preserved = selectedTypeId && !known ? `<option value="${escapeHtml(selectedTypeId)}" selected>${escapeHtml(selectedTypeName || 'Current dosage form')}</option>` : '';
+    return `<option value="">Select dosage form...</option>${preserved}${types.map(type => `<option value="${escapeHtml(type.type_id)}" ${String(type.type_id) === String(selectedTypeId) ? 'selected' : ''}>${escapeHtml(type.type_name)}</option>`).join('')}`;
+}
+
+function medicineSkuClassificationOptions(selected = '') {
+    return `<option value="">Select classification...</option>${productState.medicineClassifications.map(row => `<option value="${escapeHtml(row.value)}" ${String(row.value).toLowerCase() === String(selected).toLowerCase() ? 'selected' : ''}>${escapeHtml(row.value)}</option>`).join('')}`;
+}
+
+function variationConfiguration(variation = {}, mode = 'add') {
+    const fallbackTypeId = getValue(mode === 'edit' ? 'editProductType' : 'productType');
+    const typeId = variation.type_id || fallbackTypeId;
+    if (referenceCache.configurationsByType.has(String(typeId))) return referenceCache.configurationsByType.get(String(typeId));
+    if (String(productState.configurationTypeId) === String(typeId)) return {
+        specifications: productState.specifications,
+        package_types: productState.packageTypes
+    };
+    return { specifications: [], package_types: [] };
 }
 
 function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
     const rowId = `dynamic-spec-${Math.random().toString(36).slice(2)}`;
     const deleteButton = canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Remove variant"><i class="fa-solid fa-trash-can"></i></button>' : '';
-    const fields = productState.specifications.map(specification => dynamicSpecificationField(specification, variation, rowId)).join('');
-    const empty = productState.specifications.length ? '' : `<div class="dynamic-specification-empty"><p class="mb-2">No specifications have been configured for this Product Type.</p><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button">Customize Specifications</button></div>`;
-    return `<div class="edit-variation-entry"><div class="d-flex align-items-center justify-content-between gap-2 mb-3"><span class="fw-bold small text-muted">Product SKU Details</span><div><button class="btn btn-sm btn-outline-secondary btn-customize-specifications me-2" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div></div>${empty}<div class="dynamic-specification-grid">${fields}${inventoryUnitField(variation)}<div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" inputmode="text" value="${escapeHtml(variation.barcode || '')}"></div>${sellingPriceField(variation)}</div></div>`;
+    const categoryName = document.getElementById(mode === 'edit' ? 'editProductCategory' : 'productCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
+    const medicine = categoryName === 'Medicine';
+    const configuration = variationConfiguration(variation, mode);
+    const visibleSpecifications = (configuration.specifications || [])
+        .filter(specification => {
+            const name = String(specification.specification_name || '').trim().toLowerCase();
+            return name !== 'medicine classification' && !name.startsWith('strength denominator');
+        })
+        .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0));
+    if (medicine) {
+        const layoutPriority = specification => ({
+            'package type': 10,
+            'volume': 20,
+            'net content': 20,
+            'pack content': 20,
+            'tablet count': 20,
+            'strength': 30,
+            'flavor': 40
+        }[String(specification.specification_name || '').trim().toLowerCase()] ?? 50);
+        visibleSpecifications.sort((left, right) => layoutPriority(left) - layoutPriority(right) || Number(left.sort_order || 0) - Number(right.sort_order || 0));
+    }
+    const fields = visibleSpecifications.map(specification => dynamicSpecificationField(specification, variation, rowId, mode, configuration)).join('');
+    const empty = '';
+    const barcodeField = `<div class="col-md-6 sku-barcode-field"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" inputmode="text" value="${escapeHtml(variation.barcode || '')}"></div>`;
+    const skuTail = medicine
+        ? `${inventoryUnitField(variation)}${sellingPriceField(variation)}${barcodeField}`
+        : `${inventoryUnitField(variation)}${barcodeField}${sellingPriceField(variation)}`;
+    const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div><div class="sku-classification-field"><label class="form-label">Medicine Classification <span class="text-danger">*</span></label><select class="form-select medicine-sku-classification" required>${medicineSkuClassificationOptions(variation.medicine_classification || getValue(mode === 'edit' ? 'editProductMedicineClassification' : 'productMedicineClassification'))}</select></div></div>` : '';
+    return `<div class="edit-variation-entry${medicine ? ' is-medicine-variation' : ''}"><div class="d-flex align-items-center justify-content-end gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div>${empty}<div class="dynamic-specification-grid">${skuIdentity}${fields}${skuTail}</div></div>`;
 }
 
 function sellingPriceField(variation = {}) {
@@ -1919,17 +2293,16 @@ function sellingPriceField(variation = {}) {
 }
 
 function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName = '', canDelete = true, mode = 'edit') {
-    if (productState.specifications.length > 0 && productState.configurationTypeId === (mode === 'edit' ? getValue('editProductType') : getValue('productType'))) {
+    const selectedTypeId = mode === 'edit' ? getValue('editProductType') : getValue('productType');
+    if (categoryName === 'Medicine' || (selectedTypeId && productState.configurationTypeId === selectedTypeId)) {
         return dynamicVariationEntry(variation, canDelete, mode);
     }
     const rule = getVariationRule(categoryName, typeName);
     const rowId = `variation-rule-${Math.random().toString(36).slice(2)}`;
     const defaultName = `${mode}DefaultVariation`;
-    const header = 'Product SKU Details';
     const deleteButton = canDelete ? '<button class="btn btn-sm btn-outline-danger btn-remove-edit-variation" type="button" title="Remove variant"><i class="fa-solid fa-trash-can"></i></button>' : '';
     const medicineFields = `
-                <div class="col-md-6"><label class="form-label">Generic Name</label><input class="form-control edit-var-generic-name" value="${escapeHtml(variation.generic_name || '')}" placeholder="Povidone-Iodine"></div>
-                <div class="col-md-6"><label class="form-label">Strength</label><div class="variation-pair"><input class="form-control edit-var-strength-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.strength_value))}" placeholder="70"><select class="form-select edit-var-strength-unit">${measurementUnitOptionList('Strength', variation.strength_unit || '')}</select></div></div>
+                <div class="col-md-6"><label class="form-label">Strength</label><div class="variation-pair"><input class="form-control edit-var-strength-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.strength_value))}" placeholder="70"><select class="form-select edit-var-strength-unit">${measurementUnitOptionList('Weight', variation.strength_unit || '')}</select></div></div>
                 <div class="col-md-6"><label class="form-label">Dosage Form</label><input class="form-control edit-var-dosage-form" value="${escapeHtml(variation.dosage_form || '')}" placeholder="Solution"></div>
                 <div class="col-md-6"><label class="form-label">Net Content</label><div class="variation-pair"><input class="form-control edit-var-net-content-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.net_content_value))}" placeholder="500"><select class="form-select edit-var-net-content-unit">${measurementUnitOptionList('Volume', variation.net_content_unit || '')}</select></div></div>
                 <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule'])}</select></div>
@@ -1965,8 +2338,7 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
     return `
         <div class="edit-variation-entry">
             <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                <span class="fw-bold small text-muted">${escapeHtml(header)}</span>
-                <div class="d-flex align-items-center gap-2">
+                <div class="ms-auto d-flex align-items-center gap-2">
                     <button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button>
                     <input class="form-check-input edit-var-default d-none" type="radio" name="${escapeHtml(defaultName)}" ${String(variation.is_default) === '1' ? 'checked' : ''}>
                     ${deleteButton}
@@ -1994,7 +2366,7 @@ function renderAddVariations(product = { variations: [{}] }, categoryName = '') 
     const list = document.getElementById('addVariationList');
     if (!list) return;
     const typeName = selectedAddTypeName();
-    if (!getValue('productType')) {
+    if (!getValue('productType') && (categoryName || getSelectedAddCategoryName()) !== 'Medicine') {
         list.innerHTML = '<div class="dynamic-specification-empty">Select a Category and Product Type to configure sellable SKU details.</div>';
         return;
     }
@@ -2006,11 +2378,15 @@ function renderAddVariations(product = { variations: [{}] }, categoryName = '') 
 }
 
 function collectVariationEntries(containerSelector) {
+    const categorySelectId = containerSelector === '#editVariationList' ? 'editProductCategory' : 'productCategory';
+    const categoryName = document.getElementById(categorySelectId)?.selectedOptions?.[0]?.dataset.categoryName || '';
+    const detailSchema = categoryName === 'Medicine'
+        ? 'medicine'
+        : (categoryName === 'Medical Supplies' || categoryName === 'Medical Supply' ? 'medical_supply' : 'grocery');
     return Array.from(document.querySelectorAll(`${containerSelector} .edit-variation-entry`)).map(entry => ({
-        detail_schema: entry.querySelector('.specification-field') ? 'dynamic'
-            : (entry.querySelector('.edit-var-generic-name') ? 'medicine'
-                : (entry.querySelector('.edit-var-material, .edit-var-sterile-status') ? 'medical_supply' : 'grocery')),
-        generic_name: entry.querySelector('.edit-var-generic-name')?.value.trim() || '',
+        detail_schema: entry.querySelector('.specification-field') ? 'dynamic' : detailSchema,
+        type_id: entry.querySelector('.medicine-sku-type')?.value || '',
+        medicine_classification: entry.querySelector('.medicine-sku-classification')?.value || '',
         variant_name: entry.querySelector('.edit-var-name')?.value.trim() || '',
         strength_value: entry.querySelector('.edit-var-strength-value')?.value.trim() || '',
         strength_unit: entry.querySelector('.edit-var-strength-unit')?.value || '',
@@ -2030,12 +2406,32 @@ function collectVariationEntries(containerSelector) {
         barcode: entry.querySelector('.edit-var-barcode')?.value.trim() || '',
         is_default: entry.querySelector('.edit-var-default')?.checked ? 1 : 0,
         delete: entry.dataset.deleted === '1',
-        specifications: Array.from(entry.querySelectorAll('.specification-field')).map(field => ({
-            specification_id: field.dataset.specificationId || '',
-            value_text: field.querySelector('.dynamic-spec-text')?.value.trim() || '',
-            value_number: field.querySelector('.dynamic-spec-number')?.value.trim() || '',
-            measurement_unit_id: field.querySelector('.dynamic-spec-unit')?.value === CUSTOMIZE_OPTION ? '' : (field.querySelector('.dynamic-spec-unit')?.value || '')
-        }))
+        specifications: Array.from(entry.querySelectorAll('.specification-field')).flatMap(field => {
+            const packageUnitSelect = field.querySelector('.dynamic-package-unit');
+            const packageUnitId = packageUnitSelect?.value === CUSTOMIZE_OPTION ? '' : (packageUnitSelect?.value || '');
+            const packageUnit = packageUnitId
+                ? productState.units.find(unit => String(unit.measurement_unit_id) === String(packageUnitId))
+                : null;
+            const primary = {
+                specification_id: field.dataset.specificationId || '',
+                value_text: packageUnit
+                    ? String(packageUnit.unit_name || packageUnit.unit_symbol || '').trim()
+                    : (field.querySelector('.dynamic-spec-text')?.value.trim() || ''),
+                value_number: field.querySelector('.dynamic-spec-number')?.value.trim() || '',
+                measurement_unit_id: packageUnitId || (field.querySelector('.dynamic-spec-unit')?.value === CUSTOMIZE_OPTION ? '' : (field.querySelector('.dynamic-spec-unit')?.value || ''))
+            };
+            if (!field.matches('.medicine-strength-field')) return [primary];
+            const denominatorWrap = field.querySelector('.medicine-strength-denominator');
+            const denominatorId = field.dataset.denominatorSpecificationId || '';
+            if (!denominatorId || denominatorWrap?.classList.contains('d-none')) return [primary];
+            const denominatorUnit = field.querySelector('.medicine-denominator-unit')?.value || '';
+            return [primary, {
+                specification_id: denominatorId,
+                value_text: '',
+                value_number: field.querySelector('.medicine-denominator-number')?.value.trim() || '',
+                measurement_unit_id: denominatorUnit === CUSTOMIZE_OPTION ? '' : denominatorUnit
+            }];
+        })
     }));
 }
 
@@ -2047,6 +2443,35 @@ function collectAddVariations() {
     return collectVariationEntries('#addVariationList');
 }
 
+async function handleMedicineSkuTypeChange(event, mode = 'add') {
+    const select = event.target.closest('.medicine-sku-type');
+    if (!select) return false;
+    const containerSelector = mode === 'edit' ? '#editVariationList' : '#addVariationList';
+    const entries = Array.from(document.querySelectorAll(`${containerSelector} .edit-variation-entry`));
+    const index = entries.indexOf(select.closest('.edit-variation-entry'));
+    const variations = collectVariationEntries(containerSelector);
+    if (index < 0 || !variations[index]) return true;
+    variations[index].type_id = select.value;
+    // A dosage form owns its own configured specification values. Reusing values
+    // from the previous form (even for shared fields such as Strength) can silently
+    // turn a concentration into a tablet strength, so rebuild with empty values.
+    variations[index].specifications = [];
+    if (!select.value) return true;
+    try {
+        await loadProductConfiguration(select.value);
+        if (index === 0) {
+            const shared = document.getElementById(mode === 'edit' ? 'editProductType' : 'productType');
+            if (shared) shared.value = select.value;
+        }
+        const categoryName = document.getElementById(mode === 'edit' ? 'editProductCategory' : 'productCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
+        if (mode === 'edit') renderEditVariations({ variations }, categoryName);
+        else renderAddVariations({ variations }, categoryName);
+    } catch (error) {
+        PharmaUtils.toast.error(error.message || 'Unable to load the selected dosage form.');
+    }
+    return true;
+}
+
 function productToVariation(product) {
     const inventoryUnit = {
         inventory_unit_id: product.inventory_unit_id || '',
@@ -2056,7 +2481,9 @@ function productToVariation(product) {
     if (isMedicine(product)) {
         return {
             ...inventoryUnit,
-            generic_name: product.generic_name || '',
+            type_id: product.type_id || '',
+            type_name: product.type_name || product.dosage_form || '',
+            medicine_classification: product.medicine_classification || '',
             variant_name: '',
             strength_value: formatMeasurementValue(product.medicine_strength_value ?? product.strength_value),
             strength_unit: product.strength_unit || '',
@@ -2137,6 +2564,8 @@ async function openCreateAnotherVariant(product) {
     form.dataset.prefillMode = 'variant';
     document.getElementById('productBrandName').value = product.brand_name || '';
     document.getElementById('productName').value = product.product_name || '';
+    document.getElementById('productGenericName').value = product.generic_name || '';
+    setSelectValue('productMedicineClassification', product.medicine_classification || '');
     const categorySelect = document.getElementById('productCategory');
     const typeSelect = document.getElementById('productType');
     if (categorySelect) categorySelect.innerHTML = `<option value="${escapeHtml(product.category_id || '')}" data-category-name="${escapeHtml(product.category_name || '')}" selected>${escapeHtml(product.category_name || 'Current category')}</option>`;
@@ -2144,11 +2573,12 @@ async function openCreateAnotherVariant(product) {
         typeSelect.innerHTML = `<option value="${escapeHtml(product.type_id || '')}" selected>${escapeHtml(product.type_name || 'Current product type')}</option>`;
         typeSelect.disabled = false;
     }
+    setMedicineFields('add', product.category_name || '', { clear: false });
 
     const cachedConfiguration = referenceCache.configurationsByType.get(String(product.type_id || ''));
     if (cachedConfiguration) {
         applyProductConfiguration(product.type_id || '', cachedConfiguration);
-        renderAddVariations({ variations: [{ price: '' }] }, product.category_name || '');
+        renderAddVariations({ variations: [{ price: '', type_id: product.type_id || '', type_name: product.type_name || '', medicine_classification: product.medicine_classification || '' }] }, product.category_name || '');
     } else {
         document.getElementById('addVariationList').innerHTML = '<div class="dynamic-specification-empty"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading Product Type specifications...</div>';
     }
@@ -2168,7 +2598,7 @@ async function openCreateAnotherVariant(product) {
             populateAddTypes(product.category_id || '', product.type_id || ''),
             loadProductConfiguration(product.type_id || '')
         ]);
-        renderAddVariations({ variations: [{ price: '' }] }, product.category_name || '');
+        renderAddVariations({ variations: [{ price: '', type_id: product.type_id || '', type_name: product.type_name || '', medicine_classification: product.medicine_classification || '' }] }, product.category_name || '');
         bootstrap.Modal.getInstance(modalElement)?.handleUpdate();
     } catch (error) {
         document.getElementById('addVariationList').innerHTML = `<div class="dynamic-specification-empty text-danger">${escapeHtml(error.message || 'Product Type specifications could not be loaded.')}</div>`;
@@ -2304,6 +2734,8 @@ async function openEditProduct(productId) {
     document.getElementById('editProductId').value = product.product_id || '';
     document.getElementById('editProductBrand').value = product.brand_name || '';
     document.getElementById('editProductName').value = product.product_name || '';
+    document.getElementById('editProductGenericName').value = product.generic_name || '';
+    setSelectValue('editProductMedicineClassification', product.medicine_classification || '');
     document.getElementById('editProductStatus').value = product.status || 'Active';
     document.getElementById('editProductPricingMethod').value = product.pricing_method || product.pricing?.pricing_method || 'manual';
     document.getElementById('editProductCustomMarkup').value = product.pricing?.custom_markup_percentage ?? '';
@@ -2321,6 +2753,7 @@ async function openEditProduct(productId) {
         typeSelect.innerHTML = `<option value="${escapeHtml(product.type_id || '')}" selected>${escapeHtml(product.type_name || 'Current product type')}</option>`;
         typeSelect.disabled = false;
     }
+    setMedicineFields('edit', product.category_name || '', { clear: false });
 
     const cachedConfiguration = referenceCache.configurationsByType.get(String(product.type_id || ''));
     if (cachedConfiguration) {
@@ -2343,11 +2776,12 @@ async function openEditProduct(productId) {
             credentials: 'include',
             cache: 'no-store'
         });
-        const [categoryResult, typeResult, configurationResult, detailResult] = await Promise.allSettled([
+        const [categoryResult, typeResult, configurationResult, detailResult, classificationResult] = await Promise.allSettled([
             populateEditCategories(product.category_id || ''),
             populateEditTypes(product.category_id || '', product.type_id || ''),
             loadProductConfiguration(product.type_id || ''),
-            detailPromise
+            detailPromise,
+            populateMedicineClassificationSelects()
         ]);
         if (requestSequence !== editProductRequestSequence || getValue('editProductId') !== String(product.product_id || '')) return;
         const requiredFailure = [categoryResult, typeResult, configurationResult].find(result => result.status === 'rejected');
@@ -2356,6 +2790,8 @@ async function openEditProduct(productId) {
         const details = detailResult.status === 'fulfilled' ? (detailResult.value?.data || {}) : {};
         if (detailResult.status === 'fulfilled') productDetailsCache.set(String(product.product_id), details);
         const hydratedProduct = { ...product, ...(details.product || {}) };
+        document.getElementById('editProductGenericName').value = hydratedProduct.generic_name || '';
+        setSelectValue('editProductMedicineClassification', hydratedProduct.medicine_classification || '');
         const rawSavedSpecifications = Array.isArray(details.specifications) && details.specifications.length
             ? details.specifications
             : (Array.isArray(product.specifications) && product.specifications.length ? product.specifications : legacySpecificationsForProduct(hydratedProduct));
@@ -2382,12 +2818,15 @@ async function submitEditProduct(event) {
     const typeName = document.getElementById('editProductType')?.selectedOptions?.[0]?.textContent?.trim() || '';
 
     const pricingMethod = getValue('editProductPricingMethod') || 'manual';
+    const genericName = getValue('editProductGenericName');
     const payload = {
         product_id: getValue('editProductId'),
         brand_name: getValue('editProductBrand'),
-        product_name: getValue('editProductName'),
+        product_name: categoryName === 'Medicine' ? (getValue('editProductName') || getValue('editProductBrand') || genericName) : getValue('editProductName'),
         category_id: getValue('editProductCategory'),
-        type_id: getValue('editProductType'),
+        type_id: collectEditVariations().find(variation => !variation.delete)?.type_id || getValue('editProductType'),
+        generic_name: genericName,
+        medicine_classification: collectEditVariations().find(variation => !variation.delete)?.medicine_classification || getValue('editProductMedicineClassification'),
         status: getValue('editProductStatus') || 'Active',
         pricing_method: pricingMethod,
         variations: collectEditVariations()
@@ -2415,6 +2854,8 @@ async function submitEditProduct(event) {
                     product_name: payload.product_name,
                     category_id: payload.category_id,
                     type_id: payload.type_id,
+                    generic_name: payload.generic_name,
+                    medicine_classification: payload.medicine_classification,
                     pricing_method: payload.pricing_method,
                     custom_markup_percentage: payload.custom_markup_percentage,
                     status: payload.status,
@@ -2438,8 +2879,11 @@ async function submitEditProduct(event) {
             product_name: payload.product_name,
             category_id: payload.category_id,
             category_name: categoryName || currentProduct.category_name,
-            type_id: payload.type_id,
-            type_name: typeName || currentProduct.type_name,
+            type_id: primaryVariation.type_id || payload.type_id,
+            type_name: productState.types.find(type => String(type.type_id) === String(primaryVariation.type_id || payload.type_id))?.type_name || typeName || currentProduct.type_name,
+            generic_name: categoryName === 'Medicine' ? payload.generic_name : null,
+            medicine_classification: categoryName === 'Medicine' ? (primaryVariation.medicine_classification || payload.medicine_classification) : null,
+            medicine_classification_badge: categoryName === 'Medicine' ? (productState.medicineClassifications.find(row => row.value === (primaryVariation.medicine_classification || payload.medicine_classification))?.badge || null) : null,
             status: payload.status,
             pricing_method: payload.pricing_method,
             custom_markup_percentage: payload.custom_markup_percentage ?? null,
@@ -2622,15 +3066,14 @@ function initProductCards() {
     document.body.dataset.productCardsReady = '1';
 
     populateProductCardFilters();
-    loadProductTypeFilter();
 
-    ['productSearchInput', 'productTypeFilter', 'productStatusFilter', 'productPricingFilter', 'productSortSelect'].forEach(id => {
+    ['productSearchInput', 'medicineClassificationFilter', 'productStatusFilter', 'productPricingFilter'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', renderProductCards);
         document.getElementById(id)?.addEventListener('change', renderProductCards);
     });
 
     document.getElementById('productCategoryFilter')?.addEventListener('change', async (event) => {
-        await loadProductTypeFilter(event.target.value);
+        updateMedicineClassificationFilter();
         renderProductCards();
     });
 
@@ -2736,13 +3179,15 @@ function initProductCards() {
 
     document.getElementById('editProductCategory')?.addEventListener('change', async (event) => {
         await populateEditTypes(event.target.value, '');
-        toggleEditGenericField();
         const product = getProductById(getValue('editProductId'));
         const categoryName = event.target.selectedOptions?.[0]?.dataset.categoryName || '';
+        setMedicineFields('edit', categoryName);
         renderEditVariations(product || { variations: [{}] }, categoryName);
         updateEditPricingView();
     });
     document.getElementById('editProductType')?.addEventListener('change', async (event) => {
+        if (!await confirmProductTypeValueLoss(event.target, '#editVariationList')) return;
+        event.target.dataset.previousValue = event.target.value;
         await loadProductConfiguration(event.target.value);
         const product = getProductById(getValue('editProductId'));
         const categoryName = document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
@@ -2758,7 +3203,8 @@ function initProductCards() {
     });
     document.getElementById('editVariationList')?.addEventListener('click', (event) => {
         if (event.target.closest('.btn-customize-specifications')) {
-            openSpecificationCustomizer(true);
+            const skuTypeId = event.target.closest('.edit-variation-entry')?.querySelector('.medicine-sku-type')?.value;
+            Promise.resolve(skuTypeId ? loadProductConfiguration(skuTypeId) : null).then(() => openSpecificationCustomizer(true));
             return;
         }
         const removeButton = event.target.closest('.btn-remove-edit-variation');
@@ -2771,6 +3217,10 @@ function initProductCards() {
         }
     });
     document.getElementById('editVariationList')?.addEventListener('change', (event) => {
+        if (event.target.matches('.medicine-sku-type')) {
+            void handleMedicineSkuTypeChange(event, 'edit');
+            return;
+        }
         handleSellableSkuCustomization(event, true);
     });
     document.getElementById('editVariationList')?.addEventListener('input', (event) => {
@@ -2810,9 +3260,24 @@ function showCustomizerError(id, message = '') {
     element.classList.toggle('d-none', !message);
 }
 
-function showNestedModal(id) {
+function showNestedModal(id, parentModalId = '') {
     const element = document.getElementById(id);
     if (!element) return;
+    if (parentModalId) {
+        element.dataset.parentModalId = parentModalId;
+        document.getElementById(parentModalId)?.classList.add('has-product-customizer-open');
+        if (element.dataset.parentUnlockReady !== '1') {
+            element.dataset.parentUnlockReady = '1';
+            element.addEventListener('hidden.bs.modal', () => {
+                const parentModal = document.getElementById(element.dataset.parentModalId || '');
+                parentModal?.classList.remove('has-product-customizer-open');
+                if (parentModal?.classList.contains('show')) {
+                    requestAnimationFrame(() => document.body.classList.add('modal-open'));
+                }
+                delete element.dataset.parentModalId;
+            });
+        }
+    }
     bootstrap.Modal.getOrCreateInstance(element, { backdrop: 'static', keyboard: true }).show();
 }
 
@@ -2820,6 +3285,37 @@ function renderCustomizerRows(containerId, rows, labelKey, idKey, editClass) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = rows.length ? rows.map(row => `<div class="customizer-row"><span>${escapeHtml(row[labelKey])}</span><button class="btn btn-sm btn-outline-secondary ${editClass}" type="button" data-id="${escapeHtml(row[idKey])}" data-name="${escapeHtml(row[labelKey])}"><i class="fa-solid fa-pen"></i><span class="visually-hidden">Rename</span></button></div>`).join('') : '<div class="p-3 text-muted text-center">No values found.</div>';
+}
+
+function setProductTypeEditor(type = null) {
+    const editing = Boolean(type?.type_id);
+    const categoryName = categoryNameById(getValue('newProductTypeCategory'));
+    const medicine = categoryName === 'Medicine';
+    const idInput = document.getElementById('customProductTypeId');
+    const nameInput = document.getElementById('newProductTypeName');
+    if (idInput) idInput.value = editing ? type.type_id : '';
+    if (nameInput) nameInput.value = editing ? type.type_name : '';
+    const mode = document.getElementById('productTypeFormMode');
+    if (mode) mode.textContent = editing ? `Edit ${medicine ? 'Dosage Form' : 'Product Type'}` : `Add ${medicine ? 'Dosage Form' : 'Product Type'}`;
+    const patternField = document.getElementById('dosageFormPatternField');
+    const patternSelect = document.getElementById('dosageFormSpecificationPattern');
+    patternField?.classList.toggle('d-none', !medicine || editing);
+    if (patternSelect) {
+        patternSelect.disabled = !medicine || editing;
+        patternSelect.required = medicine && !editing;
+        if (!editing) patternSelect.value = 'simple_strength';
+    }
+    const save = document.getElementById('btnSaveProductType');
+    if (save) save.textContent = editing ? 'Save Changes' : `Save ${medicine ? 'Dosage Form' : 'Product Type'}`;
+    showCustomizerError('customProductTypeError');
+}
+
+function renderProductTypeCustomizerRows(types = []) {
+    const container = document.getElementById('productTypeCustomizerList');
+    if (!container) return;
+    const medicine = categoryNameById(getValue('newProductTypeCategory')) === 'Medicine';
+    const label = medicine ? 'Dosage Form' : 'Product Type';
+    container.innerHTML = types.length ? types.map(type => `<div class="customizer-row" data-type-id="${escapeHtml(type.type_id)}"><span>${escapeHtml(type.type_name)}</span><span class="product-type-actions"><button class="btn btn-outline-secondary edit-product-type-option" type="button" data-id="${escapeHtml(type.type_id)}" data-name="${escapeHtml(type.type_name)}" title="Edit ${label}" aria-label="Edit ${label}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button><button class="btn btn-outline-danger delete-product-type-option" type="button" data-id="${escapeHtml(type.type_id)}" data-name="${escapeHtml(type.type_name)}" title="Delete ${label}" aria-label="Delete ${label}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></span></div>`).join('') : `<div class="p-3 text-muted text-center">No ${label}s found.</div>`;
 }
 
 async function openCategoryCustomizer() {
@@ -2831,20 +3327,73 @@ async function openCategoryCustomizer() {
     showCustomizerError('customCategoryError');
 }
 
-async function openProductTypeCustomizer() {
-    const categoryId = getValue('productCategory');
+async function openProductTypeCustomizer({ mode = 'add', sourceButton = null } = {}) {
+    const categoryId = getValue(mode === 'edit' ? 'editProductCategory' : 'productCategory');
     if (!categoryId || categoryId === CUSTOMIZE_OPTION) {
         PharmaUtils.toast.error('Select a real Category first.');
         return;
     }
-    showNestedModal('addProductTypeModal');
-    const types = await cachedProductTypes(categoryId);
-    renderCustomizerRows('productTypeCustomizerList', types, 'type_name', 'type_id', 'edit-product-type-option');
+    const containerSelector = mode === 'edit' ? '#editVariationList' : '#addVariationList';
+    const entries = Array.from(document.querySelectorAll(`${containerSelector} .edit-variation-entry`));
+    const sourceEntry = sourceButton?.closest('.edit-variation-entry');
+    productTypeCustomizerTarget = { mode, variationIndex: sourceEntry ? Math.max(0, entries.indexOf(sourceEntry)) : 0 };
+    const categoryName = categoryNameById(categoryId);
+    const medicine = categoryName === 'Medicine';
+    document.getElementById('productTypeCustomizerTitle').textContent = medicine ? 'Manage Dosage Forms' : 'Customize Product Types';
+    document.getElementById('productTypeCustomizerSearch').placeholder = medicine ? 'Search Dosage Forms' : 'Search Product Types';
+    document.getElementById('newProductTypeNameLabel').innerHTML = `${medicine ? 'Dosage Form' : 'Product Type'} Name <span class="text-danger">*</span>`;
     document.getElementById('newProductTypeCategory').value = categoryId;
-    document.getElementById('customProductTypeId').value = '';
-    document.getElementById('newProductTypeName').value = '';
-    document.getElementById('productTypeCustomizerCategory').textContent = categoryNameById(categoryId);
+    showNestedModal('addProductTypeModal', mode === 'edit' ? 'editProductModal' : 'addProductModal');
+    const types = await cachedProductTypes(categoryId);
+    renderProductTypeCustomizerRows(types);
+    setProductTypeEditor();
+    document.getElementById('productTypeCustomizerCategory').textContent = categoryName;
     showCustomizerError('customProductTypeError');
+}
+
+async function deleteProductType(typeId, typeName) {
+    const medicine = categoryNameById(getValue('newProductTypeCategory')) === 'Medicine';
+    const label = medicine ? 'Dosage Form' : 'Product Type';
+    const confirmation = await Swal.fire({
+        icon: 'warning',
+        title: `Delete ${label}?`,
+        text: `Are you sure you want to delete "${typeName}"?`,
+        showCancelButton: true,
+        confirmButtonText: 'Delete',
+        confirmButtonColor: '#dc3545',
+        customClass: { container: 'product-specification-confirmation' }
+    });
+    if (!confirmation.isConfirmed) return;
+
+    const categoryId = getValue('newProductTypeCategory');
+    const mode = productTypeCustomizerTarget.mode;
+    const containerSelector = mode === 'edit' ? '#editVariationList' : '#addVariationList';
+    const variations = collectVariationEntries(containerSelector);
+    const targetIndex = Math.min(productTypeCustomizerTarget.variationIndex, Math.max(0, variations.length - 1));
+    const selectedTypeId = variations[targetIndex]?.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType');
+    const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/delete_product_type.php`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type_id: typeId, category_id: categoryId })
+    });
+    referenceCache.typesByCategory.delete(String(categoryId));
+    invalidateProductConfiguration(typeId);
+    const deletedSelectedType = String(selectedTypeId) === String(typeId);
+    if (deletedSelectedType && variations[targetIndex]) variations[targetIndex].type_id = '';
+    if (targetIndex === 0) {
+        if (mode === 'edit') await populateEditTypes(categoryId, deletedSelectedType ? '' : selectedTypeId);
+        else await populateAddTypes(categoryId, deletedSelectedType ? '' : selectedTypeId);
+    } else {
+        productState.types = await cachedProductTypes(categoryId, true);
+    }
+    if (deletedSelectedType) {
+        productState.configurationTypeId = '';
+        productState.specifications = [];
+        if (mode === 'edit') renderEditVariations({ variations }, categoryNameById(categoryId));
+        else renderAddVariations({ variations }, categoryNameById(categoryId));
+    }
+    renderProductTypeCustomizerRows(await cachedProductTypes(categoryId, true));
+    setProductTypeEditor();
+    PharmaUtils.toast.success(response.message);
 }
 
 function renderSpecificationAssignments() {
@@ -3026,57 +3575,80 @@ function applyMeasurementUnitListSearch() {
     renderMeasurementUnits();
 }
 
+function measurementUnitDisplayLabel(unit) {
+    const name = String(unit?.unit_name || '').trim();
+    const symbol = String(unit?.unit_symbol || '').trim();
+    if (!name) return symbol || 'Measurement unit';
+    return symbol && symbol.toLowerCase() !== name.toLowerCase() ? `${name} (${symbol})` : name;
+}
+
 function renderMeasurementUnits(group = document.getElementById('measurementUnitGroupFilter')?.value || '') {
     const query = String(document.getElementById('measurementUnitSearch')?.value || '').trim().toLowerCase();
+    const sourceGroup = String(document.getElementById('addMeasurementUnitModal')?.dataset.sourceGroup || '').trim().toLowerCase();
     const activeUnits = productState.units.filter(unit => Number(unit.is_active ?? 1) === 1);
     const units = activeUnits.filter(unit => {
         if (group && String(unit.measurement_group).toLowerCase() !== String(group).toLowerCase()) return false;
         return !query || [unit.unit_name, unit.unit_symbol, unit.measurement_group]
             .some(value => String(value || '').toLowerCase().includes(query));
     });
-    const activeCustomIds = new Set(activeUnits.filter(unit => Number(unit.is_system ?? 1) === 0).map(unit => String(unit.measurement_unit_id)));
-    [...selectedMeasurementUnitIds].forEach(id => { if (!activeCustomIds.has(id)) selectedMeasurementUnitIds.delete(id); });
     const container = document.getElementById('measurementUnitCustomizerList');
     if (container) {
         const rows = units.length ? units.map(unit => {
             const id = String(unit.measurement_unit_id);
-            const isProtected = Number(unit.is_system ?? 1) === 1;
+            const isSystem = Number(unit.is_system ?? 1) === 1;
+            const selectable = Boolean(sourceGroup) && String(unit.measurement_group || '').trim().toLowerCase() === sourceGroup;
             return `
-            <div class="customizer-row measurement-unit-row" data-id="${escapeHtml(id)}">
-                <input class="form-check-input measurement-unit-checkbox" type="checkbox" value="${escapeHtml(id)}" ${isProtected ? 'disabled title="Protected system unit"' : ''} ${selectedMeasurementUnitIds.has(id) ? 'checked' : ''} aria-label="Select ${escapeHtml(unit.unit_name)}">
-                <span class="measurement-unit-name">${escapeHtml(`${unit.unit_name} (${unit.unit_symbol || unit.unit_name})`)}</span>
+            <div class="customizer-row measurement-unit-row${selectable ? ' is-selectable' : ''}" data-id="${escapeHtml(id)}"${selectable ? ` role="option" tabindex="0" aria-label="Select ${escapeHtml(unit.unit_symbol || unit.unit_name)}"` : ''}>
+                <span class="measurement-unit-name">${escapeHtml(unit.unit_name)}</span>
+                <span class="measurement-unit-symbol">${escapeHtml(unit.unit_symbol || unit.unit_name)}</span>
                 <span class="measurement-unit-group">${escapeHtml(unit.measurement_group)}</span>
                 <div class="measurement-unit-actions">
-                     <button class="btn btn-sm btn-outline-primary select-measurement-unit-option" type="button" data-id="${escapeHtml(unit.measurement_unit_id)}"><i class="fa-solid fa-check me-1"></i>Select</button>
-                     <button class="btn btn-sm btn-outline-secondary edit-measurement-unit-option" type="button" data-id="${escapeHtml(unit.measurement_unit_id)}" aria-label="Edit ${escapeHtml(unit.unit_name)}"><i class="fa-solid fa-pen me-1"></i>Edit</button>
-                    ${isProtected ? '<span class="measurement-unit-protected">Protected</span>' : `<button class="btn btn-sm btn-outline-danger delete-measurement-unit-option" type="button" data-id="${escapeHtml(unit.measurement_unit_id)}" aria-label="Remove ${escapeHtml(unit.unit_name)}"><i class="fa-solid fa-trash me-1"></i>Delete</button>`}
+                    <button class="btn btn-sm btn-outline-secondary edit-measurement-unit-option" type="button" data-id="${escapeHtml(id)}" data-system="${isSystem ? '1' : '0'}" title="Edit unit" aria-label="Edit unit"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+                    ${isSystem ? `
+                    <span class="system-measurement-unit-delete" role="button" tabindex="0" title="Built-in measurement unit cannot be deleted" aria-label="Built-in measurement unit cannot be deleted">
+                        <button class="btn btn-sm btn-outline-danger delete-measurement-unit-option" type="button" data-id="${escapeHtml(id)}" disabled aria-hidden="true" tabindex="-1"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+                    </span>` : `
+                    <button class="btn btn-sm btn-outline-danger delete-measurement-unit-option" type="button" data-id="${escapeHtml(id)}" title="Delete ${escapeHtml(measurementUnitDisplayLabel(unit))}" aria-label="Delete ${escapeHtml(measurementUnitDisplayLabel(unit))}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`}
                 </div>
             </div>`;
         }).join('') : '<div class="p-3 text-muted text-center">No values found.</div>';
         container.innerHTML = `<div class="measurement-unit-table-header">
-            <label><input class="form-check-input" id="measurementUnitSelectAll" type="checkbox"> <span>Select All</span></label>
-            <span>Unit</span><span>Group</span><span>Actions</span>
+            <span>Unit</span><span>Symbol</span><span>Group</span><span>Actions</span>
         </div>${rows}`;
-    }
-    const visibleDeletableIds = units.filter(unit => Number(unit.is_system ?? 1) === 0).map(unit => String(unit.measurement_unit_id));
-    const selectedVisible = visibleDeletableIds.filter(id => selectedMeasurementUnitIds.has(id)).length;
-    const selectAll = document.getElementById('measurementUnitSelectAll');
-    if (selectAll) {
-        selectAll.disabled = visibleDeletableIds.length === 0;
-        selectAll.checked = visibleDeletableIds.length > 0 && selectedVisible === visibleDeletableIds.length;
-        selectAll.indeterminate = selectedVisible > 0 && selectedVisible < visibleDeletableIds.length;
-        selectAll.dataset.visibleIds = JSON.stringify(visibleDeletableIds);
-    }
-    const bulkButton = document.getElementById('btnDeleteSelectedMeasurementUnits');
-    if (bulkButton) {
-        bulkButton.classList.toggle('d-none', selectedMeasurementUnitIds.size === 0);
-        bulkButton.disabled = selectedMeasurementUnitIds.size === 0;
-        bulkButton.innerHTML = `<i class="fa-solid fa-trash me-1"></i>Delete Selected (${selectedMeasurementUnitIds.size})`;
     }
 }
 
 function updateClearableInput(input) {
     input?.closest('.clearable-input')?.classList.toggle('has-value', Boolean(input.value));
+}
+
+function setMeasurementUnitEditorMode(unit = null) {
+    const editing = Boolean(unit?.measurement_unit_id);
+    const idInput = document.getElementById('customMeasurementUnitId');
+    const nameInput = document.getElementById('newMeasurementUnitName');
+    const symbolInput = document.getElementById('newMeasurementUnitSymbol');
+    const groupInput = document.getElementById('newMeasurementUnitGroup');
+    const cancelButton = document.getElementById('btnCancelMeasurementUnit');
+    const saveButton = document.getElementById('btnSaveMeasurementUnit');
+    const systemUnit = Number(unit?.is_system ?? 0) === 1;
+
+    if (idInput) idInput.value = editing ? unit.measurement_unit_id : '';
+    if (nameInput) nameInput.value = editing ? (unit.unit_name || '') : '';
+    if (symbolInput) {
+        symbolInput.value = editing ? (unit.unit_symbol || unit.unit_name || '') : '';
+        symbolInput.disabled = editing && systemUnit;
+    }
+    if (groupInput) {
+        if (editing) groupInput.value = unit.measurement_group || groupInput.value;
+        groupInput.disabled = editing && systemUnit;
+    }
+    if (cancelButton) {
+        cancelButton.textContent = editing ? 'Cancel Edit' : 'Cancel';
+        if (editing) cancelButton.removeAttribute('data-bs-dismiss');
+        else cancelButton.setAttribute('data-bs-dismiss', 'modal');
+    }
+    if (saveButton) saveButton.textContent = editing ? 'Save Changes' : 'Save';
+    [nameInput, symbolInput].forEach(updateClearableInput);
 }
 
 async function openMeasurementUnitCustomizer(group = '', sourceSelect = null) {
@@ -3086,31 +3658,40 @@ async function openMeasurementUnitCustomizer(group = '', sourceSelect = null) {
     if (!groupSelect.value && productState.measurementGroups.length) groupSelect.value = productState.measurementGroups[0];
     const filterSelect = document.getElementById('measurementUnitGroupFilter');
     filterSelect.innerHTML = `<option value="">All Measurement Groups</option>${productState.measurementGroups.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('')}`;
-    filterSelect.value = '';
+    filterSelect.value = productState.measurementGroups.some(value => String(value).toLowerCase() === String(group).toLowerCase()) ? group : '';
     document.getElementById('addMeasurementUnitModal').dataset.sourceGroup = group;
     document.getElementById('addMeasurementUnitModal')._sourceSelect = sourceSelect;
-    document.getElementById('customMeasurementUnitId').value = '';
-    document.getElementById('newMeasurementUnitName').value = '';
-    document.getElementById('newMeasurementUnitSymbol').value = '';
+    setMeasurementUnitEditorMode();
     document.getElementById('measurementUnitSearch').value = '';
-    selectedMeasurementUnitIds.clear();
     ['measurementUnitSearch', 'newMeasurementUnitName', 'newMeasurementUnitSymbol'].forEach(id => updateClearableInput(document.getElementById(id)));
-    renderMeasurementUnits('');
+    renderMeasurementUnits(filterSelect.value);
     showCustomizerError('customMeasurementUnitError');
     showNestedModal('addMeasurementUnitModal');
 }
 
-async function removeMeasurementUnits(units, { bulk = false } = {}) {
-    const removable = (Array.isArray(units) ? units : []).filter(unit => Number(unit.is_system ?? 1) === 0);
-    if (!removable.length) return;
+function selectMeasurementUnitFromManager(unitId) {
+    const modal = document.getElementById('addMeasurementUnitModal');
+    const sourceSelect = modal?._sourceSelect;
+    const unit = productState.units.find(item => String(item.measurement_unit_id) === String(unitId));
+    const expectedGroup = String(modal?.dataset.sourceGroup || '').trim().toLowerCase();
+    if (!sourceSelect || !unit || String(unit.measurement_group || '').trim().toLowerCase() !== expectedGroup) return;
+    sourceSelect.value = unit.measurement_unit_id;
+    sourceSelect.dataset.previousValue = unit.measurement_unit_id;
+    syncMeasurementSelect(sourceSelect);
+    sourceSelect.dispatchEvent(new Event('change', { bubbles:true }));
+    bootstrap.Modal.getInstance(modal)?.hide();
+    sourceSelect._measurementTrigger?.focus();
+}
+
+async function removeMeasurementUnit(unit) {
+    if (!unit?.measurement_unit_id) throw new Error('Unable to delete measurement unit.');
+    if (Number(unit.is_system ?? 1) === 1) throw new Error('Built-in measurement unit cannot be deleted.');
     const confirmation = await Swal.fire({
         icon: 'warning',
-        title: bulk ? `Remove ${removable.length} selected measurement units?` : `Remove ${removable[0].unit_name}?`,
-        text: bulk
-            ? `Remove ${removable.length} selected measurement units from future selection? Existing products using these units will keep their saved values.`
-            : 'This unit will no longer appear for new selections. Existing products using it will keep their saved value.',
+        title: 'Delete Measurement Unit?',
+        text: `Are you sure you want to delete "${measurementUnitDisplayLabel(unit)}"?`,
         showCancelButton: true,
-        confirmButtonText: bulk ? 'Remove Selected' : 'Remove from available units',
+        confirmButtonText: 'Delete',
         cancelButtonText: 'Cancel',
         confirmButtonColor: '#dc3545'
     });
@@ -3123,15 +3704,19 @@ async function removeMeasurementUnits(units, { bulk = false } = {}) {
     const preserved = addContainer ? collectAddVariations() : (editContainer ? collectEditVariations() : []);
     const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/delete_measurement_unit.php`, {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ measurement_unit_ids: removable.map(unit => unit.measurement_unit_id) })
+        body: JSON.stringify({ measurement_unit_id: unit.measurement_unit_id })
     });
-    (response.units || removable).forEach(unit => {
-        archiveMeasurementUnit(unit.measurement_unit_id);
-        selectedMeasurementUnitIds.delete(String(unit.measurement_unit_id));
+    preserved.forEach(variation => {
+        if (String(variation.inventory_unit_id) === String(unit.measurement_unit_id)) variation.inventory_unit_id = '';
+        (variation.specifications || []).forEach(value => {
+            if (String(value.measurement_unit_id) === String(unit.measurement_unit_id)) value.measurement_unit_id = '';
+        });
     });
+    await loadMeasurementUnitCache({ forceRefresh:true });
     if (addContainer) renderAddVariations({ variations: preserved }, getSelectedAddCategoryName());
     if (editContainer) renderEditVariations({ variations: preserved }, document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '');
-    renderMeasurementUnits();
+    renderMeasurementUnits(document.getElementById('measurementUnitGroupFilter')?.value || '');
+    refreshMeasurementUnitDropdowns();
     PharmaUtils.toast.success(response.message);
 }
 
@@ -3156,6 +3741,7 @@ async function previewCategoryPricingImpact() {
 function initProductCustomizers() {
     if (document.body.dataset.productCustomizersReady === '1') return;
     document.body.dataset.productCustomizersReady = '1';
+    initMeasurementUnitDropdowns();
 
     document.querySelectorAll('.product-customizer-modal').forEach(modal => {
         modal.addEventListener('shown.bs.modal', () => document.querySelectorAll('.modal-backdrop').item(document.querySelectorAll('.modal-backdrop').length - 1)?.classList.add('product-customizer-backdrop'));
@@ -3231,23 +3817,62 @@ function initProductCustomizers() {
         } catch (error) { showCustomizerError('customCategoryError', error.message); }
     });
     document.getElementById('productTypeCustomizerList')?.addEventListener('click', event => {
-        const button = event.target.closest('.edit-product-type-option');
-        if (!button) return;
-        document.getElementById('customProductTypeId').value = button.dataset.id;
-        document.getElementById('newProductTypeName').value = button.dataset.name;
+        const editButton = event.target.closest('.edit-product-type-option');
+        if (editButton) {
+            setProductTypeEditor({ type_id: editButton.dataset.id, type_name: editButton.dataset.name });
+            document.getElementById('newProductTypeName')?.focus();
+            return;
+        }
+        const deleteButton = event.target.closest('.delete-product-type-option');
+        if (!deleteButton) return;
+        deleteProductType(deleteButton.dataset.id, deleteButton.dataset.name).catch(error => {
+            showCustomizerError('customProductTypeError', error.message);
+            Swal.fire({ icon: 'error', title: 'Product Type Not Deleted', text: error.message, confirmButtonText: 'OK', customClass: { container: 'product-specification-confirmation' } });
+        });
+    });
+    document.getElementById('btnCancelProductTypeEdit')?.addEventListener('click', () => {
+        if (getValue('customProductTypeId')) {
+            setProductTypeEditor();
+            return;
+        }
+        bootstrap.Modal.getInstance(document.getElementById('addProductTypeModal'))?.hide();
     });
     document.getElementById('addProductTypeForm')?.addEventListener('submit', async event => {
         event.preventDefault();
         try {
             const categoryId = getValue('newProductTypeCategory');
-            const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/add_product_type.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type_id: getValue('customProductTypeId'), category_id: categoryId, type_name: getValue('newProductTypeName') }) });
+            const mode = productTypeCustomizerTarget.mode;
+            const containerSelector = mode === 'edit' ? '#editVariationList' : '#addVariationList';
+            const variations = collectVariationEntries(containerSelector);
+            const editing = Boolean(getValue('customProductTypeId'));
+            const medicine = categoryNameById(categoryId) === 'Medicine';
+            const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/add_product_type.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type_id: getValue('customProductTypeId'), category_id: categoryId, type_name: getValue('newProductTypeName'), specification_pattern: medicine && !editing ? getValue('dosageFormSpecificationPattern') : '' }) });
             referenceCache.typesByCategory.delete(String(categoryId));
             invalidateProductConfiguration(response.type.type_id);
-            await populateAddTypes(categoryId, response.type.type_id);
-            document.getElementById('productType').dataset.previousValue = response.type.type_id;
-            await loadProductConfiguration(response.type.type_id);
-            renderAddVariations({ variations: collectAddVariations() }, getSelectedAddCategoryName());
-            await openProductTypeCustomizer();
+            productState.types = await cachedProductTypes(categoryId, true);
+            const targetIndex = Math.min(productTypeCustomizerTarget.variationIndex, Math.max(0, variations.length - 1));
+            if (!variations[targetIndex]) variations.push({});
+            if (!editing) {
+                variations[targetIndex].type_id = response.type.type_id;
+                variations[targetIndex].type_name = response.type.type_name;
+                variations[targetIndex].specifications = [];
+            } else if (String(variations[targetIndex].type_id) === String(response.type.type_id)) {
+                variations[targetIndex].type_name = response.type.type_name;
+            }
+            const selectedTypeId = editing
+                ? (variations[targetIndex].type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'))
+                : response.type.type_id;
+            if (targetIndex === 0) {
+                if (mode === 'edit') await populateEditTypes(categoryId, selectedTypeId);
+                else await populateAddTypes(categoryId, selectedTypeId);
+                const shared = document.getElementById(mode === 'edit' ? 'editProductType' : 'productType');
+                if (shared) shared.dataset.previousValue = selectedTypeId;
+            }
+            if (selectedTypeId) await loadProductConfiguration(selectedTypeId);
+            const categoryName = categoryNameById(categoryId);
+            if (mode === 'edit') renderEditVariations({ variations }, categoryName);
+            else renderAddVariations({ variations }, categoryName);
+            bootstrap.Modal.getInstance(document.getElementById('addProductTypeModal'))?.hide();
             PharmaUtils.toast.success(response.message);
         } catch (error) { showCustomizerError('customProductTypeError', error.message); }
     });
@@ -3329,61 +3954,67 @@ function initProductCustomizers() {
         } catch (error) { showCustomizerError('customSpecificationError', error.message); }
     });
     document.getElementById('measurementUnitCustomizerList')?.addEventListener('click', async event => {
-        const selectButton = event.target.closest('.select-measurement-unit-option');
-        if (selectButton) {
-            const modal = document.getElementById('addMeasurementUnitModal');
-            const sourceSelect = modal?._sourceSelect;
-            if (sourceSelect) {
-                sourceSelect.value = selectButton.dataset.id;
-                sourceSelect.dataset.previousValue = selectButton.dataset.id;
-                sourceSelect.dispatchEvent(new Event('change', { bubbles:true }));
-                bootstrap.Modal.getInstance(modal)?.hide();
-                sourceSelect.focus();
-                return;
-            }
+        const protectedDelete = event.target.closest('.system-measurement-unit-delete');
+        if (protectedDelete) {
+            event.preventDefault();
+            event.stopPropagation();
+            const message = 'Built-in measurement unit cannot be deleted.';
+            showCustomizerError('customMeasurementUnitError', message);
+            PharmaUtils.toast.warning(message);
+            return;
         }
         const deleteButton = event.target.closest('.delete-measurement-unit-option');
         if (deleteButton) {
+            event.preventDefault();
+            event.stopPropagation();
             const unit = productState.units.find(item => String(item.measurement_unit_id) === String(deleteButton.dataset.id));
-            if (!unit) return;
             try {
-                await removeMeasurementUnits([unit]);
+                if (!unit) throw new Error('Unable to delete measurement unit.');
+                await removeMeasurementUnit(unit);
             } catch (error) {
-                showCustomizerError('customMeasurementUnitError', error.message);
+                const message = error?.message || 'Unable to delete measurement unit.';
+                console.error('Unable to delete measurement unit.', error);
+                showCustomizerError('customMeasurementUnitError', message);
+                PharmaUtils.toast.error(message);
             }
             return;
         }
         const button = event.target.closest('.edit-measurement-unit-option');
-        if (!button) return;
-        const unit = productState.units.find(item => String(item.measurement_unit_id) === String(button.dataset.id));
-        if (!unit) return;
-        document.getElementById('customMeasurementUnitId').value = unit.measurement_unit_id;
-        document.getElementById('newMeasurementUnitName').value = unit.unit_name;
-        document.getElementById('newMeasurementUnitSymbol').value = unit.unit_symbol || unit.unit_name;
-        document.getElementById('newMeasurementUnitGroup').value = unit.measurement_group;
-        updateClearableInput(document.getElementById('newMeasurementUnitName'));
-        updateClearableInput(document.getElementById('newMeasurementUnitSymbol'));
-    });
-    document.getElementById('measurementUnitCustomizerList')?.addEventListener('change', event => {
-        if (event.target.id === 'measurementUnitSelectAll') {
-            const visibleIds = JSON.parse(event.target.dataset.visibleIds || '[]');
-            visibleIds.forEach(id => event.target.checked ? selectedMeasurementUnitIds.add(String(id)) : selectedMeasurementUnitIds.delete(String(id)));
-            renderMeasurementUnits();
+        if (button) {
+            event.preventDefault();
+            event.stopPropagation();
+            const unit = productState.units.find(item => String(item.measurement_unit_id) === String(button.dataset.id));
+            if (!unit) return;
+            setMeasurementUnitEditorMode(unit);
+            document.getElementById('newMeasurementUnitName').focus();
             return;
         }
-        const checkbox = event.target.closest('.measurement-unit-checkbox');
-        if (!checkbox || checkbox.disabled) return;
-        if (checkbox.checked) selectedMeasurementUnitIds.add(String(checkbox.value));
-        else selectedMeasurementUnitIds.delete(String(checkbox.value));
-        renderMeasurementUnits();
+        const row = event.target.closest('.measurement-unit-row.is-selectable');
+        if (row) selectMeasurementUnitFromManager(row.dataset.id);
     });
-    document.getElementById('btnDeleteSelectedMeasurementUnits')?.addEventListener('click', async () => {
-        const units = productState.units.filter(unit => selectedMeasurementUnitIds.has(String(unit.measurement_unit_id)));
-        try {
-            await removeMeasurementUnits(units, { bulk: true });
-        } catch (error) {
-            showCustomizerError('customMeasurementUnitError', error.message);
+    document.getElementById('measurementUnitCustomizerList')?.addEventListener('keydown', event => {
+        const protectedDelete = event.target.closest('.system-measurement-unit-delete');
+        if (protectedDelete && ['Enter', ' '].includes(event.key)) {
+            event.preventDefault();
+            event.stopPropagation();
+            const message = 'Built-in measurement unit cannot be deleted.';
+            showCustomizerError('customMeasurementUnitError', message);
+            PharmaUtils.toast.warning(message);
+            return;
         }
+        if (!['Enter', ' '].includes(event.key) || event.target.closest('button')) return;
+        const row = event.target.closest('.measurement-unit-row.is-selectable');
+        if (!row) return;
+        event.preventDefault();
+        selectMeasurementUnitFromManager(row.dataset.id);
+    });
+    document.getElementById('btnCancelMeasurementUnit')?.addEventListener('click', event => {
+        if (!getValue('customMeasurementUnitId')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setMeasurementUnitEditorMode();
+        showCustomizerError('customMeasurementUnitError');
+        document.getElementById('newMeasurementUnitName')?.focus();
     });
     document.getElementById('addMeasurementUnitForm')?.addEventListener('submit', async event => {
         event.preventDefault();
@@ -3393,11 +4024,21 @@ function initProductCustomizers() {
         const editContainer = sourceSelect?.closest('#editVariationList');
         const preserved = addContainer ? collectAddVariations() : (editContainer ? collectEditVariations() : []);
         const sourceEntryIndex = sourceSelect ? Array.from(sourceSelect.closest(addContainer ? '#addVariationList' : '#editVariationList').querySelectorAll('.edit-variation-entry')).indexOf(sourceSelect.closest('.edit-variation-entry')) : -1;
-        const specificationId = sourceSelect?.closest('.specification-field')?.dataset.specificationId || '';
+        const sourceSpecificationField = sourceSelect?.closest('.specification-field');
+        const specificationId = sourceSelect?.matches('.medicine-denominator-unit')
+            ? (sourceSpecificationField?.dataset.denominatorSpecificationId || '')
+            : (sourceSpecificationField?.dataset.specificationId || '');
         try {
+            const editingUnitId = getValue('customMeasurementUnitId');
+            const proposedName = getValue('newMeasurementUnitName');
+            const proposedSymbol = getValue('newMeasurementUnitSymbol') || proposedName;
+            if (/(?:[⁄/\\]|\bper\b|^\s*\d+(?:\.\d+)?\s*(?:mg|g|mcg|kg|iu|%|ml|l|tablet|capsule|piece|bottle|vial|ampule|sachet|box)\s*$)/iu.test(proposedName)
+                || /(?:[⁄/\\]|\bper\b|^\s*\d+(?:\.\d+)?\s*(?:mg|g|mcg|kg|iu|%|ml|l|tablet|capsule|piece|bottle|vial|ampule|sachet|box)\s*$)/iu.test(proposedSymbol)) {
+                throw new Error('Measurement units must be atomic and reusable (for example: mg, mL, tablet, or bottle). Enter concentration values in the Medicine Strength fields.');
+            }
             const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/add_measurement_unit.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ measurement_unit_id: getValue('customMeasurementUnitId'), unit_name: getValue('newMeasurementUnitName'), unit_symbol: getValue('newMeasurementUnitSymbol'), measurement_group: getValue('newMeasurementUnitGroup') }) });
-            upsertMeasurementUnit(response.unit);
-            if (sourceEntryIndex >= 0) {
+            await loadMeasurementUnitCache({ forceRefresh: true });
+            if (!editingUnitId && sourceEntryIndex >= 0) {
                 if (sourceSelect?.matches('.edit-var-inventory-unit')) {
                     preserved[sourceEntryIndex].inventory_unit_id = response.unit.measurement_unit_id;
                     preserved[sourceEntryIndex].inventory_unit_name = response.unit.unit_name;
@@ -3410,11 +4051,23 @@ function initProductCustomizers() {
             if (addContainer) renderAddVariations({ variations: preserved }, getSelectedAddCategoryName());
             if (editContainer) renderEditVariations({ variations: preserved }, document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '');
             renderMeasurementUnits();
-            document.getElementById('customMeasurementUnitId').value = '';
-            document.getElementById('newMeasurementUnitName').value = '';
-            document.getElementById('newMeasurementUnitSymbol').value = '';
-            updateClearableInput(document.getElementById('newMeasurementUnitName'));
-            updateClearableInput(document.getElementById('newMeasurementUnitSymbol'));
+            setMeasurementUnitEditorMode();
+            bootstrap.Modal.getInstance(modal)?.hide();
+            const refreshedContainer = addContainer
+                ? document.getElementById('addVariationList')
+                : (editContainer ? document.getElementById('editVariationList') : null);
+            const refreshedEntry = refreshedContainer?.querySelectorAll('.edit-variation-entry')?.[sourceEntryIndex];
+            const refreshedSource = sourceSelect?.matches('.edit-var-inventory-unit')
+                ? refreshedEntry?.querySelector('.edit-var-inventory-unit')
+                : (sourceSelect?.matches('.medicine-denominator-unit')
+                    ? refreshedEntry?.querySelector('.medicine-denominator-unit')
+                    : (sourceSelect?.matches('.dynamic-package-unit')
+                        ? refreshedEntry?.querySelector('.dynamic-package-unit')
+                        : Array.from(refreshedEntry?.querySelectorAll('.specification-field') || [])
+                            .find(field => String(field.dataset.specificationId) === String(specificationId))
+                            ?.querySelector('.dynamic-spec-unit')));
+            refreshMeasurementUnitDropdowns(refreshedContainer || document);
+            refreshedSource?._measurementTrigger?.focus();
             PharmaUtils.toast.success(response.message);
         } catch (error) { showCustomizerError('customMeasurementUnitError', error.message); }
     });
@@ -3490,8 +4143,10 @@ if (_addProductModalEl) {
     _addProductModalEl.addEventListener('show.bs.modal', () => {
         clearProductFormValidation(document.getElementById('addProductForm'));
         populateSupplierDropdown();
+        populateMedicineClassificationSelects().catch(err => console.warn('Failed to load medicine classifications:', err.message || err));
         const prefilledVariant = document.getElementById('addProductForm')?.dataset.prefillMode === 'variant';
         if (prefilledVariant) return;
+        setMedicineFields('add', '');
         populateAddCategories();
         const typeSelect = document.getElementById('productType');
         if (typeSelect) {

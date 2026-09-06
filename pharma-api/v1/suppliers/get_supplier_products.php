@@ -70,7 +70,7 @@ try {
             COALESCE(gd.pack_content, msd.pack_content) AS pack_content_unit,
             '' AS product_unit,
             COALESCE(md.strength_value, md.strength) AS strength_size_value,
-            COALESCE(NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength) AS strength_size_display
+            COALESCE(NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), '')) AS strength_size_display
          FROM supplier_products sp
          INNER JOIN product p ON sp.product_id = p.product_id
          LEFT JOIN product_categories pc ON p.category_id = pc.category_id

@@ -70,9 +70,8 @@ try {
          INNER JOIN product p ON p.product_id = poi.product_id
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
-         LEFT JOIN (SELECT claim_id, MIN(receiving_item_id) AS receiving_item_id FROM supplier_claim_damage_lines WHERE receiving_item_id IS NOT NULL GROUP BY claim_id) claim_receiving ON claim_receiving.claim_id = por.return_id
-         LEFT JOIN (SELECT item.po_item_id, MIN(item.receiving_item_id) AS receiving_item_id FROM purchase_order_receiving_items item INNER JOIN purchase_order_receiving receiving ON receiving.receiving_id=item.receiving_id AND receiving.receiving_type='Original' GROUP BY item.po_item_id) legacy_receiving ON legacy_receiving.po_item_id=poi.po_item_id
-         LEFT JOIN purchase_order_receiving_items receiving_item ON receiving_item.receiving_item_id = COALESCE(claim_receiving.receiving_item_id, legacy_receiving.receiving_item_id)
+         LEFT JOIN (SELECT claim_id, MIN(receiving_item_id) AS receiving_item_id FROM supplier_claim_damage_lines WHERE receiving_item_id IS NOT NULL GROUP BY claim_id HAVING COUNT(DISTINCT receiving_item_id)=1) claim_receiving ON claim_receiving.claim_id = por.return_id
+         LEFT JOIN purchase_order_receiving_items receiving_item ON receiving_item.receiving_item_id = claim_receiving.receiving_item_id
          LEFT JOIN purchase_order_receiving receiving ON receiving.receiving_id = receiving_item.receiving_id
          WHERE por.return_id = :return_id
          LIMIT 1 FOR UPDATE"
@@ -81,11 +80,9 @@ try {
     $record = $recordStatement->fetch(PDO::FETCH_ASSOC);
     if (!$record) throw new InvalidArgumentException('Return/Damage record not found.');
     if (empty($record['original_receiving_id']) || empty($record['original_receiving_item_id'])) throw new InvalidArgumentException('The original receiving event for this claim could not be resolved.');
-    $parsed = parsePurchaseOrderReturnRemarks($record['remarks'] ?? '');
-    $metadata = $parsed['metadata'];
-    if (($metadata['resolution'] ?? '') !== 'return_for_replacement' && ($record['resolution_type'] ?? '') !== 'Replacement') throw new InvalidArgumentException('This record is not awaiting replacement stock.');
-    $expected = (int) ($metadata['replacement_expected_qty'] ?? ($record['affected_base_quantity'] ?? 0));
-    $alreadyReceived = (int) ($metadata['replacement_received_qty'] ?? 0);
+    if (($record['resolution_type'] ?? '') !== 'Replacement') throw new InvalidArgumentException('This record is not awaiting replacement stock.');
+    $expected = (int) ($record['replacement_expected_qty'] ?? 0);
+    $alreadyReceived = (int) ($record['replacement_received_qty'] ?? 0);
     $outstanding = max(0, $expected - $alreadyReceived);
     if ($outstanding <= 0) throw new InvalidArgumentException('The expected replacement quantity has already been received.');
     if ($delivered > $outstanding) throw new InvalidArgumentException('Replacement delivered quantity cannot exceed the outstanding quantity.');
@@ -108,17 +105,10 @@ try {
 
     $replacementReceivingId = newUuid($pdo);
     $replacementReceivingItemId = newUuid($pdo);
-    $receivingRemarks = '[REPLACEMENT_RECEIVING_V1]' . "\n" . json_encode([
-        'claim_id' => $returnId,
-        'original_receiving_id' => $record['original_receiving_id'],
-        'original_receiving_item_id' => $record['original_receiving_item_id'],
-        'replacement_delivered' => $delivered,
-        'replacement_accepted' => $good,
-        'replacement_damaged' => $damaged,
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n" . $remarks;
+    $receivingRemarks = $remarks ?: null;
     $pdo->prepare("INSERT INTO purchase_order_receiving (receiving_id, po_id, receiving_type, parent_receiving_id, claim_id, receiving_request_key, received_date, delivery_receipt_no, remarks, inspection_status, inspected_by) VALUES (:id, :po_id, 'Replacement', :parent_id, :claim_id, :request_key, CURRENT_TIMESTAMP, :delivery_receipt_no, :remarks, 'Confirmed', :inspected_by)")
         ->execute([':id' => $replacementReceivingId, ':po_id' => $record['po_id'], ':parent_id' => $record['original_receiving_id'], ':claim_id' => $returnId, ':request_key' => $requestKey, ':delivery_receipt_no' => $deliveryReceiptNo ?: null, ':remarks' => $receivingRemarks, ':inspected_by' => $_SESSION['user_id'] ?? null]);
-    $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, parent_receiving_item_id, received_quantity, accepted_quantity, damaged_quantity) VALUES (:id, :receiving_id, :po_item_id, :parent_item_id, :received, :accepted, :damaged)')
+    $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, parent_receiving_item_id, received_quantity, accepted_quantity, damaged_quantity, missing_quantity) VALUES (:id, :receiving_id, :po_item_id, :parent_item_id, :received, :accepted, :damaged, 0)')
         ->execute([':id' => $replacementReceivingItemId, ':receiving_id' => $replacementReceivingId, ':po_item_id' => $record['po_item_id'], ':parent_item_id' => $record['original_receiving_item_id'], ':received' => $delivered, ':accepted' => $good, ':damaged' => $damaged]);
 
     $inventoryStatement = $pdo->prepare("INSERT INTO product_inventory (inventory_id, receiving_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, expiry_date, status) VALUES (:id, :receiving_id, :product_id, :batch_number, :quantity, :remaining, :expiry, :expiry_copy, 'Available')");
@@ -150,14 +140,10 @@ try {
     }
 
     $newReceived = $alreadyReceived + $good;
-    $metadata['replacement_delivered_qty'] = (int) ($metadata['replacement_delivered_qty'] ?? 0) + $delivered;
-    $metadata['replacement_accepted_qty'] = $newReceived;
-    $metadata['replacement_received_qty'] = $newReceived;
-    $metadata['replacement_rejected_qty'] = (int) ($metadata['replacement_rejected_qty'] ?? 0) + $damaged;
     $remaining = max(0, $expected - $newReceived);
     $newStatus = $remaining === 0 ? 'Resolved' : 'Partially Replaced';
-    $updateReturn = $pdo->prepare('UPDATE supplier_claims SET remarks = :remarks, claim_status = :status, resolved_at = :resolved_at WHERE claim_id = :return_id');
-    $updateReturn->execute([':remarks' => buildPurchaseOrderReturnRemarks($metadata, $parsed['remarks']), ':status' => $newStatus, ':resolved_at' => $remaining === 0 ? date('Y-m-d H:i:s') : null, ':return_id' => $returnId]);
+    $updateReturn = $pdo->prepare('UPDATE supplier_claims SET claim_status = :status, resolved_at = :resolved_at WHERE claim_id = :return_id');
+    $updateReturn->execute([':status' => $newStatus, ':resolved_at' => $remaining === 0 ? date('Y-m-d H:i:s') : null, ':return_id' => $returnId]);
 
     $newFinalPayment = purchaseOrderEffectivePayable($pdo, cleanId($record['po_id']), (float) $record['final_payment']);
     $updatePo = $pdo->prepare("UPDATE purchase_orders SET final_payment = :final_payment WHERE po_id = :po_id");

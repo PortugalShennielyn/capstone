@@ -48,9 +48,13 @@ try {
     );
     $stmt->execute($params);
     $requests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $itemsByRequest = [];
+    foreach (purchaseRequestItemsForRequests($pdo, array_column($requests, 'pr_id')) as $item) {
+        $itemsByRequest[$item['pr_id']][] = $item;
+    }
     $allProductIds = [];
     foreach ($requests as &$request) {
-        $request['items'] = purchaseRequestItems($pdo, (string) $request['pr_id']);
+        $request['items'] = $itemsByRequest[$request['pr_id']] ?? [];
         $allProductIds = array_merge($allProductIds, array_column($request['items'], 'product_id'));
     }
     unset($request);

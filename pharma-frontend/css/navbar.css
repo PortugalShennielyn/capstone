@@ -221,7 +221,11 @@ body .modal > .modal-dialog {
 /* Shared application header. The dashboard and every module reuse the sidebar's
    exact navigation color so the two surfaces read as one system. */
 body #mainWrapper > .topbar.drp-shared-topbar,
-body .main-wrapper > .topbar.drp-shared-topbar {
+body .main-wrapper > .topbar.drp-shared-topbar,
+body #mainWrapper > .cashier-topbar.drp-shared-topbar,
+body .main-wrapper > .cashier-topbar.drp-shared-topbar,
+body #mainWrapper > .shift-topbar.drp-shared-topbar,
+body .main-wrapper > .shift-topbar.drp-shared-topbar {
     position: sticky !important;
     top: 0 !important;
     z-index: 1020 !important;
@@ -332,7 +336,11 @@ body .main-wrapper > .topbar.drp-shared-topbar {
 
 @media (max-width: 850px) {
     body #mainWrapper > .topbar.drp-shared-topbar,
-    body .main-wrapper > .topbar.drp-shared-topbar { padding: 0 14px !important; gap: 9px !important; }
+    body .main-wrapper > .topbar.drp-shared-topbar,
+    body #mainWrapper > .cashier-topbar.drp-shared-topbar,
+    body .main-wrapper > .cashier-topbar.drp-shared-topbar,
+    body #mainWrapper > .shift-topbar.drp-shared-topbar,
+    body .main-wrapper > .shift-topbar.drp-shared-topbar { padding: 0 14px !important; gap: 9px !important; }
     .drp-shared-topbar .topbar-search { min-width: 160px; width: auto; }
     .drp-shared-topbar .page-title-mini span,
     .drp-shared-topbar .topbar-greeting span,
@@ -1251,4 +1259,19 @@ html:not(.navbar-role-ready) #navbar-container .sidebar-profile-footer {
 .modal .modal-header button[aria-label="Close"]:focus-visible {
     outline: 3px solid rgba(220, 38, 38, .35);
     outline-offset: 2px;
+}
+
+.search-match-highlight {
+    padding: 0 1px;
+    border-radius: 3px;
+    color: inherit;
+    background-color: #fff0a6;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+}
+
+html[data-bs-theme="dark"] .search-match-highlight,
+body.dark-mode .search-match-highlight {
+    background: #854d0e;
+    color: #fef3c7;
 }

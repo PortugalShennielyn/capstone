@@ -13,6 +13,8 @@ const state = {
     activeOrder: null,
     searchTimer: null,
     receiptOnly: false,
+    paymentDrafts: new Map(),
+    submittingOrderIds: new Set(),
 };
 
 const nodes = {};
@@ -162,6 +164,24 @@ function paymentTotals(order, type, customAmount) {
     };
 }
 
+function safeCurrencyValue(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function paymentDraft(order, isCompleted = false) {
+    const orderId = Number(order.order_id);
+    if (!state.paymentDrafts.has(orderId)) {
+        const cash = safeCurrencyValue(isCompleted ? (order.amount_paid || order.cash_received) : order.cash_received);
+        state.paymentDrafts.set(orderId, {
+            cashText: cash > 0 ? cash.toFixed(2) : '',
+            discountType: order.cashier_discount_type || 'none',
+            discountAmountText: safeCurrencyValue(order.cashier_discount_amount).toFixed(2),
+        });
+    }
+    return state.paymentDrafts.get(orderId);
+}
+
 function receiptSpec(item) {
     return [
         item.generic_name,
@@ -299,6 +319,7 @@ function renderOrders() {
             ? 'No waiting orders.'
             : `No ${state.tab.replace('_', ' ')} orders found.`;
         nodes.list.innerHTML = `<div class="empty-list">${escapeHtml(message)}</div>`;
+        window.PharmacySearchHighlight?.apply(nodes.list, nodes.search.value);
         return;
     }
 
@@ -333,6 +354,7 @@ function renderOrders() {
             </article>
         `;
     }).join('');
+    window.PharmacySearchHighlight?.apply(nodes.list, nodes.search.value);
 }
 
 function emptyDetail() {
@@ -397,10 +419,11 @@ function renderDetail(order) {
     const isCompleted = order.status_group === 'completed';
     const inactiveItem = !isCompleted && (order.items || []).find((item) => String(item.product_status || 'Active').toLowerCase() === 'inactive');
     const canPay = !inactiveItem && ['accepted_by_cashier', 'processing_payment', 'processing'].includes(order.status_code);
-    const cashValue = Number(isCompleted ? (order.amount_paid || order.cash_received || 0) : (order.cash_received || 0));
+    const draft = paymentDraft(order, isCompleted);
+    const cashValue = safeCurrencyValue(draft.cashText);
     const amountPaid = isCompleted ? Number(order.amount_paid || 0) : 0;
-    const selectedDiscountType = order.cashier_discount_type || 'none';
-    const selectedDiscountAmount = Number(order.cashier_discount_amount || 0);
+    const selectedDiscountType = draft.discountType;
+    const selectedDiscountAmount = safeCurrencyValue(draft.discountAmountText);
     const totals = paymentTotals(order, selectedDiscountType, selectedDiscountAmount);
     const paidFinalAmount = Number(order.final_amount || order.total_amount || 0);
     const displayFinalAmount = isCompleted ? paidFinalAmount : totals.finalAmount;
@@ -425,9 +448,22 @@ function renderDetail(order) {
             <span>${isCompleted ? 'Completed At' : 'Time Accepted'}<b>${escapeHtml(formatDateTime(isCompleted ? order.completed_at : order.cashier_accepted_at))}</b></span>
         </div>
         ${inactiveItem ? `<div class="alert alert-danger py-2 px-3 mb-3"><strong>${escapeHtml(inactiveItem.product_name)}</strong> is now inactive. Remove it from the order before continuing.</div>` : ''}
-        <div class="checkout-layout">
-            <section class="order-items-panel" aria-label="Order items">
-             <div class="items-wrap">
+        <section class="payment-hero" aria-label="Payment summary">
+            <div class="payment-hero-block">
+                <span>Total</span>
+                <strong id="paymentHeroTotal">${money(displayFinalAmount)}</strong>
+            </div>
+            <label class="payment-hero-block" for="cashAmountInput">
+                <span>Cash Received</span>
+                <input class="cash-input" id="cashAmountInput" type="number" min="0" step="0.01" placeholder="0.00" value="${escapeHtml(draft.cashText)}" ${canPay ? '' : 'disabled'} inputmode="decimal" autocomplete="off">
+            </label>
+            <div class="payment-hero-block change">
+                <span>Change</span>
+                <strong id="changeAmount">${money(displayChange)}</strong>
+            </div>
+        </section>
+        <div class="detail-scroll">
+            <div class="items-wrap">
                 <table class="items-table">
                     <thead>
                         <tr>
@@ -440,29 +476,22 @@ function renderDetail(order) {
                     </thead>
                     <tbody>${itemRows(order)}</tbody>
                 </table>
-             </div>
-            </section>
-            <aside class="checkout-panel" aria-label="Checkout">
-              <div class="checkout-total"><span>Total</span><strong id="paymentHeroTotal">${money(displayFinalAmount)}</strong></div>
-              <div class="totals-list">
-                <label class="checkout-field" for="cashierDiscountType">
+            </div>
+            <div class="totals-list">
+                <div class="total-line discount-line">
                     <span>Discount</span>
                     <span class="discount-control">
                         <select class="discount-select" id="cashierDiscountType" ${canPay ? '' : 'disabled'}>${discountSelect}</select>
                         <input class="discount-input ${selectedDiscountType === 'custom' ? '' : 'is-hidden'}" id="cashierDiscountAmount" type="number" min="0" step="0.01" value="${selectedDiscountAmount.toFixed(2)}" ${canPay ? '' : 'disabled'} inputmode="decimal" autocomplete="off" aria-label="Custom cashier discount amount">
                     </span>
-                </label>
+                </div>
                 <div class="total-line"><span>Subtotal</span><strong>${money(order.subtotal)}</strong></div>
                 <div class="total-line"><span>Total Discount</span><strong id="totalDiscount">${money(isCompleted ? completedReceiptTotals(order).discount : totals.discount)}</strong></div>
                 <div class="total-line"><span>VATable Sales</span><strong id="vatableSales">${money(isCompleted ? completedReceiptTotals(order).vatableSales : totals.vatableSales)}</strong></div>
                 <div class="total-line"><span>VAT (12%)</span><strong id="vatAmount">${money(isCompleted ? completedReceiptTotals(order).vat : totals.vat)}</strong></div>
                 <div class="total-line after-discount"><span>Total Amount</span><strong id="finalAmount">${money(displayFinalAmount)}</strong></div>
-              </div>
-              <label class="checkout-field" for="cashAmountInput"><span>Cash Received</span>
-                <input class="cash-input" id="cashAmountInput" type="number" min="0" step="0.01" placeholder="0.00" value="${cashValue > 0 ? cashValue.toFixed(2) : ''}" ${canPay ? '' : 'disabled'} inputmode="decimal" autocomplete="off">
-              </label>
-              <div class="checkout-change"><span>Change</span><strong id="changeAmount">${money(displayChange)}</strong></div>
-              ${isCompleted ? `
+            </div>
+            ${isCompleted ? `
                 <div class="receipt-box">
                     Receipt No: ${escapeHtml(order.receipt_no || '-')}<br>
                     Cashier: ${escapeHtml(order.cashier_name || 'Unassigned')}<br>
@@ -472,25 +501,24 @@ function renderDetail(order) {
                     Change: ${money(order.change_amount)}<br>
                     Total Amount: ${money(displayFinalAmount)}
                 </div>
-              ` : ''}
-              <div class="detail-actions">
-              ${isWaiting ? `
+            ` : ''}
+            <div class="detail-actions">
+            ${isWaiting ? `
                 <button class="primary-action" type="button" data-accept-active="${order.order_id}">
                     <i class="fa-solid fa-folder-open"></i> Open Order
                 </button>
-              ` : ''}
-              ${canPay ? `
+            ` : ''}
+            ${canPay ? `
                 <button class="primary-action" type="button" id="completePaymentBtn" disabled>
                     <i class="fa-solid fa-circle-check"></i> Complete Payment
                 </button>
-              ` : ''}
-              ${isCompleted ? `
+            ` : ''}
+            ${isCompleted ? `
                 <button class="secondary-action" type="button" id="printReceiptBtn">
                     <i class="fa-solid fa-print"></i> Print Receipt
                 </button>
-              ` : ''}
-              </div>
-            </aside>
+            ` : ''}
+            </div>
         </div>
     `;
 
@@ -510,28 +538,52 @@ function bindDetailEvents(order) {
     const discountType = document.getElementById('cashierDiscountType');
     const discountInput = document.getElementById('cashierDiscountAmount');
 
-    if (cashInput && completeBtn && changeNode && finalNode && discountType && discountInput) {
+    if (cashInput && completeBtn && changeNode && finalNode && discountType && discountInput && cashInput.dataset.paymentBound !== 'true') {
+        cashInput.dataset.paymentBound = 'true';
+        const orderId = Number(order.order_id);
+        const draft = paymentDraft(order);
         const updatePayment = () => {
             const type = discountType.value || 'none';
             discountInput.classList.toggle('is-hidden', type !== 'custom');
             discountInput.disabled = type !== 'custom';
             if (type !== 'custom') discountInput.value = discountAmount(type, 0, order.subtotal).toFixed(2);
-            const totals = paymentTotals(order, type, Number(discountInput.value || 0));
-            const cash = Number(cashInput.value || 0);
+            const customDiscount = safeCurrencyValue(discountInput.value);
+            const totals = paymentTotals(order, type, customDiscount);
+            const cash = safeCurrencyValue(cashInput.value);
             const change = Math.max(0, cash - totals.finalAmount);
+            draft.cashText = cashInput.value;
+            draft.discountType = type;
+            draft.discountAmountText = discountInput.value;
             finalNode.textContent = money(totals.finalAmount);
             if (heroTotalNode) heroTotalNode.textContent = money(totals.finalAmount);
             if (totalDiscountNode) totalDiscountNode.textContent = money(totals.discount);
             if (vatableNode) vatableNode.textContent = money(totals.vatableSales);
             if (vatNode) vatNode.textContent = money(totals.vat);
             changeNode.textContent = money(change);
-            completeBtn.disabled = !cashInput.value || cash < totals.finalAmount;
+            const canComplete = cashInput.value.trim() !== '' && cash + 0.00001 >= totals.finalAmount
+                && !state.submittingOrderIds.has(orderId);
+            completeBtn.disabled = !canComplete;
+            completeBtn.setAttribute('aria-disabled', String(!canComplete));
         };
         cashInput.addEventListener('input', updatePayment);
+        cashInput.addEventListener('blur', () => {
+            if (cashInput.value !== '' && (!Number.isFinite(Number(cashInput.value)) || Number(cashInput.value) < 0)) {
+                cashInput.value = '';
+                updatePayment();
+            }
+        });
+        cashInput.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            updatePayment();
+            if (!completeBtn.disabled) completeBtn.click();
+        });
         discountType.addEventListener('change', updatePayment);
         discountInput.addEventListener('input', updatePayment);
         completeBtn.addEventListener('click', () => {
-            completePayment(order.order_id, Number(cashInput.value || 0), discountType.value, Number(discountInput.value || 0));
+            updatePayment();
+            if (completeBtn.disabled) return;
+            completePayment(orderId, safeCurrencyValue(cashInput.value), discountType.value, safeCurrencyValue(discountInput.value));
         });
         updatePayment();
     }
@@ -636,28 +688,43 @@ async function acceptOrder(orderId) {
 }
 
 async function completePayment(orderId, amountPaid, discountType = 'none', discountAmountValue = 0) {
+    const normalizedOrderId = Number(orderId);
+    if (state.submittingOrderIds.has(normalizedOrderId)) return;
+    state.submittingOrderIds.add(normalizedOrderId);
+    const button = document.getElementById('completePaymentBtn');
+    if (button) {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+    }
     try {
         const data = await apiFetch('/cashier/complete_payment.php', {
             method: 'POST',
             body: JSON.stringify({
-                order_id: Number(orderId),
+                order_id: normalizedOrderId,
                 amount_paid: amountPaid,
                 cashier_discount_type: discountType,
                 cashier_discount_amount: discountAmountValue,
             }),
         });
-        state.activeOrderId = Number(orderId);
+        state.paymentDrafts.delete(normalizedOrderId);
+        state.activeOrderId = normalizedOrderId;
         state.activeOrder = data;
         syncTabs();
         renderDetail(data);
         toast('success', 'Payment completed. Receipt is ready for printing.');
-        publishDataUpdate('payment-completed', { orderId: Number(orderId) });
-        publishDataUpdate('shelf-updated', { orderId: Number(orderId) });
+        await loadOrders(true);
+        publishDataUpdate('payment-completed', { orderId: normalizedOrderId });
+        publishDataUpdate('shelf-updated', { orderId: normalizedOrderId });
         printCashierReceipt(data, () => {
             showWaitingQueueAndSelectNext().catch((error) => toast('error', error.message));
         });
     } catch (error) {
         toast('error', error.message);
+    } finally {
+        state.submittingOrderIds.delete(normalizedOrderId);
+        if (state.activeOrder && Number(state.activeOrder.order_id) === normalizedOrderId && state.activeOrder.status_group !== 'completed') {
+            renderDetail(state.activeOrder);
+        }
     }
 }
 

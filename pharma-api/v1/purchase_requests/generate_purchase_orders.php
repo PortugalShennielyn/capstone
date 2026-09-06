@@ -20,7 +20,6 @@ if ($prId === '') sendPurchaseRequestJson(false, 'Purchase request id is require
 try {
     ensurePurchaseRequestSchema($pdo);
     ensurePurchaseOrderSchema($pdo);
-    ensureSupplierPurchasingConversionSchema($pdo);
     requireActivePurchaseRequestManager($pdo);
     $pdo->beginTransaction();
     $request = purchaseRequestById($pdo, $prId, true);

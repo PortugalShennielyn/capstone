@@ -56,26 +56,63 @@ function syncSupplierProductUnitConversions(PDO $pdo, string $supplierProductId,
         ensureSupplierPurchasingConversionSchema($pdo);
     }
     $conversion = supplierPurchasingConversion($setup);
-    $pdo->prepare('DELETE FROM supplier_product_unit_conversions WHERE supplier_product_id=:id')->execute([':id'=>$supplierProductId]);
+    $existingStatement = $pdo->prepare(
+        'SELECT conversion_id,unit_name
+         FROM supplier_product_unit_conversions
+         WHERE supplier_product_id=:id
+         FOR UPDATE'
+    );
+    $existingStatement->execute([':id'=>$supplierProductId]);
+    $existingByUnit = [];
+    foreach ($existingStatement->fetchAll(PDO::FETCH_ASSOC) as $existing) {
+        $existingByUnit[mb_strtolower(trim((string)$existing['unit_name']))] = $existing;
+    }
+    $update = $pdo->prepare(
+        'UPDATE supplier_product_unit_conversions
+         SET unit_name=:unit_name,base_quantity=:base_quantity,level_order=:level_order,
+             is_transfer_unit=1,is_selling_unit=:is_selling_unit
+         WHERE conversion_id=:conversion_id'
+    );
     $insert = $pdo->prepare(
         'INSERT INTO supplier_product_unit_conversions
             (conversion_id,supplier_product_id,unit_name,base_quantity,level_order,is_transfer_unit,is_selling_unit)
          VALUES (UUID(),:supplier_product_id,:unit_name,:base_quantity,:level_order,1,:is_selling_unit)'
     );
     foreach ($conversion['absolute_levels'] as $level) {
-        $insert->execute([
+        $unitKey = mb_strtolower(trim((string)$level['unit']));
+        $parameters = [
             ':supplier_product_id'=>$supplierProductId,
             ':unit_name'=>$level['unit'],
             ':base_quantity'=>$level['base_quantity'],
             ':level_order'=>$level['level_order'],
             ':is_selling_unit'=>$level['base_quantity'] === 1 ? 1 : 0,
-        ]);
+        ];
+        if (isset($existingByUnit[$unitKey])) {
+            unset($parameters[':supplier_product_id']);
+            $parameters[':conversion_id'] = $existingByUnit[$unitKey]['conversion_id'];
+            $update->execute($parameters);
+            unset($existingByUnit[$unitKey]);
+        } else {
+            $insert->execute($parameters);
+        }
+    }
+    if ($existingByUnit) {
+        $obsoleteIds = array_column($existingByUnit, 'conversion_id');
+        $placeholders = implode(',', array_fill(0, count($obsoleteIds), '?'));
+        try {
+            $pdo->prepare("DELETE FROM supplier_product_unit_conversions WHERE conversion_id IN ({$placeholders})")->execute($obsoleteIds);
+        } catch (PDOException $error) {
+            if ((string)$error->getCode() === '23000') {
+                throw new InvalidArgumentException('This supplier packaging hierarchy is used by historical receiving or damage records and cannot be replaced.');
+            }
+            throw $error;
+        }
     }
 }
 
 function positivePurchasingFactor($value, string $label): int
 {
-    if (!is_numeric($value) || (int) $value < 1 || (float) $value !== (float) (int) $value) {
+    if (!is_numeric($value) || !is_finite((float)$value) || (float)$value > 2147483647 || (int) $value < 1 || (float) $value !== (float) (int) $value) {
         throw new InvalidArgumentException("{$label} must be a positive whole number.");
     }
     return (int) $value;
@@ -123,6 +160,7 @@ function supplierPurchasingConversion(array $setup): array
             $key = mb_strtolower($unit);
             if (isset($seen[$key])) throw new InvalidArgumentException('Supplier packaging units must be unique at every level.');
             $seen[$key] = true;
+            if ($running > intdiv(2147483647, $quantity)) throw new InvalidArgumentException('Converted packaging quantity exceeds the supported inventory limit.');
             $running *= $quantity;
             $levels[] = ['unit'=>$unit,'quantity'=>$quantity];
             $summaryParts[] = number_format($running) . ' ' . purchasingQuantityUnitLabel($unit, $running);

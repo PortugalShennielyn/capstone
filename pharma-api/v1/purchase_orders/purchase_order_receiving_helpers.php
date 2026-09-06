@@ -29,12 +29,13 @@ function receivingGrnNumber(string $poNumber, string $receivedDate): string
     return 'GRN-' . $date . '-' . str_pad($suffix, 4, '0', STR_PAD_LEFT);
 }
 
-function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId): ?array
+function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId, string $receivingId = ''): ?array
 {
+    $receivingFilter = $receivingId !== '' ? ' AND por.receiving_id = :receiving_id' : '';
     $headerStatement = $pdo->prepare(
         "SELECT po.po_id, po.po_number, po.status, po.payment_status, po.payment_terms,
                 po.total_amount, po.final_payment, po.created_at AS order_date, po.expected_delivery_date,
-                s.supplier_id, s.supplier_name, por.receiving_id, por.received_date, por.inspection_status, por.inspected_by,
+                s.supplier_id, s.supplier_name, por.receiving_id, por.claim_id, por.received_date, por.inspection_status, por.inspected_by,
                 por.delivered_by_name, por.delivery_receipt_no, por.remarks AS stored_receiving_remarks,
                 COALESCE(NULLIF(inspector.full_name, ''), inspector.username, '') AS inspected_by_name,
                 receiver.user_id AS received_by_id,
@@ -49,11 +50,14 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId): ?array
              ORDER BY al.created_at DESC, al.activity_id DESC LIMIT 1
          )
          LEFT JOIN users receiver ON receiver.user_id = receipt_log.user_id
-         WHERE po.po_id = :po_id
+         WHERE po.po_id = :po_id{$receivingFilter}
            AND EXISTS (SELECT 1 FROM purchase_order_receiving_items x WHERE x.receiving_id = por.receiving_id)
+         ORDER BY por.received_date DESC, por.receiving_id DESC
          LIMIT 1"
     );
-    $headerStatement->execute([':po_id' => $poId]);
+    $headerParameters = [':po_id' => $poId];
+    if ($receivingId !== '') $headerParameters[':receiving_id'] = $receivingId;
+    $headerStatement->execute($headerParameters);
     $header = $headerStatement->fetch(PDO::FETCH_ASSOC);
     if (!$header) return null;
 
@@ -62,6 +66,11 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId): ?array
         "SELECT poi.po_item_id, poi.product_id, pori.receiving_item_id,
                 COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS ordered_quantity,
                 COALESCE(pori.received_quantity, 0) AS delivered_quantity,
+                COALESCE(pori.accepted_quantity, 0) AS accepted_quantity,
+                COALESCE((SELECT raw_ri.missing_quantity
+                          FROM purchase_order_receiving_items raw_ri
+                          WHERE raw_ri.receiving_item_id = pori.receiving_item_id
+                          LIMIT 1), 0) AS recorded_missing_quantity,
                 COALESCE(NULLIF(poi.purchase_unit_snapshot, ''), 'Package') AS purchase_unit,
                 COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
                 COALESCE(pori.damaged_quantity, 0) AS damaged_quantity,
@@ -70,12 +79,12 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId): ?array
                 COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name) AS product_name,
                 COALESCE(NULLIF(poi.brand_name_snapshot, ''), p.brand_name) AS brand_name,
                 COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name, gd.variant, '') AS generic_or_variant,
-                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), md.strength, '') AS strength,
+                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
                 COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, '') AS size_value,
                 COALESCE(NULLIF(poi.unit_snapshot, ''), md.dosage_form, gd.unit, 'pcs') AS unit,
                 COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging
          FROM purchase_order_items poi
-         INNER JOIN product p ON p.product_id = poi.product_id
+         LEFT JOIN product p ON p.product_id = poi.product_id
          LEFT JOIN purchase_order_receiving_item_summary pori ON pori.po_item_id = poi.po_item_id AND pori.receiving_id = :receiving_id
          LEFT JOIN purchase_order_invoice_items piii ON piii.po_item_id = poi.po_item_id
          LEFT JOIN medicine_details md ON md.product_id = poi.product_id
@@ -132,9 +141,30 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId): ?array
                  WHERE cr.claim_id = claim_projection.claim_id) AS credit_applied_amount
          FROM supplier_claim_legacy_projection claim_projection
          WHERE claim_projection.po_id = :po_id
+           AND (
+               EXISTS (
+                   SELECT 1
+                   FROM supplier_claim_damage_lines scoped_dl
+                   INNER JOIN purchase_order_receiving_items scoped_ri
+                           ON scoped_ri.receiving_item_id = scoped_dl.receiving_item_id
+                   WHERE scoped_dl.claim_id = claim_projection.claim_id
+                     AND scoped_ri.receiving_id = :claim_receiving_id
+               )
+               OR claim_projection.claim_id = :receiving_claim_id
+               OR (SELECT COUNT(*)
+                        FROM purchase_order_receiving single_por
+                        WHERE single_por.po_id = :single_po_id
+                          AND single_por.receiving_type = \'Original\'
+                          AND EXISTS (SELECT 1 FROM purchase_order_receiving_items single_ri WHERE single_ri.receiving_id = single_por.receiving_id)) = 1
+           )
          ORDER BY claim_projection.created_at, claim_projection.return_id'
     );
-    $returnStatement->execute([':po_id' => $poId]);
+    $returnStatement->execute([
+        ':po_id' => $poId,
+        ':claim_receiving_id' => $header['receiving_id'],
+        ':receiving_claim_id' => $header['claim_id'] ?? '',
+        ':single_po_id' => $poId,
+    ]);
     $returnsByItem = [];
     foreach ($returnStatement->fetchAll(PDO::FETCH_ASSOC) as $return) {
         $decorated = decoratePurchaseOrderReturnRecord($return);
@@ -156,15 +186,23 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId): ?array
          LEFT JOIN inventory_batches ib ON ib.batch_id = dl.inventory_batch_id
          LEFT JOIN product_inventory pi ON pi.inventory_id = ib.legacy_inventory_id
          WHERE sc.po_item_id IN (SELECT po_item_id FROM purchase_order_items WHERE po_id = :po_id)
-           AND (dl.receiving_item_id IS NULL OR dl.receiving_item_id IN (
-               SELECT pri.receiving_item_id
-               FROM purchase_order_receiving_items pri
-               INNER JOIN purchase_order_receiving pr ON pr.receiving_id = pri.receiving_id
-               WHERE pr.po_id = :damage_po_id AND pr.receiving_type = \'Original\'
-           ))
-         ORDER BY sc.po_item_id, dl.sequence_no'
+            AND (dl.receiving_item_id IN (
+                SELECT pri.receiving_item_id
+                FROM purchase_order_receiving_items pri
+                WHERE pri.receiving_id = :damage_receiving_id
+            ) OR (dl.receiving_item_id IS NULL AND (
+                SELECT COUNT(*)
+                FROM purchase_order_receiving pr
+                WHERE pr.po_id = :damage_po_id AND pr.receiving_type = \'Original\'
+                  AND EXISTS (SELECT 1 FROM purchase_order_receiving_items pri2 WHERE pri2.receiving_id = pr.receiving_id)
+            ) = 1))
+          ORDER BY sc.po_item_id, dl.sequence_no'
     );
-    $damageLineStatement->execute([':po_id' => $poId, ':damage_po_id' => $poId]);
+    $damageLineStatement->execute([
+        ':po_id' => $poId,
+        ':damage_receiving_id' => $header['receiving_id'],
+        ':damage_po_id' => $poId,
+    ]);
     $damageLinesByItem = [];
     foreach ($damageLineStatement->fetchAll(PDO::FETCH_ASSOC) as $damageLine) {
         foreach (['sequence_no', 'package_sequence', 'affected_quantity', 'affected_unit_base_quantity', 'damaged_quantity', 'damaged_unit_base_quantity'] as $field) $damageLine[$field] = (int) $damageLine[$field];
@@ -218,11 +256,11 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId): ?array
         $delivered = (int) $item['delivered_quantity'];
         $damaged = (int) $item['damaged_quantity'];
         $action = (int) $item['action_quantity'];
-        $missing = (int) ($return['missing_quantity'] ?? max(0, $ordered - $delivered));
+        $missing = (int) ($return['missing_quantity'] ?? $item['recorded_missing_quantity'] ?? max(0, $ordered - $delivered));
         $returned = $disposition === 'Return to Supplier' ? $action : 0;
         $disposed = $disposition === 'Dispose' ? $action : 0;
         $quarantined = $disposition === 'Hold/Quarantine' ? $action : 0;
-        $accepted = max(0, $delivered - $action);
+        $accepted = (int) $item['accepted_quantity'];
         $batches = $batchesByItem[$itemId] ?? [];
         $inventoryAdded = array_sum(array_column($batches, 'batch_quantity'));
         if ($inventoryAdded === 0 && $accepted > 0) $inventoryAdded = $accepted;

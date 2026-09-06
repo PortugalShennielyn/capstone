@@ -654,7 +654,7 @@ function parsePurchaseOrderReturnRemarks(?string $storedRemarks): array
 
 function buildPurchaseOrderReturnRemarks(array $metadata, string $remarks): string
 {
-    return '[RETURN_META_V1]' . json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n" . trim($remarks);
+    return trim($remarks);
 }
 
 function decoratePurchaseOrderReturnRecord(array $record): array
@@ -663,15 +663,15 @@ function decoratePurchaseOrderReturnRecord(array $record): array
     $metadata = $parsed['metadata'];
     $record['remarks'] = $parsed['remarks'];
     $record['resolution'] = $metadata['resolution'] ?? supplierClaimLegacyResolution($record['resolution_type'] ?? null, $record['disposition'] ?? null);
-    $record['delivered_quantity'] = (int) ($metadata['delivered_quantity'] ?? ($record['received_quantity'] ?? 0));
-    $record['missing_quantity'] = (int) ($metadata['missing_quantity'] ?? 0);
-    $record['supplier_adjustment'] = (float) ($metadata['supplier_adjustment'] ?? 0);
-    $record['replacement_expected_qty'] = (int) ($metadata['replacement_expected_qty'] ?? (($record['resolution_type'] ?? '') === 'Replacement' ? ($record['affected_base_quantity'] ?? 0) : 0));
-    $record['replacement_received_qty'] = (int) ($metadata['replacement_received_qty'] ?? 0);
+    $record['delivered_quantity'] = (int) ($record['delivered_quantity'] ?? $metadata['delivered_quantity'] ?? ($record['received_quantity'] ?? 0));
+    $record['missing_quantity'] = (int) ($record['missing_quantity'] ?? $metadata['missing_quantity'] ?? 0);
+    $record['supplier_adjustment'] = (float) ($record['supplier_adjustment'] ?? $metadata['supplier_adjustment'] ?? 0);
+    $record['replacement_expected_qty'] = (int) ($record['replacement_expected_qty'] ?? $metadata['replacement_expected_qty'] ?? (($record['resolution_type'] ?? '') === 'Replacement' ? ($record['affected_base_quantity'] ?? 0) : 0));
+    $record['replacement_received_qty'] = (int) ($record['replacement_received_qty'] ?? $metadata['replacement_received_qty'] ?? 0);
     $record['replacement_outstanding_qty'] = max(0, $record['replacement_expected_qty'] - $record['replacement_received_qty']);
-    $record['parent_return_id'] = $metadata['parent_return_id'] ?? null;
-    $record['requested_resolution_type'] = $metadata['requested_resolution_type'] ?? ($record['resolution_type'] ?? null);
-    $record['management_remarks'] = trim((string) ($metadata['management_remarks'] ?? ''));
+    $record['parent_return_id'] = $record['parent_return_id'] ?? $metadata['parent_return_id'] ?? null;
+    $record['requested_resolution_type'] = $record['requested_resolution_type'] ?? $metadata['requested_resolution_type'] ?? ($record['resolution_type'] ?? null);
+    $record['management_remarks'] = trim((string) ($record['management_remarks'] ?? $metadata['management_remarks'] ?? ''));
     $record['inspection_remarks'] = $record['remarks'];
     return $record;
 }

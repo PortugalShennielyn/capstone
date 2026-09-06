@@ -45,7 +45,7 @@ function ensureProductCategorySchema(PDO $pdo): void
          VALUES (:category_name)
          ON DUPLICATE KEY UPDATE category_name = VALUES(category_name)"
     );
-    foreach (['Medicine', 'Grocery'] as $categoryName) {
+    foreach (['Medicine', 'Grocery', 'Medical Supplies'] as $categoryName) {
         $categorySeed->execute([':category_name' => $categoryName]);
     }
 
@@ -53,12 +53,16 @@ function ensureProductCategorySchema(PDO $pdo): void
         "CREATE TABLE IF NOT EXISTS product_types (
             type_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
             category_id CHAR(36) NULL,
-            type_name VARCHAR(80) NOT NULL UNIQUE
+            type_name VARCHAR(80) NOT NULL UNIQUE,
+            is_active TINYINT(1) NOT NULL DEFAULT 1
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
     if (!productTypeTableHasColumn($pdo, 'category_id')) {
         $pdo->exec("ALTER TABLE product_types ADD COLUMN category_id CHAR(36) NULL AFTER type_id");
+    }
+    if (!productTypeTableHasColumn($pdo, 'is_active')) {
+        $pdo->exec("ALTER TABLE product_types ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER type_name");
     }
 
     $pdo->exec("ALTER TABLE product_types MODIFY type_name VARCHAR(80) NOT NULL");
@@ -71,9 +75,8 @@ function ensureProductCategorySchema(PDO $pdo): void
     );
 
     $typeSeed = $pdo->prepare(
-        "INSERT INTO product_types (category_id, type_name)
-         VALUES (:category_id, :type_name)
-         ON DUPLICATE KEY UPDATE category_id = VALUES(category_id), type_name = VALUES(type_name)"
+        "INSERT IGNORE INTO product_types (category_id, type_name)
+         VALUES (:category_id, :type_name)"
     );
 
     $medicineCategoryId = getProductCategoryId($pdo, 'Medicine');
@@ -91,13 +94,11 @@ function ensureProductCategorySchema(PDO $pdo): void
         'Solution',
         'Injection',
         'Inhaler',
-        'Nebulizer',
         'Suppository',
         'Patch',
         'Powder',
-        'First Aid',
-        'Medical Supply',
-        'Device/Equipment'
+        'Powder for Suspension',
+        'Vitamins/Supplements'
     ];
 
     foreach ($medicineTypes as $typeName) {
@@ -125,6 +126,19 @@ function ensureProductCategorySchema(PDO $pdo): void
     foreach ($groceryTypes as $typeName) {
         $typeSeed->execute([
             ':category_id' => $groceryCategoryId,
+            ':type_name' => $typeName
+        ]);
+    }
+
+    $medicalSuppliesCategoryId = getProductCategoryId($pdo, 'Medical Supplies');
+    $medicalSupplyTypes = [
+        'Device/Equipment', 'First Aid Supply', 'Medical Supply', 'Nebulizer',
+        'Bandage', 'Cotton', 'Face Mask', 'Gloves', 'Medical Tape',
+        'Personal Protective Equipment', 'Sanitizer', 'Syringe', 'Thermometer', 'Wound Care'
+    ];
+    foreach ($medicalSupplyTypes as $typeName) {
+        $typeSeed->execute([
+            ':category_id' => $medicalSuppliesCategoryId,
             ':type_name' => $typeName
         ]);
     }
@@ -515,7 +529,7 @@ function getProductTypeId(PDO $pdo, string $categoryId, string $typeId): ?string
 function findProductTypeByNormalizedName(PDO $pdo, string $categoryId, string $typeName, string $excludeTypeId = ''): ?array
 {
     $statement = $pdo->prepare(
-        "SELECT type_id, category_id, type_name
+        "SELECT type_id, category_id, type_name, is_active
          FROM product_types
          WHERE category_id = :category_id
            AND LOWER(TRIM(type_name)) = LOWER(TRIM(:type_name))
@@ -597,7 +611,7 @@ function getProductTypesByCategory(PDO $pdo, string $categoryId): array
         "SELECT pt.type_id, pt.category_id, pt.type_name
          FROM product_types pt
          INNER JOIN product_categories pc ON pc.category_id = pt.category_id
-         WHERE pt.category_id = :category_id
+         WHERE pt.category_id = :category_id AND pt.is_active = 1
            AND pc.category_name IN ('Grocery', 'Medicine', 'Medical Supplies')
          ORDER BY type_name ASC"
     );
@@ -611,6 +625,7 @@ function getAllProductTypes(PDO $pdo): array
     $statement = $pdo->query(
         "SELECT type_id, category_id, type_name
          FROM product_types
+         WHERE is_active = 1
          ORDER BY type_name ASC"
     );
 
