@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Expiry Monitoring Highlight Runtime Test</title>
+    <link rel="stylesheet" href="../css/navbar.css?v=36">
+</head>
+<body>
+    <div id="expirySummaryCards"></div>
+    <input id="expirySearch" type="search" data-search-highlight-target="#table-expiry-monitoring tbody">
+    <select id="expiryStatusFilter"><option value="">All statuses</option><option value="Safe">Safe</option></select>
+    <select id="expiryCategoryFilter"><option value="">All categories</option></select>
+    <table id="table-expiry-monitoring" class="table" data-table-enhance="false">
+        <thead><tr><th>Product</th><th>Batch Number</th><th>PO Number</th><th>Storage Qty</th><th>Shelf Qty</th><th>Expiry</th><th>Days Left</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+    </table>
+    <span id="expiryRecordCount"></span>
+    <select id="expiryPageSize"><option value="10">10</option></select>
+    <button id="expiryPreviousPage" type="button">Previous</button><button id="expiryNextPage" type="button">Next</button>
+    <button id="btnSaveExpiryDate" type="button"></button><button id="btnEditExpiryFromDetails" type="button"></button>
+    <select id="editExpiryAlertSelect"><option value="30">30</option></select><div id="editExpiryCustomWrap"></div>
+    <div id="expiryDetailsModal"><div id="expiryDetailsContent"></div></div><div id="editExpiryDateModal"></div>
+    <input id="editExpiryBatchId"><input id="editExpiryInventoryId"><input id="editExpiryDateInput"><input id="editExpiryCustomDays" value="30">
+    <span id="editExpiryProductName"></span><span id="editExpiryProductMeta"></span><span id="editExpiryBatchNumber"></span><span id="editExpiryPoNumber"></span>
+    <script>
+        window.bootstrap = {
+            Tooltip: { getOrCreateInstance() { return {}; } },
+            Modal: { getOrCreateInstance() { return { show() {}, hide() {} }; }, getInstance() { return null; } }
+        };
+        window.fetch = async () => new Response(JSON.stringify({ status: 'success', data: [{
+            batch_id: 'batch-B1', batch_number: 'PO20260818-B1', po_number: 'PO-20260818', product_id: 'product-1',
+            product_name: 'Biogesic for Kids', brand_name: 'Biogesic', normalized_specification: '1 bottle • 5 ml',
+            inventory_unit_name: 'Bottle', inventory_unit_symbol: 'Bottle', category_name: 'Medicine', type_name: 'Medicine',
+            received_quantity: 30, storage_qty: 20, shelf_qty: 8, damaged_qty: 0, available_quantity: 28,
+            expiry_date: '2027-10-24', expiry_alert_days: 30, days_until_expiry: 424, expiry_status: 'Safe'
+        }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    </script>
+    <script src="../js/search_highlight.js?v=3"></script>
+    <script type="module" src="../js/modules/expiry_monitoring.js?v=8"></script>
+</body>
+</html>

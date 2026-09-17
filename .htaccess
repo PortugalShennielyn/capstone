@@ -1,0 +1,8 @@
+# Prevent Apache from exposing project directories that do not have an index.
+Options -Indexes
+
+# Development backups, database exports, logs, environment files, editor
+# temporaries, and hidden configuration files must never be served over HTTP.
+<FilesMatch "(?i)(^\.|\.(?:bak|backup|sql|env|ini|log|old|orig|save|swp|swo|tmp|temp|code-workspace)$|~$)">
+    Require all denied
+</FilesMatch>

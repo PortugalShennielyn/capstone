@@ -1,0 +1,212 @@
+<?php
+require_once __DIR__ . '/auth_page_guard.php';
+?>
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Return/Damage</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=28" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
+
+    <style>
+        :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
+        * { box-sizing:border-box; }
+        body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter", sans-serif; }
+        body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; }
+        .main-wrapper { min-height:100vh; margin-left:var(--sidebar-width); transition:var(--transition); }
+        .main-wrapper.collapsed { margin-left:var(--sidebar-collapsed-width); }
+        .topbar { position:sticky; top:0; height:var(--topbar-height); display:flex; align-items:center; justify-content:space-between; padding:0 26px; background:#fff; border-bottom:1px solid var(--border-soft); z-index:1020; }
+        body.dark-mode .topbar, body.dark-mode .card, body.dark-mode .summary-card { background:#182131; color:var(--text-main); }
+        .topbar-left, .topbar-right { display:flex; align-items:center; gap:14px; }
+        .icon-btn { width:42px; height:42px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:8px; color:#4b5563; background:#f4f6fb; }
+        .icon-btn:hover { color:#fff; background:var(--purple); }
+        .page-title-mini { display:flex; flex-direction:column; line-height:1.2; }
+        .page-title-mini strong { color:var(--text-main); font-size:15px; font-weight:800; }
+        .page-title-mini span { margin-top:3px; color:#7b8494; font-size:12px; font-weight:600; }
+        .page-body { padding:clamp(22px, 2vw, 34px); }
+        .workspace { width:100%; max-width:1540px; margin:0 auto; padding-inline:clamp(8px, 1.1vw, 18px); }
+        body.navbar-sidebar-collapsed .workspace { max-width:1640px; padding-inline:clamp(10px, 1.4vw, 24px); }
+        .card, .summary-card { border:1px solid var(--border-soft); border-radius:10px; box-shadow:0 10px 28px rgba(15,23,42,.05); }
+        .summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(168px, 1fr)); gap:clamp(12px, 1.2vw, 18px); margin-bottom:clamp(18px, 1.8vw, 26px); }
+        .summary-card { min-height:112px; display:flex; flex-direction:column; justify-content:center; padding:20px 18px; background:#fff; border-left:5px solid var(--summary-color, var(--purple)); }
+        .summary-card strong { display:block; color:var(--text-main); font-size:clamp(1.35rem, 1.7vw, 1.75rem); font-weight:800; line-height:1; }
+        .summary-card p { margin:10px 0 0; color:#596274; font-size:.9rem; font-weight:800; line-height:1.25; }
+        .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-color:#fff; --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
+        .section-title { color:var(--text-main); font-size:1.05rem; font-weight:800; }
+        .table-responsive { border-radius:10px; overflow-x:auto; }
+        .return-table { width:100%; min-width:1380px; margin-bottom:0; table-layout:fixed; }
+        .return-table th { padding:15px 10px; color:#596274; background:#f8f9fc; font-size:.82rem; font-weight:800; line-height:1.25; text-align:center; vertical-align:middle; }
+        .return-table td { padding:16px 10px; color:var(--text-main); font-size:.86rem; font-weight:700; line-height:1.42; text-align:center; vertical-align:middle; overflow-wrap:anywhere; }
+        .return-table .col-date { width:8%; }
+        .return-table .col-po { width:10%; }
+        .return-table .col-supplier { width:11%; }
+        .return-table .col-product { width:12%; }
+        .return-table .col-brand { width:9%; }
+        .return-table .col-num { width:7%; }
+        .return-table .col-reason { width:10%; }
+        .return-table .col-remarks { width:10%; }
+        .return-table .col-status { width:8%; }
+        .return-table .col-actions { width:9%; }
+        .return-actions { display:inline-flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:7px; }
+        .return-actions .btn { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+        .empty-row { padding:42px 16px !important; color:#8790a1 !important; text-align:center; }
+        .detail-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:12px; }
+        .detail-box { padding:12px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
+        .detail-box span { display:block; color:#7b8494; font-size:.78rem; font-weight:800; text-transform:uppercase; }
+        .detail-box strong { display:block; margin-top:4px; color:var(--text-main); font-size:.95rem; font-weight:800; }
+        body.dark-mode .return-table th { background:#202b3d; color:#cbd5e1; }
+        body.dark-mode .detail-box { background:#182131; }
+        @media (max-width:991.98px) { .page-body { padding:20px 14px; } .workspace { max-width:100%; padding-inline:0; } }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="page-title-mini">
+                    <strong>Return/Damage</strong>
+                    <span>Track damaged and returned purchase order items</span>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <button class="icon-btn" type="button" aria-label="Notifications">
+                    <i class="fa-regular fa-bell"></i>
+                </button>
+                <button class="icon-btn" type="button" id="themeToggle" aria-label="Toggle dark mode">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <section class="page-body">
+            <div class="workspace">
+                <div id="return-summary" class="summary-grid"></div>
+
+                <div class="card p-3">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                        <div>
+                            <h1 class="section-title mb-1">Return/Damage Records</h1>
+                            <p class="text-muted small mb-0">Review damaged and returned items without adding them to inventory.</p>
+                        </div>
+                        <button class="btn btn-purple" type="button" id="btnRefreshReturnDamage">
+                            <i class="fa-solid fa-rotate me-2"></i>Refresh
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="table-return-damage" class="table table-hover align-middle return-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-date">Date</th>
+                                    <th class="col-po">PO Number</th>
+                                    <th class="col-supplier">Supplier Name</th>
+                                    <th class="col-product">Product Name / Items</th>
+                                    <th class="col-brand">Brand Name</th>
+                                    <th class="col-num">Ordered Quantity</th>
+                                    <th class="col-num">Received Quantity</th>
+                                    <th class="col-num">Damaged Quantity</th>
+                                    <th class="col-num">Return Quantity</th>
+                                    <th class="col-reason">Damage Reason</th>
+                                    <th class="col-remarks">Remarks</th>
+                                    <th class="col-status">Status</th>
+                                    <th class="col-actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="13" class="empty-row">Loading return/damage records...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="viewReturnDamageModal" tabindex="-1" aria-labelledby="viewReturnDamageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title fs-5 fw-bold" id="viewReturnDamageModalLabel">Return/Damage Details</h2>
+                        <p class="text-muted small mb-0 mt-1" id="viewReturnDamageSubtitle">Review complete record information.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="viewReturnDamageDetails" class="detail-grid"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="editReturnDamageModal" tabindex="-1" aria-labelledby="editReturnDamageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title fs-5 fw-bold" id="editReturnDamageModalLabel">Edit Return/Damage</h2>
+                        <p class="text-muted small mb-0 mt-1" id="editReturnDamageSubtitle">Update return quantity, reason, and remarks.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="edit-return-id">
+                    <div id="editReturnDamageDetails" class="detail-grid mb-4"></div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" for="edit-return-quantity">Return Quantity</label>
+                            <input id="edit-return-quantity" class="form-control" type="number" min="1">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" for="edit-damage-reason">Damage Reason</label>
+                            <select id="edit-damage-reason" class="form-select">
+                                <option value="Expired">Expired</option>
+                                <option value="Broken package">Broken package</option>
+                                <option value="Wrong item delivered">Wrong item delivered</option>
+                                <option value="Incorrect quantity">Incorrect quantity</option>
+                                <option value="Damaged during delivery">Damaged during delivery</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" for="edit-return-remarks">Remarks</label>
+                            <textarea id="edit-return-remarks" class="form-control" rows="4"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                    <button id="btnSaveReturnDamageEdit" class="btn btn-purple" type="button">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script type="module" src="./js/modules/return_damage.js?v=4"></script>
+    <script type="module">
+        import verifySession from './js/modules/auth.js';
+        await verifySession();
+    </script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+ <!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Suppliers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=15" rel="stylesheet">
+    <script src="./js/navbar.js?v=28" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=6"></script>
+    <style>
+        :root { --sidebar-width:260px; --sidebar-collapsed-width:70px; --sidebar-bg:#1f2530; --sidebar-bg-deep:#171c25; --sidebar-text:#c6ccd8; --sidebar-muted:#8790a1; --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
+        * { box-sizing:border-box; } body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter",sans-serif; } body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; } a { text-decoration:none; }
+        .app-sidebar { position:fixed; inset:0 auto 0 0; width:var(--sidebar-width); overflow:hidden; color:var(--sidebar-text); background:var(--sidebar-bg); z-index:1040; transition:var(--transition); box-shadow:12px 0 30px rgba(15,23,42,.12); } .app-sidebar.collapsed { width:var(--sidebar-collapsed-width); }
+        .sidebar-brand { height:var(--topbar-height); display:flex; align-items:center; padding:0 20px; background:var(--sidebar-bg-deep); } .brand-mark { width:38px; height:38px; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; color:#fff; background:linear-gradient(135deg,var(--purple),#a855f7); }
+        .sidebar-nav { height:calc(100vh - var(--topbar-height)); padding:16px 10px 88px; overflow:auto; } .nav-link-item { min-height:46px; display:flex; align-items:center; gap:14px; margin:4px 0; padding:0 16px; color:var(--sidebar-text); border-radius:8px; font-size:14px; font-weight:600; white-space:nowrap; } .nav-link-item:hover,.nav-link-item.active { color:#fff; background:var(--purple); } .nav-link-item i { width:22px; text-align:center; }
+        .app-sidebar.collapsed .sidebar-brand,.app-sidebar.collapsed .nav-link-item { justify-content:center; padding-inline:0; } .app-sidebar.collapsed .nav-label,.app-sidebar.collapsed .fa-angle-right,.app-sidebar.collapsed .profile-name,.app-sidebar.collapsed .signout-btn { display:none; }
+        .sidebar-profile-footer { position:absolute; inset:auto 0 0; display:flex; align-items:center; justify-content:space-between; padding:15px 20px; background:var(--sidebar-bg-deep); } .avatar-initials { width:35px; height:35px; display:flex; align-items:center; justify-content:center; border-radius:50%; color:#fff; background:var(--purple); font-weight:700; } .profile-name { color:#fff; } .signout-btn { color:var(--sidebar-muted); }
+        .main-wrapper { min-height:100vh; margin-left:var(--sidebar-width); transition:var(--transition); } .main-wrapper.collapsed { margin-left:var(--sidebar-collapsed-width); } .topbar { position:sticky; top:0; z-index:1020; height:var(--topbar-height); display:flex; align-items:center; justify-content:space-between; padding:0 26px; background:#fff; border-bottom:1px solid var(--border-soft); } body.dark-mode .topbar,body.dark-mode .card { background:#182131; color:var(--text-main); } .topbar-left,.topbar-right { display:flex; align-items:center; gap:14px; } .icon-btn { width:42px; height:42px; border:0; border-radius:8px; color:#4b5563; background:#f4f6fb; } .page-title-mini { display:flex; flex-direction:column; } .page-title-mini span { color:#7b8494; font-size:12px; font-weight:600; } .page-body { padding:28px; } .card { border:1px solid var(--border-soft); border-radius:8px; box-shadow:0 10px 28px rgba(15,23,42,.05); } .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
+        .supplier-table-scroll { max-height:clamp(280px,52vh,520px)!important; overflow:auto!important; position:relative; border-radius:10px; }
+        #table-suppliers,
+        #table-supplier-products { border-collapse:separate!important; border-spacing:0!important; margin-bottom:0!important; }
+        #table-suppliers thead th,
+        #table-supplier-products thead th { position:sticky!important; top:0!important; z-index:30!important; background:#f8f9fc!important; box-shadow:inset 0 -1px 0 #d8dee9!important; }
+        #table-supplier-products thead th:last-child { z-index:40!important; }
+        .supplier-product-actions { display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; }
+        .supplier-product-actions .btn { width:32px; height:32px; min-width:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+        .supplier-product-toolbar { display:grid; grid-template-columns:minmax(240px,1.4fr) repeat(4,minmax(150px,1fr)); gap:10px; margin-bottom:14px; align-items:end; }
+        .supplier-product-toolbar .form-label { margin-bottom:5px; color:#667085; font-size:11px; font-weight:850; text-transform:uppercase; }
+        .supplier-product-toolbar .form-control,
+        .supplier-product-toolbar .form-select { min-height:38px; font-size:13px; font-weight:700; }
+        .supplier-product-table { width:100%; min-width:1180px; table-layout:auto; border-collapse:separate; border-spacing:0; }
+        .supplier-product-table th { color:#596274; background:#f8f9fc; font-size:12px; font-weight:800; white-space:normal; text-align:left; vertical-align:middle; }
+        .supplier-product-table td { color:var(--text-main); font-size:12.5px; font-weight:700; vertical-align:middle; text-align:left; overflow-wrap:break-word; word-break:normal; white-space:normal; }
+        .supplier-product-table .col-supplier { min-width:170px; max-width:240px; text-align:left; }
+        .supplier-product-table .col-brand { min-width:150px; max-width:220px; text-align:left; }
+        .supplier-product-table .col-product { min-width:200px; max-width:300px; text-align:left; }
+        .supplier-product-table .col-variant { min-width:210px; max-width:320px; text-align:left; }
+        .supplier-product-table .col-price { min-width:115px; text-align:right; white-space:nowrap; }
+        .supplier-product-table .col-package { min-width:135px; max-width:180px; }
+        .supplier-product-table .col-contains { min-width:185px; max-width:240px; text-align:left; }
+        .supplier-product-table th:last-child,
+        .supplier-product-table td:last-child { position:sticky; right:0; z-index:5; min-width:96px; background:var(--bs-table-bg,#fff); border-left:1px solid #e5e9f1; box-shadow:-6px 0 10px rgba(15,23,42,.06); }
+        .supplier-product-table th:last-child { z-index:7; background:#f8f9fc; }
+        .supplier-product-name { display:grid; gap:2px; line-height:1.25; }
+        .supplier-product-name strong { font-size:.88rem; font-weight:850; }
+        .supplier-product-edit-dialog,
+        .supplier-product-dialog { --drp-modal-width:min(1180px,calc(100vw - 32px)); --drp-modal-max-width:min(1180px,calc(100vw - 32px)); --drp-modal-min-width:720px; --drp-modal-min-height:620px; width:min(1180px,calc(100vw - 32px)); max-width:min(1180px,calc(100vw - 32px)); margin-inline:auto; }
+        .supplier-product-dialog .modal-content,
+        .supplier-product-edit-dialog .modal-content { min-width:min(720px,calc(100vw - 32px)); min-height:620px; max-width:calc(100vw - 24px); max-height:calc(100vh - 24px); resize:both; overflow:hidden; }
+        .supplier-product-dialog .modal-header,
+        .supplier-product-edit-dialog .modal-header { cursor:move; user-select:none; }
+        .supplier-product-dialog .modal-body,
+        .supplier-product-edit-dialog .modal-body { max-height:calc(100vh - 190px); overflow:auto; background:#f4f6fb; }
+        .supplier-product-dialog .modal-footer,
+        .supplier-product-edit-dialog .modal-footer { position:sticky; bottom:0; z-index:3; background:#fff; border-top:1px solid var(--border-soft); }
+        .supplier-product-modal-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr); gap:18px; align-items:start; }
+        .supplier-product-section-stack { display:grid; gap:14px; }
+        .supplier-product-edit-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr); gap:18px; align-items:start; }
+        .supplier-product-edit-section { padding:16px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
+        .supplier-product-edit-section h6 { margin:0 0 14px; color:#344054; font-size:.8rem; font-weight:900; text-transform:uppercase; letter-spacing:.02em; }
+        .supplier-product-edit-section p { margin:-8px 0 14px; color:#667085; font-size:.8rem; font-weight:600; }
+        .supplier-product-edit-section .form-label { color:#667085; font-size:.78rem; font-weight:800; }
+        .supplier-product-edit-section .form-control,
+        .supplier-product-edit-section .form-select { min-height:40px; font-size:.9rem; font-weight:650; }
+        .supplier-product-form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+        .supplier-product-form-grid .span-2 { grid-column:span 2; }
+        .supplier-product-form-grid .span-3 { grid-column:1/-1; }
+        .supplier-product-reference-price { display:flex; flex-direction:column; justify-content:center; min-height:40px; padding:8px 12px; border:1px solid #d9e2ef; border-radius:8px; color:#344054; background:#fff; font-weight:850; }
+        .supplier-product-preview-card { display:grid; gap:12px; padding:16px; border:1px solid #bfdbfe; border-radius:8px; background:#eff6ff; }
+        .supplier-product-preview-card h6 { margin:0; color:#1e3a8a; font-size:.85rem; font-weight:900; text-transform:uppercase; }
+        .supplier-product-preview-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:10px 0; border-top:1px solid rgba(37,99,235,.16); }
+        .supplier-product-preview-row span { color:#475569; font-size:.78rem; font-weight:800; text-transform:uppercase; }
+        .supplier-product-preview-row strong { color:#1d4ed8; font-size:.98rem; font-weight:900; text-align:right; overflow-wrap:anywhere; }
+        .supplier-product-preview-row.is-meaning { display:block; }
+        .supplier-product-preview-row.is-meaning strong { display:block; margin-top:6px; text-align:left; line-height:1.4; }
+        .supplier-product-preview-card.is-warning { border-color:#facc15; background:#fffbeb; }
+        .supplier-product-preview-card.is-warning h6,
+        .supplier-product-preview-card.is-warning .supplier-product-preview-row strong { color:#92400e; }
+        #addSupplierModal { --drp-modal-width:540px; --drp-modal-min-width:380px; --drp-modal-min-height:420px; }
+        #addSupplierModal .modal-content { border:0; box-shadow:0 22px 52px rgba(15,23,42,.18); }
+        #addSupplierModal .modal-header { padding:18px 20px 14px; border-bottom:1px solid var(--border-soft); }
+        #addSupplierModal .modal-body { display:grid; gap:14px; padding:18px 20px; }
+        #addSupplierModal .modal-body .mb-3 { margin-bottom:0!important; }
+        #addSupplierModal .form-label { margin-bottom:6px; color:#667085; font-size:.78rem; font-weight:800; }
+        #addSupplierModal .form-control { min-height:40px; font-size:.9rem; font-weight:650; }
+        #addSupplierModal textarea.form-control { min-height:92px; resize:vertical; }
+        #addSupplierModal .modal-footer { padding:14px 20px 18px; border-top:1px solid var(--border-soft); }
+        body.dark-mode .supplier-product-table th,
+        body.dark-mode .supplier-product-table th:last-child { background:#202b3d; color:#cbd5e1; }
+        body.dark-mode #table-suppliers thead th,
+        body.dark-mode #table-supplier-products thead th { background:#202b3d!important; color:#cbd5e1!important; box-shadow:inset 0 -1px 0 #334155!important; }
+        body.dark-mode .supplier-product-table td:last-child { background:var(--bs-table-bg,#182131); border-left-color:#263244; }
+        body.dark-mode .supplier-product-edit-section { background:#111827; border-color:#263244; }
+        body.dark-mode .supplier-product-reference-price { background:#182131; border-color:#263244; color:#e5e7eb; }
+        body.dark-mode .supplier-product-preview-card { border-color:#1d4ed8; background:#172554; }
+        body.dark-mode .supplier-product-preview-row { border-top-color:rgba(191,219,254,.22); }
+        body.dark-mode .supplier-product-preview-row span { color:#cbd5e1; }
+        body.dark-mode .supplier-product-preview-row strong,
+        body.dark-mode .supplier-product-preview-card h6 { color:#bfdbfe; }
+        body.dark-mode #addSupplierModal .modal-content { background:#182131; color:#e5e7eb; }
+        body.dark-mode #addSupplierModal .modal-header,
+        body.dark-mode #addSupplierModal .modal-footer { border-color:#263244; background:#182131; }
+        body.dark-mode #addSupplierModal .form-label { color:#cbd5e1; }
+        @media (max-width:1199.98px) { .supplier-product-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        @media (max-width:991.98px) { .supplier-product-edit-grid,.supplier-product-modal-grid { grid-template-columns:1fr; } .supplier-product-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        @media (max-width:575.98px) { .supplier-product-form-grid { grid-template-columns:1fr; } .supplier-product-form-grid .span-2 { grid-column:auto; } }
+        @media (max-width:575.98px) { .supplier-product-toolbar { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar"><div class="topbar-left"><button class="icon-btn" id="sidebarToggle"><i class="fa-solid fa-bars"></i></button><div class="page-title-mini"><strong>Suppliers</strong><span>Supplier directory and management</span></div></div><div class="topbar-right"><button class="icon-btn"><i class="fa-regular fa-bell"></i></button><button class="icon-btn" id="themeToggle"><i class="fa-solid fa-moon"></i></button></div></header>
+        <section class="page-body">
+            <div class="card p-3">
+                <div class="d-flex align-items-center justify-content-between gap-3 mb-3"><div><h5 class="fw-bold mb-1">Suppliers</h5><p class="text-muted mb-0">Manage suppliers available for purchase orders.</p></div><button class="btn btn-purple" id="btnOpenAddSupplier" data-bs-toggle="modal" data-bs-target="#addSupplierModal"><i class="fa-solid fa-plus me-2"></i>Add New Supplier</button></div>
+                <div class="table-responsive supplier-table-scroll"><table class="table table-hover align-middle" id="table-suppliers"><thead><tr><th>Supplier Name</th><th>Phone Number</th><th>Email Address</th><th>Address</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="text-center text-muted py-4">Loading suppliers...</td></tr></tbody></table></div>
+            </div>
+            <div class="card p-3 mt-3">
+                <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+                    <div>
+                        <h5 class="fw-bold mb-1">Supplier Product Catalog</h5>
+                        <p class="text-muted mb-0">Products assigned to each supplier for purchase orders.</p>
+                    </div>
+                    <button class="btn btn-purple" data-bs-toggle="modal" data-bs-target="#addSupplierProductModal"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
+                </div>
+                <div class="supplier-product-toolbar">
+                    <div>
+                        <label class="form-label" for="supplierProductSearch">Search</label>
+                        <input class="form-control" id="supplierProductSearch" type="search" placeholder="Search supplier, product, category, package...">
+                    </div>
+                    <div>
+                        <label class="form-label" for="supplierProductFilterSupplier">Supplier</label>
+                        <select class="form-select" id="supplierProductFilterSupplier"><option value="">All suppliers</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="supplierProductFilterCategory">Category</label>
+                        <select class="form-select" id="supplierProductFilterCategory"><option value="">All categories</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="supplierProductFilterType">Product Type</label>
+                        <select class="form-select" id="supplierProductFilterType"><option value="">All types</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="supplierProductFilterPackage">Purchase Unit</label>
+                        <select class="form-select" id="supplierProductFilterPackage"><option value="">All packages</option></select>
+                    </div>
+                </div>
+                <div class="table-responsive supplier-table-scroll">
+                    <table class="table table-hover align-middle supplier-product-table" id="table-supplier-products">
+                        <thead>
+                            <tr>
+                                <th>Supplier</th>
+                                <th>Brand</th>
+                                <th>Product</th>
+                                <th>Category</th>
+                                <th>Product Type</th>
+                                <th>Variant / Strength / Size</th>
+                                <th>Selling Price</th>
+                                <th>Supplier Cost</th>
+                                <th>Packaging</th>
+                                <th>Purchase Unit</th>
+                                <th>Units per Purchase Unit</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="12" class="text-center text-muted py-4">Loading supplier products...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+    <div class="modal fade" id="addSupplierModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="addSupplierModalLabel">Add Supplier</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addSupplierForm"><input id="sup_id" type="hidden"><div class="modal-body"><div class="mb-3"><label class="form-label" for="sup_name">Supplier Name</label><input class="form-control" id="sup_name" required></div><div class="mb-3"><label class="form-label" for="sup_phone">Phone Number</label><input class="form-control" id="sup_phone"></div><div class="mb-3"><label class="form-label" for="sup_email">Email Address</label><input class="form-control" id="sup_email" type="email"></div><div><label class="form-label" for="sup_address">Address</label><textarea class="form-control" id="sup_address"></textarea></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" id="btnSaveSupplier"><i class="fa-solid fa-floppy-disk me-2"></i><span>Save Supplier</span></button></div></form></div></div></div>
+    <div class="modal fade" id="addSupplierProductModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered supplier-product-dialog"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold">Add Supplier Product</h5><p class="text-muted small mb-0">Assign product details and supplier purchasing setup.</p></div><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addSupplierProductForm"><div class="modal-body"><div class="supplier-product-modal-grid">
+        <div class="supplier-product-section-stack">
+            <section class="supplier-product-edit-section"><h6>Product Identity</h6><div class="supplier-product-form-grid">
+                <div><label class="form-label" for="supplierProductSupplier">Supplier <span class="text-danger">*</span></label><select class="form-select" id="supplierProductSupplier" required><option value="" disabled selected>Select supplier...</option></select></div>
+                <div><label class="form-label" for="supplierProductCategory">Category <span class="text-danger">*</span></label><select class="form-select" id="supplierProductCategory" required><option value="" disabled selected>Select category...</option></select></div>
+                <div><label class="form-label" for="supplierProductType">Product Type</label><div class="input-group"><select class="form-select" id="supplierProductType" required disabled><option value="" disabled selected>Select category first...</option></select><button class="btn btn-outline-secondary" type="button" id="btnOpenAddProductType" title="Add product type" disabled><i class="fa-solid fa-plus"></i></button></div></div>
+                <div><label class="form-label" for="supplierProductBrand">Brand Name</label><input class="form-control" id="supplierProductBrand" required></div>
+                <div class="span-2"><label class="form-label" for="supplierProductName">Product Name</label><input class="form-control" id="supplierProductName" required></div>
+                <select class="d-none" id="supplierProductMeasurementUnit" aria-hidden="true"></select>
+            </div></section>
+            <section class="supplier-product-edit-section"><h6>Product Attributes</h6>
+                <div class="supplier-product-form-grid d-none" id="supplierProductMedicineFields">
+                    <div><label class="form-label" for="supplierProductGenericName">Generic Name</label><input class="form-control" id="supplierProductGenericName"></div>
+                    <div><label class="form-label" for="supplierProductStrengthValue">Strength Value</label><input class="form-control" id="supplierProductStrengthValue" type="number" min="0" step="any" inputmode="decimal" placeholder="500"></div>
+                    <div><label class="form-label" for="supplierProductStrengthUnit">Strength Unit</label><select class="form-select" id="supplierProductStrengthUnit"><option>mg</option><option>mcg</option><option>g</option><option>ml</option><option>%</option><option>IU</option></select></div>
+                    <div><label class="form-label" for="supplierProductDosageForm">Dosage Form</label><input class="form-control" id="supplierProductDosageForm" placeholder="Tablet"></div>
+                    <div><label class="form-label" for="supplierProductNetContentValue">Net Content Value</label><input class="form-control" id="supplierProductNetContentValue" type="number" min="0" step="any" inputmode="decimal" placeholder="10"></div>
+                    <div><label class="form-label" for="supplierProductNetContentUnit">Net Content Unit</label><select class="form-select" id="supplierProductNetContentUnit"><option>tablets</option><option>capsules</option><option>pcs</option><option>ml</option><option>L</option><option>g</option><option>mg</option><option>bottle</option><option>vial</option><option>tube</option><option>sachet</option></select></div>
+                    <div><label class="form-label" for="supplierProductMedicinePackaging">Packaging</label><select class="form-select" id="supplierProductMedicinePackaging"><option value="">Not set</option><option>Blister Pack</option><option>Bottle</option><option>Box</option><option>Tube</option><option>Sachet</option><option>Pack</option><option>Strip</option></select></div>
+                    <input id="supplierProductVolumeUnit" type="hidden"><input id="supplierProductMedicineFlavor" type="hidden"><input id="supplierProductMedicinePackContentQty" type="hidden"><input id="supplierProductMedicinePackContentUnit" type="hidden">
+                </div>
+                <div class="supplier-product-form-grid d-none" id="supplierProductGroceryFields">
+                    <div><label class="form-label" for="supplierProductVariantFlavor">Flavor / Variant</label><input class="form-control supplier-product-variant-flavor" id="supplierProductVariantFlavor" placeholder="e.g., Tuna flakes"></div>
+                    <div><label class="form-label" for="supplierProductSizeValue">Size</label><input class="form-control supplier-product-size-value" id="supplierProductSizeValue" placeholder="155"></div>
+                    <div><label class="form-label" for="supplierProductNetWeight">Net Weight</label><input class="form-control" id="supplierProductNetWeight" type="number" min="0" step="any" inputmode="decimal" placeholder="155"></div>
+                    <div><label class="form-label" for="supplierProductVariationUnit">Unit</label><select class="form-select supplier-product-unit" id="supplierProductVariationUnit"><option>g</option><option>kg</option><option>ml</option><option>L</option><option>oz</option><option>pcs</option></select></div>
+                    <div><label class="form-label" for="supplierProductPackaging">Packaging</label><select class="form-select supplier-product-packaging" id="supplierProductPackaging"><option value="">Not set</option><option>Can</option><option>Bottle</option><option>Pack</option><option>Box</option><option>Sachet</option><option>Pouch</option><option>Bag</option></select></div>
+                    <input id="supplierProductWeightVolumeValue" type="hidden"><input id="supplierProductWeightVolumeUnit" type="hidden"><input id="supplierProductGroceryVolumeValue" type="hidden"><input id="supplierProductGroceryVolumeUnit" type="hidden"><input id="supplierProductPackContentQty" type="hidden"><input id="supplierProductPackContentUnit" type="hidden"><div class="d-none" id="groceryVariationList"></div>
+                </div>
+                <div class="supplier-product-form-grid d-none" id="supplierProductMedicalFields">
+                    <div><label class="form-label" for="supplierProductMedicalVariant">Variant / Type</label><input class="form-control" id="supplierProductMedicalVariant" placeholder="e.g., Gauze"></div>
+                    <div><label class="form-label" for="supplierProductMedicalSize">Size</label><input class="form-control" id="supplierProductMedicalSize" placeholder="Medium"></div>
+                    <div><label class="form-label" for="supplierProductMedicalMaterial">Material</label><input class="form-control" id="supplierProductMedicalMaterial" placeholder="Cotton"></div>
+                    <div><label class="form-label" for="supplierProductMedicalSterileStatus">Sterile Status</label><select class="form-select" id="supplierProductMedicalSterileStatus"><option value="">Not set</option><option>Sterile</option><option>Non-sterile</option></select></div>
+                    <div><label class="form-label" for="supplierProductMedicalUnit">Unit</label><select class="form-select" id="supplierProductMedicalUnit"><option>pcs</option><option>pair</option><option>roll</option><option>box</option><option>pack</option><option>g</option><option>ml</option></select></div>
+                    <div><label class="form-label" for="supplierProductMedicalPackaging">Packaging</label><select class="form-select" id="supplierProductMedicalPackaging"><option value="">Not set</option><option>Box</option><option>Pack</option><option>Roll</option><option>Bottle</option><option>Pouch</option><option>Bag</option></select></div>
+                </div>
+            </section>
+            <section class="supplier-product-edit-section"><h6>Pricing</h6><div class="supplier-product-form-grid">
+                <div><label class="form-label" for="supplierProductBasePrice">Selling Price</label><input class="form-control supplier-product-price" id="supplierProductBasePrice" type="number" min="0" step=".01" required></div>
+                <div><label class="form-label" for="supplierProductSupplierCost">Supplier Cost</label><input class="form-control" id="supplierProductSupplierCost" type="number" min="0" step=".01" required></div>
+                <div><label class="form-label" for="supplierProductBarcode">Barcode</label><input class="form-control supplier-product-barcode" id="supplierProductBarcode" placeholder="Auto/manual"></div>
+                <div><label class="form-label" for="supplierProductSku">SKU <span class="text-muted">(optional)</span></label><input class="form-control supplier-product-sku" id="supplierProductSku" placeholder="Optional"></div>
+                <div class="span-2"><label class="form-label" for="supplierProductImageUrl">Image URL <span class="text-muted">(optional)</span></label><input class="form-control" id="supplierProductImageUrl" type="url" placeholder="Optional image link"></div>
+            </div></section>
+        </div>
+        <div class="supplier-product-section-stack">
+            <section class="supplier-product-edit-section"><h6>Supplier Purchasing Setup</h6><p>Conversion setup for purchase order receiving only.</p><div class="row g-3">
+                <div class="col-12"><label class="form-label" for="supplierProductPurchaseUnit">Supplier Package / Purchase Unit</label><select class="form-select" id="supplierProductPurchaseUnit" required><option>Box</option><option>Pack</option><option>Bottle</option><option>Carton</option><option>Case</option><option>Can</option><option>Pouch</option><option>Bag</option></select></div>
+                <div class="col-12"><label class="form-label" for="supplierProductInventoryUnitPreview">Inventory Unit</label><input class="form-control" id="supplierProductInventoryUnitPreview" readonly value="pc"></div>
+                <div class="col-12"><label class="form-label" for="supplierProductUnitsPerPurchaseUnit">Units per Purchase Unit</label><input class="form-control" id="supplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" value="1" required placeholder="40"></div>
+            </div></section>
+            <div class="supplier-product-preview-card" id="addSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="addPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="addPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="addPreviewMeaning">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
+        </div>
+    </div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple"><i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product</button></div></form></div></div></div>
+    <div class="modal fade" id="editSupplierProductModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered supplier-product-edit-dialog"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold">Edit Supplier Product</h5><p class="text-muted small mb-0">Assign product details and supplier purchasing setup.</p></div><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="editSupplierProductForm"><input type="hidden" id="editSupplierProductLinkId"><input type="hidden" id="editSupplierProductId"><input type="hidden" id="editSupplierProductSupplierId"><input type="hidden" id="editSupplierProductCurrentPrice"><div class="modal-body"><div class="supplier-product-modal-grid">
+        <div class="supplier-product-section-stack">
+            <section class="supplier-product-edit-section"><h6>Product Identity</h6><div class="supplier-product-form-grid">
+                <div><label class="form-label" for="editSupplierProductSupplierName">Supplier</label><input class="form-control" id="editSupplierProductSupplierName" readonly></div>
+                <div><label class="form-label" for="editSupplierProductCategory">Category</label><select class="form-select" id="editSupplierProductCategory" required></select></div>
+                <div><label class="form-label" for="editSupplierProductType">Product Type</label><select class="form-select" id="editSupplierProductType" required></select></div>
+                <div><label class="form-label" for="editSupplierProductBrand">Brand Name</label><input class="form-control" id="editSupplierProductBrand" required></div>
+                <div class="span-2"><label class="form-label" for="editSupplierProductName">Product Name</label><input class="form-control" id="editSupplierProductName" required></div>
+            </div></section>
+            <section class="supplier-product-edit-section"><h6>Product Attributes</h6><div class="supplier-product-form-grid">
+                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductGeneric">Generic Name</label><input class="form-control" id="editSupplierProductGeneric"></div>
+                <div class="edit-attribute edit-grocery edit-medical"><label class="form-label" for="editSupplierProductVariant">Flavor / Variant</label><input class="form-control" id="editSupplierProductVariant"></div>
+                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductStrength">Strength Value</label><input class="form-control" id="editSupplierProductStrength" type="number" min="0" step="any" inputmode="decimal"></div>
+                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductStrengthUnit">Strength Unit</label><select class="form-select" id="editSupplierProductStrengthUnit"></select></div>
+                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductDosageForm">Dosage Form</label><input class="form-control" id="editSupplierProductDosageForm"></div>
+                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductNetContentValue">Net Content Value</label><input class="form-control" id="editSupplierProductNetContentValue" type="number" min="0" step="any" inputmode="decimal"></div>
+                <div class="edit-attribute edit-medicine"><label class="form-label" for="editSupplierProductNetContentUnit">Net Content Unit</label><select class="form-select" id="editSupplierProductNetContentUnit"></select></div>
+                <div class="edit-attribute edit-grocery edit-medical"><label class="form-label" for="editSupplierProductSize">Size</label><input class="form-control" id="editSupplierProductSize"></div>
+                <div class="edit-attribute edit-grocery"><label class="form-label" for="editSupplierProductNetWeight">Net Weight</label><input class="form-control" id="editSupplierProductNetWeight" type="number" min="0" step="any" inputmode="decimal"></div>
+                <div class="edit-attribute edit-medical"><label class="form-label" for="editSupplierProductMaterial">Material</label><input class="form-control" id="editSupplierProductMaterial"></div>
+                <div class="edit-attribute edit-medical"><label class="form-label" for="editSupplierProductSterileStatus">Sterile Status</label><select class="form-select" id="editSupplierProductSterileStatus"><option value="">Not set</option><option>Sterile</option><option>Non-sterile</option></select></div>
+                <div class="edit-attribute edit-grocery edit-medical"><label class="form-label" for="editSupplierProductUnit">Unit</label><select class="form-select" id="editSupplierProductUnit"></select></div>
+                <div class="edit-attribute edit-grocery edit-medical edit-medicine"><label class="form-label" for="editSupplierProductPackaging">Packaging</label><select class="form-select" id="editSupplierProductPackaging"></select></div>
+            </div></section>
+            <section class="supplier-product-edit-section"><h6>Pricing</h6><div class="supplier-product-form-grid">
+                <div><label class="form-label">Selling Price</label><div class="supplier-product-reference-price" id="editSupplierProductSellingPriceText">-</div></div>
+                <div><label class="form-label" for="editSupplierProductSupplierCost">Supplier Cost</label><input class="form-control" id="editSupplierProductSupplierCost" type="number" min="0" step=".01" required></div>
+                <div><label class="form-label" for="editSupplierProductBarcode">Barcode</label><input class="form-control" id="editSupplierProductBarcode" readonly></div>
+                <div><label class="form-label" for="editSupplierProductSku">SKU <span class="text-muted">(optional)</span></label><input class="form-control" id="editSupplierProductSku" readonly></div>
+                <div class="span-2"><label class="form-label" for="editSupplierProductImageUrl">Image URL <span class="text-muted">(optional)</span></label><input class="form-control" id="editSupplierProductImageUrl" readonly></div>
+            </div></section>
+        </div>
+        <div class="supplier-product-section-stack">
+            <section class="supplier-product-edit-section"><h6>Supplier Purchasing Setup</h6><p>Conversion setup for purchase order receiving only.</p><div class="row g-3">
+                <div class="col-12"><label class="form-label" for="editSupplierProductPurchaseUnit">Supplier Package / Purchase Unit</label><select class="form-select" id="editSupplierProductPurchaseUnit" required><option>Box</option><option>Pack</option><option>Bottle</option><option>Carton</option><option>Case</option><option>Can</option><option>Pouch</option><option>Bag</option></select></div>
+                <div class="col-12"><label class="form-label" for="editSupplierProductInventoryUnitPreview">Inventory Unit</label><input class="form-control" id="editSupplierProductInventoryUnitPreview" readonly value="pc"></div>
+                <div class="col-12"><label class="form-label" for="editSupplierProductUnitsPerPurchaseUnit">Units per Purchase Unit</label><input class="form-control" id="editSupplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" required></div>
+            </div></section>
+            <div class="supplier-product-preview-card" id="editSupplierProductConversionPreview"><h6>Purchase Preview</h6><div class="supplier-product-preview-row"><span>Purchase Unit</span><strong id="editPreviewPurchaseUnit">Box</strong></div><div class="supplier-product-preview-row"><span>Inventory Units per Purchase Unit</span><strong id="editPreviewContains">1 pc</strong></div><div class="supplier-product-preview-row is-meaning"><span>Meaning</span><strong id="editPreviewInventoryReceived">When 1 Box is received from PO, inventory receives 1 pc.</strong></div></div>
+        </div>
+    </div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit"><i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product</button></div></form></div></div></div>
+    <div class="modal fade" id="addProductTypeModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Add Product Type</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addProductTypeForm"><div class="modal-body"><div class="mb-3"><label class="form-label">Category <span class="text-danger">*</span></label><select class="form-select" id="newProductTypeCategory" required></select></div><div><label class="form-label">New Product Type Name <span class="text-danger">*</span></label><input class="form-control" id="newProductTypeName" required></div></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple">Save</button></div></form></div></div></div>
+    <div class="modal fade" id="addMeasurementUnitModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold">Add Measurement Unit</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><form id="addMeasurementUnitForm"><div class="modal-body"><label class="form-label">New Measurement Unit Name <span class="text-danger">*</span></label><input class="form-control" id="newMeasurementUnitName" required></div><div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple">Save</button></div></form></div></div></div>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script><script type="module" src="./js/modules/suppliers.js?v=23"></script><script type="module">import verifySession from './js/modules/auth.js'; await verifySession();</script>
+</body>
+</html>

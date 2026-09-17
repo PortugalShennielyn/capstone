@@ -1,0 +1,162 @@
+Pharmacy operational data reset audit
+Timestamp: 2026-09-02 00:58:52 America/Los_Angeles
+Verified target: pharma_db on 127.0.0.1:3306 (local XAMPP MariaDB)
+
+Pre-reset protected counts:
+users=7
+roles=4
+accounts=1
+account_roles=1
+suppliers=8
+sales_orders=5
+sales_order_items=8
+sales_order_status_history=18
+sales_payments=3
+sales_receipts=3
+cashier_queue=5
+
+Tables/data to clear:
+inventory_receiving_transactions
+supplier_credit_applications
+supplier_credits
+supplier_refunds
+supplier_claim_damage_lines
+purchase_order_receiving_revisions
+purchase_order_receiving_items
+purchase_order_receiving
+supplier_claims
+inventory_transfer_allocations
+inventory_transfers
+product_selling_stock
+inventory_batches
+product_inventory
+purchase_order_invoice_items
+purchase_order_invoices
+purchase_order_payments
+purchase_order_approval_audit
+purchase_order_items
+purchase_orders
+purchase_request_items
+purchase_requests
+supplier_product_unit_conversions
+supplier_products
+entity_dimensions records whose entity_type is product/product_variation
+product_variations_backup
+product_specification_values
+grocery_details
+medical_supply_details
+medicine_details
+product_selling_options
+product
+activity_logs limited to procurement/catalog/inventory modules
+
+Tables/data explicitly preserved:
+sales_orders
+sales_order_items
+sales_order_status_history
+sales_payments
+sales_receipts
+cashier_queue
+users
+roles
+accounts
+account_roles
+account_types
+suppliers
+product_categories
+product_types
+product_measurement_units
+product_specifications
+product_specification_choices
+product_type_specifications
+lookup_values
+system_settings
+business_hours
+business_hour_exceptions
+tenants
+tenant_domains
+auth_sessions
+login_attempts
+Sales, Cashier, User Management activity logs
+
+Historical-product safety finding:
+sales_order_items stores snapshot fields product_name, brand_name, specification,
+selected quantity/unit, quantity, unit_price, and line_total. Its product_id has no
+foreign-key constraint to product. Catalog deletion therefore does not cascade into
+or prevent loading historical sales line items.
+
+Backup:
+C:\xampp\htdocs\PharmacySystem_for_DocR\backups\pharma_db-before-operational-reset-20260902-005852.sql
+Verified size: 651959 bytes
+mysqldump completion marker: present
+
+Reset transaction result: COMMITTED
+FOREIGN_KEY_CHECKS during reset: 1
+Schema before/after: 61 tables/views, 662 columns (unchanged)
+
+Post-reset operational counts:
+product=0
+supplier_products=0
+supplier_product_unit_conversions=0
+purchase_requests=0
+purchase_request_items=0
+purchase_orders=0
+purchase_order_items=0
+purchase_order_invoices=0
+purchase_order_invoice_items=0
+purchase_order_payments=0
+purchase_order_receiving=0
+purchase_order_receiving_items=0
+supplier_claims=0
+supplier_claim_damage_lines=0
+inventory_receiving_transactions=0
+inventory_batches=0
+product_inventory=0
+product_selling_stock=0
+inventory_transfers=0
+inventory_transfer_allocations=0
+
+Post-reset protected counts:
+users=7
+roles=4
+accounts=1
+account_roles=1
+suppliers=8
+sales_orders=5
+sales_order_items=8
+sales_order_status_history=18
+sales_payments=3
+sales_receipts=3
+cashier_queue=5
+
+Protected-table validation:
+All protected table row counts and SHA-256 content digests matched before/after.
+sales_item_orphans=0
+sales_payment_orphans=0
+sales_receipt_orphans=0
+cashier_queue_orphans=0
+incomplete_sales_snapshots=0
+
+API validation (authenticated HTTP):
+products=0
+purchase_requests=0
+purchase_orders=0
+PO status counts: Draft=0, Pending=0, Arrived=0, Delivered=0, Cancelled=0
+receiving_history=0
+return_damage=0
+storage_inventory=0
+transfer_history=0
+shelf_inventory=0
+sales_history_orders=5
+historical receipt order 63 opened with 2 item rows
+dashboard pending_po=0, expiring_soon=0, low_stock=0, out_of_stock=0, inventory_value=0
+
+Browser validation:
+Products, Storage Inventory, Purchase Requests, Purchase Orders, Inspect Deliveries,
+Return/Damage, and Shelf Inventory rendered empty states.
+Dashboard rendered zero operational metrics and preserved recent sales.
+Sales History rendered 5 historical orders.
+Cashier Transaction History rendered 3 completed receipts.
+Receipt RCPT-20260827-183612-9190 opened with product, specification, quantity,
+unit price, subtotal, VAT, total, cash received, and change.
+Browser console warnings/errors across validated pages: 0

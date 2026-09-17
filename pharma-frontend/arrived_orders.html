@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Inspect Deliveries</title>
+    <meta http-equiv="refresh" content="0; url=inspect_deliveries.html">
+    <script>
+        const target = new URL('inspect_deliveries.html', window.location.href);
+        const legacy = new URLSearchParams(window.location.search);
+        const poId = legacy.get('po') || legacy.get('po_id');
+        if (poId) target.searchParams.set('po', poId);
+        window.location.replace(target.href);
+    </script>
+</head>
+<body>
+    <p>Arrived Orders has moved to <a href="inspect_deliveries.html">Inspect Deliveries</a>.</p>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<aside class="app-sidebar sidebar collapsed" id="sidebar" aria-label="Application sidebar">
+    <div class="sidebar-header">
+        <a href="dashboard.html" class="sidebar-brand" aria-label="Dr. R Pharmacy dashboard" data-dashboard-view="dashboard">
+            <span class="brand-mark"><i class="fa-solid fa-prescription-bottle-medical"></i></span>
+            <span class="brand-text">Dr. R Pharmacy</span>
+        </a>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-expanded="false" aria-label="Close sidebar">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+            <span class="sidebar-tooltip" role="tooltip">Close sidebar</span>
+        </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Main navigation">
+        <a href="dashboard.html" class="nav-link-item" data-nav-page="dashboard" data-dashboard-view="dashboard" title="Dashboard">
+            <i class="fa-solid fa-gauge-high"></i>
+            <span class="nav-label">Dashboard</span>
+        </a>
+
+        <a href="#masterFilesCollapse" class="nav-link-item d-flex align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="masterFilesCollapse" title="Master Files">
+            <i class="fa-solid fa-folder-open"></i>
+            <span class="nav-label">Master Files</span>
+            <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
+        </a>
+        <div class="collapse" id="masterFilesCollapse">
+            <a href="products.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="products" data-dashboard-view="dashboard/products" title="Products">
+                <i class="fa-solid fa-boxes"></i>
+                <span class="nav-label">Products</span>
+            </a>
+            <a href="inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inventory" data-dashboard-view="dashboard/inventory" title="Storage Inventory">
+                <i class="fa-solid fa-warehouse"></i>
+                <span class="nav-label">Storage Inventory</span>
+            </a>
+            <a href="shelf_inventory.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="shelf-inventory" title="Shelf Inventory">
+                <i class="fa-solid fa-store"></i>
+                <span class="nav-label">Shelf Inventory</span>
+            </a>
+            <a href="supplier.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supplier" data-dashboard-view="dashboard/suppliers" title="Suppliers">
+                <i class="fa-solid fa-handshake-simple"></i>
+                <span class="nav-label">Suppliers</span>
+            </a>
+        </div>
+
+        <a href="#salesTransactionsCollapse" class="nav-link-item d-flex align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="salesTransactionsCollapse" title="Sales & Transactions">
+            <i class="fa-solid fa-cash-register"></i>
+            <span class="nav-label">Sales & Transactions</span>
+            <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
+        </a>
+        <div class="collapse" id="salesTransactionsCollapse">
+            <a href="sales_clerk_pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-clerk-pos" data-dashboard-view="dashboard/sales-clerk-pos" title="Sales Clerk POS">
+                <i class="fa-solid fa-cash-register"></i>
+                <span class="nav-label">Sales Clerk POS</span>
+            </a>
+            <a href="sales_clerk_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-clerk-orders" data-dashboard-view="dashboard/sales-clerk-orders" title="My Orders">
+                <i class="fa-solid fa-clipboard-list"></i>
+                <span class="nav-label">Clerk Transactions</span>
+            </a>
+            <a href="cashier_pos.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cashier-pos" data-dashboard-view="dashboard/cashier-pos" title="Cashier POS">
+                <i class="fa-solid fa-hand-holding-dollar"></i>
+                <span class="nav-label">Cashier POS</span>
+            </a>
+            <a href="cashier_transaction_history.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cashier-history" data-dashboard-view="dashboard/cashier-history" title="Cashier Transaction History">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span class="nav-label">Cashier Transaction </span>
+            </a>
+            <a href="cashier_shift_summary.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="cashier-shift" data-dashboard-view="dashboard/cashier-shift" title="Shift Summary">
+                <i class="fa-solid fa-calendar-day"></i>
+                <span class="nav-label">Shift Summary</span>
+            </a>
+            <a href="sales_history.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="sales-history" data-dashboard-view="dashboard/sales-history" title="Sales History">
+                <i class="fa-solid fa-user-tie"></i>
+                <span class="nav-label">Sales History</span>
+            </a>
+        </div>
+
+        <a href="#purchaseOrdersCollapse" class="nav-link-item d-flex align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="purchaseOrdersCollapse" title="Purchase Orders">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+            <span class="nav-label">Purchase Orders</span>
+            <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
+        </a>
+        <div class="collapse" id="purchaseOrdersCollapse">
+            <a href="purchase_requests.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="purchase-requests" data-dashboard-view="dashboard/purchase-requests" title="Purchase Requests">
+                <i class="fa-solid fa-file-circle-plus"></i>
+                <span class="nav-label">Purchase Requests</span>
+            </a>
+            <a href="purchase_orders.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="purchase-orders" data-dashboard-view="dashboard/purchase-orders" title="Purchase Orders">
+                <i class="fa-solid fa-list-check"></i>
+                <span class="nav-label">Purchase Orders</span>
+            </a>
+            <a href="inspect_deliveries.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="inspect-deliveries" data-dashboard-view="dashboard/inspect-deliveries" title="Inspect Deliveries">
+                <i class="fa-solid fa-boxes-packing"></i>
+                <span class="nav-label">Inspect Deliveries</span>
+            </a>
+            <a href="supervisor_approval.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="supervisor-approval" data-dashboard-view="dashboard/supervisor-approval" title="CEO PR Approvals">
+                <i class="fa-solid fa-clipboard-check"></i>
+                <span class="nav-label">PR Approvals</span>
+            </a>
+        </div>
+
+        <a href="#monitoringCollapse" class="nav-link-item d-flex align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="monitoringCollapse" title="Monitoring">
+            <i class="fa-solid fa-chart-line"></i>
+            <span class="nav-label">Monitoring</span>
+            <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
+        </a>
+        <div class="collapse" id="monitoringCollapse">
+            <a href="return_damage.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="return-damage" data-dashboard-view="dashboard/return-damage" title="Return/Damage">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span class="nav-label">Return/Damage</span>
+            </a>
+            <a href="expiry_monitoring.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="expiry-monitoring" data-dashboard-view="dashboard/expiry-monitoring" title="Expiry Monitoring">
+                <i class="fa-solid fa-hourglass-half"></i>
+                <span class="nav-label">Expiry Monitoring</span>
+            </a>
+            <a href="reports.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="reports" data-dashboard-view="dashboard/reports" title="Reports">
+                <i class="fa-solid fa-chart-column"></i>
+                <span class="nav-label">Reports</span>
+            </a>
+        </div>
+
+        <a href="#administrationCollapse" class="nav-link-item d-flex align-items-center" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="administrationCollapse" title="Administration">
+            <i class="fa-solid fa-screwdriver-wrench"></i>
+            <span class="nav-label">Administration</span>
+            <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
+        </a>
+        <div class="collapse" id="administrationCollapse">
+            <a href="admin_settings.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="settings" data-dashboard-view="settings" title="Admin Settings">
+                <i class="fa-solid fa-gear"></i>
+                <span class="nav-label">Settings</span>
+            </a>
+        </div>
+    </nav>
+
+    <div class="sidebar-profile-footer" role="group" aria-label="User profile">
+        <button class="sidebar-user-trigger" type="button" id="sidebarUserMenuButton" aria-expanded="false" aria-controls="sidebarUserPopover" title="User actions">
+            <div class="avatar-initials" data-navbar-initials></div>
+            <span class="profile-name" data-navbar-display-name></span>
+        </button>
+        <button class="signout-btn sidebar-user-menu-toggle" type="button" aria-label="Open user actions" title="User actions">
+            <i class="fa-solid fa-ellipsis-vertical"></i>
+        </button>
+        <div class="sidebar-user-popover" id="sidebarUserPopover" role="menu" aria-labelledby="sidebarUserMenuButton">
+            <div class="sidebar-user-summary">
+                <div class="avatar-initials" data-navbar-initials></div>
+                <div>
+                    <strong data-navbar-display-name></strong>
+                    <span data-navbar-role-label></span>
+                </div>
+            </div>
+            <a href="user_settings.html" class="sidebar-user-action" data-nav-page="user-settings" role="menuitem">
+                <i class="fa-solid fa-user-gear"></i>
+                <span>User Settings</span>
+            </a>
+            <a href="dashboard.html#dashboard/billing" class="sidebar-user-action" data-nav-page="billing" data-dashboard-view="dashboard/billing" role="menuitem">
+                <i class="fa-solid fa-credit-card"></i>
+                <span>Billing</span>
+            </a>
+            <a href="login.html" class="sidebar-user-action sidebar-user-action-danger" data-auth-action="logout" role="menuitem">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span>Sign out</span>
+            </a>
+        </div>
+        <a class="signout-btn sidebar-signout-direct" href="login.html" data-auth-action="logout" title="Sign out" aria-label="Sign out">
+            <i class="fa-solid fa-right-from-bracket"></i>
+        </a>
+    </div>
+</aside>

@@ -1,0 +1,2449 @@
+<?php
+require_once __DIR__ . '/auth_page_guard.php';
+?>
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=12" rel="stylesheet">
+    <script src="./js/navbar.js?v=27" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=2"></script>
+
+    <style>
+        :root {
+            --sidebar-width: 260px;
+            --sidebar-collapsed-width: 70px;
+            --sidebar-bg: #1f2530;
+            --sidebar-bg-deep: #171c25;
+            --sidebar-text: #c6ccd8;
+            --sidebar-muted: #8790a1;
+            --purple: #7c3aed;
+            --purple-dark: #6328d6;
+            --purple-soft: rgba(124, 58, 237, 0.14);
+            --body-bg: #f4f6fb;
+            --topbar-height: 70px;
+            --border-soft: #e8ecf3;
+            --text-main: #252b37;
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            min-height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--body-bg);
+            color: var(--text-main);
+            letter-spacing: 0;
+        }
+
+        body.dark-mode {
+            --body-bg: #111827;
+            --border-soft: #263244;
+            --text-main: #e5e7eb;
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+        .sidebar a,
+        .sidebar .nav-link {
+            text-decoration: none !important;
+            color: var(--sidebar-text);
+        }
+
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: #fff !important;
+            background-color: var(--purple) !important;
+            border-radius: 8px;
+        }
+
+        .app-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: var(--sidebar-width);
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            background: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            z-index: 1040;
+            overflow: hidden;
+            transition: var(--transition);
+            box-shadow: 12px 0 30px rgba(15, 23, 42, 0.12);
+        }
+
+        .app-sidebar.collapsed {
+            width: var(--sidebar-collapsed-width);
+        }
+
+        .sidebar-brand {
+            height: var(--topbar-height);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 20px;
+            background: var(--sidebar-bg-deep);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            white-space: nowrap;
+        }
+
+        .brand-mark {
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--purple), #a855f7);
+            color: #fff;
+            font-size: 18px;
+            box-shadow: 0 12px 24px rgba(124, 58, 237, 0.32);
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.1;
+            opacity: 1;
+            transition: var(--transition);
+        }
+
+        .brand-title {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .brand-subtitle {
+            margin-top: 4px;
+            color: var(--sidebar-muted);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .sidebar-nav {
+            height: calc(100vh - var(--topbar-height));
+            padding: 16px 10px 88px;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .sidebar-nav::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+        }
+
+        .nav-link-item {
+            position: relative;
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 4px 0;
+            padding: 0 16px;
+            color: var(--sidebar-text);
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            transition: var(--transition);
+        }
+
+        .nav-link-item:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .nav-link-item.active {
+            color: #fff;
+            background: var(--purple);
+            box-shadow: 0 12px 22px rgba(124, 58, 237, 0.28);
+        }
+
+        .nav-link-item i {
+            width: 22px;
+            min-width: 22px;
+            text-align: center;
+            font-size: 16px;
+            transition: var(--transition);
+        }
+
+        .nav-label {
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        .app-sidebar.collapsed .sidebar-brand {
+            justify-content: center;
+            padding: 0;
+        }
+
+        .app-sidebar.collapsed .brand-text,
+        .app-sidebar.collapsed .nav-label {
+            width: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .app-sidebar.collapsed .sidebar-nav {
+            padding: 16px 8px;
+        }
+
+        .app-sidebar.collapsed .nav-link-item {
+            justify-content: center;
+            gap: 0;
+            padding: 0;
+        }
+
+        .app-sidebar.collapsed .nav-link-item i {
+            width: auto;
+            min-width: auto;
+            font-size: 17px;
+        }
+
+        .main-wrapper {
+            min-height: 100vh;
+            margin-left: var(--sidebar-width);
+            transition: var(--transition);
+        }
+
+        .main-wrapper.collapsed {
+            margin-left: var(--sidebar-collapsed-width);
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            height: var(--topbar-height);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 26px;
+            background: #fff;
+            border-bottom: 1px solid var(--border-soft);
+            z-index: 1020;
+            transition: var(--transition);
+        }
+
+        body.dark-mode .topbar,
+        body.dark-mode .stat-card,
+        body.dark-mode .content-panel,
+        body.dark-mode .table {
+            background: #182131;
+            color: var(--text-main);
+        }
+
+        body.dark-mode .welcome-band,
+        body.dark-mode .empty-state,
+        body.dark-mode .quick-action.is-disabled {
+            background: #182131;
+        }
+
+        .topbar-left,
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .icon-btn {
+            width: 42px;
+            height: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 0;
+            border-radius: 8px;
+            color: #4b5563;
+            background: #f4f6fb;
+            transition: var(--transition);
+        }
+
+        .icon-btn:hover {
+            color: #fff;
+            background: var(--purple);
+        }
+
+        body.dark-mode .icon-btn {
+            color: #d1d5db;
+            background: #243044;
+        }
+
+        .page-title-mini {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.2;
+        }
+
+        .page-title-mini strong {
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .page-title-mini span {
+            margin-top: 3px;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .notification-btn {
+            position: relative;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            min-width: 17px;
+            height: 17px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            border-radius: 999px;
+            background: var(--purple);
+            color: #fff;
+            border: 2px solid #fff;
+            font-size: 9px;
+            font-weight: 800;
+        }
+
+        body.dark-mode .notification-badge {
+            border-color: #182131;
+        }
+
+        .profile-btn {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 8px 5px 6px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        .profile-avatar {
+            width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: var(--purple-soft);
+            color: var(--purple);
+            font-weight: 800;
+        }
+
+        .dropdown-menu {
+            border: 0;
+            border-radius: 8px;
+            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+        }
+
+        .page-body {
+            padding: 28px;
+        }
+
+        .welcome-band {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            min-height: 88px;
+            padding: 16px 20px;
+            border-radius: 8px;
+            background: #fff;
+            color: var(--text-main);
+            border: 1px solid var(--border-soft);
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+        }
+
+        .welcome-band h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 800;
+        }
+
+        .welcome-band p {
+            margin: 5px 0 0;
+            color: #7b8494;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .dashboard-clock {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            min-width: 220px;
+            color: var(--text-main);
+            text-align: right;
+        }
+
+        .dashboard-clock span {
+            display: block;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .dashboard-clock strong {
+            display: block;
+            margin-top: 3px;
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .welcome-icon {
+            width: 42px;
+            height: 42px;
+            min-width: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            background: var(--purple-soft);
+            color: var(--purple);
+            font-size: 18px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(150px, 1fr));
+            gap: 14px;
+            margin-top: 18px;
+        }
+
+        .stat-card,
+        .content-panel {
+            background: #fff;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+        }
+
+        .stat-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: 96px;
+            padding: 16px;
+            min-width: 0;
+        }
+
+        .stat-icon {
+            width: 42px;
+            height: 42px;
+            min-width: 42px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 17px;
+        }
+
+        .stat-icon.sales {
+            background: #22c55e;
+        }
+
+        .stat-icon.orders {
+            background: #06b6d4;
+        }
+
+        .stat-icon.products {
+            background: var(--purple);
+        }
+
+        .stat-icon.alerts {
+            background: #f59e0b;
+        }
+
+        .stat-icon.expiry {
+            background: #ec4899;
+        }
+
+        .stat-icon.out {
+            background: #ef4444;
+        }
+
+        .stat-content {
+            min-width: 0;
+        }
+
+        .stat-content span {
+            display: block;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: normal;
+        }
+
+        .stat-content strong {
+            display: block;
+            margin-top: 6px;
+            color: var(--text-main);
+            font-size: 22px;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+            gap: 18px;
+            margin-top: 18px;
+            align-items: stretch;
+        }
+
+        .dashboard-grid.equal {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        }
+
+        .dashboard-grid.single {
+            grid-template-columns: 1fr;
+        }
+
+        .dashboard-grid > .content-panel {
+            min-width: 0;
+        }
+
+        .panel-header {
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .panel-header h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .panel-body {
+            padding: 18px 20px 20px;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .quick-action {
+            min-height: 72px;
+            display: flex;
+            align-items: center;
+            gap: 13px;
+            padding: 16px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            color: var(--text-main);
+            background: transparent;
+            font-weight: 800;
+            transition: var(--transition);
+            text-align: left;
+        }
+
+        .quick-action:hover {
+            color: var(--purple);
+            border-color: rgba(124, 58, 237, 0.28);
+            background: var(--purple-soft);
+        }
+
+        .quick-action i {
+            width: 36px;
+            height: 36px;
+            min-width: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: #fff;
+            background: var(--purple);
+        }
+
+        .quick-action.is-disabled {
+            color: #9aa3b2;
+            background: #f8fafc;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .chart-wrap {
+            min-height: 260px;
+            display: grid;
+            align-items: end;
+        }
+
+        .sales-chart {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 10px;
+            min-height: 220px;
+            align-items: end;
+        }
+
+        .chart-bar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: end;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .chart-bar-fill {
+            width: 100%;
+            min-height: 8px;
+            border-radius: 8px 8px 4px 4px;
+            background: linear-gradient(180deg, var(--purple), #a78bfa);
+        }
+
+        .chart-bar span {
+            width: 100%;
+            color: #7b8494;
+            font-size: 11px;
+            font-weight: 800;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .po-summary {
+            display: grid;
+            gap: 10px;
+        }
+
+        .po-summary-item {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            min-height: 42px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-weight: 800;
+        }
+
+        .po-summary-item:hover {
+            color: var(--purple);
+            border-color: rgba(124, 58, 237, 0.28);
+            background: var(--purple-soft);
+        }
+
+        .po-summary-item span {
+            overflow-wrap: anywhere;
+        }
+
+        .po-count {
+            min-width: 30px;
+            min-height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: var(--purple);
+            background: var(--purple-soft);
+        }
+
+        .health-list,
+        .activity-feed {
+            display: grid;
+            gap: 12px;
+        }
+
+        .health-group {
+            display: grid;
+            gap: 8px;
+        }
+
+        .health-group h3 {
+            margin: 0;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .health-item,
+        .activity-item {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            padding: 11px 12px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+        }
+
+        .item-title {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+
+        .item-meta {
+            margin: 4px 0 0;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 650;
+            overflow-wrap: anywhere;
+        }
+
+        .empty-state {
+            margin: 0;
+            padding: 22px;
+            color: #7b8494;
+            font-size: 13px;
+            font-weight: 700;
+            text-align: center;
+            border: 1px dashed var(--border-soft);
+            border-radius: 8px;
+            background: #fbfcff;
+        }
+
+        .table {
+            margin: 0;
+            vertical-align: middle;
+        }
+
+        .table thead th {
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 800;
+            text-transform: uppercase;
+            background: transparent;
+            border-bottom-color: var(--border-soft);
+        }
+
+        .table tbody td {
+            color: var(--text-main);
+            font-size: 14px;
+            font-weight: 600;
+            border-bottom-color: var(--border-soft);
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            padding: 0 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .status-pill.success {
+            color: #15803d;
+            background: #dcfce7;
+        }
+
+        .status-pill.warning {
+            color: #b45309;
+            background: #fef3c7;
+        }
+
+        .content-view {
+            display: block;
+        }
+
+        .content-view.is-hidden {
+            display: none;
+        }
+
+        .settings-shell {
+            display: grid;
+            grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
+            gap: 18px;
+        }
+
+        .settings-profile-card {
+            padding: 22px;
+        }
+
+        .settings-profile-card .profile-avatar {
+            width: 54px;
+            height: 54px;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+
+        .settings-profile-card h1 {
+            margin: 14px 0 4px;
+            color: var(--text-main);
+            font-size: 20px;
+            font-weight: 800;
+        }
+
+        .settings-profile-card p,
+        .settings-row span {
+            margin: 0;
+            color: #7b8494;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            min-height: 56px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .settings-row:last-child {
+            border-bottom: 0;
+        }
+
+        .settings-row strong {
+            display: block;
+            color: var(--text-main);
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .settings-action {
+            min-width: 114px;
+        }
+
+        .user-context-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .user-context-panel {
+            padding: 16px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        body.dark-mode .user-context-panel {
+            background: #182131;
+        }
+
+        .user-context-panel h3,
+        .user-section-title {
+            margin: 0 0 12px;
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0;
+        }
+
+        .context-list {
+            display: grid;
+            gap: 10px;
+            margin: 0;
+        }
+
+        .context-list div {
+            display: grid;
+            grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+        }
+
+        .context-list dt {
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .context-list dd {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        .context-list dd.db-backed-value,
+        .settings-profile-meta strong.db-backed-value,
+        .settings-profile-card h1.db-backed-value,
+        .settings-profile-card p.db-backed-value,
+        #settingsSessionSummary.db-backed-value {
+            color: #f97316;
+        }
+
+        .context-list dd.missing-value,
+        .settings-profile-meta strong.missing-value,
+        #settingsSessionSummary.missing-value {
+            color: #9aa3b2;
+            font-weight: 650;
+        }
+
+        .settings-profile-meta {
+            display: grid;
+            gap: 8px;
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        .settings-profile-meta span {
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .settings-profile-meta strong {
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+
+        .tenant-settings-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .tenant-settings-card {
+            min-height: 132px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 16px;
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            background: #fff;
+        }
+
+        body.dark-mode .tenant-settings-card {
+            background: #182131;
+        }
+
+        .tenant-settings-card header {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+        }
+
+        .tenant-settings-card i {
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 34px;
+            border-radius: 8px;
+            color: #fff;
+            background: var(--purple);
+        }
+
+        .tenant-settings-card h3 {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 14px;
+            font-weight: 850;
+        }
+
+        .tenant-settings-card p {
+            margin: 0;
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 650;
+            line-height: 1.45;
+        }
+
+        .tenant-settings-card code {
+            width: fit-content;
+            max-width: 100%;
+            display: inline-block;
+            padding: 4px 7px;
+            border-radius: 6px;
+            color: #4c1d95;
+            background: rgba(124, 58, 237, .1);
+            font-size: 11px;
+            font-weight: 800;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .tenant-settings-tabs {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .tenant-settings-tab {
+            min-height: 42px;
+            padding: 0 2px;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            color: #7b8494;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 800;
+        }
+
+        .tenant-settings-tab.is-active {
+            color: var(--text-main);
+            border-bottom-color: var(--text-main);
+        }
+
+        .tenant-settings-pane {
+            display: none;
+        }
+
+        .tenant-settings-pane.is-active {
+            display: block;
+        }
+
+        .settings-table-stack {
+            display: grid;
+            gap: 16px;
+        }
+
+        .settings-table-section {
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        body.dark-mode .settings-table-section {
+            background: #182131;
+        }
+
+        .settings-table-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-height: 46px;
+            padding: 0 14px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .settings-table-title h3 {
+            margin: 0;
+            color: var(--text-main);
+            font-size: 13px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: 0;
+        }
+
+        .settings-table-title span {
+            color: #7b8494;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .settings-value-cell {
+            max-width: 280px;
+            overflow-wrap: anywhere;
+        }
+
+        .settings-table-action {
+            min-width: 84px;
+        }
+
+        .btn-purple {
+            --bs-btn-color: #fff;
+            --bs-btn-bg: var(--purple);
+            --bs-btn-border-color: var(--purple);
+            --bs-btn-hover-color: #fff;
+            --bs-btn-hover-bg: var(--purple-dark);
+            --bs-btn-hover-border-color: var(--purple-dark);
+            --bs-btn-focus-shadow-rgb: 124, 58, 237;
+        }
+
+        .dynamic-product-section {
+            display: none;
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+
+        .dynamic-product-section.is-visible {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @media (max-width: 991.98px) {
+            .app-sidebar {
+                transform: translateX(0);
+            }
+
+            .app-sidebar:not(.collapsed) {
+                width: var(--sidebar-width);
+            }
+
+            .app-sidebar.collapsed {
+                width: var(--sidebar-collapsed-width);
+            }
+
+            .stats-grid,
+            .dashboard-grid,
+            .dashboard-grid.equal,
+            .settings-shell,
+            .tenant-settings-grid,
+            .user-context-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tenant-settings-tabs {
+                overflow-x: auto;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .topbar {
+                padding: 0 14px;
+            }
+
+            .page-title-mini,
+            .profile-name {
+                display: none;
+            }
+
+            .page-body {
+                padding: 18px;
+            }
+
+            .welcome-band {
+                align-items: flex-start;
+                flex-direction: column;
+                padding: 16px;
+            }
+
+            .dashboard-clock {
+                width: 100%;
+                justify-content: space-between;
+                min-width: 0;
+                text-align: left;
+            }
+
+            .stats-grid,
+            .quick-actions {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (min-width: 992px) and (max-width: 1399.98px) {
+            .stats-grid,
+            .quick-actions {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        /* Sidebar profile footer at bottom */
+        .sidebar-profile-footer {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 15px 20px;
+            background: var(--sidebar-bg-deep);
+            color: var(--sidebar-text);
+        }
+
+        .sidebar-profile-footer .profile-avatar {
+            width: 35px;
+            height: 35px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: var(--purple);
+            color: #fff;
+            font-weight: 800;
+        }
+
+        .sidebar-profile-footer .profile-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: #fff;
+        }
+
+        .sidebar-profile-footer .signout-btn {
+            color: var(--sidebar-muted);
+        }
+
+        .app-sidebar.collapsed .sidebar-profile-footer {
+            justify-content: center;
+            padding: 15px 0;
+        }
+
+        .app-sidebar.collapsed .sidebar-profile-footer .profile-name,
+        .app-sidebar.collapsed .sidebar-profile-footer .signout-btn {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="page-title-mini">
+                    <strong>Dashboard</strong>
+                    <span>Pharmacy management overview</span>
+                </div>
+            </div>
+
+            <div class="topbar-right">
+                <button class="icon-btn notification-btn" type="button" aria-label="Notifications">
+                    <i class="fa-regular fa-bell"></i>
+                    <span class="notification-badge">3</span>
+                </button>
+                <button class="icon-btn" type="button" id="themeToggle" aria-label="Toggle dark mode">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+
+                <!-- user dropdown removed to avoid duplicate profile UI -->
+            </div>
+        </header>
+
+        <section class="page-body">
+            <div class="content-view" id="dashboardView">
+                <div id="view-dashboard">
+                    <div class="welcome-band">
+                        <div>
+                            <h1 id="dashboardWelcomeName">Welcome back, Dr. ADMIN</h1>
+                            <p>Here's today's pharmacy operation overview.</p>
+                        </div>
+                        <div class="dashboard-clock">
+                            <div>
+                                <span id="dashboardTodayDate">Today</span>
+                                <strong id="dashboardCurrentTime">--:--</strong>
+                            </div>
+                            <div class="welcome-icon">
+                                <i class="fa-solid fa-staff-snake"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid" id="dashboardKpis">
+                        <div class="stat-card">
+                            <div class="stat-icon sales"><i class="fa-solid fa-peso-sign"></i></div>
+                            <div class="stat-content">
+                                <span>Today's Sales</span>
+                                <strong id="kpiTodaySales">--</strong>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon orders"><i class="fa-solid fa-receipt"></i></div>
+                            <div class="stat-content">
+                                <span>Transactions Today</span>
+                                <strong id="kpiTransactionsToday">--</strong>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon products"><i class="fa-solid fa-truck-ramp-box"></i></div>
+                            <div class="stat-content">
+                                <span>Pending POs</span>
+                                <strong id="kpiPendingPo">--</strong>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon alerts"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                            <div class="stat-content">
+                                <span>Low Stock</span>
+                                <strong id="kpiLowStock">--</strong>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon expiry"><i class="fa-solid fa-calendar-xmark"></i></div>
+                            <div class="stat-content">
+                                <span>Expiring Soon</span>
+                                <strong id="kpiExpiringSoon">--</strong>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon out"><i class="fa-solid fa-box-open"></i></div>
+                            <div class="stat-content">
+                                <span>Out of Stock</span>
+                                <strong id="kpiOutOfStock">--</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="content-panel">
+                            <div class="panel-header">
+                                <h2>Sales Trend - Last 7 Days</h2>
+                            </div>
+                            <div class="panel-body">
+                                <div class="chart-wrap" id="salesTrendChart">
+                                    <p class="empty-state">Loading sales overview...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="content-panel">
+                            <div class="panel-header">
+                                <h2>Purchase Order Summary</h2>
+                            </div>
+                            <div class="panel-body">
+                                <div class="po-summary" id="poSummaryList">
+                                    <p class="empty-state">Loading purchase orders...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid equal">
+                        <div class="content-panel">
+                            <div class="panel-header">
+                                <h2>Inventory Health</h2>
+                            </div>
+                            <div class="panel-body">
+                                <div class="health-list" id="inventoryHealthList">
+                                    <p class="empty-state">Loading inventory health...</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="content-panel">
+                            <div class="panel-header">
+                                <h2>Top Selling Products</h2>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Product Name</th>
+                                            <th>Brand</th>
+                                            <th>Qty Sold</th>
+                                            <th>Total Sales</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="topSellingProductsBody">
+                                        <tr><td colspan="4" class="text-center text-muted py-4">Loading top products...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid single">
+                        <div class="content-panel">
+                            <div class="panel-header">
+                                <h2>Recent Activities</h2>
+                            </div>
+                            <div class="panel-body">
+                                <div class="activity-feed" id="recentActivitiesFeed">
+                                    <p class="empty-state">Loading recent activities...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid single">
+                        <div class="content-panel">
+                            <div class="panel-header">
+                                <h2>Quick Actions</h2>
+                            </div>
+                            <div class="panel-body">
+                                <div class="quick-actions">
+                                    <a href="pos.php" class="quick-action">
+                                        <i class="fa-solid fa-cart-shopping"></i>
+                                        <span>Open POS</span>
+                                    </a>
+                                    <a href="products.php" class="quick-action">
+                                        <i class="fa-solid fa-boxes-stacked"></i>
+                                        <span>Products</span>
+                                    </a>
+                                    <a href="inventory.php" class="quick-action">
+                                        <i class="fa-solid fa-warehouse"></i>
+                                        <span>Inventory</span>
+                                    </a>
+                                    <a href="purchase_orders.php" class="quick-action">
+                                        <i class="fa-solid fa-file-circle-plus"></i>
+                                        <span>Create Purchase Order</span>
+                                    </a>
+                                    <a href="arrived_orders.php" class="quick-action">
+                                        <i class="fa-solid fa-truck-ramp-box"></i>
+                                        <span>Receive Delivery</span>
+                                    </a>
+                                    <a href="expiry_monitoring.php" class="quick-action">
+                                        <i class="fa-solid fa-calendar-check"></i>
+                                        <span>Expiry Monitoring</span>
+                                    </a>
+                                    <a href="#" class="quick-action is-disabled" aria-disabled="true">
+                                        <i class="fa-solid fa-chart-pie"></i>
+                                        <span>Reports</span>
+                                    </a>
+                                    <a href="#" class="quick-action is-disabled" aria-disabled="true">
+                                        <i class="fa-solid fa-user-plus"></i>
+                                        <span>Add User</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-inventory" class="d-none"></div>
+            <div id="view-suppliers" class="d-none"></div>
+            <div id="view-settings" class="content-view d-none">
+                <div class="settings-shell">
+                    <aside class="content-panel settings-profile-card">
+                        <div class="profile-avatar" id="tenantSettingsInitials">DR</div>
+                        <h1 id="tenantSettingsName">Dr. R Pharmacy</h1>
+                        <p>Tenant workspace</p>
+                        <div class="settings-profile-meta">
+                            <span>Tenant table</span>
+                            <strong>saas.tenant</strong>
+                            <span>Settings table</span>
+                            <strong>core.entity_config</strong>
+                            <span>Config scope</span>
+                            <strong>entity_type="tenant_settings"</strong>
+                        </div>
+                    </aside>
+                    <section class="content-panel">
+                        <div class="panel-header">
+                            <h2>Tenant Settings</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="tenant-settings-tabs" role="tablist" aria-label="Tenant settings sections">
+                                <button class="tenant-settings-tab is-active" type="button" role="tab" aria-selected="true" data-settings-tab="overview">Overview</button>
+                                <button class="tenant-settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="activity">Activity</button>
+                                <button class="tenant-settings-tab" type="button" role="tab" aria-selected="false" data-settings-tab="settings">Settings</button>
+                            </div>
+
+                            <div class="tenant-settings-pane is-active" data-settings-pane="overview" role="tabpanel">
+                                <div class="settings-table-stack">
+                                    <section class="settings-table-section">
+                                        <div class="settings-table-title">
+                                            <h3>Tenant Attributes</h3>
+                                            <span>saas.tenant</span>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Attribute</th>
+                                                        <th>Value</th>
+                                                        <th>Source</th>
+                                                        <th>Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>Workspace name</td>
+                                                        <td class="settings-value-cell" id="tenantOverviewName">Dr. R Pharmacy</td>
+                                                        <td><code>tenant.name</code></td>
+                                                        <td><button class="btn btn-sm btn-purple settings-table-action" type="button" id="editTenantIdentityBtn">Edit</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Tenant slug</td>
+                                                        <td class="settings-value-cell" id="tenantOverviewSlug">dr-r-pharmacy</td>
+                                                        <td><code>tenant.slug</code></td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Billing email</td>
+                                                        <td class="settings-value-cell" id="tenantOverviewBillingEmail">Not configured</td>
+                                                        <td><code>tenant.billing_email</code></td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Website</td>
+                                                        <td class="settings-value-cell" id="tenantOverviewWebsite">Not configured</td>
+                                                        <td><code>tenant.website_url</code></td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Logo URL</td>
+                                                        <td class="settings-value-cell" id="tenantOverviewLogo">Not configured</td>
+                                                        <td><code>tenant.logo_url</code></td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="identity">Edit</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+
+                                    <section class="settings-table-section">
+                                        <div class="settings-table-title">
+                                            <h3>Workspace Scope</h3>
+                                            <span>core.entity_tenant</span>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Scope</th>
+                                                        <th>Value</th>
+                                                        <th>Status</th>
+                                                        <th>Notes</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>Entity owner type</td>
+                                                        <td><code>tenant_settings</code></td>
+                                                        <td><span class="status-pill success">Active</span></td>
+                                                        <td>Settings resolve through tenant-owned configuration rows.</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Domain binding</td>
+                                                        <td><code>current tenant</code></td>
+                                                        <td><span class="status-pill success">Scoped</span></td>
+                                                        <td>Shared records attach to tenant context before feature rules.</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
+
+                            <div class="tenant-settings-pane" data-settings-pane="activity" role="tabpanel">
+                                <div class="settings-table-stack">
+                                    <section class="settings-table-section">
+                                        <div class="settings-table-title">
+                                            <h3>Recent Configuration Activity</h3>
+                                            <span>tenant audit view</span>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Event</th>
+                                                        <th>Actor</th>
+                                                        <th>Target</th>
+                                                        <th>Status</th>
+                                                        <th>When</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>Tenant identity reviewed</td>
+                                                        <td id="tenantActivityActor">Dr. ADMIN</td>
+                                                        <td><code>saas.tenant</code></td>
+                                                        <td><span class="status-pill success">Current</span></td>
+                                                        <td>Current session</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Configuration keys available</td>
+                                                        <td>System</td>
+                                                        <td><code>core.entity_config</code></td>
+                                                        <td><span class="status-pill warning">Review</span></td>
+                                                        <td>Pending setup</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Usage monitoring placeholder</td>
+                                                        <td>System</td>
+                                                        <td><code>saas.usage_summary</code></td>
+                                                        <td><span class="status-pill warning">Draft</span></td>
+                                                        <td>Pending integration</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
+
+                            <div class="tenant-settings-pane" data-settings-pane="settings" role="tabpanel">
+                                <div class="settings-table-stack">
+                                    <section class="settings-table-section">
+                                        <div class="settings-table-title">
+                                            <h3>Configuration Keys</h3>
+                                            <span>core.entity_config</span>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Group</th>
+                                                        <th>Key</th>
+                                                        <th>Value</th>
+                                                        <th>Type</th>
+                                                        <th>Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>workspace</td>
+                                                        <td>timezone</td>
+                                                        <td class="settings-value-cell">America/Los_Angeles</td>
+                                                        <td>string</td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Manage</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>billing</td>
+                                                        <td>invoice_mode</td>
+                                                        <td class="settings-value-cell">manual</td>
+                                                        <td>string</td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Manage</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>features</td>
+                                                        <td>expiry_monitoring</td>
+                                                        <td class="settings-value-cell">enabled</td>
+                                                        <td>boolean</td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Manage</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+
+                                    <section class="settings-table-section">
+                                        <div class="settings-table-title">
+                                            <h3>Tenant Controls</h3>
+                                            <span>related setup views</span>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Control</th>
+                                                        <th>Description</th>
+                                                        <th>Table</th>
+                                                        <th>Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>Domains and invitations</td>
+                                                        <td>Custom domains and tenant join invites.</td>
+                                                        <td><code>integrations.custom_domain / core.invitation</code></td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Review</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Usage and limits</td>
+                                                        <td>Tenant-level usage counters and limits.</td>
+                                                        <td><code>saas.usage_summary</code></td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Monitor</button></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td>Feature access</td>
+                                                        <td>Scoped overrides before feature defaults.</td>
+                                                        <td><code>saas.feature_override</code></td>
+                                                        <td><button class="btn btn-sm btn-outline-primary settings-table-action" type="button" data-settings-action="toast">Configure</button></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+            <div id="view-user-settings" class="content-view d-none">
+                <div class="settings-shell">
+                    <aside class="content-panel settings-profile-card">
+                        <div class="profile-avatar" id="userSettingsInitials">--</div>
+                        <h1 id="userSettingsName">Loading user</h1>
+                        <p id="userSettingsRole">Loading access</p>
+                        <div class="settings-profile-meta">
+                            <span>Signed in as</span>
+                            <strong id="userSettingsUsername">Loading</strong>
+                            <span>Workspace</span>
+                            <strong id="userSettingsTenant">Loading</strong>
+                        </div>
+                    </aside>
+                    <section class="content-panel">
+                        <div class="panel-header">
+                            <h2>User Settings</h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="user-context-grid mb-3">
+                                <div class="user-context-panel">
+                                    <h3>Identity</h3>
+                                    <dl class="context-list">
+                                        <div>
+                                            <dt>User</dt>
+                                            <dd id="settingsIdentityName">Loading</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Username</dt>
+                                            <dd id="settingsIdentityUsername">Loading</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Email</dt>
+                                            <dd id="settingsIdentityEmail">Loading</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Status</dt>
+                                            <dd id="settingsIdentityStatus">Loading</dd>
+                                        </div>
+                                    </dl>
+                                </div>
+                                <div class="user-context-panel">
+                                    <h3>Account Context</h3>
+                                    <dl class="context-list">
+                                        <div>
+                                            <dt>Account type</dt>
+                                            <dd id="settingsAccountType">Loading</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Role</dt>
+                                            <dd id="settingsAccountRoles">Loading</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Tenant</dt>
+                                            <dd id="settingsTenantName">Loading</dd>
+                                        </div>
+                                    </dl>
+                                </div>
+                            </div>
+                            <h3 class="user-section-title">Account Actions</h3>
+                            <div class="settings-row">
+                                <div>
+                                    <strong>Profile identity</strong>
+                                    <span>Basic user identity is kept separate from account capacity.</span>
+                                </div>
+                                <button class="btn btn-sm btn-purple settings-action" type="button" id="editProfileIdentityBtn">Edit</button>
+                            </div>
+                            <div class="settings-row">
+                                <div>
+                                    <strong>Password and sign-in</strong>
+                                    <span>Password credentials, sessions, and login history belong to auth.</span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary settings-action" type="button" id="updatePasswordBtn">Update</button>
+                            </div>
+                            <div class="settings-row">
+                                <div>
+                                    <strong>Current session</strong>
+                                    <span id="settingsSessionSummary">Permissions are resolved from the active account context.</span>
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary settings-action" type="button" id="reviewCurrentSessionBtn">Review</button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+            <div id="view-billing" class="content-view d-none">
+                <div class="content-panel">
+                    <div class="panel-header">
+                        <h2>Billing</h2>
+                    </div>
+                    <div class="panel-body">
+                        <div class="user-context-grid mb-3">
+                            <div class="user-context-panel">
+                                <h3>Billing Context</h3>
+                                <dl class="context-list">
+                                    <div>
+                                        <dt>Tenant</dt>
+                                        <dd id="billingTenantName">Dr. R Pharmacy</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Billing owner</dt>
+                                        <dd id="billingOwnerName">Dr. ADMIN</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Account context</dt>
+                                        <dd id="billingAccountContext">Admin</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                            <div class="user-context-panel">
+                                <h3>Source Tables</h3>
+                                <dl class="context-list">
+                                    <div>
+                                        <dt>Tenant</dt>
+                                        <dd><code>saas.tenant</code></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Plan rules</dt>
+                                        <dd><code>saas.plan</code></dd>
+                                    </div>
+                                    <div>
+                                        <dt>Overrides</dt>
+                                        <dd><code>saas.feature_override</code></dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </div>
+                        <h3 class="user-section-title">Subscription</h3>
+                        <div class="table-responsive mb-3">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Plan</th>
+                                        <th>Tenant</th>
+                                        <th>Status</th>
+                                        <th>Billing Cycle</th>
+                                        <th>Trial Ends</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Workspace Plan</td>
+                                        <td id="billingSubscriptionTenant">Dr. R Pharmacy</td>
+                                        <td><span class="status-pill success">Active</span></td>
+                                        <td>Monthly</td>
+                                        <td>Configured on tenant</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <h3 class="user-section-title">Invoices</h3>
+                        <div class="table-responsive mb-3">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice</th>
+                                        <th>Period</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                        <th>Due Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>BILL-1003</td>
+                                        <td>Current month</td>
+                                        <td>0.00</td>
+                                        <td><span class="status-pill warning">Draft</span></td>
+                                        <td>Tenant billing date</td>
+                                    </tr>
+                                    <tr>
+                                        <td>BILL-1002</td>
+                                        <td>Previous month</td>
+                                        <td>0.00</td>
+                                        <td><span class="status-pill success">Recorded</span></td>
+                                        <td>Closed</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <h3 class="user-section-title">Payment Methods</h3>
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Method</th>
+                                        <th>Last Four</th>
+                                        <th>Expires</th>
+                                        <th>Default</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Manual billing</td>
+                                        <td>Not stored</td>
+                                        <td>Not applicable</td>
+                                        <td><span class="status-pill success">Yes</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="tenantIdentityModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Edit Tenant Identity</h5>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="tenantIdentityForm">
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="tenantNameInput">Tenant Name</label>
+                                <input class="form-control" id="tenantNameInput" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="tenantSlugInput">Tenant Slug</label>
+                                <input class="form-control" id="tenantSlugInput" pattern="[a-z0-9-]+" placeholder="dr-r-pharmacy">
+                                <div class="form-text">Lowercase letters, numbers, and hyphens only.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="tenantBillingEmailInput">Billing Email</label>
+                                <input class="form-control" id="tenantBillingEmailInput" type="email" placeholder="billing@example.com">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="tenantWebsiteInput">Website URL</label>
+                                <input class="form-control" id="tenantWebsiteInput" type="url" placeholder="https://example.com">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="tenantLogoInput">Logo URL</label>
+                                <input class="form-control" id="tenantLogoInput" type="url" placeholder="https://example.com/logo.png">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-purple" type="submit">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+    <script>
+        const themeToggle = document.getElementById("themeToggle");
+        const root = document.documentElement;
+
+        function setTheme(theme) {
+            const isDark = theme === "dark";
+            document.body.classList.toggle("dark-mode", isDark);
+            root.setAttribute("data-bs-theme", theme);
+            themeToggle.innerHTML = isDark
+                ? '<i class="fa-solid fa-sun"></i>'
+                : '<i class="fa-solid fa-moon"></i>';
+            localStorage.setItem("drpTheme", theme);
+        }
+
+        const savedTheme = localStorage.getItem("drpTheme") || "light";
+
+        setTheme(savedTheme);
+
+        themeToggle.addEventListener("click", () => {
+            const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
+            setTheme(nextTheme);
+        });
+
+        toastr.options = {
+            closeButton: true,
+            progressBar: true,
+            positionClass: "toast-bottom-right",
+            timeOut: "2600"
+        };
+
+        (function setupTenantIdentityEditor() {
+            const storageKey = 'drpTenantIdentityDraft';
+            const editButton = document.getElementById('editTenantIdentityBtn');
+            const form = document.getElementById('tenantIdentityForm');
+            const modalEl = document.getElementById('tenantIdentityModal');
+            const modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+            const fields = {
+                name: document.getElementById('tenantNameInput'),
+                slug: document.getElementById('tenantSlugInput'),
+                billingEmail: document.getElementById('tenantBillingEmailInput'),
+                websiteUrl: document.getElementById('tenantWebsiteInput'),
+                logoUrl: document.getElementById('tenantLogoInput')
+            };
+
+            function getDraft() {
+                try {
+                    return JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
+                } catch (error) {
+                    return {};
+                }
+            }
+
+            function slugify(value) {
+                return String(value || '')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '');
+            }
+
+            function getTenantDisplayName() {
+                return document.getElementById('tenantSettingsName')?.textContent?.trim() || 'Dr. R Pharmacy';
+            }
+
+            function initialsFromName(value) {
+                return String(value || '')
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map(part => part.charAt(0).toUpperCase())
+                    .join('') || 'TN';
+            }
+
+            function setText(id, value) {
+                const target = document.getElementById(id);
+                if (target && value) target.textContent = value;
+            }
+
+            function displayValue(value) {
+                return value || 'Not configured';
+            }
+
+            window.applyTenantSettingsDraft = function applyTenantSettingsDraft() {
+                const draft = getDraft();
+                if (!draft.name) return;
+
+                setText('tenantSettingsName', draft.name);
+                setText('tenantSettingsInitials', initialsFromName(draft.name));
+                setText('tenantIdentitySummary', `Edit workspace name, slug, billing email, website, and logo for ${draft.name} from saas.tenant.`);
+                setText('tenantOverviewName', draft.name);
+                setText('tenantOverviewSlug', displayValue(draft.slug));
+                setText('tenantOverviewBillingEmail', displayValue(draft.billingEmail));
+                setText('tenantOverviewWebsite', displayValue(draft.websiteUrl));
+                setText('tenantOverviewLogo', displayValue(draft.logoUrl));
+                setText('userSettingsTenant', draft.name);
+                setText('settingsTenantName', draft.name);
+                setText('profileTenantName', draft.name);
+                setText('profileSummaryText', `Active dashboard account for ${draft.name}.`);
+                setText('billingTenantName', draft.name);
+                setText('billingSubscriptionTenant', draft.name);
+            };
+
+            function fillForm() {
+                const draft = getDraft();
+                const tenantName = draft.name || getTenantDisplayName();
+                fields.name.value = tenantName;
+                fields.slug.value = draft.slug || slugify(tenantName);
+                fields.billingEmail.value = draft.billingEmail || '';
+                fields.websiteUrl.value = draft.websiteUrl || '';
+                fields.logoUrl.value = draft.logoUrl || '';
+            }
+
+            editButton?.addEventListener('click', () => {
+                fillForm();
+                modal?.show();
+            });
+
+            fields.name?.addEventListener('input', () => {
+                if (!fields.slug.value.trim()) {
+                    fields.slug.value = slugify(fields.name.value);
+                }
+            });
+
+            form?.addEventListener('submit', (event) => {
+                event.preventDefault();
+
+                const name = fields.name.value.trim();
+                const slug = slugify(fields.slug.value || name);
+
+                if (!name) {
+                    fields.name.focus();
+                    return;
+                }
+
+                const draft = {
+                    name,
+                    slug,
+                    billingEmail: fields.billingEmail.value.trim(),
+                    websiteUrl: fields.websiteUrl.value.trim(),
+                    logoUrl: fields.logoUrl.value.trim()
+                };
+
+                localStorage.setItem(storageKey, JSON.stringify(draft));
+                window.applyTenantSettingsDraft();
+                modal?.hide();
+                toastr.success('Tenant identity updated in this dashboard view.');
+            });
+
+            window.applyTenantSettingsDraft();
+        })();
+
+        (function setupTenantSettingsTabs() {
+            const tabs = Array.from(document.querySelectorAll('[data-settings-tab]'));
+            const panes = Array.from(document.querySelectorAll('[data-settings-pane]'));
+
+            function activateTab(targetName) {
+                tabs.forEach(tab => {
+                    const isActive = tab.dataset.settingsTab === targetName;
+                    tab.classList.toggle('is-active', isActive);
+                    tab.setAttribute('aria-selected', String(isActive));
+                });
+
+                panes.forEach(pane => {
+                    pane.classList.toggle('is-active', pane.dataset.settingsPane === targetName);
+                });
+            }
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => activateTab(tab.dataset.settingsTab));
+            });
+
+            document.querySelectorAll('[data-settings-action="identity"]').forEach(button => {
+                button.addEventListener('click', () => {
+                    document.getElementById('editTenantIdentityBtn')?.click();
+                });
+            });
+
+            document.querySelectorAll('[data-settings-action="toast"]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const action = button.textContent.trim() || 'Action';
+                    toastr.info(`${action} view is ready for backend wiring.`);
+                });
+            });
+        })();
+
+        // Sidebar view routing: show/hide view containers and trigger data loaders
+        (function setupSidebarRouting(){
+            const viewIds = ['view-dashboard','view-inventory','view-suppliers','view-settings','view-user-settings','view-billing'];
+            const pageTitle = document.querySelector('.page-title-mini strong');
+            const pageSubtitle = document.querySelector('.page-title-mini span');
+            const viewLabels = {
+                dashboard: ['Dashboard', 'Pharmacy management overview'],
+                inventory: ['Inventory', 'Stock batches and availability'],
+                suppliers: ['Suppliers', 'Supplier records and contacts'],
+                settings: ['Tenant Settings', 'Tenant workspace configuration'],
+                'user-settings': ['User Settings', 'Dashboard user preferences and account actions'],
+                billing: ['Billing', 'Tenant billing and payment records']
+            };
+
+            const dashboardRouteMap = {
+                'dashboard': 'dashboard',
+                'dashboard/settings': 'settings',
+                'dashboard/billing': 'billing',
+                'dashboard/user/settings': 'user-settings',
+                'dashboard/inventory': 'inventory',
+                'dashboard/suppliers': 'suppliers'
+            };
+
+            function hideAllViews() {
+                viewIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && !el.classList.contains('d-none')) {
+                        el.classList.add('d-none');
+                    }
+                });
+            }
+
+            function normalizeDashboardRoute(route) {
+                return String(route || '')
+                    .replace(/^#/, '')
+                    .replace(/^\/+/, '')
+                    .replace(/\/+$/, '')
+                    || 'dashboard';
+            }
+
+            function routeToView(route) {
+                const normalizedRoute = normalizeDashboardRoute(route);
+                return dashboardRouteMap[normalizedRoute] || normalizedRoute || 'dashboard';
+            }
+
+            function showView(viewName) {
+                viewName = routeToView(viewName);
+                hideAllViews();
+                const targetId = `view-${viewName}`;
+                const targetEl = document.getElementById(targetId);
+                if (!targetEl) {
+                    showView('dashboard');
+                    return;
+                }
+                targetEl.classList.remove('d-none');
+
+                const labels = viewLabels[viewName] || viewLabels.dashboard;
+                pageTitle.textContent = labels[0];
+                pageSubtitle.textContent = labels[1];
+                if (viewName === 'inventory') {
+                    if (typeof window.loadInventoryTable === 'function') {
+                        window.loadInventoryTable();
+                    } else {
+                        console.warn('No inventory loader available');
+                    }
+                }
+
+                if (viewName === 'suppliers') {
+                    if (typeof window.loadSuppliersTable === 'function') {
+                        window.loadSuppliersTable();
+                    } else {
+                        console.warn('No suppliers loader available');
+                    }
+                }
+            }
+
+            // Also respond to programmatic events
+            window.addEventListener('pharma:view-change', (e) => {
+                const view = e?.detail?.view;
+                if (view) showView(view);
+            });
+
+            function showHashView() {
+                showView(window.location.hash || 'dashboard');
+            }
+
+            window.addEventListener('navbar:ready', (e) => {
+                const route = e?.detail?.dashboardView;
+                if (route) showView(route);
+            });
+            window.addEventListener('hashchange', showHashView);
+            showHashView();
+        })();
+    </script>
+    <script type="module">
+        import verifySession from './js/modules/auth.js?v=2';
+        import { loadInventoryTable } from './js/modules/products.js?v=9';
+        import API_BASE_URL from './js/config/config.js';
+
+        const sessionUser = await verifySession();
+        window.loadInventoryTable = loadInventoryTable || (async () => console.info('loadInventoryTable not implemented'));
+        window.loadSuppliersTable = window.loadSuppliersTable || (async () => console.info('loadSuppliersTable not implemented'));
+
+        const peso = new Intl.NumberFormat('en-PH', {
+            style: 'currency',
+            currency: 'PHP',
+            maximumFractionDigits: 2
+        });
+        const wholeNumber = new Intl.NumberFormat('en-PH', { maximumFractionDigits: 0 });
+        const dateFormatter = new Intl.DateTimeFormat('en-PH', {
+            weekday: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+        const timeFormatter = new Intl.DateTimeFormat('en-PH', {
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function setText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function updateDashboardClock() {
+            const now = new Date();
+            setText('dashboardTodayDate', dateFormatter.format(now));
+            setText('dashboardCurrentTime', timeFormatter.format(now));
+        }
+
+        function updateDashboardWelcome(user) {
+            const name = user?.full_name || user?.username || 'ADMIN';
+            const displayName = /^dr\.?\s/i.test(name) ? name : `Dr. ${name}`;
+            setText('dashboardWelcomeName', `Welcome back, ${displayName}`);
+        }
+
+        function renderKpis(data) {
+            setText('kpiTodaySales', peso.format(Number(data.today_sales || 0)));
+            setText('kpiTransactionsToday', wholeNumber.format(Number(data.transactions_today || 0)));
+            setText('kpiPendingPo', wholeNumber.format(Number(data.pending_po || 0)));
+            setText('kpiLowStock', wholeNumber.format(Number(data.low_stock || 0)));
+            setText('kpiExpiringSoon', wholeNumber.format(Number(data.expiring_soon || 0)));
+            setText('kpiOutOfStock', wholeNumber.format(Number(data.out_of_stock || 0)));
+        }
+
+        function renderSalesTrend(rows = []) {
+            const target = document.getElementById('salesTrendChart');
+            if (!target) return;
+
+            if (!rows.length) {
+                target.innerHTML = '<p class="empty-state">No sales data yet.</p>';
+                return;
+            }
+
+            const maxTotal = Math.max(...rows.map(row => Number(row.total_sales || 0)), 1);
+            target.innerHTML = `
+                <div class="sales-chart">
+                    ${rows.map(row => {
+                        const total = Number(row.total_sales || 0);
+                        const height = Math.max(8, Math.round((total / maxTotal) * 190));
+                        const labelDate = new Date(`${row.sale_date}T00:00:00`);
+                        const label = Number.isNaN(labelDate.getTime())
+                            ? row.sale_date
+                            : labelDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+                        return `
+                            <div class="chart-bar" title="${escapeHtml(`${label}: ${peso.format(total)}`)}">
+                                <div class="chart-bar-fill" style="height:${height}px"></div>
+                                <span>${escapeHtml(label)}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function renderPoSummary(rows = []) {
+            const target = document.getElementById('poSummaryList');
+            if (!target) return;
+
+            if (!rows.length) {
+                target.innerHTML = '<p class="empty-state">No purchase orders yet.</p>';
+                return;
+            }
+
+            target.innerHTML = rows.map(row => {
+                const status = row.status || 'Pending';
+                const href = `purchase_orders.php?status=${encodeURIComponent(status)}`;
+                return `
+                    <a class="po-summary-item" href="${href}">
+                        <span>${escapeHtml(status)}</span>
+                        <strong class="po-count">${wholeNumber.format(Number(row.count || 0))}</strong>
+                    </a>
+                `;
+            }).join('');
+        }
+
+        function renderInventoryHealth(groups = {}) {
+            const target = document.getElementById('inventoryHealthList');
+            if (!target) return;
+
+            const sections = [
+                ['Low Stock Products', groups.low_stock || [], item => `${wholeNumber.format(Number(item.current_stock || 0))} in stock`],
+                ['Expiring Soon Products', groups.expiring_soon || [], item => `${item.days_until_expiry ?? 0} day(s) left`],
+                ['Out of Stock Products', groups.out_of_stock || [], () => '0 in stock']
+            ];
+
+            const html = sections.map(([title, items, meta]) => `
+                <div class="health-group">
+                    <h3>${escapeHtml(title)}</h3>
+                    ${items.length ? items.map(item => `
+                        <div class="health-item">
+                            <div>
+                                <p class="item-title">${escapeHtml(item.product_name || 'Unnamed product')}</p>
+                                <p class="item-meta">${escapeHtml(item.brand_name || 'No brand')} - ${escapeHtml(meta(item))}</p>
+                            </div>
+                            <span class="status-pill warning">${escapeHtml(item.status || title)}</span>
+                        </div>
+                    `).join('') : '<p class="empty-state">No items found.</p>'}
+                </div>
+            `).join('');
+
+            target.innerHTML = html;
+        }
+
+        function renderTopSelling(rows = []) {
+            const target = document.getElementById('topSellingProductsBody');
+            if (!target) return;
+
+            if (!rows.length) {
+                target.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">No sales data yet.</td></tr>';
+                return;
+            }
+
+            target.innerHTML = rows.map(row => `
+                <tr>
+                    <td>${escapeHtml(row.product_name || 'Unnamed product')}</td>
+                    <td>${escapeHtml(row.brand_name || 'No brand')}</td>
+                    <td>${wholeNumber.format(Number(row.quantity_sold || 0))}</td>
+                    <td>${peso.format(Number(row.total_sales || 0))}</td>
+                </tr>
+            `).join('');
+        }
+
+        function relativeWhen(value) {
+            const date = new Date(String(value || '').replace(' ', 'T'));
+            if (Number.isNaN(date.getTime())) return 'Recently';
+            return date.toLocaleString('en-PH', {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+            });
+        }
+
+        function renderRecentActivities(rows = []) {
+            const target = document.getElementById('recentActivitiesFeed');
+            if (!target) return;
+
+            if (!rows.length) {
+                target.innerHTML = '<p class="empty-state">No recent activities yet.</p>';
+                return;
+            }
+
+            target.innerHTML = rows.map(row => `
+                <div class="activity-item">
+                    <div>
+                        <p class="item-title">${escapeHtml(row.message || row.type || 'Activity')}</p>
+                        <p class="item-meta">${escapeHtml(row.type || 'System')} - ${escapeHtml(relativeWhen(row.created_at))}</p>
+                    </div>
+                    <span class="status-pill success">${escapeHtml(row.status || 'Recorded')}</span>
+                </div>
+            `).join('');
+        }
+
+        async function loadDashboardSummary() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/dashboard/get_dashboard_summary.php`, {
+                    credentials: 'include'
+                });
+                const data = await response.json();
+                if (!response.ok || data.status !== 'success') {
+                    throw new Error(data.message || 'Unable to load dashboard summary.');
+                }
+
+                renderKpis(data);
+                renderSalesTrend(data.sales_trend || []);
+                renderPoSummary(data.po_summary || []);
+                renderInventoryHealth(data.inventory_health || {});
+                renderTopSelling(data.top_selling_products || []);
+                renderRecentActivities(data.recent_activities || []);
+            } catch (error) {
+                console.error(error);
+                document.querySelectorAll('#salesTrendChart, #poSummaryList, #inventoryHealthList, #recentActivitiesFeed')
+                    .forEach(el => { el.innerHTML = '<p class="empty-state">Unable to load dashboard data.</p>'; });
+                const topSelling = document.getElementById('topSellingProductsBody');
+                if (topSelling) {
+                    topSelling.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Unable to load top products.</td></tr>';
+                }
+            }
+        }
+
+        updateDashboardWelcome(sessionUser);
+        updateDashboardClock();
+        setInterval(updateDashboardClock, 1000);
+        await loadDashboardSummary();
+    </script>
+</body>
+</html>

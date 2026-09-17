@@ -1,0 +1,1876 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <script src="./js/navbar_profile.js?v=1"></script>
+        <script src="./js/navbar_bootstrap.js?v=11"></script>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Dr. R Pharmacy | Purchase Requests</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
+            rel="stylesheet"
+        />
+        <link href="./css/navbar.css?v=36" rel="stylesheet" />
+        <link href="./css/supervisor_approval.css?v=12" rel="stylesheet" />
+        <script src="./js/navbar.js?v=83" defer></script>
+        <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+        <style>
+            :root {
+                --purple: #7c3aed;
+                --purple-dark: #6427d8;
+                --body-bg: #f4f6fb;
+                --border-soft: #e8ecf3;
+                --text-main: #252b37;
+                --muted: #667085;
+                --transition: all 0.3s ease;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                min-height: 100vh;
+                color: var(--text-main);
+                background: var(--body-bg);
+                font-family: "Inter", sans-serif;
+            }
+            body.dark-mode {
+                --body-bg: #111827;
+                --border-soft: #263244;
+                --text-main: #e5e7eb;
+                --muted: #a9b4c7;
+            }
+            .main-wrapper {
+                min-height: 100vh;
+                margin-left: var(--sidebar-width);
+                transition: var(--transition);
+            }
+            .main-wrapper.collapsed {
+                margin-left: var(--sidebar-collapsed-width);
+            }
+            .topbar {
+                position: sticky;
+                top: 0;
+                height: 70px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0 26px;
+                background: #fff;
+                border-bottom: 1px solid var(--border-soft);
+                z-index: 1020;
+            }
+            .topbar-left,
+            .topbar-right {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            }
+            .icon-btn {
+                width: 42px;
+                height: 42px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border: 0;
+                border-radius: 8px;
+                color: #4b5563;
+                background: #f4f6fb;
+            }
+            .page-title-mini {
+                display: flex;
+                flex-direction: column;
+                line-height: 1.2;
+            }
+            .page-title-mini strong {
+                font-size: 15px;
+                font-weight: 800;
+            }
+            .page-title-mini span {
+                margin-top: 3px;
+                color: #7b8494;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .page-body {
+                padding: clamp(16px, 1.5vw, 24px);
+            }
+            .workspace {
+                width: 100%;
+                max-width: 1480px;
+                margin: 0 auto;
+            }
+            .btn-purple {
+                color: #fff;
+                background: var(--purple);
+                border-color: var(--purple);
+            }
+            .btn-purple:hover {
+                color: #fff;
+                background: var(--purple-dark);
+                border-color: var(--purple-dark);
+            }
+            .pr-summary-grid {
+                display: grid;
+                grid-template-columns: repeat(5, minmax(145px, 1fr));
+                gap: 10px;
+                margin-bottom: 12px;
+            }
+            .pr-summary-card {
+                min-height: 70px;
+                height: 70px;
+                display: flex;
+                align-items: center;
+                gap: 11px;
+                padding: 9px 14px;
+                border: 1px solid var(--border-soft);
+                border-left: 4px solid var(--card-color);
+                border-radius: 10px;
+                background: #fff;
+                box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
+            }
+            .pr-summary-icon {
+                width: 36px;
+                height: 36px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                flex: 0 0 36px;
+                border-radius: 9px;
+                color: var(--card-color);
+                background: color-mix(in srgb, var(--card-color) 12%, transparent);
+            }
+            .pr-summary-card span {
+                display: block;
+                color: var(--muted);
+                font-size: 12px;
+                font-weight: 800;
+                line-height: 1.15;
+            }
+            .pr-summary-card strong {
+                display: block;
+                margin-top: 2px;
+                font-size: 21px;
+                font-weight: 900;
+                line-height: 1;
+            }
+            .pr-card {
+                border: 1px solid var(--border-soft);
+                border-radius: 12px;
+                background: #fff;
+                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+            }
+            .pr-card-header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 18px;
+                padding: 18px 18px 0;
+            }
+            .pr-card-header h2 {
+                margin: 0;
+                font-size: 1.05rem;
+                font-weight: 850;
+            }
+            .pr-card-header p {
+                margin: 5px 0 0;
+                color: var(--muted);
+                font-size: 0.8rem;
+            }
+            .pr-card-header .btn {
+                flex: 0 0 auto;
+            }
+            .pr-filters {
+                display: grid;
+                grid-template-columns: minmax(260px, 1fr) 210px 175px 175px auto;
+                gap: 10px;
+                align-items: end;
+                padding: 16px 18px;
+            }
+            .pr-filter-field label {
+                display: block;
+                margin-bottom: 5px;
+                color: #596274;
+                font-size: 11px;
+                font-weight: 850;
+                text-transform: uppercase;
+            }
+            .pr-filter-field .form-control,
+            .pr-filter-field .form-select {
+                min-height: 40px;
+                font-size: 13px;
+            }
+            .pr-table-wrap {
+                width: 100%;
+                overflow-x: visible;
+                border-top: 1px solid var(--border-soft);
+                border-radius: 0 0 12px 12px;
+            }
+            .pr-table-wrap > .data-table-wrapper {
+                width: 100% !important;
+                max-width: 100% !important;
+                max-height: none !important;
+                overflow: visible !important;
+                border-radius: 0 0 12px 12px !important;
+            }
+            .pr-table-wrap > .data-table-wrapper > table.pr-table.data-table-enhanced,
+            .pr-table {
+                width: 100%;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                margin: 0;
+                table-layout: fixed !important;
+            }
+            .pr-table th {
+                padding: 13px 10px;
+                color: #596274;
+                background: #f8f9fc;
+                font-size: 11px;
+                font-weight: 850;
+                text-align: left;
+                text-transform: uppercase;
+                white-space: nowrap;
+            }
+            .pr-table td {
+                padding: 13px 10px;
+                color: var(--text-main);
+                font-size: 12px;
+                font-weight: 650;
+                line-height: 1.4;
+                text-align: left;
+                vertical-align: middle;
+            }
+            .pr-table th:nth-child(1) {
+                width: 16.5%;
+            }
+            .pr-table th:nth-child(2) {
+                width: 12%;
+            }
+            .pr-table th:nth-child(3) {
+                width: 17.5%;
+            }
+            .pr-table th:nth-child(4) {
+                width: 21%;
+            }
+            .pr-table th:nth-child(5) {
+                width: 8.25%;
+            }
+            .pr-table th:nth-child(6) {
+                width: 8.25%;
+            }
+            .pr-table th:nth-child(5),
+            .pr-table td:nth-child(5) {
+                text-align: center;
+            }
+            .pr-table-wrap
+                > .data-table-wrapper
+                > table.pr-table.data-table-enhanced
+                th:nth-child(7),
+            .pr-table-wrap
+                > .data-table-wrapper
+                > table.pr-table.data-table-enhanced
+                td:nth-child(7),
+            .pr-table th:nth-child(7),
+            .pr-table td:nth-child(7) {
+                position: static !important;
+                right: auto !important;
+                z-index: auto !important;
+                width: 15% !important;
+                min-width: 160px !important;
+                max-width: 180px !important;
+                padding-right: 6px !important;
+                padding-left: 6px !important;
+                border-left: 0 !important;
+                box-shadow: none !important;
+                text-align: center;
+            }
+            .pr-table-wrap
+                > .data-table-wrapper
+                > table.pr-table.data-table-enhanced
+                th:nth-child(7),
+            .pr-table th:nth-child(7) {
+                background: #f8f9fc !important;
+            }
+            .pr-table-wrap
+                > .data-table-wrapper
+                > table.pr-table.data-table-enhanced
+                td:nth-child(7),
+            .pr-table td:nth-child(7) {
+                background: var(--bs-table-bg, #fff) !important;
+            }
+            .pr-table-wrap
+                > .data-table-wrapper
+                > table.pr-table.data-table-enhanced
+                tbody
+                tr:hover
+                td:nth-child(7),
+            .pr-table tbody tr:hover td:nth-child(7) {
+                background: var(--bs-table-hover-bg, #f8fafc) !important;
+            }
+            .pr-number-value {
+                display: inline-block;
+                white-space: normal;
+                word-break: normal;
+                overflow-wrap: normal;
+            }
+            .requested-by-value {
+                white-space: nowrap;
+            }
+            .pr-item-summary strong,
+            .pr-item-summary span {
+                display: block;
+            }
+            .pr-item-summary strong {
+                font-size: 12px;
+            }
+            .pr-item-summary span {
+                margin-top: 2px;
+                color: var(--muted);
+                font-size: 10.5px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .pr-po-generated {
+                display: inline-flex;
+                min-width: 24px;
+                height: 26px;
+                align-items: center;
+                justify-content: center;
+                padding: 0 6px;
+                border: 0;
+                border-radius: 6px;
+                background: transparent;
+                color: #0d6efd;
+                font: 800 12px/1 inherit;
+                text-decoration: underline;
+                text-underline-offset: 2px;
+                cursor: pointer;
+            }
+            .pr-po-generated:hover,
+            .pr-po-generated:focus-visible {
+                background: #eef5ff;
+                color: #084298;
+                outline: none;
+            }
+            .pr-po-generated-zero {
+                display: inline-block;
+                min-width: 24px;
+                color: var(--muted);
+                font-size: 12px;
+                font-weight: 700;
+                text-align: center;
+            }
+            .pr-status {
+                display: inline-flex;
+                align-items: center;
+                padding: 5px 9px;
+                border-radius: 999px;
+                font-size: 10.5px;
+                font-weight: 850;
+                white-space: nowrap;
+            }
+            .is-draft {
+                color: #475569;
+                background: #e2e8f0;
+            }
+            .is-pending {
+                color: #92400e;
+                background: #fef3c7;
+            }
+            .is-approved {
+                color: #166534;
+                background: #dcfce7;
+            }
+            .is-revision {
+                color: #6d28d9;
+                background: #ede9fe;
+            }
+            .is-rejected {
+                color: #991b1b;
+                background: #fee2e2;
+            }
+            .pr-table td:nth-child(7) .pr-actions {
+                width: auto !important;
+                max-width: 100% !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                flex-wrap: nowrap !important;
+                gap: 5px !important;
+                white-space: nowrap;
+            }
+            .pr-table td:nth-child(7) .pr-actions .btn {
+                width: 30px !important;
+                min-width: 30px !important;
+                height: 30px !important;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0 !important;
+                font-size: 14px;
+            }
+            .pr-table td:nth-child(7) .pr-actions .btn.pr-labeled-action {
+                width: auto !important;
+                min-width: 0 !important;
+                height: 30px !important;
+                padding: 0 5px !important;
+                gap: 3px !important;
+                font-size: 13px;
+                white-space: nowrap;
+            }
+            .pr-table td:nth-child(7) .pr-actions .btn.pr-labeled-action i {
+                font-size: 12px;
+            }
+            .pr-empty {
+                height: 180px;
+                color: #8790a1 !important;
+                text-align: center;
+                vertical-align: middle !important;
+            }
+            .request-form-meta {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 10px;
+                margin-bottom: 16px;
+            }
+            .request-form-meta > div {
+                padding: 10px 11px;
+                border: 1px solid var(--border-soft);
+                border-radius: 8px;
+                background: #fafbfe;
+            }
+            .request-form-meta span {
+                display: block;
+                color: var(--muted);
+                font-size: 9px;
+                font-weight: 850;
+                text-transform: uppercase;
+            }
+            .request-form-meta strong {
+                display: block;
+                margin-top: 4px;
+                font-size: 12px;
+                overflow-wrap: anywhere;
+            }
+            .create-pr-modal .modal-dialog {
+                width: min(96vw, 1400px);
+                max-width: 1400px;
+                margin: 2vh auto;
+            }
+            .create-pr-modal .modal-content {
+                max-height: 92vh;
+                overflow: hidden;
+                border: 0;
+                border-radius: 12px;
+            }
+            .create-pr-modal .modal-body {
+                min-height: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                overflow: hidden;
+                padding: 14px 18px;
+            }
+            .create-pr-modal .modal-footer,
+            .finalize-pr-modal .modal-footer {
+                flex: 0 0 auto;
+                background: inherit;
+            }
+            .catalog-toolbar {
+                display: grid;
+                grid-template-columns: minmax(320px, 1fr) 220px 210px;
+                align-items: end;
+                gap: 12px;
+            }
+            .catalog-filter {
+                display: grid;
+                gap: 5px;
+                color: #596274;
+                font-size: 11px;
+                font-weight: 800;
+            }
+            .catalog-search {
+                position: relative;
+                flex: 1;
+            }
+            .catalog-search i {
+                position: absolute;
+                left: 13px;
+                top: 50%;
+                color: #7b8494;
+                transform: translateY(-50%);
+            }
+            .catalog-search input {
+                min-height: 44px;
+                padding-left: 38px;
+            }
+            .catalog-hint {
+                color: var(--muted);
+                font-size: 11px;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+            .product-catalog-scroll {
+                flex: 0 1 380px;
+                height: min(380px, calc(92vh - 240px));
+                min-height: 260px;
+                overflow-y: auto;
+                overflow-x: auto;
+                border: 1px solid var(--border-soft);
+                border-radius: 9px;
+                background: #fff;
+            }
+            .product-catalog-table {
+                width: 100%;
+                min-width: 1080px;
+                margin: 0;
+                table-layout: fixed;
+            }
+            .product-catalog-table th {
+                position: sticky;
+                top: 0;
+                z-index: 3;
+                height: 38px;
+                padding: 8px 10px;
+                color: #596274;
+                background: #f8f9fc;
+                border-bottom: 1px solid var(--border-soft);
+                font-size: 10px;
+                font-weight: 850;
+                text-transform: uppercase;
+                white-space: normal;
+                vertical-align: middle;
+            }
+            .product-catalog-table td {
+                padding: 8px 10px;
+                vertical-align: middle;
+                font-size: 11px;
+                font-weight: 650;
+                line-height: 1.25;
+            }
+            .product-catalog-table th:nth-child(1),
+            .product-catalog-table td:nth-child(1),
+            .product-catalog-table th:nth-child(n + 4),
+            .product-catalog-table td:nth-child(n + 4) {
+                text-align: center;
+            }
+            .product-catalog-table th:nth-child(2),
+            .product-catalog-table th:nth-child(3),
+            .product-catalog-table td:nth-child(2),
+            .product-catalog-table td:nth-child(3) {
+                text-align: left;
+            }
+            .catalog-product strong,
+            .catalog-product span,
+            .catalog-base-unit strong,
+            .catalog-base-unit small {
+                display: block;
+                white-space: normal;
+                overflow-wrap: break-word;
+                line-height: 1.25;
+            }
+            .catalog-product span,
+            .catalog-base-unit small {
+                margin-top: 2px;
+                color: var(--muted);
+                font-size: 11px;
+            }
+            .catalog-specification {
+                white-space: normal;
+                overflow-wrap: break-word;
+                line-height: 1.25;
+            }
+            .catalog-checkbox {
+                width: 17px;
+                height: 17px;
+                accent-color: var(--purple);
+            }
+            .product-catalog-table tbody tr:not(.is-unselectable) {
+                cursor: pointer;
+            }
+            .product-catalog-table tr.is-selected td {
+                background: #f5f3ff;
+            }
+            .catalog-action {
+                flex-wrap: wrap;
+                display: flex;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 6px;
+                white-space: normal;
+            }
+            .requested-qty-control {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
+            }
+            .requested-unit-label {
+                display: block;
+                color: #334155;
+                font-size: 11px;
+                font-weight: 650;
+                line-height: 1.2;
+                text-align: center;
+            }
+            .package-contents-cell {
+                color: #334155;
+                font-size: 11px;
+                font-weight: 650;
+                line-height: 1.35;
+            }
+            .product-catalog-table .btn {
+                min-height: 28px;
+                padding: 3px 8px;
+                font-size: 10px;
+            }
+            .catalog-qty {
+                width: 68px;
+                flex: 0 0 68px;
+                height: 30px;
+                min-height: 30px;
+                padding: 3px 6px;
+                font-size: 10px;
+                text-align: center;
+            }
+            [data-package-help] {
+                display: block;
+                font-size: 12.5px;
+                color: #334155;
+                font-weight: 650;
+                line-height: 1.35;
+                margin-top: 6px;
+                letter-spacing: 0;
+            }
+            .catalog-selected {
+                color: #166534;
+                background: #dcfce7;
+                border-color: #bbf7d0;
+            }
+            .selected-summary {
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+                color: #475569;
+                font-size: 12px;
+                font-weight: 800;
+            }
+            .selected-summary strong {
+                color: var(--purple);
+                font-size: 15px;
+            }
+            .finalize-pr-modal .modal-dialog {
+                width: min(92vw, 1200px);
+                max-width: 1200px;
+            }
+            .finalize-pr-modal .modal-content {
+                max-height: 90vh;
+                overflow: hidden;
+                border: 0;
+                border-radius: 12px;
+            }
+            .finalize-pr-modal .modal-body {
+                min-height: 0;
+                overflow-y: auto;
+                background: #f8fafc;
+            }
+            .finalize-document-preview {
+                padding: 18px;
+                border: 1px solid #cfd5df;
+                border-radius: 9px;
+                background: #fff;
+            }
+            .finalize-document-heading {
+                display: flex;
+                align-items: flex-end;
+                justify-content: space-between;
+                gap: 16px;
+                padding-bottom: 10px;
+                border-bottom: 2px solid #1f2937;
+            }
+            .finalize-document-heading strong {
+                display: block;
+                font-size: 20px;
+                font-weight: 900;
+                letter-spacing: 0.08em;
+            }
+            .finalize-document-heading span {
+                display: block;
+                margin-top: 2px;
+                font-size: 12px;
+                font-weight: 850;
+                letter-spacing: 0.16em;
+            }
+            .finalize-document-mark {
+                padding: 6px 10px;
+                color: #fff;
+                background: #1f2937;
+                font-size: 10px;
+                font-weight: 850;
+                letter-spacing: 0.06em;
+            }
+            .finalize-meta-line {
+                display: grid;
+                grid-template-columns: 1.15fr 1fr 1fr 1fr;
+                border: 1px solid #cfd5df;
+                border-top: 0;
+            }
+            .finalize-meta-line > span {
+                min-width: 0;
+                padding: 8px 9px;
+                border-right: 1px solid #cfd5df;
+                color: #596274;
+                font-size: 9px;
+                font-weight: 800;
+                text-transform: uppercase;
+            }
+            .finalize-meta-line > span:last-child {
+                border-right: 0;
+            }
+            .finalize-meta-line strong {
+                display: block;
+                margin-top: 3px;
+                color: #1f2937;
+                font-size: 11px;
+                text-transform: none;
+                overflow-wrap: anywhere;
+            }
+            .finalize-items-wrap {
+                max-height: 400px;
+                overflow-y: auto;
+                overflow-x: auto;
+                border: 1px solid #cfd5df;
+                border-top: 0;
+            }
+            .finalize-items-table {
+                min-width: 980px;
+                width: 100%;
+                margin: 0;
+                table-layout: fixed;
+            }
+            .finalize-items-table th {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                padding: 10px 8px;
+                color: #596274;
+                background: #f8f9fc;
+                font-size: 10px;
+                font-weight: 850;
+                text-transform: uppercase;
+            }
+            .finalize-items-table td {
+                padding: 9px 8px;
+                vertical-align: middle;
+                font-size: 11px;
+                font-weight: 650;
+            }
+            .finalize-items-table th:nth-child(1) {
+                width: 50px;
+            }
+            .finalize-items-table th:nth-child(2) {
+                width: auto;
+            }
+            .finalize-items-table th:nth-child(3) {
+                width: 120px;
+            }
+            .finalize-items-table th:nth-child(4),
+            .finalize-items-table th:nth-child(5),
+            .finalize-items-table th:nth-child(6) {
+                width: 75px;
+            }
+            .finalize-items-table th:nth-child(7) {
+                width: 120px;
+            }
+            .finalize-items-table th:nth-child(8) {
+                width: 110px;
+            }
+            .finalize-items-table th:nth-child(9) {
+                width: 72px;
+            }
+            .finalize-items-table td:nth-child(1),
+            .finalize-items-table td:nth-child(n + 3) {
+                text-align: center;
+            }
+            .finalize-product-description strong,
+            .finalize-product-description span,
+            .finalize-product-description small {
+                display: block;
+            }
+            .finalize-product-description span {
+                margin-top: 2px;
+                font-weight: 800;
+            }
+            .finalize-product-description small {
+                margin-top: 2px;
+                color: var(--muted);
+                line-height: 1.3;
+            }
+            .finalize-qty {
+                width: 82px;
+                min-height: 34px;
+                margin: auto;
+                text-align: center;
+            }
+            .total-equivalent-cell {
+                color: #1f2937;
+                font-size: 11px;
+                font-weight: 650;
+                white-space: nowrap;
+            }
+            .request-stock-status {
+                display: inline-flex;
+                margin-top: 6px;
+                padding: 4px 7px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 850;
+                text-transform: uppercase;
+                white-space: nowrap;
+            }
+            .request-stock-status.is-low {
+                color: #92400e;
+                background: #fef3c7;
+            }
+            .request-stock-status.is-out {
+                color: #991b1b;
+                background: #fee2e2;
+            }
+            .request-stock-status.is-in {
+                color: #166534;
+                background: #dcfce7;
+            }
+            .request-stock-status.is-na {
+                color: #475569;
+                background: #e2e8f0;
+            }
+            .pr-conflict-summary {
+                margin-bottom: 12px;
+                padding: 10px 12px;
+                border: 1px solid #fecaca;
+                border-radius: 8px;
+                color: #991b1b;
+                background: #fff1f2;
+                font-size: 11px;
+                font-weight: 700;
+                line-height: 1.45;
+            }
+            .pr-conflict-summary[hidden] {
+                display: none !important;
+            }
+            .product-selector-empty {
+                padding: 28px !important;
+                color: #7b8494;
+                text-align: center;
+            }
+            .request-details-modal .modal-dialog {
+                width: min(94vw, 1200px);
+                max-width: 1200px;
+                margin: 4vh auto;
+            }
+            .request-details-modal .modal-content {
+                height: 92vh;
+                max-height: 92vh;
+                overflow: hidden;
+                border: 0;
+                border-radius: 12px;
+            }
+            .request-details-modal .modal-header,
+            .request-details-modal .modal-footer {
+                flex: 0 0 auto;
+                padding: 16px 20px;
+                background: inherit;
+            }
+            .request-details-modal .modal-body {
+                min-height: 0;
+                padding: 16px 20px 24px;
+                overflow-y: auto;
+                overflow-x: hidden;
+            }
+            .request-detail-section + .request-detail-section {
+                margin-top: 22px;
+                padding-top: 20px;
+                border-top: 1px solid var(--border-soft);
+            }
+            .request-detail-section-heading {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 12px;
+            }
+            .request-detail-section-heading h3 {
+                margin: 0;
+                font-size: 0.92rem;
+                font-weight: 850;
+            }
+            .request-detail-count {
+                color: var(--muted);
+                font-size: 0.72rem;
+                font-weight: 750;
+            }
+            .request-detail-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 14px 24px;
+                margin: 0;
+            }
+            .request-detail-field {
+                min-width: 0;
+            }
+            .request-detail-field dt {
+                margin: 0 0 5px;
+                color: var(--muted);
+                font-size: 10px;
+                font-weight: 850;
+                letter-spacing: 0.025em;
+                text-transform: uppercase;
+            }
+            .request-detail-field dd {
+                margin: 0;
+                color: var(--text-main);
+                font-size: 13px;
+                font-weight: 700;
+                line-height: 1.45;
+                overflow-wrap: anywhere;
+            }
+            .request-detail-status {
+                display: flex;
+                align-items: center;
+                gap: 9px;
+                margin-bottom: 14px;
+                padding: 10px 12px;
+                border: 1px solid var(--border-soft);
+                border-radius: 9px;
+                background: #fafbfe;
+            }
+            .request-detail-status > span:first-child {
+                color: var(--muted);
+                font-size: 10px;
+                font-weight: 850;
+                text-transform: uppercase;
+            }
+            .request-preview-shell {
+                padding: 20px;
+                overflow: hidden;
+                border: 1px solid var(--border-soft);
+                border-radius: 10px;
+                background: #e9edf3;
+            }
+            .request-preview-stage {
+                position: relative;
+                width: 100%;
+                max-width: 794px;
+                height: 1123px;
+                margin: 0 auto;
+                overflow: hidden;
+                background: #fff;
+                box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+            }
+            .request-preview-frame {
+                position: absolute;
+                top: 0;
+                left: 0;
+                display: block;
+                width: 794px;
+                height: 1123px;
+                border: 0;
+                background: #fff;
+                transform-origin: top left;
+            }
+            .generated-po-list {
+                display: grid;
+                gap: 8px;
+            }
+            .generated-po-card {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 11px 13px;
+                border: 1px solid var(--border-soft);
+                border-radius: 9px;
+                background: #fafbfe;
+            }
+            .generated-po-card strong,
+            .generated-po-card span {
+                display: block;
+            }
+            .generated-po-card span {
+                margin-top: 2px;
+                color: var(--muted);
+                font-size: 10px;
+            }
+            .generated-po-actions {
+                display: flex;
+                gap: 6px;
+                flex: 0 0 auto;
+            }
+            .related-pos-modal .modal-dialog {
+                width: min(94vw, 1100px);
+                max-width: 1100px;
+            }
+            .related-pos-modal .modal-content {
+                max-height: 86vh;
+                overflow: hidden;
+                border: 0;
+                border-radius: 12px;
+            }
+            .related-pos-modal .modal-header {
+                flex: 0 0 auto;
+                padding: 16px 20px;
+            }
+            .related-pos-modal .modal-body {
+                min-height: 180px;
+                padding: 0;
+                overflow: auto;
+            }
+            .related-pos-table {
+                width: 100%;
+                margin: 0;
+                table-layout: auto;
+            }
+            .related-pos-table th {
+                position: sticky;
+                top: 0;
+                z-index: 1;
+                padding: 11px 12px;
+                color: #475569;
+                background: #f8fafc;
+                font-size: 10px;
+                font-weight: 850;
+                letter-spacing: 0.025em;
+                text-transform: uppercase;
+                white-space: nowrap;
+            }
+            .related-pos-table td {
+                padding: 12px;
+                vertical-align: middle;
+                border-color: var(--border-soft);
+                font-size: 12px;
+            }
+            .related-po-number {
+                white-space: nowrap;
+            }
+            .related-po-supplier {
+                display: block;
+                min-width: 150px;
+                font-weight: 700;
+            }
+            .related-po-items {
+                min-width: 190px;
+                max-width: 320px;
+            }
+            .related-po-items strong,
+            .related-po-items span {
+                display: block;
+            }
+            .related-po-items span {
+                margin-top: 3px;
+                color: var(--muted);
+                font-size: 10px;
+                line-height: 1.35;
+                overflow-wrap: anywhere;
+            }
+            .related-po-action {
+                width: 1%;
+                white-space: nowrap;
+            }
+            .related-po-action .btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .related-po-loading,
+            .related-pos-empty {
+                padding: 42px 20px !important;
+                color: var(--muted);
+                text-align: center;
+            }
+            .related-pos-empty i {
+                display: block;
+                margin-bottom: 10px;
+                font-size: 26px;
+            }
+            .related-po-document-modal .modal-dialog {
+                width: 96vw;
+                max-width: none;
+                height: 94vh;
+                margin: 3vh auto;
+            }
+            .related-po-document-modal .modal-content {
+                height: 100%;
+                overflow: hidden;
+                border: 0;
+                border-radius: 12px;
+            }
+            .related-po-document-modal .modal-header {
+                flex: 0 0 auto;
+                padding: 10px 16px;
+            }
+            .related-po-document-modal .modal-body {
+                min-height: 0;
+                padding: 0;
+                overflow: auto;
+                background: #e8ebef;
+            }
+            .related-po-document-frame {
+                display: block;
+                width: 100%;
+                height: 1123px;
+                border: 0;
+                background: #fff;
+            }
+            body.dark-mode .topbar,
+            body.dark-mode .pr-card,
+            body.dark-mode .pr-summary-card,
+            body.dark-mode .modal-content {
+                background: #182131;
+            }
+            body.dark-mode .pr-table th,
+            body.dark-mode .product-catalog-table th,
+            body.dark-mode .finalize-items-table th {
+                color: #cbd5e1;
+                background: #202b3d;
+            }
+            body.dark-mode .pr-table th:nth-child(7) {
+                background: #202b3d !important;
+            }
+            body.dark-mode .pr-table td:nth-child(7) {
+                background: var(--bs-table-bg, #182131) !important;
+            }
+            body.dark-mode .pr-table tbody tr:hover td:nth-child(7) {
+                background: var(--bs-table-hover-bg, #202b3d) !important;
+            }
+            body.dark-mode .request-preview-shell {
+                background: #111827;
+            }
+            body.dark-mode .related-pos-table th {
+                color: #cbd5e1;
+                background: #202b3d;
+            }
+            body.dark-mode .related-po-document-modal .modal-body {
+                background: #111827;
+            }
+            body.dark-mode .product-catalog-scroll {
+                background: #182131;
+            }
+            body.dark-mode .finalize-pr-modal .modal-body {
+                background: #111827;
+            }
+            body.dark-mode .finalize-document-preview {
+                background: #182131;
+                border-color: #334155;
+            }
+            body.dark-mode .finalize-meta-line,
+            .finalize-meta-line > span {
+                border-color: #334155;
+            }
+            body.dark-mode .finalize-meta-line strong {
+                color: #e5e7eb;
+            }
+            body.dark-mode .pr-filter-field label {
+                color: #a9b4c7;
+            }
+            @media (max-width: 1200px) {
+                .pr-summary-grid {
+                    grid-template-columns: repeat(3, 1fr);
+                }
+                .pr-filters {
+                    grid-template-columns: minmax(250px, 1fr) repeat(2, 170px);
+                }
+            }
+            @media (max-width: 991px) {
+                .main-wrapper {
+                    margin-left: 0;
+                }
+                .page-body {
+                    padding: 18px 12px;
+                }
+                .pr-filters {
+                    grid-template-columns: 1fr 1fr;
+                }
+                .request-detail-grid {
+                    grid-template-columns: 1fr 1fr;
+                }
+            }
+            @media (max-width: 767px) {
+                .finalize-document-heading {
+                    align-items: flex-start;
+                    flex-direction: column;
+                }
+                .finalize-meta-line {
+                    grid-template-columns: 1fr 1fr;
+                }
+                .finalize-meta-line > span:nth-child(2) {
+                    border-right: 0;
+                }
+                .finalize-meta-line > span:nth-child(n + 3) {
+                    border-top: 1px solid #cfd5df;
+                }
+            }
+            @media (max-width: 575px) {
+                .pr-card-header {
+                    flex-direction: column;
+                }
+                .pr-card-header .btn {
+                    width: 100%;
+                }
+                .catalog-toolbar {
+                    grid-template-columns: 1fr;
+                    align-items: stretch;
+                }
+                .catalog-bulk-actions {
+                    grid-column: 1;
+                }
+                .catalog-hint {
+                    white-space: normal;
+                }
+                .pr-summary-grid,
+                .pr-filters,
+                .request-detail-grid {
+                    grid-template-columns: 1fr;
+                }
+                .request-details-modal .modal-body {
+                    padding: 14px;
+                }
+                .request-preview-shell {
+                    padding: 10px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="navbar-container"></div>
+        <main class="main-wrapper" id="mainWrapper">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button
+                        class="icon-btn"
+                        id="sidebarToggle"
+                        type="button"
+                        aria-label="Toggle sidebar"
+                    >
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <div class="page-title-mini">
+                        <strong>Purchase Requests</strong
+                        ><span>Request stock before supplier sourcing and PO creation.</span>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <button class="icon-btn" type="button" aria-label="Notifications">
+                        <i class="fa-regular fa-bell"></i>
+                    </button>
+                </div>
+            </header>
+            <section class="page-body">
+                <div class="workspace">
+                    <div class="pr-summary-grid" aria-label="Purchase request summary">
+                        <div class="pr-summary-card" style="--card-color: #64748b">
+                            <i class="fa-regular fa-file-lines pr-summary-icon"></i>
+                            <div><span>Draft</span><strong id="draftPrCount">0</strong></div>
+                        </div>
+                        <div class="pr-summary-card" style="--card-color: #f59e0b">
+                            <i class="fa-regular fa-clock pr-summary-icon"></i>
+                            <div>
+                                <span>Pending Approval</span><strong id="pendingPrCount">0</strong>
+                            </div>
+                        </div>
+                        <div class="pr-summary-card" style="--card-color: #16a34a">
+                            <i class="fa-regular fa-circle-check pr-summary-icon"></i>
+                            <div><span>Approved</span><strong id="approvedPrCount">0</strong></div>
+                        </div>
+                        <div class="pr-summary-card" style="--card-color: #7c3aed">
+                            <i class="fa-solid fa-rotate-left pr-summary-icon"></i>
+                            <div>
+                                <span>Revision Requested</span
+                                ><strong id="revisionPrCount">0</strong>
+                            </div>
+                        </div>
+                        <div class="pr-summary-card" style="--card-color: #dc2626">
+                            <i class="fa-regular fa-circle-xmark pr-summary-icon"></i>
+                            <div><span>Rejected</span><strong id="rejectedPrCount">0</strong></div>
+                        </div>
+                    </div>
+                    <section class="pr-card">
+                        <div class="pr-card-header">
+                            <div>
+                                <h2>Purchase Request Records</h2>
+                                <p>Track requests from draft through PO conversion.</p>
+                            </div>
+                            <button
+                                class="btn btn-purple d-none"
+                                id="createRequestButton"
+                                type="button"
+                                aria-hidden="true"
+                            >
+                                <i class="fa-solid fa-plus me-2"></i>Create PR
+                            </button>
+                        </div>
+                        <div class="pr-filters" role="search" aria-label="Purchase request filters">
+                            <div class="pr-filter-field">
+                                <label for="prSearch">Search</label
+                                ><input
+                                    class="form-control"
+                                    id="prSearch"
+                                    type="search"
+                                    placeholder="Search PR number, product, or requester"
+                                />
+                            </div>
+                            <div class="pr-filter-field">
+                                <label for="prStatusFilter">Status</label
+                                ><select class="form-select" id="prStatusFilter">
+                                    <option value="">All Statuses</option>
+                                    <option>Draft</option>
+                                    <option value="Pending Supervisor Approval">
+                                        Pending Supervisor Approval
+                                    </option>
+                                    <option>Approved</option>
+                                    <option>Revision Requested</option>
+                                    <option>Rejected</option>
+                                </select>
+                            </div>
+                            <div class="pr-filter-field">
+                                <label for="prStartDate">Start Date</label
+                                ><input class="form-control" id="prStartDate" type="date" />
+                            </div>
+                            <div class="pr-filter-field">
+                                <label for="prEndDate">End Date</label
+                                ><input class="form-control" id="prEndDate" type="date" />
+                            </div>
+                            <button
+                                class="btn btn-outline-secondary"
+                                id="clearPrFilters"
+                                type="button"
+                                title="Clear filters"
+                            >
+                                <i class="fa-solid fa-filter-circle-xmark"></i>
+                            </button>
+                        </div>
+                        <div class="pr-table-wrap">
+                            <table class="table table-hover align-middle pr-table">
+                                <thead>
+                                    <tr>
+                                        <th>PR Number</th>
+                                        <th>Requested By</th>
+                                        <th>Submitted Date</th>
+                                        <th>Items</th>
+                                        <th>PO Generated</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="requestRows">
+                                    <tr>
+                                        <td colspan="7" class="pr-empty">
+                                            Loading purchase requests...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </section>
+        </main>
+
+        <div
+            class="modal fade create-pr-modal"
+            id="createRequestModal"
+            tabindex="-1"
+            aria-labelledby="requestCatalogTitle"
+            aria-hidden="true"
+        >
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5 fw-bold" id="requestCatalogTitle">
+                                Create Purchase Request
+                            </h2>
+                            <p class="text-muted small mb-0">
+                                Select active Product Master items to request for replenishment.
+                            </p>
+                        </div>
+                        <button
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            type="button"
+                            aria-label="Close"
+                        ></button>
+                    </div>
+                    <div class="modal-body">
+                        <input id="requestId" type="hidden" />
+                        <div class="catalog-toolbar">
+                            <label class="catalog-search" for="productSelectorSearch"
+                                ><i class="fa-solid fa-magnifying-glass"></i
+                                ><input
+                                    class="form-control"
+                                    id="productSelectorSearch"
+                                    type="search"
+                                    placeholder="Search brand, product, specification, or barcode" /></label
+                            ><label class="catalog-filter" for="replenishmentFilter"
+                                ><span>Status</span
+                                ><select class="form-select" id="replenishmentFilter">
+                                    <option value="all">All replenishment items</option>
+                                    <option value="out">Out of Stock</option>
+                                    <option value="low">Low Stock</option>
+                                    <option value="new">New Products</option>
+                                </select></label
+                            ><label class="catalog-filter" for="productBulkSelect"
+                                ><span>Select</span
+                                ><select class="form-select" id="productBulkSelect">
+                                    <option value="">Select products</option>
+                                    <option value="visible">Select all visible</option>
+                                    <option value="out">Select all out of stock</option>
+                                    <option value="low">Select all low stock</option>
+                                    <option value="new">Select all new Products</option>
+                                    <option value="clear">Clear selection</option>
+                                </select></label
+                            >
+                        </div>
+                        <div class="product-catalog-scroll">
+                            <table
+                                class="table table-hover product-catalog-table"
+                                data-table-enhance="false"
+                            >
+                                <colgroup>
+                                    <col style="width: 5%" />
+                                    <col style="width: 17%" />
+                                    <col style="width: 25%" />
+                                    <col style="width: 10%" />
+                                    <col style="width: 6%" />
+                                    <col style="width: 7%" />
+                                    <col style="width: 8%" />
+                                    <col style="width: 8%" />
+                                    <col style="width: 14%" />
+                                    <col style="width: 10%" />
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>
+                                            <label
+                                                class="d-inline-flex align-items-center justify-content-center gap-1"
+                                                for="selectAllVisibleProducts"
+                                                ><input
+                                                    class="catalog-checkbox"
+                                                    id="selectAllVisibleProducts"
+                                                    type="checkbox"
+                                                    aria-label="Select all visible eligible products"
+                                                /><span>Select</span></label
+                                            >
+                                        </th>
+                                        <th>Product</th>
+                                        <th>Specification</th>
+                                        <th>Base Inventory Unit</th>
+                                        <th>Shelf</th>
+                                        <th>Storage</th>
+                                        <th>On Hand</th>
+                                        <th>Status</th>
+                                        <th>Package Contents</th>
+                                        <th>Requested Qty</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="productSelectorRows"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer justify-content-between">
+                        <button class="btn btn-light" data-bs-dismiss="modal" type="button">
+                            Cancel</button
+                        ><span class="selected-summary"
+                            ><strong id="selectedProductCount">0</strong> products selected</span
+                        ><button
+                            class="btn btn-purple"
+                            id="reviewRequestButton"
+                            type="button"
+                            disabled
+                        >
+                            Review Purchase Request
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            class="modal fade finalize-pr-modal"
+            id="finalizeRequestModal"
+            tabindex="-1"
+            aria-labelledby="finalizeRequestTitle"
+            aria-hidden="true"
+        >
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5 fw-bold" id="finalizeRequestTitle">
+                                Finalize Purchase Request
+                            </h2>
+                            <p class="text-muted small mb-0">
+                                Review the Purchase Request document before saving or submitting.
+                            </p>
+                        </div>
+                        <button
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            type="button"
+                            aria-label="Close"
+                        ></button>
+                    </div>
+                    <div class="modal-body">
+                        <div
+                            class="pr-conflict-summary"
+                            id="requestConflictSummary"
+                            role="alert"
+                            hidden
+                        ></div>
+                        <section class="finalize-document-preview">
+                            <header class="finalize-document-heading">
+                                <div>
+                                    <strong>DOC R PHARMACY</strong><span>PURCHASE REQUEST</span>
+                                </div>
+                                <div class="finalize-document-mark">INTERNAL REQUISITION</div>
+                            </header>
+                            <div class="finalize-meta-line">
+                                <span
+                                    >PR No.<strong id="requestFormNumber"
+                                        >DRAFT / Auto-generated on submission</strong
+                                    ></span
+                                ><span>Date<strong id="requestFormDate">Today</strong></span
+                                ><span
+                                    >Requested By<strong id="requestFormRequester"
+                                        >Current user</strong
+                                    ></span
+                                ><span>Status<strong id="requestFormStatus">Draft</strong></span>
+                            </div>
+                            <div class="finalize-items-wrap">
+                                <table
+                                    class="table finalize-items-table"
+                                    data-table-enhance="false"
+                                >
+                                    <thead>
+                                        <tr>
+                                            <th>No.</th>
+                                            <th>Product Description</th>
+                                            <th>Base Inventory Unit</th>
+                                            <th>Shelf</th>
+                                            <th>Storage</th>
+                                            <th>On Hand</th>
+                                            <th>Requested Qty</th>
+                                            <th>Total</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="finalizeRequestItems"></tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="modal-footer">
+                        <button
+                            class="btn btn-light me-auto"
+                            id="backToProductsButton"
+                            type="button"
+                        >
+                            <i class="fa-solid fa-arrow-left me-2"></i>Back to Products</button
+                        ><button
+                            class="btn btn-outline-dark"
+                            id="previewRequestButton"
+                            type="button"
+                        >
+                            <i class="fa-solid fa-print me-2"></i>Print Preview</button
+                        ><button class="btn btn-outline-primary" id="saveDraftButton" type="button">
+                            Save Draft</button
+                        ><button class="btn btn-purple" id="submitRequestButton" type="button">
+                            Submit for Supervisor Approval
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            class="modal fade request-details-modal"
+            id="requestDetailsModal"
+            tabindex="-1"
+            aria-labelledby="requestDetailsTitle"
+            aria-hidden="true"
+        >
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5 fw-bold" id="requestDetailsTitle">
+                                Purchase Request Details
+                            </h2>
+                            <p class="text-muted small mb-0" id="detailsPrNumber"></p>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button
+                                type="button"
+                                class="btn btn-outline-dark btn-sm"
+                                id="detailsPrintButton"
+                            >
+                                <i class="fa-solid fa-print me-2"></i>Print PR</button
+                            ><button
+                                type="button"
+                                class="btn-close"
+                                data-bs-dismiss="modal"
+                                aria-label="Close"
+                            ></button>
+                        </div>
+                    </div>
+                    <div class="modal-body">
+                        <div class="request-detail-status">
+                            <span>Status</span><span id="detailsPrStatus"></span>
+                        </div>
+                        <section
+                            class="request-detail-section"
+                            aria-labelledby="purchaseRequestDocumentTitle"
+                        >
+                            <div class="request-detail-section-heading">
+                                <h3 id="purchaseRequestDocumentTitle">Purchase Request Document</h3>
+                            </div>
+                            <div class="request-preview-shell">
+                                <div class="request-preview-stage" id="requestPreviewStage">
+                                    <iframe
+                                        class="request-preview-frame"
+                                        id="requestPreviewFrame"
+                                        title="Purchase Request A4 preview"
+                                        scrolling="no"
+                                    ></iframe>
+                                </div>
+                            </div>
+                        </section>
+                        <section
+                            class="request-detail-section"
+                            id="generatedPoSection"
+                            aria-labelledby="generatedPoTitle"
+                        >
+                            <div class="request-detail-section-heading">
+                                <h3 id="generatedPoTitle">Generated Purchase Orders</h3>
+                            </div>
+                            <div class="generated-po-list" id="generatedPoList"></div>
+                        </section>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            class="modal fade related-pos-modal"
+            id="relatedPurchaseOrdersModal"
+            tabindex="-1"
+            aria-labelledby="relatedPurchaseOrdersTitle"
+            aria-hidden="true"
+        >
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5 fw-bold" id="relatedPurchaseOrdersTitle">
+                                Related Purchase Orders
+                            </h2>
+                            <p
+                                class="text-muted small mb-0 mt-1"
+                                id="relatedPurchaseOrdersPrNumber"
+                            ></p>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"
+                        ></button>
+                    </div>
+                    <div class="modal-body">
+                        <table
+                            class="table table-hover align-middle related-pos-table"
+                            id="relatedPurchaseOrdersTable"
+                            data-table-enhance="false"
+                        >
+                            <thead>
+                                <tr>
+                                    <th>PO Number</th>
+                                    <th>Supplier</th>
+                                    <th>Items</th>
+                                    <th class="text-end">PO Total</th>
+                                    <th>ETA</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="relatedPurchaseOrderRows"></tbody>
+                        </table>
+                        <div class="related-pos-empty" id="relatedPurchaseOrdersEmpty" hidden>
+                            <i class="fa-regular fa-folder-open"></i
+                            ><strong
+                                >No Purchase Orders have been generated for this Purchase Request
+                                yet.</strong
+                            >
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            class="modal fade related-po-document-modal"
+            id="relatedPoDocumentModal"
+            tabindex="-1"
+            aria-labelledby="relatedPoDocumentTitle"
+            aria-hidden="true"
+        >
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <h2 class="modal-title fs-5 fw-bold" id="relatedPoDocumentTitle">
+                                Purchase Order
+                            </h2>
+                            <p class="text-muted small mb-0 mt-1" id="relatedPoDocumentNumber"></p>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-dark"
+                                id="relatedPoPrintButton"
+                            >
+                                <i class="fa-solid fa-print me-2"></i>Print PO</button
+                            ><button
+                                type="button"
+                                class="btn-close"
+                                data-bs-dismiss="modal"
+                                aria-label="Close"
+                            ></button>
+                        </div>
+                    </div>
+                    <div class="modal-body">
+                        <iframe
+                            class="related-po-document-frame"
+                            id="relatedPoDocumentFrame"
+                            title="A4 purchase order preview"
+                            scrolling="no"
+                        ></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            class="modal fade supervisor-review-modal"
+            id="generatePoModal"
+            tabindex="-1"
+            aria-labelledby="generatePoTitle"
+            aria-hidden="true"
+        >
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div>
+                            <span class="eyebrow">Manager purchasing workflow</span>
+                            <h2 class="modal-title" id="generatePoTitle">
+                                Generate Purchase Orders
+                            </h2>
+                            <p class="modal-subtitle" id="generatePoNumber"></p>
+                        </div>
+                        <button
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"
+                        ></button>
+                    </div>
+                    <nav
+                        class="approval-stepper"
+                        id="poGenerationStepper"
+                        aria-label="PO generation steps"
+                    >
+                        <button type="button" data-po-step-target="1">
+                            <span>1</span><strong>Purchasing Setup</strong
+                            ><small>Choose supplier; quantity is automatic</small></button
+                        ><button type="button" data-po-step-target="2">
+                            <span>2</span><strong>PO Preview</strong
+                            ><small>Review supplier purchase orders</small>
+                        </button>
+                    </nav>
+                    <div class="modal-body">
+                        <section class="approval-step" data-po-step-panel="1">
+                            <div class="step-heading">
+                                <div>
+                                    <h3>Purchasing Setup</h3>
+                                    <p>
+                                        Select a supplier. PO quantity is derived automatically from
+                                        the approved requirement and packaging conversion.
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="procurement-table-wrap">
+                                <table class="procurement-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Product</th>
+                                            <th>Approved Requirement</th>
+                                            <th>Supplier</th>
+                                            <th>Purchase Unit</th>
+                                            <th>Contents</th>
+                                            <th>PO Qty</th>
+                                            <th>Base Qty / Excess</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="managerProcurementAssignments"></tbody>
+                                </table>
+                            </div>
+                            <div class="setup-validation" id="managerSetupValidation"></div>
+                        </section>
+                        <section class="approval-step" data-po-step-panel="2" hidden>
+                            <div class="step-heading">
+                                <div>
+                                    <h3>Purchase Order Preview</h3>
+                                    <p>Items are grouped into one purchase order per supplier.</p>
+                                </div>
+                                <div class="po-preview-count" id="managerPoPreviewCount"></div>
+                            </div>
+                            <div class="po-preview-summary" id="managerPoPreviewSummary"></div>
+                            <div class="supplier-po-preview" id="managerSupplierPoPreview"></div>
+                            <div class="setup-validation" id="managerPoPreviewValidation"></div>
+                        </section>
+                    </div>
+                    <div class="modal-footer" id="generatePoActions"></div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script type="module" src="./js/modules/purchase_requests.js?v=35"></script>
+        <script type="module">
+            import verifySession from "./js/modules/auth.js?v=8";
+            await verifySession();
+        </script>
+    </body>
+</html>

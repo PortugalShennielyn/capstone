@@ -1,0 +1,32 @@
+{
+  "database": "pharma_db",
+  "captured_before_cleanup": "2026-08-16 America/Los_Angeles",
+  "purchase_requests_removed_columns": [
+    {
+      "pr_id": "a31a4047-9796-11f1-9306-706871ff20d7",
+      "pr_number": "PR-20260814-061426-1CC2",
+      "reason": null,
+      "decision_reason": null,
+      "converted_po_id": null
+    }
+  ],
+  "purchase_request_items_removed_columns": [
+    {
+      "pr_item_id": "b0d11d8a-9796-11f1-9306-706871ff20d7",
+      "supplier_product_id": "2b1de659-96f6-11f1-9fb5-706871ff20d7",
+      "reason": null
+    },
+    {
+      "pr_item_id": "b0d1c973-9796-11f1-9306-706871ff20d7",
+      "supplier_product_id": "2b1ddf97-96f6-11f1-9fb5-706871ff20d7",
+      "reason": null
+    }
+  ],
+  "timestamp_before_repair": {
+    "pr_id": "a31a4047-9796-11f1-9306-706871ff20d7",
+    "submitted_at": "2026-08-14 06:14:49",
+    "decided_at": "2026-08-13 21:31:17",
+    "php_timezone": "Europe/Berlin",
+    "database_timezone": "America/Los_Angeles"
+  }
+}

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=12"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Return/Damage</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=37" rel="stylesheet">
+    <link href="./css/return_damage_status.css?v=1" rel="stylesheet">
+    <script src="./js/navbar.js?v=83" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+
+    <style>
+        :root { --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
+        * { box-sizing:border-box; }
+        body { margin:0; min-height:100vh; color:var(--text-main); background:var(--body-bg); font-family:"Inter", sans-serif; }
+        body.dark-mode { --body-bg:#111827; --border-soft:#263244; --text-main:#e5e7eb; }
+        .main-wrapper { min-height:100vh; margin-left:var(--sidebar-width); transition:var(--transition); }
+        .main-wrapper.collapsed { margin-left:var(--sidebar-collapsed-width); }
+        .topbar { position:sticky; top:0; height:var(--topbar-height); display:flex; align-items:center; justify-content:space-between; padding:0 26px; background:#fff; border-bottom:1px solid var(--border-soft); z-index:1020; }
+        body.dark-mode .topbar, body.dark-mode .card { background:#182131; color:var(--text-main); }
+        .topbar-left, .topbar-right { display:flex; align-items:center; gap:14px; }
+        .icon-btn { width:42px; height:42px; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:8px; color:#4b5563; background:#f4f6fb; }
+        .icon-btn:hover { color:#fff; background:var(--purple); }
+        .page-title-mini { display:flex; flex-direction:column; line-height:1.2; }
+        .page-title-mini strong { color:var(--text-main); font-size:15px; font-weight:800; }
+        .page-title-mini span { margin-top:3px; color:#7b8494; font-size:12px; font-weight:600; }
+        .page-body { padding:clamp(22px, 2vw, 34px); }
+        .workspace { width:100%; max-width:1540px; margin:0 auto; padding-inline:clamp(8px, 1.1vw, 18px); }
+        body.navbar-sidebar-collapsed .workspace { max-width:1640px; padding-inline:clamp(10px, 1.4vw, 24px); }
+        .card { border:1px solid var(--border-soft); border-radius:9px; box-shadow:0 4px 16px rgba(15,23,42,.045); }
+        .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-color:#fff; --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
+        .section-title { color:var(--text-main); font-size:1.05rem; font-weight:800; }
+        .records-card { padding:0; overflow:hidden; }
+        .records-toolbar { display:flex; align-items:center; gap:12px; margin:0 0 12px; }
+        .toolbar-filters { display:grid; grid-template-columns:minmax(360px,420px) minmax(170px,190px) minmax(170px,190px); gap:10px; width:100%; }
+        .search-control { position:relative; }
+        .search-control i { position:absolute; left:12px; top:50%; color:#98a2b3; transform:translateY(-50%); pointer-events:none; }
+        .search-control input { padding-left:35px; }
+        .toolbar-actions { display:flex; gap:8px; flex:0 0 auto; }
+        .toolbar-actions .btn { min-height:38px; }
+        .refresh-btn { width:38px; padding:0; }
+        .table-responsive { overflow:clip; }
+        .return-table { width:100%; min-width:0; margin-bottom:0; table-layout:fixed; }
+        .return-table th { padding:13px 10px; color:#596274; background:#f8f9fc; font-size:13px; font-weight:600; line-height:1.2; text-align:left; vertical-align:middle; }
+        .return-table td { height:72px; padding:14px 10px; color:var(--text-main); font-size:14px; font-weight:500; line-height:1.35; text-align:left; vertical-align:middle; overflow-wrap:anywhere; }
+        .return-table .col-reference { width:14%; } .return-table .col-supplier { width:12%; } .return-table .col-product { width:20%; }
+        .return-table .col-ordered,.return-table .col-accepted,.return-table .col-returned { width:7%; text-align:center; }
+        .return-table .col-issue { width:10%; } .return-table .col-resolution { width:14%; } .return-table .col-actions { width:9%; text-align:center; }
+        .return-table th:nth-child(4),.return-table th:nth-child(5),.return-table th:nth-child(6),.return-table th:nth-child(9),
+        .return-table td:nth-child(4),.return-table td:nth-child(5),.return-table td:nth-child(6),.return-table td:nth-child(9) { text-align:center; }
+        .cell-primary { color:#273142; font-weight:600; } .cell-secondary { margin-top:4px; color:#7b8494; font-size:12.5px; font-weight:500; }
+        .product-name { display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; }
+        .quantity-value { display:inline-block; color:#273142; font-size:14px; font-weight:600; white-space:normal; }
+        .status-pill { display:inline-flex; margin-top:5px; padding:3px 7px; border-radius:999px; font-size:10.5px; font-weight:750; line-height:1.2; }
+        .status-waiting { color:#9a4d05; background:#fff3d6; } .status-success { color:#147a4b; background:#dcf7e9; } .status-info { color:#4c3fc0; background:#eeebff; } .status-problem { color:#b42318; background:#fee4e2; }
+        .return-actions { display:inline-flex; flex-wrap:nowrap; justify-content:center; align-items:center; gap:5px; }
+        .return-actions .btn { width:33px; height:33px; flex:0 0 33px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+        .pagination-bar { min-height:48px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 10px; color:#667085; font-size:12.5px; }
+        .pagination-controls { display:flex; align-items:center; gap:8px; }
+        .pagination-controls select { width:72px; height:36px; }
+        .pagination-controls .btn { height:36px; }
+        .empty-row { padding:42px 16px !important; color:#8790a1 !important; text-align:center; }
+        .detail-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:12px; }
+        .detail-box { padding:12px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
+        .detail-box span { display:block; color:#7b8494; font-size:.78rem; font-weight:800; text-transform:uppercase; }
+        .detail-box strong { display:block; margin-top:4px; color:var(--text-main); font-size:.95rem; font-weight:800; }
+        body.dark-mode .return-table th { background:#202b3d; color:#cbd5e1; }
+        body.dark-mode .detail-box { background:#182131; }
+        .modal .modal-dialog.edit-modal { --bs-modal-width:1240px; --drp-modal-width:1240px; --drp-modal-max-width:1240px; --drp-modal-min-width:0px; width:min(1240px,94vw); max-width:1240px; margin-inline:auto; }
+        .edit-modal .modal-content { max-height:90vh; overflow:hidden; border:0; border-radius:12px; }
+        .edit-modal .modal-header,.edit-modal .modal-footer { position:relative; z-index:2; flex:0 0 auto; background:#fff; }
+        .edit-modal .modal-header { padding:14px 20px; }
+        .edit-modal .modal-body { overflow-y:auto; overflow-x:hidden; padding:0 20px; }
+        .edit-modal .modal-footer { padding:10px 16px; }
+        .edit-modal-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin-top:5px; color:#667085; font-size:13px; }
+        .edit-modal-meta .meta-separator { color:#c4cad4; }
+        .supplier-chip { display:inline-flex; align-items:center; padding:3px 9px; border:1px solid #dfe3ea; border-radius:999px; background:#f3f5f8; color:#344054; font-weight:650; }
+        .edit-context { padding:14px 16px; border:1px solid #e3e7ef; border-radius:9px; background:#f8f9fc; }
+        .edit-context-head { display:flex; justify-content:space-between; gap:16px; align-items:start; }
+        .edit-context-product { font-size:15px; font-weight:800; }
+        .context-quantities { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:12px; }
+        .context-quantities div { color:#7b8494; font-size:11px; font-weight:650; }
+        .context-quantities strong { display:block; margin-top:2px; color:#273142; font-size:13px; }
+        .edit-details-collapse { margin-top:10px; padding-top:10px; border-top:1px solid #e3e7ef; }
+        .form-section { margin-top:16px; padding:16px; border:1px solid #e3e7ef; border-radius:9px; }
+        .form-section h3 { margin:0 0 13px; font-size:14px; font-weight:800; }
+        .field-error { min-height:17px; margin-top:4px; color:#b42318; font-size:11.5px; }
+        .input-suffix { min-width:72px; justify-content:center; color:#667085; }
+        .issue-modal { width:min(960px,92vw); max-width:none; }
+        .issue-modal .modal-content { max-height:88vh; overflow:hidden; border:0; border-radius:12px; }
+        .issue-modal .modal-body { overflow-y:auto; padding:16px 20px; }
+        .issue-section { padding:14px 0; border-bottom:1px solid var(--border-soft); }
+        .issue-section:first-child { padding-top:0; } .issue-section:last-child { border-bottom:0; }
+        .issue-section h3 { margin:0 0 12px; font-size:14px; font-weight:800; }
+        .issue-product-row { display:flex; justify-content:space-between; align-items:start; gap:16px; }
+        .issue-product-name { font-size:16px; font-weight:800; }
+        .definition-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 18px; }
+        .definition-grid > div { min-width:0; }
+        .definition-grid dt { margin:0 0 3px; color:#7b8494; font-size:10.5px; font-weight:800; text-transform:uppercase; }
+        .definition-grid dd { margin:0; color:#273142; font-size:13px; font-weight:650; overflow-wrap:anywhere; }
+        .definition-grid .wide { grid-column:1/-1; }
+        .issue-quantity-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-top:14px; }
+        .issue-quantity-row > div { text-align:center; }
+        .issue-quantity-row span { display:block; color:#7b8494; font-size:10.5px; font-weight:700; }
+        .issue-quantity-row strong { display:block; margin-top:2px; font-size:13px; }
+        .activity-timeline { margin:0; padding:0; list-style:none; }
+        .activity-timeline li { position:relative; padding:0 0 10px 18px; color:#596274; font-size:12px; }
+        .activity-timeline li::before { position:absolute; left:1px; top:5px; width:7px; height:7px; border-radius:50%; background:#8b5cf6; content:""; }
+        .activity-timeline li::after { position:absolute; left:4px; top:14px; bottom:0; width:1px; background:#e4e7ec; content:""; }
+        .activity-timeline li:last-child::after { display:none; }
+        .manage-grid { display:block; }
+        .manage-section { min-width:0; padding:20px 0; }
+        .manage-section + .manage-section { border-top:1px solid var(--border-soft); }
+        .manage-section h3 { margin:0 0 16px; font-size:15px; font-weight:700; }
+        .manage-evidence-grid { display:block; }
+        .manage-evidence-grid .wide { grid-column:1/-1; }
+        .manage-field-label { display:block; margin-bottom:4px; color:#7b8494; font-size:11.5px; font-weight:700; text-transform:uppercase; }
+        .manage-field-value { margin:0; color:#273142; font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+        .manage-product-name { font-size:15px; font-weight:700; }
+        .manage-product-block { padding-bottom:16px; }
+        .manage-detail-row { display:grid; gap:0; padding:14px 0; border-top:1px solid var(--border-soft); }
+        .manage-detail-row > div { min-width:0; padding:0 16px; border-left:1px solid var(--border-soft); }
+        .manage-detail-row > div:first-child { padding-left:0; border-left:0; }
+        .manage-detail-row > div:last-child { padding-right:0; }
+        .manage-reference-grid { grid-template-columns:1.5fr .8fr .95fr 1.1fr; }
+        .manage-reference-grid > div:first-child .manage-field-value { white-space:nowrap; }
+        .manage-quantities { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .manage-quantities .manage-field-value { font-weight:600; }
+        .manage-remarks-row { padding:14px 0 0; border-top:1px solid var(--border-soft); }
+        .manage-response-fields { display:grid; gap:16px; }
+        .supplier-primary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+        .manage-response-fields .form-label { margin-bottom:5px; font-size:13px; }
+        .manage-response-fields .form-control,.manage-response-fields .form-select,.manage-response-fields .input-group-text { min-height:40px; }
+        .manage-credit-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+        .readonly-value { min-height:38px; display:flex; align-items:center; padding:8px 11px; border:1px solid #e3e7ef; border-radius:7px; background:#f8f9fc; color:#273142; font-size:13px; font-weight:650; }
+        .readonly-value.readonly-plain { padding:8px 0; border:0; background:transparent; }
+        .management-notes { margin-top:2px; }
+        .replacement-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+        .replacement-summary > div { padding:11px; border:1px solid var(--border-soft); border-radius:8px; background:#f8f9fc; }
+        .replacement-summary span { display:block; color:#7b8494; font-size:.72rem; font-weight:800; text-transform:uppercase; }
+        .replacement-summary strong { display:block; margin-top:3px; overflow-wrap:anywhere; }
+        .replacement-batch-row { display:grid; grid-template-columns:1fr .6fr .8fr auto; gap:8px; align-items:end; margin-top:8px; }
+        body.dark-mode .replacement-summary > div { background:#182131; }
+        @media (max-width:1199px) { .return-table th,.return-table td{padding-inline:8px}.return-table .col-reference{width:14%}.return-table .col-supplier{width:11%}.return-table .col-product{width:19%}.return-table .col-ordered,.return-table .col-accepted,.return-table .col-returned{width:7%}.return-table .col-issue{width:11%}.return-table .col-resolution{width:14%}.return-table .col-actions{width:10%} }
+        @media (max-width:991.98px) { .page-body { padding:20px 14px; } .workspace { max-width:100%; padding-inline:0; } .toolbar-filters { grid-template-columns:minmax(280px,1fr) minmax(145px,.55fr) minmax(145px,.55fr); } .return-table th,.return-table td{padding-inline:6px}.return-table th{font-size:12px}.return-table td{font-size:13px}.cell-secondary{font-size:12px}.return-actions{gap:3px}.return-actions .btn{width:32px;height:32px;flex-basis:32px} }
+        @media (max-width:991.98px) { .manage-reference-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.manage-reference-grid > div:nth-child(3){border-left:0;padding-left:0}.manage-reference-grid > div:nth-child(n+3){margin-top:14px}.manage-reference-grid > div:first-child .manage-field-value{white-space:normal}.supplier-primary-grid{grid-template-columns:1fr 1fr}.supplier-primary-grid > :last-child{grid-column:1/-1} }
+        @media (max-width:767px) { .toolbar-filters { grid-template-columns:1fr; } .replacement-summary,.context-quantities,.definition-grid { grid-template-columns:1fr 1fr; } .issue-quantity-row { grid-template-columns:repeat(3,minmax(0,1fr)); } .manage-section{padding:18px 0}.manage-reference-grid,.supplier-primary-grid{grid-template-columns:1fr}.manage-detail-row > div{padding:12px 0 0;border-left:0;border-top:1px solid var(--border-soft)}.manage-detail-row > div:first-child{padding-top:0;border-top:0}.manage-reference-grid > div:nth-child(n+3){margin-top:0}.manage-quantities{grid-template-columns:repeat(3,minmax(0,1fr))}.manage-quantities > div{padding:0 10px;border-top:0;border-left:1px solid var(--border-soft)}.manage-quantities > div:first-child{padding-left:0;border-left:0}.manage-quantities > div:last-child{padding-right:0}.supplier-primary-grid > :last-child{grid-column:auto}.manage-credit-grid{grid-template-columns:1fr}.replacement-batch-row { grid-template-columns:1fr 1fr; } .table-responsive { overflow:visible; border:0; } .return-table,.return-table tbody,.return-table tr,.return-table td,.return-table td[class] { display:block; width:100%; } .return-table thead{display:none}.return-table tr{margin-bottom:10px;border:1px solid var(--border-soft);border-radius:9px;background:#fff}.return-table td{padding:9px 12px;border:0}.return-table td::before{display:block;margin-bottom:2px;color:#7b8494;font-size:10px;font-weight:800;text-transform:uppercase;content:attr(data-label)}.return-table .col-actions{text-align:left}.return-actions{justify-content:flex-start}.pagination-bar{align-items:flex-start;flex-direction:column}.edit-modal,.issue-modal{width:96vw;margin-inline:auto} }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="page-title-mini">
+                    <strong>Return/Damage</strong>
+                    <span>Track damaged and returned purchase order items</span>
+                </div>
+            </div>
+            <div class="topbar-right">
+                <button class="icon-btn" type="button" aria-label="Notifications">
+                    <i class="fa-regular fa-bell"></i>
+                </button>
+            </div>
+        </header>
+
+        <section class="page-body">
+            <div class="workspace">
+                <div class="records-toolbar">
+                    <div class="toolbar-filters">
+                        <div class="search-control"><i class="fa-solid fa-magnifying-glass"></i><label class="visually-hidden" for="returnSearch">Search records</label><input id="returnSearch" class="form-control form-control-sm" type="search" placeholder="Search PO, supplier, product or brand"></div>
+                        <div><label class="visually-hidden" for="returnStatusFilter">Status filter</label><select id="returnStatusFilter" class="form-select form-select-sm"><option value="">All statuses</option></select></div>
+                        <div><label class="visually-hidden" for="returnReasonFilter">Reason filter</label><select id="returnReasonFilter" class="form-select form-select-sm"><option value="">All reasons</option></select></div>
+                    </div>
+                </div>
+                <div class="card records-card">
+                    <div class="table-responsive">
+                        <table id="table-return-damage" class="table table-hover align-middle return-table">
+                            <thead>
+                                <tr>
+                                    <th class="col-reference" scope="col">Reference</th>
+                                    <th class="col-supplier" scope="col">Supplier</th>
+                                    <th class="col-product" scope="col">Product</th>
+                                    <th class="col-ordered" scope="col">Ordered</th>
+                                    <th class="col-accepted" scope="col">Accepted</th>
+                                    <th class="col-returned" scope="col">Returned</th>
+                                    <th class="col-issue" scope="col">Issue</th>
+                                    <th class="col-resolution" scope="col">Resolution</th>
+                                    <th class="col-actions" scope="col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="9" class="empty-row">Loading supplier issues...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="pagination-bar"><span id="returnPageSummary" aria-live="polite">0 records</span><div class="pagination-controls"><label for="returnPageSize">Rows</label><select id="returnPageSize" class="form-select form-select-sm"><option>10</option><option>20</option><option>50</option></select><button id="returnPrevPage" class="btn btn-sm btn-outline-secondary" type="button">Previous</button><button id="returnNextPage" class="btn btn-sm btn-outline-secondary" type="button">Next</button></div></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="modal fade" id="viewReturnDamageModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="viewReturnDamageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered issue-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title fs-5 fw-bold" id="viewReturnDamageModalLabel">Return/Damage Details</h2>
+                        <p class="text-muted small mb-0 mt-1" id="viewReturnDamageSubtitle">Review complete record information.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="viewReturnDamageDetails"></div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="replacementArrivalModal" tabindex="-1" aria-labelledby="replacementArrivalModalLabel" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div><h2 class="modal-title fs-5 fw-bold" id="replacementArrivalModalLabel">Receive Replacement</h2><p id="replacementArrivalSubtitle" class="text-muted small mb-0 mt-1"></p></div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="replacement-summary">
+                        <div><span>Original PO</span><strong id="replacementPoNumber">-</strong></div>
+                        <div><span>Supplier</span><strong id="replacementSupplier">-</strong></div>
+                        <div><span>Product</span><strong id="replacementProduct">-</strong></div>
+                        <div><span>Replacement Remaining</span><strong id="replacementOutstanding">0</strong></div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-4"><label class="form-label fw-semibold" for="replacementDeliveryReceiptNo">Delivery Receipt No.</label><input id="replacementDeliveryReceiptNo" class="form-control" maxlength="100"></div>
+                        <div class="col-md-4"><label class="form-label fw-semibold" for="replacementDeliveredQty">Quantity Delivered</label><input id="replacementDeliveredQty" class="form-control" type="number" min="1" step="1"></div>
+                        <div class="col-md-4"><label class="form-label fw-semibold" for="replacementDamagedQty">Damaged Qty</label><input id="replacementDamagedQty" class="form-control" type="number" min="0" step="1" value="0"></div>
+                        <div class="col-md-4"><label class="form-label fw-semibold">Replacement Accepted</label><div id="replacementGoodQty" class="form-control bg-light">0</div></div>
+                        <div id="replacementIssueWrap" class="col-12 d-none"><div class="row g-3"><div class="col-md-5"><label class="form-label fw-semibold" for="replacementIssueType">Issue Type</label><select id="replacementIssueType" class="form-select"><option value="">Select issue...</option><option>Expired</option><option>Broken package</option><option>Wrong item delivered</option><option>Incorrect quantity</option><option>Damaged during delivery</option><option>Other</option></select></div><div class="col-md-7"><label class="form-label fw-semibold" for="replacementRemarks">Remarks</label><textarea id="replacementRemarks" class="form-control" rows="2"></textarea></div></div></div>
+                        <div class="col-12"><div class="d-flex justify-content-between align-items-center"><div><strong>Accepted Replacement Batches</strong><div id="replacementAllocationState" class="text-muted small">Allocated 0 of 0</div></div><button id="btnAddReplacementBatch" class="btn btn-sm btn-outline-primary" type="button"><i class="fa-solid fa-plus me-1"></i>Add Batch</button></div><div id="replacementBatchList"></div></div>
+                    </div>
+                </div>
+                <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button id="btnSaveReplacementArrival" class="btn btn-purple" type="button">Complete Replacement Receiving</button></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="editReturnDamageModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="editReturnDamageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered edit-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-title fs-5 fw-bold" id="editReturnDamageModalLabel">Manage Return/Damage</h2>
+                        <div class="edit-modal-meta" id="editReturnDamageSubtitle"><span id="editModalPo"></span><span class="meta-separator" aria-hidden="true">•</span><span class="supplier-chip">Supplier: <strong class="ms-1" id="editModalSupplier"></strong></span><span class="meta-separator" aria-hidden="true">•</span><span id="editModalDate"></span></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="edit-return-id">
+                    <div class="manage-grid">
+                        <section class="manage-section manage-evidence" aria-labelledby="inspectionEvidenceHeading"><h3 id="inspectionEvidenceHeading">Inspection Evidence</h3><div id="manageInspectionEvidence" class="manage-evidence-grid"></div></section>
+                        <section class="manage-section manage-response" aria-labelledby="supplierResolutionHeading"><h3 id="supplierResolutionHeading">Supplier Resolution</h3><div class="manage-response-fields"><div class="supplier-primary-grid">
+                            <div><label class="form-label fw-semibold">Requested Resolution</label><div id="manageRequestedResolution" class="readonly-value readonly-plain"></div></div>
+                            <div><label class="form-label fw-semibold" for="edit-claim-resolution">Supplier Response</label><select id="edit-claim-resolution" class="form-select"><option value="">Awaiting Supplier Decision</option><option value="Replacement">Replacement</option><option value="Current PO Credit">Current PO Discount</option><option value="Next PO Credit">Credit Next PO</option></select></div>
+                            <div><label class="form-label fw-semibold">Workflow Status</label><div id="editWorkflowStatus" class="readonly-value" aria-readonly="true"></div></div>
+                            </div>
+                            <div class="manage-credit-grid">
+                                <div class="d-none" id="editClaimConfirmedAmountWrap"><label id="editConfirmedAmountLabel" class="form-label fw-semibold" for="edit-claim-confirmed-amount">Confirmed Credit Amount</label><div class="input-group"><span class="input-group-text">₱</span><input id="edit-claim-confirmed-amount" class="form-control" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></div><div id="editConfirmedAmountHelp" class="form-text"></div><div id="editConfirmedAmountError" class="field-error" aria-live="polite"></div></div>
+                                <div class="d-none" id="editRemainingCreditWrap"><label class="form-label fw-semibold">Remaining Credit</label><div id="editRemainingCredit" class="readonly-value" aria-readonly="true">—</div></div>
+                            </div>
+                            <div class="management-notes"><label class="form-label fw-semibold" for="edit-return-remarks">Management Notes</label><textarea id="edit-return-remarks" class="form-control" rows="2" placeholder="Optional supplier communication or administrative note"></textarea></div>
+                        </div></section>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                    <button id="btnSaveReturnDamageEdit" class="btn btn-purple" type="button">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script src="./js/search_highlight.js?v=3"></script>
+    <script type="module" src="./js/modules/return_damage.js?v=15"></script>
+    <script type="module">
+        import verifySession from './js/modules/auth.js?v=8';
+        await verifySession();
+    </script>
+</body>
+</html>

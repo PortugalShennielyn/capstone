@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PO Pagination Fixture</title><link rel="stylesheet" href="../pharma-frontend/css/purchase_order_document.css?v=1"></head>
+<body class="embed"><main class="po-pages" id="purchaseOrder"></main><output id="result" hidden></output>
+<script type="module">
+import { renderPurchaseOrderDocument } from '../pharma-frontend/js/modules/purchase_order_document.js?v=2';
+const count=Math.max(1,Math.min(80,Number(new URLSearchParams(location.search).get('count')||1)));
+const items=Array.from({length:count},(_,index)=>({product_name:`Product ${index+1}`,brand_name:'Test Brand',generic_name:'Complete product specification',strength:'500 mg',dosage_form:'Tablet',packaging:'Box',purchase_qty:2,purchase_unit:'Box',units_per_purchase_unit:100,unit:'pcs',price:7,line_total:1400}));
+const order={po_number:'PO-PAGINATION-TEST',pr_number:'PR-PAGINATION-TEST',supplier_name:'Dyna Drug Corporation',supplier_address:'Cagayan de Oro City',supplier_phone:'09123456789',supplier_email:'orders@example.test',prepared_by_name:'Manager Test',approved_by_name:'CEO Test',order_date:'2026-08-11',expected_delivery_date:'2026-08-15',payment_terms:'Cash',total_amount:count*1400,items};
+const result=renderPurchaseOrderDocument(order,document.getElementById('purchaseOrder'));
+document.getElementById('result').value=JSON.stringify(result);
+</script></body></html>

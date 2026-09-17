@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Return/Damage Manage Modal Runtime Test</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="../css/navbar.css?v=37">
+    <link rel="stylesheet" href="../css/return_damage_status.css?v=1">
+</head>
+<body>
+    <input id="returnSearch" type="search">
+    <select id="returnStatusFilter"><option value="">All statuses</option></select>
+    <select id="returnReasonFilter"><option value="">All reasons</option></select>
+    <select id="returnPageSize"><option value="10">10</option></select>
+    <table id="table-return-damage">
+        <thead><tr><th>Reference</th><th>Supplier</th><th>Product</th><th>Ordered</th><th>Accepted</th><th>Returned</th><th>Issue</th><th>Resolution</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+    </table>
+    <span id="returnPageSummary"></span>
+    <button id="returnPrevPage" type="button">Previous</button>
+    <button id="returnNextPage" type="button">Next</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../js/search_highlight.js?v=3"></script>
+    <script type="module">
+        const sourceResponse = await fetch('../return_damage.html?v=15', {cache:'no-store'});
+        const sourceDocument = new DOMParser().parseFromString(await sourceResponse.text(), 'text/html');
+        document.head.append(sourceDocument.querySelector('style').cloneNode(true));
+        document.body.append(sourceDocument.getElementById('editReturnDamageModal').cloneNode(true));
+
+        const record = {
+            return_id:'credit-waiting', po_number:'PO-20260824-155244-4AF0CB', supplier_name:'kianen Marketing',
+            product_name:'EQ Dry Disposable Baby Diapers', brand_name:'EQ', specification:'New Born', unit:'Pack', packaging:'Pack',
+            ordered_quantity:50, accepted_quantity:48, return_quantity:2, affected_unit_name:'Pack',
+            damage_reason:'Delivery Damage', disposition:'Return to Supplier', resolution_type:'Next PO Credit',
+            requested_resolution:'Next PO Credit', return_status:'Awaiting Supplier Credit', return_date:'2026-08-24',
+            delivery_receipt_no:null, inspection_remarks:null, remarks:null, management_remarks:'',
+            replacement_outstanding_qty:0, credit_amount:null, credit_remaining:null, credit_applied:0
+        };
+        window.PharmaUtils = window.PharmaUtils || {
+            toast:{ error:console.error, success:console.log },
+            modal:{ error:console.error }
+        };
+        window.fetch = async (url) => {
+            const body = String(url).includes('get_return_damage_details.php')
+                ? {status:'success',return_damage:record}
+                : {status:'success',returns:[record]};
+            return new Response(JSON.stringify(body), {status:200,headers:{'Content-Type':'application/json'}});
+        };
+        await import('../js/modules/return_damage.js?v=15');
+    </script>
+</body>
+</html>

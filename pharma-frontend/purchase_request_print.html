@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Doc R Pharmacy | Purchase Request</title>
+        <style>
+            @page {
+                size: A4 portrait;
+                margin: 11mm 10mm 12mm;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                color: #000;
+                background: #eef1f5;
+                font-family: Arial, Helvetica, sans-serif;
+            }
+            .print-toolbar {
+                position: sticky;
+                top: 0;
+                z-index: 5;
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                padding: 12px;
+                background: #1f2937;
+            }
+            .print-toolbar button,
+            .print-toolbar a {
+                padding: 9px 16px;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                color: #111;
+                background: #fff;
+                font: 700 13px Arial;
+                text-decoration: none;
+                cursor: pointer;
+            }
+            .print-toolbar .primary {
+                color: #fff;
+                background: #111827;
+                border-color: #fff;
+            }
+            .print-sheet {
+                width: 210mm;
+                min-height: 297mm;
+                margin: 18px auto;
+                padding: 11mm 10mm 12mm;
+                background: #fff;
+                box-shadow: 0 8px 30px rgba(15, 23, 42, 0.18);
+            }
+            .document-header {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                align-items: end;
+                gap: 14px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid #111;
+            }
+            .pharmacy-name {
+                margin: 0;
+                font-size: 22px;
+                font-weight: 900;
+                letter-spacing: 0.08em;
+            }
+            .document-title {
+                margin: 4px 0 0;
+                font-size: 15px;
+                font-weight: 800;
+                letter-spacing: 0.16em;
+            }
+            .document-mark {
+                padding: 7px 12px;
+                border: 1px solid #000;
+                color: #000;
+                background: #fff;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.08em;
+            }
+            .request-meta {
+                display: grid;
+                grid-template-columns: auto auto;
+                justify-content: space-between;
+                column-gap: 20px;
+                row-gap: 10px;
+                margin: 12px 0 6px;
+            }
+            .approval-date-field {
+                grid-column: 2;
+            }
+            .meta-field {
+                display: flex;
+                align-items: baseline;
+                gap: 4px;
+                min-width: 0;
+                font-size: 9pt;
+            }
+            .meta-label {
+                flex: 0 0 auto;
+                font-weight: 800;
+            }
+            .meta-value {
+                font-weight: 700;
+                overflow-wrap: anywhere;
+            }
+            .pr-print-table {
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+                font-size: 11px;
+            }
+            .pr-print-table thead {
+                display: table-header-group;
+            }
+            .pr-print-table tr {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            .pr-print-table th,
+            .pr-print-table td {
+                border: 1px solid #111;
+                vertical-align: middle;
+                overflow-wrap: break-word;
+            }
+            .pr-print-table th {
+                padding: 6px 4px;
+                color: #000;
+                background: #fff;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.15;
+                text-align: center;
+                text-transform: uppercase;
+                white-space: normal;
+            }
+            .pr-print-table td {
+                padding: 5px 4px;
+                font-size: 11px;
+                line-height: 1.2;
+            }
+            .pr-print-table th:nth-child(1) {
+                width: 5%;
+            }
+            .pr-print-table th:nth-child(2) {
+                width: 37%;
+            }
+            .pr-print-table th:nth-child(3) {
+                width: 12%;
+            }
+            .pr-print-table th:nth-child(4) {
+                width: 7%;
+            }
+            .pr-print-table th:nth-child(5) {
+                width: 8%;
+            }
+            .pr-print-table th:nth-child(6) {
+                width: 8%;
+            }
+            .pr-print-table th:nth-child(7) {
+                width: 12%;
+            }
+            .pr-print-table th:nth-child(8) {
+                width: 11%;
+            }
+            .pr-print-table th:nth-child(n + 4):nth-child(-n + 8) {
+                padding-left: 5px;
+                padding-right: 5px;
+                text-align: center;
+                vertical-align: middle;
+            }
+            .pr-print-table td:nth-child(1),
+            .pr-print-table td:nth-child(n + 3) {
+                text-align: center;
+            }
+            .pr-print-table .quantity-cell {
+                font-weight: 700;
+                white-space: nowrap;
+            }
+            .quantity-stack {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 2px;
+            }
+            .quantity-stack small {
+                color: #333;
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1.2;
+            }
+            .product-description strong {
+                display: block;
+                font-size: 11px;
+            }
+            .product-description span {
+                display: block;
+                margin-top: 2px;
+                color: #333;
+                line-height: 1.2;
+            }
+            .notes-block {
+                min-height: 34px;
+                margin-top: 8px;
+                padding: 6px 8px;
+                border: 1px solid #111;
+                font-size: 8pt;
+            }
+            .notes-block strong {
+                margin-right: 6px;
+                text-transform: uppercase;
+            }
+            #purchaseRequestDocument {
+                min-height: 274mm;
+                display: flex;
+                flex-direction: column;
+            }
+            .signature-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 18mm;
+                margin-top: auto;
+                padding-top: 14mm;
+                font-size: 8pt;
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            .signature-block {
+                min-width: 0;
+                text-align: center;
+            }
+            .signature-caption {
+                display: block;
+                font-weight: 800;
+                text-align: left;
+            }
+            .signature-space {
+                height: 11mm;
+            }
+            .signature-name {
+                display: block;
+                min-height: 5mm;
+                font-size: 8pt;
+                font-weight: 700;
+                text-align: center;
+            }
+            .signature-line {
+                width: 100%;
+                border-top: 1px solid #111;
+            }
+            .signature-role {
+                display: block;
+                margin-top: 3px;
+                font-size: 7.5pt;
+            }
+            .document-footer {
+                display: flex;
+                justify-content: space-between;
+                margin-top: 9mm;
+                padding-top: 5px;
+                border-top: 1px solid #000;
+                color: #000;
+                font-size: 6.8pt;
+            }
+            .loading,
+            .error {
+                padding: 70px 20px;
+                text-align: center;
+                font-weight: 700;
+            }
+            .error {
+                color: #991b1b;
+            }
+            [hidden] {
+                display: none !important;
+            }
+            body.is-embedded {
+                overflow: hidden;
+                background: transparent;
+            }
+            body.is-embedded .print-toolbar {
+                display: none !important;
+            }
+            body.is-embedded .print-sheet {
+                width: 210mm;
+                min-height: 297mm;
+                margin: 0;
+                padding: 11mm 10mm 12mm;
+                box-shadow: none;
+            }
+            body.is-embedded #purchaseRequestDocument {
+                min-height: 274mm;
+            }
+            @media print {
+                html,
+                body {
+                    color: #000;
+                    background: #fff;
+                    print-color-adjust: exact;
+                    -webkit-print-color-adjust: exact;
+                }
+                .print-toolbar {
+                    display: none !important;
+                }
+                .print-sheet {
+                    width: auto;
+                    min-height: auto;
+                    margin: 0;
+                    padding: 0;
+                    box-shadow: none;
+                }
+                #purchaseRequestDocument {
+                    min-height: 274mm;
+                }
+                .document-header,
+                .request-meta,
+                .signature-grid,
+                .document-footer {
+                    break-inside: avoid;
+                    page-break-inside: avoid;
+                }
+                .pr-print-table thead {
+                    display: table-header-group;
+                }
+                .pr-print-table tr {
+                    break-inside: avoid;
+                    page-break-inside: avoid;
+                }
+                .document-mark,
+                .pr-print-table th {
+                    color: #000 !important;
+                    background: #fff !important;
+                }
+            }
+            @media screen and (max-width: 850px) {
+                .print-sheet {
+                    width: 100%;
+                    min-height: 0;
+                    margin: 0;
+                    padding: 20px;
+                }
+                #purchaseRequestDocument {
+                    min-height: 0;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="print-toolbar" aria-label="Print controls">
+            <a href="purchase_requests.html">Back to Purchase Requests</a
+            ><button class="primary" id="printPurchaseRequest" type="button">
+                Print / Save as PDF
+            </button>
+        </div>
+        <main class="print-sheet" id="printSheet">
+            <div class="loading" id="printLoading">Loading purchase request...</div>
+            <article id="purchaseRequestDocument" hidden></article>
+        </main>
+        <script type="module" src="./js/modules/purchase_request_print.js?v=15"></script>
+    </body>
+</html>
