@@ -1,6 +1,10 @@
 <?php
 function ensurePurchaseOrderInvoiceSchema(PDO $pdo): void
 {
+    // DDL implicitly commits MySQL transactions, even with IF NOT EXISTS.
+    $tables = $pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('purchase_order_invoices','purchase_order_invoice_items')");
+    if ((int) $tables->fetchColumn() === 2) return;
+    if ($pdo->inTransaction()) throw new RuntimeException('Initialize invoice schema before starting a transaction.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS purchase_order_invoices (
         invoice_id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
         po_id CHAR(36) NOT NULL,
@@ -64,6 +68,28 @@ function purchaseOrderInvoice(PDO $pdo, string $poId): ?array
     );
     $items->execute([':invoice_id' => $invoice['invoice_id']]);
     $invoice['items'] = $items->fetchAll(PDO::FETCH_ASSOC);
+        $applicationStatement = $pdo->prepare(
+            'SELECT app.application_id, app.credit_id, app.po_id AS destination_po_id,
+                    app.amount_applied, app.applied_at,
+                    cr.credit_amount AS original_credit_amount,
+                    source_po.po_id AS source_po_id,
+                    source_po.po_number AS source_po_number,
+                    source_po.supplier_id
+             FROM supplier_credit_applications app
+             INNER JOIN supplier_credits cr ON cr.credit_id = app.credit_id
+             INNER JOIN supplier_claims sc ON sc.claim_id = cr.claim_id
+             INNER JOIN purchase_order_items source_item ON source_item.po_item_id = sc.po_item_id
+             INNER JOIN purchase_orders source_po ON source_po.po_id = source_item.po_id
+             WHERE app.po_id = :po_id AND sc.resolution_type = \'Next PO Credit\'
+             ORDER BY app.applied_at, app.application_id'
+        );
+        $applicationStatement->execute([':po_id' => $poId]);
+        $invoice['supplier_credit_applications'] = $applicationStatement->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($invoice['supplier_credit_applications'] as &$application) {
+            $application['amount_applied'] = round((float) $application['amount_applied'], 2);
+            $application['original_credit_amount'] = round((float) $application['original_credit_amount'], 2);
+        }
+        unset($application);
     $productIds = array_values(array_unique(array_filter(array_column($invoice['items'], 'product_id'))));
     $specificationsByProduct = [];
     if ($productIds) {
@@ -108,6 +134,12 @@ function purchaseOrderInvoice(PDO $pdo, string $poId): ?array
     $invoice['calculated_total'] = round($invoice['subtotal'] - $invoice['discount'] + $invoice['other_charges'], 2);
     $invoice['difference'] = round($invoice['supplier_invoice_total'] - $invoice['calculated_total'], 2);
     $invoice['match_status'] = abs($invoice['difference']) < 0.01 ? 'Matched' : 'Review Required';
+    $invoice['supplier_credit_applied'] = round(array_reduce(
+        $invoice['supplier_credit_applications'],
+        static fn(float $total, array $application): float => $total + (float) ($application['amount_applied'] ?? 0),
+        0.0
+    ), 2);
+    $invoice['amount_payable'] = round(max(0, $invoice['supplier_invoice_total'] - $invoice['supplier_credit_applied']), 2);
     return $invoice;
 }
 ?>

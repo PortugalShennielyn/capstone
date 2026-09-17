@@ -1,6 +1,7 @@
 import PharmaUtils from '../utils.js';
 import { configureResizableModal, resetResizableModal } from './modal_size.js?v=2';
 import { createLiveSync, publishDataUpdate } from './live_data.js?v=1';
+import { cleanProductSpecificationText, formatProductIdentityParts, isPrescriptionProduct } from './product_specification.js?v=9';
 
 const API_BASE_URL = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -94,6 +95,26 @@ function uniqueParts(parts) {
     });
 }
 
+function productIdentityParts(row) {
+    const parts = formatProductIdentityParts(row);
+    return { primary: parts.productName, secondary: parts.genericName };
+}
+
+function productIdentityText(row, fallback = '') {
+    const { primary, secondary } = productIdentityParts(row);
+    return uniqueParts([primary, secondary]).join(' ') || fallback;
+}
+
+function renderProductIdentityCell(row, searchTerm) {
+    const { primary, secondary } = productIdentityParts(row);
+    if (!primary && !secondary) return '<span class="text-muted">—</span>';
+    const badge = isPrescriptionProduct(row) ? '<span class="inventory-rx-badge" title="Prescription medicine">Rx</span>' : '';
+    return `
+        ${primary ? `<div class="inventory-product-name">${highlightSearchText(primary, searchTerm)}${badge}</div>` : ''}
+        ${secondary ? `<div class="inventory-generic-name">${highlightSearchText(secondary, searchTerm)}</div>` : ''}
+    `;
+}
+
 function joinedMeasurement(value, unit) {
     const rawAmount = meaningful(normalizeDisplayText(value));
     const amount = rawAmount && Number.isFinite(Number(rawAmount)) ? String(Number(rawAmount)) : rawAmount;
@@ -116,14 +137,13 @@ function formatProductIdentity(parts) {
 }
 
 function buildInventorySpecification(product) {
-    const normalizedSpecification = meaningful(product.normalized_specification);
+    const normalizedSpecification = meaningful(cleanProductSpecificationText(product.normalized_specification));
     if (normalizedSpecification) return normalizedSpecification;
     const category = meaningful(product.category_name).toLowerCase();
     let candidates;
 
     if (category === 'medicine') {
         candidates = [
-            product.generic_name,
             joinedMeasurement(product.strength_value, product.strength_unit) || meaningful(product.strength),
             joinedMeasurement(product.net_content_value, product.net_content_unit),
             product.dosage_form,
@@ -262,7 +282,7 @@ function filteredInventoryRows() {
         const rowStatus = isInactiveProduct(row) ? 'Inactive' : 'Active';
         const isActiveStockAlert = stockStatus === 'low_stock' || stockStatus === 'out_of_stock';
         const haystack = [
-            row.brand_name, row.product_name, row.barcode, row.category_name, row.type_name, buildInventorySpecification(row)
+            row.brand_name, productIdentityText(row), row.barcode, row.category_name, row.type_name, buildInventorySpecification(row)
         ].join(' ').toLowerCase();
         return (status === 'all' || status === rowStatus)
             && (!isActiveStockAlert || rowStatus === 'Active')
@@ -283,6 +303,32 @@ function isPrEligible(row) {
     return !isInactiveProduct(row) && ['low_stock', 'out_of_stock'].includes(normalizeStockStatus(row.stock_status));
 }
 
+async function showNoStorageStockModal(row) {
+    const productId = String(row?.product_id || '');
+    const unit = cleanText(row?.inventory_unit_symbol || row?.inventory_unit_name, 'unit');
+    const canCreate = canCreatePurchaseRequest();
+    const result = await Swal.fire({
+        title: 'No stock available in Storage.',
+        html: `
+            <div class="text-start">
+                <p class="mb-2"><strong>${esc(productIdentityText(row, 'Product'))}</strong></p>
+                <p class="mb-2">Shelf Qty: <strong>${esc(inventoryQuantityLabel(Number(row?.shelf_quantity || 0), unit))}</strong></p>
+                <p class="mb-2">Stock Status: <strong>${esc(formatStatusLabel(row?.stock_status || 'out of stock'))}</strong></p>
+                <p class="mb-0">Replenishment must begin with a Purchase Requisition (PR).</p>
+            </div>
+        `,
+        icon: 'info',
+        showCancelButton: true,
+        showConfirmButton: canCreate,
+        confirmButtonText: 'Create PR',
+        cancelButtonText: canCreate ? 'Cancel' : 'Close',
+        confirmButtonColor: '#4f46e5'
+    });
+    if (result.isConfirmed && canCreate && productId) {
+        window.location.href = `purchase_requests.html?${new URLSearchParams({ create: '1', source: 'inventory', product_id: productId, product_ids: productId })}`;
+    }
+}
+
 function applyInventoryFilters() {
     if (inventoryView === 'history') {
         const search = String(document.getElementById('inventorySearch')?.value || '').trim().toLowerCase();
@@ -290,7 +336,7 @@ function applyInventoryFilters() {
         const to = document.getElementById('transferHistoryTo')?.value || '';
         renderGlobalTransferHistory(transferHistoryRows.filter((row) => {
             const transferDate = String(row.created_at || '').slice(0, 10);
-            const matchesSearch = !search || [row.brand_name,row.product_name,buildInventorySpecification(row),row.selected_unit,row.source_location,row.destination_location,row.allocations].join(' ').toLowerCase().includes(search);
+            const matchesSearch = !search || [row.brand_name,productIdentityText(row),buildInventorySpecification(row),row.selected_unit,row.source_location,row.destination_location,row.allocations].join(' ').toLowerCase().includes(search);
             return matchesSearch && (!from || transferDate >= from) && (!to || transferDate <= to);
         }));
         return;
@@ -338,7 +384,7 @@ function renderGlobalTransferHistory(rows) {
     }
     if (inventoryWrap) inventoryWrap.hidden = true;
     historyWrap.hidden = false;
-    historyWrap.innerHTML = `<table class="table table-hover align-middle inventory-table"><thead><tr><th>Date</th><th>Brand</th><th>Product</th><th>Specification</th><th>Movement</th><th>Selected Qty</th><th>Inventory Qty</th><th>Batch / Expiry Allocation</th></tr></thead><tbody>${rows.length ? rows.map((row) => `<tr><td>${esc(formatDateTime(row.created_at))}</td><td>${esc(row.brand_name || '-')}</td><td>${esc(row.product_name || '-')}</td><td><span class="history-specification">${esc(buildInventorySpecification(row))}</span></td><td><span class="status-badge status-safe">${esc(row.source_location)} → ${esc(row.destination_location)}</span></td><td>${esc(inventoryQuantityLabel(row.selected_quantity, row.selected_unit))}</td><td>${esc(inventoryQuantityLabel(row.base_quantity, row.base_unit))}</td><td>${transferAllocationMarkup(row.allocations)}</td></tr>`).join('') : '<tr><td class="empty-row" colspan="8">No inventory transfers recorded.</td></tr>'}</tbody></table>`;
+    historyWrap.innerHTML = `<table class="table table-hover align-middle inventory-table"><thead><tr><th>Date</th><th>Brand</th><th>Product</th><th>Specification</th><th>Movement</th><th>Selected Qty</th><th>Inventory Qty</th><th>Batch / Expiry Allocation</th></tr></thead><tbody>${rows.length ? rows.map((row) => `<tr><td>${esc(formatDateTime(row.created_at))}</td><td>${esc(row.brand_name || '-')}</td><td>${esc(productIdentityText(row, '-'))}</td><td><span class="history-specification">${esc(buildInventorySpecification(row))}</span></td><td><span class="status-badge status-safe">${esc(row.source_location)} → ${esc(row.destination_location)}</span></td><td>${esc(inventoryQuantityLabel(row.selected_quantity, row.selected_unit))}</td><td>${esc(inventoryQuantityLabel(row.base_quantity, row.base_unit))}</td><td>${transferAllocationMarkup(row.allocations)}</td></tr>`).join('') : '<tr><td class="empty-row" colspan="8">No inventory transfers recorded.</td></tr>'}</tbody></table>`;
     const historyTable = historyWrap.querySelector('table');
     const historyColumnClasses = ['inventory-history-col-date', 'inventory-history-col-brand', 'inventory-history-col-product', 'inventory-history-col-specification', 'inventory-history-col-movement', 'inventory-history-col-selected', 'inventory-history-col-base', 'inventory-history-col-allocation'];
     historyTable?.classList.add('inventory-history-table');
@@ -473,7 +519,7 @@ function renderInventory(rows) {
         const shelfQty = Number(row.shelf_quantity || 0);
         const inventoryUnit = cleanText(row.inventory_unit_name || row.inventory_unit_symbol, 'unit');
         const selectionControl = isPrSelectionMode()
-            ? `<input class="form-check-input inventory-pr-checkbox me-1" type="checkbox" aria-label="Select ${esc(cleanText(row.product_name, 'product'))} for purchase request" data-product-id="${productId}" ${selectedPrProductIds.has(String(row.product_id)) ? 'checked' : ''}>`
+            ? `<input class="form-check-input inventory-pr-checkbox me-1" type="checkbox" aria-label="Select ${esc(productIdentityText(row, 'product'))} for purchase request" data-product-id="${productId}" ${selectedPrProductIds.has(String(row.product_id)) ? 'checked' : ''}>`
             : '';
         const transferDirection = inventoryView === 'shelf' ? 'SHELF_TO_STORAGE' : 'STORAGE_TO_SHELF';
         const sourceQty = transferDirection === 'SHELF_TO_STORAGE' ? shelfQty : storageQty;
@@ -481,7 +527,7 @@ function renderInventory(rows) {
         const transferClass = transferDirection === 'SHELF_TO_STORAGE' ? 'return-storage-btn' : 'move-selling-btn';
         const moveButton = inactive
             ? `<button class="btn btn-sm btn-outline-primary move-selling-btn" type="button" title="Reactivate this product before transferring stock." aria-label="${transferLabel} unavailable for inactive product" data-product-id="${productId}" disabled><i class="fa-solid fa-right-left"></i></button>`
-            : `<button class="btn btn-sm btn-outline-primary ${transferClass}" type="button" title="${transferLabel}" aria-label="${transferLabel}" data-product-id="${productId}" data-direction="${transferDirection}" ${sourceQty <= 0 ? 'disabled' : ''}><i class="fa-solid fa-right-left"></i></button>`;
+            : `<button class="btn btn-sm btn-outline-primary ${transferClass}" type="button" title="${transferLabel}" aria-label="${transferLabel}" data-product-id="${productId}" data-direction="${transferDirection}"><i class="fa-solid fa-right-left"></i></button>`;
         const expiry = `<div class="expiry-cell">${statusBadge(row.expiry_status)}<span class="expiry-date">${esc(formatDate(row.nearest_expiry_date))}</span></div>`;
         const action = `<td class="inventory-col-action inventory-actions-column"><div class="table-actions">${moveButton}<button class="btn btn-sm btn-outline-secondary view-inventory-btn" type="button" title="View Details" aria-label="View Details" data-product-id="${productId}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-secondary history-btn" type="button" title="View Stock Movement History" aria-label="View Stock Movement History" data-product-id="${productId}"><i class="fa-solid fa-clock-rotate-left"></i></button></div></td>`;
         const locationCells = inventoryView === 'shelf'
@@ -494,7 +540,7 @@ function renderInventory(rows) {
             <tr data-product-id="${productId}" class="${rowClasses}">
                 <td class="inventory-col-brand inventory-brand-column">${selectionControl}<span class="brand-cell">${highlightSearchText(cleanText(row.brand_name), searchTerm)}</span></td>
                 <td class="inventory-col-product inventory-product-column">
-                    <span class="product-cell">${highlightSearchText(cleanText(row.product_name, 'Unnamed product'), searchTerm)}</span>
+                    <span class="product-cell">${renderProductIdentityCell(row, searchTerm)}</span>
                 </td>
                 <td class="inventory-col-specification inventory-specification-column"><span class="specification-cell" title="${esc(specification)}">${highlightSearchText(specification, searchTerm)}</span></td>
                 <td class="inventory-col-type inventory-type-column">${highlightSearchText(cleanText(row.type_name), searchTerm)}</td>
@@ -617,7 +663,7 @@ function openDetails(productId, show = true) {
     const batchCount = Number(row.active_batch_count || 0);
     const hasReturned = returnedQty > 0 || (row.batches || []).some((batch) => Object.prototype.hasOwnProperty.call(batch, 'returned_qty'));
     const subtitle = document.getElementById('inventoryDetailsSubtitle');
-    if (subtitle) subtitle.textContent = formatProductIdentity([row.brand_name, row.product_name, productSpecification]);
+    if (subtitle) subtitle.textContent = formatProductIdentity([row.brand_name, productIdentityText(row), productSpecification]);
     const statusContainer = document.getElementById('inventoryDetailsProductStatus');
     if (statusContainer) {
         statusContainer.innerHTML = `<strong>Product Status:</strong> ${productStatusBadge(row.product_status, true)}`;
@@ -662,7 +708,7 @@ function openDetails(productId, show = true) {
                         <tbody>
                             <tr>
                                 ${identityItem('Brand', row.brand_name)}
-                                ${identityItem('Product', row.product_name)}
+                                ${identityItem('Product', productIdentityText(row))}
                                 ${identityItem('Category', row.category_name)}
                                 ${identityItem('Product Type', row.type_name)}
                                 ${identityItem('Specification', productSpecification)}
@@ -755,12 +801,17 @@ async function openMoveModal(productId, direction = 'STORAGE_TO_SHELF') {
     const storageQty = Number(product.storage_quantity || 0);
     const shelfQty = Number(product.shelf_quantity || 0);
     const toShelf = direction === 'STORAGE_TO_SHELF';
+    if (toShelf && storageQty <= 0) {
+        activeTransferOptions = null;
+        await showNoStorageStockModal(row);
+        return;
+    }
     document.getElementById('moveProductId').value = product.product_id;
     document.getElementById('moveDirection').value = direction;
     document.getElementById('moveShelfTitle').textContent = toShelf ? 'Transfer to Shelf' : 'Return to Storage';
     document.getElementById('moveSourceLocation').textContent = toShelf ? 'Storage Inventory' : 'Shelf Inventory';
     document.getElementById('moveDestinationLocation').textContent = toShelf ? 'Shelf Inventory' : 'Storage Inventory';
-    document.getElementById('moveProductName').textContent = cleanText(product.product_name, 'Unnamed product');
+    document.getElementById('moveProductName').textContent = productIdentityText({ ...row, ...product }, 'Unnamed product');
     document.getElementById('moveBrandName').textContent = cleanText(product.brand_name);
     document.getElementById('moveSpecification').textContent = buildInventorySpecification(row);
     document.getElementById('moveInventoryUnit').textContent = inventoryUnitLabel(product.base_unit);
@@ -768,7 +819,22 @@ async function openMoveModal(productId, direction = 'STORAGE_TO_SHELF') {
     document.getElementById('moveShelfBefore').textContent = inventoryQuantityLabel(shelfQty, product.base_unit);
     document.getElementById('moveQuantity').value = '';
     const unitSelect = document.getElementById('moveUnit');
-    unitSelect.innerHTML = (options.units || []).map((unit) => `<option value="${esc(unit.unit)}" data-factor="${esc(unit.base_quantity)}">${esc(inventoryUnitLabel(unit.unit))}</option>`).join('');
+    const allUnits = Array.isArray(options.units) ? options.units : [];
+    const sourceQty = toShelf ? storageQty : shelfQty;
+    const satisfiableUnits = allUnits.filter((unit) => Math.floor(sourceQty / Math.max(1, Number(unit.base_quantity || 1))) > 0);
+    const baseUnitOption = allUnits.find((unit) => Number(unit.base_quantity || 1) === 1) || { unit: product.base_unit, base_quantity: 1 };
+    const modalUnits = (satisfiableUnits.length ? satisfiableUnits : [baseUnitOption])
+        .filter((unit, index, units) => units.findIndex((candidate) => String(candidate.unit || '').trim().toLowerCase() === String(unit.unit || '').trim().toLowerCase()) === index)
+        .sort((left, right) => Number(right.base_quantity || 1) - Number(left.base_quantity || 1));
+    unitSelect.innerHTML = modalUnits
+        .map((unit) => {
+            const factor = Number(unit.base_quantity || 1);
+            const label = `${inventoryUnitLabel(unit.unit)} - ${inventoryQuantityLabel(factor, product.base_unit)}`;
+            return `<option value="${esc(unit.unit)}" data-factor="${esc(factor)}">${esc(label)}</option>`;
+        })
+        .join('');
+    unitSelect.value = modalUnits[0]?.unit || product.base_unit;
+    document.getElementById('moveQuantity').value = '1';
     document.getElementById('moveShelfReceive').textContent = inventoryQuantityLabel(0, product.base_unit);
     document.getElementById('moveStorageRemaining').textContent = inventoryQuantityLabel(storageQty, product.base_unit);
     document.getElementById('moveShelfAfter').textContent = inventoryQuantityLabel(shelfQty, product.base_unit);
@@ -806,20 +872,46 @@ function renderTransferAllocationPreview(baseQty) {
 
 function updateTransferPreview() {
     if (!activeTransferOptions) return;
-    const quantity = Number(document.getElementById('moveQuantity')?.value || 0);
+    const quantityInput = document.getElementById('moveQuantity');
+    const quantity = Number(quantityInput?.value || 0);
     const selected = document.getElementById('moveUnit')?.selectedOptions?.[0];
     const factor = Number(selected?.dataset.factor || 1);
     const baseQty = Number.isInteger(quantity) && quantity > 0 ? quantity * factor : 0;
     const product = activeTransferOptions.product;
     const toShelf = document.getElementById('moveDirection').value === 'STORAGE_TO_SHELF';
     const selectedUnit = selected?.value || product.base_unit;
+    const sourceBatches = toShelf ? activeTransferOptions.storage_batches : activeTransferOptions.shelf_batches;
+    const sourceQty = (sourceBatches || []).reduce((total, batch) => total + Number(batch.available_quantity || 0), 0);
+    const maxTransferQty = Math.floor(sourceQty / Math.max(1, factor));
+    const exceedsSource = baseQty > sourceQty;
+    const validQuantity = baseQty > 0 && !exceedsSource;
+    const feedback = document.getElementById('moveBatchFeedback');
+    const submitButton = document.getElementById('moveSubmitButton');
+    const moving = document.getElementById('moveMoving');
+    const maxHelper = document.getElementById('moveMaxHelper');
+    if (quantityInput) {
+        quantityInput.max = String(maxTransferQty);
+        quantityInput.classList.toggle('is-invalid', exceedsSource || (quantityInput.value !== '' && !Number.isInteger(quantity)));
+    }
+    if (maxHelper) maxHelper.textContent = `Maximum: ${inventoryQuantityLabel(maxTransferQty, selectedUnit)}`;
     document.getElementById('moveEquivalent').textContent = baseQty > 0
         ? `${inventoryQuantityLabel(quantity, selectedUnit)} = ${inventoryQuantityLabel(baseQty, product.base_unit)}`
         : 'Enter a quantity';
-    document.getElementById('moveShelfReceive').textContent = inventoryQuantityLabel(baseQty, product.base_unit);
-    document.getElementById('moveStorageRemaining').textContent = inventoryQuantityLabel(Number(product.storage_quantity) + (toShelf ? -baseQty : baseQty), product.base_unit);
-    document.getElementById('moveShelfAfter').textContent = inventoryQuantityLabel(Number(product.shelf_quantity) + (toShelf ? baseQty : -baseQty), product.base_unit);
-    renderTransferAllocationPreview(baseQty);
+    if (moving) moving.textContent = baseQty > 0 ? inventoryQuantityLabel(quantity, selectedUnit) : 'Enter a quantity';
+    document.getElementById('moveShelfReceive').textContent = inventoryQuantityLabel(toShelf ? (validQuantity ? baseQty : 0) : 0, product.base_unit);
+    document.getElementById('moveStorageRemaining').textContent = validQuantity
+        ? inventoryQuantityLabel(Number(product.storage_quantity) + (toShelf ? -baseQty : baseQty), product.base_unit)
+        : (exceedsSource ? 'Cannot transfer' : inventoryQuantityLabel(Number(product.storage_quantity), product.base_unit));
+    document.getElementById('moveShelfAfter').textContent = validQuantity
+        ? inventoryQuantityLabel(Number(product.shelf_quantity) + (toShelf ? baseQty : -baseQty), product.base_unit)
+        : inventoryQuantityLabel(Number(product.shelf_quantity), product.base_unit);
+    if (feedback) {
+        feedback.textContent = exceedsSource
+            ? `Only ${inventoryQuantityLabel(maxTransferQty, selectedUnit)} can be transferred from the current ${inventoryQuantityLabel(sourceQty, product.base_unit)}.`
+            : '';
+    }
+    if (submitButton) submitButton.disabled = !validQuantity;
+    renderTransferAllocationPreview(validQuantity ? baseQty : 0);
 }
 
 async function submitMove(event) {
@@ -833,6 +925,8 @@ async function submitMove(event) {
         if (feedback) feedback.textContent = 'Transfer quantity must be a positive whole number.';
         return;
     }
+    updateTransferPreview();
+    if (document.getElementById('moveSubmitButton')?.disabled) return;
 
     if (feedback) feedback.textContent = '';
 
@@ -863,7 +957,7 @@ function openHistoryLegacy(productId) {
 
     document.getElementById('stockHistory').innerHTML = `
         <div class="mb-3">
-            <strong>${esc(cleanText(row.product_name, 'Unnamed product'))}</strong>
+            <strong>${esc(productIdentityText(row, 'Unnamed product'))}</strong>
             <span class="text-muted ms-2">${esc(cleanText(row.brand_name))}</span>
         </div>
         <div class="table-responsive">
@@ -967,7 +1061,7 @@ function historyProductSummary(product) {
     const shelf = Number(product.shelf_quantity || 0);
     const storage = Number(product.storage_quantity || 0);
     return `<div class="stock-product-summary">
-        <div class="stock-product-card"><span class="stock-product-label">Product</span><strong>${esc(uniqueParts([product.brand_name, product.product_name]).join(' ') || 'Unnamed product')}</strong><span class="stock-product-meta">${esc(buildInventorySpecification(product))} &middot; SKU / Barcode: ${esc(product.barcode || 'Not recorded')}</span></div>
+        <div class="stock-product-card"><span class="stock-product-label">Product</span><strong>${esc(formatProductIdentity([product.brand_name, productIdentityText(product)]) || 'Unnamed product')}</strong><span class="stock-product-meta">${esc(buildInventorySpecification(product))} &middot; SKU / Barcode: ${esc(product.barcode || 'Not recorded')}</span></div>
         <div class="stock-summary-card"><span>Current Shelf Stock</span><strong>${esc(shelf)}</strong></div>
         <div class="stock-summary-card"><span>Current Storage Stock</span><strong>${esc(storage)}</strong></div>
         <div class="stock-summary-card on-hand"><span>Current On Hand</span><strong>${esc(shelf + storage)}</strong></div>
@@ -1184,6 +1278,8 @@ document.getElementById('inventoryStockStatusFilter')?.addEventListener('change'
     applyInventoryFilters();
 });
 document.getElementById('moveShelfForm')?.addEventListener('submit', submitMove);
+document.getElementById('moveUnit')?.addEventListener('change', updateTransferPreview);
+document.getElementById('moveQuantity')?.addEventListener('input', updateTransferPreview);
 document.getElementById('btnInventoryDetailsHistory')?.addEventListener('click', () => {
     if (!activeDetailsProductId) return;
     bootstrap.Modal.getInstance(document.getElementById('inventoryDetailsModal'))?.hide();

@@ -200,11 +200,21 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             i.line_total,
             p.status AS product_status,
             md.generic_name,
+            classification_values.medicine_classification,
+            classification_values.medicine_classification_badge,
             COALESCE(NULLIF(md.strength, ''), TRIM(CONCAT(COALESCE(md.strength_value, ''), COALESCE(md.strength_unit, '')))) AS medicine_strength,
             TRIM(CONCAT(COALESCE(gd.net_weight, ''), CASE WHEN gd.unit IS NULL OR gd.unit = '' THEN '' ELSE CONCAT(' ', gd.unit) END)) AS grocery_net_weight
          FROM sales_order_items i
          LEFT JOIN product p ON p.product_id = i.product_id
          LEFT JOIN medicine_details md ON md.product_id = i.product_id
+         LEFT JOIN (
+            SELECT psv.product_id,
+                   psv.value_text AS medicine_classification,
+                   CASE WHEN LOWER(TRIM(psv.value_text)) = 'prescription (rx)' THEN 'Rx' ELSE NULL END AS medicine_classification_badge
+            FROM product_specification_values psv
+            INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+            WHERE LOWER(TRIM(ps.specification_name)) = 'medicine classification'
+         ) classification_values ON classification_values.product_id = i.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = i.product_id
          WHERE i.order_id = :order_id
          ORDER BY i.order_item_id ASC"
@@ -217,6 +227,8 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             'product_name' => cashierDisplay($item['product_name'] ?? '', 'Item'),
             'specification' => cashierDisplay($item['specification'] ?? ''),
             'generic_name' => cashierDisplay($item['generic_name'] ?? ''),
+            'medicine_classification' => cashierDisplay($item['medicine_classification'] ?? ''),
+            'medicine_classification_badge' => cashierDisplay($item['medicine_classification_badge'] ?? ''),
             'strength' => cashierDisplay($item['medicine_strength'] ?? ''),
             'net_weight' => cashierDisplay($item['grocery_net_weight'] ?? ''),
             'quantity' => (int) (($item['selected_quantity'] ?? 0) ?: ($item['quantity'] ?? 0)),
@@ -305,6 +317,7 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
              FROM product_selling_stock
              WHERE product_id = :product_id
                AND quantity_remaining > 0
+               AND (expiration_date IS NULL OR expiration_date >= CURDATE())
              ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC
              FOR UPDATE"
         );
@@ -325,12 +338,18 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
             $update = $pdo->prepare(
                 'UPDATE product_selling_stock
                  SET quantity_remaining = quantity_remaining - :deduct
-                 WHERE selling_stock_id = :selling_stock_id'
+                 WHERE selling_stock_id = :selling_stock_id
+                   AND quantity_remaining >= :deduct_guard
+                   AND (expiration_date IS NULL OR expiration_date >= CURDATE())'
             );
             $update->execute([
                 ':deduct' => $deduct,
+                ':deduct_guard' => $deduct,
                 ':selling_stock_id' => $batch['selling_stock_id'],
             ]);
+            if ($update->rowCount() !== 1) {
+                throw new RuntimeException('Shelf stock changed while completing the sale. Please review the order and try again.');
+            }
 
             $remaining -= $deduct;
         }

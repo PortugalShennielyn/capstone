@@ -1,5 +1,5 @@
 import API_BASE_URL from "../config/config.js";
-import { renderPurchaseRequestDocument } from "./pr_document_renderer.js?v=10";
+import { renderPurchaseRequestDocument } from "./pr_document_renderer.js?v=11";
 
 const pageParams = new URLSearchParams(window.location.search);
 const embeddedPreview = pageParams.get("embed") === "1";

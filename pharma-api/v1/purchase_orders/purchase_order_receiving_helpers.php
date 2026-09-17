@@ -76,8 +76,14 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId, string $rece
                 COALESCE(pori.damaged_quantity, 0) AS damaged_quantity,
                 COALESCE(pori.action_quantity, 0) AS action_quantity,
                 COALESCE(piii.unit_cost / NULLIF(poi.units_per_purchase_unit_snapshot, 0), poi.unit_price_snapshot, 0) AS unit_price,
-                COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name) AS product_name,
+                CASE
+                    WHEN LOWER(COALESCE(pc.category_name, '')) = 'medicine'
+                        THEN COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name, p.product_name)
+                    ELSE COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name)
+                END AS product_name,
                 COALESCE(NULLIF(poi.brand_name_snapshot, ''), p.brand_name) AS brand_name,
+                COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name, '') AS generic_name,
+                pc.category_name,
                 COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name, gd.variant, '') AS generic_or_variant,
                 COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
                 COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, '') AS size_value,
@@ -85,6 +91,7 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId, string $rece
                 COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging
          FROM purchase_order_items poi
          LEFT JOIN product p ON p.product_id = poi.product_id
+         LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN purchase_order_receiving_item_summary pori ON pori.po_item_id = poi.po_item_id AND pori.receiving_id = :receiving_id
          LEFT JOIN purchase_order_invoice_items piii ON piii.po_item_id = poi.po_item_id
          LEFT JOIN medicine_details md ON md.product_id = poi.product_id

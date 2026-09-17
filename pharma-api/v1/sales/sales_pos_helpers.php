@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../activity_log_helpers.php';
 require_once __DIR__ . '/sales_financials.php';
 require_once __DIR__ . '/../products/product_selling_options.php';
+require_once __DIR__ . '/../inventory/expiry_status_helpers.php';
 
 function salesReadJsonBody(): array
 {
@@ -201,12 +202,32 @@ function salesBuildSpecification(array $row): string
     return implode(' • ', $parts);
 }
 
+function salesResolvedProductName(array $row): string
+{
+    $brand = trim((string) ($row['brand_name'] ?? ''));
+    $product = trim((string) ($row['product_name'] ?? ''));
+    $generic = trim((string) ($row['generic_name'] ?? ''));
+    $category = strtolower(trim((string) ($row['category_name'] ?? '')));
+
+    if ($category === 'medicine' && $generic !== '') {
+        return $generic;
+    }
+
+    if ($product !== '' && strcasecmp($product, $brand) !== 0) {
+        return $product;
+    }
+
+    return $generic !== '' ? $generic : ($product !== '' ? $product : $brand);
+}
+
 function salesProductStock(PDO $pdo, string $productId): int
 {
     $stmt = $pdo->prepare(
         'SELECT COALESCE(SUM(quantity_remaining), 0)
          FROM product_selling_stock
-         WHERE product_id = :product_id'
+         WHERE product_id = :product_id
+           AND quantity_remaining > 0
+           AND (expiration_date IS NULL OR expiration_date >= CURDATE())'
     );
     $stmt->execute([':product_id' => $productId]);
     return (int) $stmt->fetchColumn();
@@ -267,14 +288,21 @@ function salesLoadProductsByIds(PDO $pdo, array $productIds): array
                 msd.sterile_status,
                 msd.package_type AS medical_package_type,
                 msd.pack_content AS medical_pack_content,
-                COALESCE(stock.available_stock, 0) AS available_stock
+                COALESCE(stock.available_stock, 0) AS available_stock,
+                stock.first_expiry_date,
+                stock.first_days_until_expiry,
+                stock.first_batch_number
             FROM product p
             LEFT JOIN product_categories pc ON pc.category_id = p.category_id
             LEFT JOIN medicine_details md ON md.product_id = p.product_id
             LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
             LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
             LEFT JOIN (
-                SELECT product_id, SUM(quantity_remaining) AS available_stock
+                SELECT product_id,
+                       SUM(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN quantity_remaining ELSE 0 END) AS available_stock,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN expiration_date END ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC), ',', 1) AS first_expiry_date,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN DATEDIFF(expiration_date, CURDATE()) END ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC), ',', 1) AS first_days_until_expiry,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN batch_number END ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC), ',', 1) AS first_batch_number
                 FROM product_selling_stock
                 GROUP BY product_id
             ) stock ON stock.product_id = p.product_id
@@ -285,7 +313,9 @@ function salesLoadProductsByIds(PDO $pdo, array $productIds): array
     $products = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $row['specification'] = salesBuildSpecification($row);
+        $row['product_name'] = salesResolvedProductName($row);
         $row['available_stock'] = (int) ($row['available_stock'] ?? 0);
+        $row['first_expiry_status'] = inventoryExpiryStatus($row['first_expiry_date'] ?? null, $row['first_days_until_expiry'] ?? null);
         $row['price'] = round((float) ($row['price'] ?? 0), 2);
         $products[(string) $row['product_id']] = $row;
     }

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../suppliers/purchasing_conversion.php';
 
 function productSellingBaseUnit(PDO $pdo, string $productId): array
 {
@@ -21,12 +22,14 @@ function productSellingBaseUnit(PDO $pdo, string $productId): array
     return $row;
 }
 
-function productShelfBaseQuantity(PDO $pdo, string $productId): int
+function productShelfBaseQuantity(PDO $pdo, string $productId, bool $usableOnly = false): int
 {
+    $expiryFilter = $usableOnly ? ' AND (expiration_date IS NULL OR expiration_date >= CURDATE())' : '';
     $statement = $pdo->prepare(
-        'SELECT COALESCE(SUM(quantity_remaining), 0)
+        "SELECT COALESCE(SUM(quantity_remaining), 0)
          FROM product_selling_stock
-         WHERE product_id = :product_id'
+         WHERE product_id = :product_id
+           AND quantity_remaining > 0{$expiryFilter}"
     );
     $statement->execute([':product_id' => $productId]);
     return (int) $statement->fetchColumn();
@@ -34,9 +37,7 @@ function productShelfBaseQuantity(PDO $pdo, string $productId): int
 
 function productSellingOptions(PDO $pdo, string $productId, bool $posOnly = false): array
 {
-    // POS stock is canonical inventory stock. Packaging units may be used for
-    // purchasing and transfers, but customers buy the Product Master unit.
-    $where = $posOnly ? ' AND pso.is_active = 1 AND pso.pos_enabled = 1 AND pso.base_quantity = 1' : '';
+    $where = $posOnly ? ' AND pso.is_active = 1 AND pso.pos_enabled = 1' : '';
     $statement = $pdo->prepare(
         "SELECT pso.selling_option_id, pso.product_id,
                 pso.unit_name AS unit, pso.base_quantity,
@@ -48,7 +49,7 @@ function productSellingOptions(PDO $pdo, string $productId, bool $posOnly = fals
                   pso.base_quantity ASC, pso.unit_name ASC"
     );
     $statement->execute([':product_id' => $productId]);
-    $shelfQuantity = productShelfBaseQuantity($pdo, $productId);
+    $shelfQuantity = productShelfBaseQuantity($pdo, $productId, true);
     return array_map(static function (array $row) use ($shelfQuantity): array {
         $baseQuantity = max(1, (int) $row['base_quantity']);
         return [
@@ -63,6 +64,27 @@ function productSellingOptions(PDO $pdo, string $productId, bool $posOnly = fals
             'available_quantity' => intdiv(max(0, $shelfQuantity), $baseQuantity),
         ];
     }, $statement->fetchAll(PDO::FETCH_ASSOC));
+}
+
+function productSellableUnitCandidates(PDO $pdo, string $productId): array
+{
+    $base = productSellingBaseUnit($pdo, $productId);
+    $candidates = [];
+    $configuredUnits = supplierProductConfiguredUnits($pdo, $productId);
+    $largestFactor = 0;
+    foreach ($configuredUnits as $unit) $largestFactor = max($largestFactor, (int) ($unit['base_quantity'] ?? 1));
+    foreach ($configuredUnits as $unit) {
+        $name = trim((string) ($unit['unit'] ?? ''));
+        $factor = max(1, (int) ($unit['base_quantity'] ?? 1));
+        if ($name === '') continue;
+        $candidates[mb_strtolower($name)] = ['unit' => $name, 'base_quantity' => $factor];
+    }
+    $baseName = (string) ($base['unit_symbol'] ?: $base['unit_name']);
+    $candidates[mb_strtolower($baseName)] = ['unit' => $baseName, 'base_quantity' => 1];
+    uasort($candidates, static fn(array $left, array $right): int =>
+        $right['base_quantity'] <=> $left['base_quantity'] ?: strcasecmp($left['unit'], $right['unit'])
+    );
+    return array_values($candidates);
 }
 
 function productDefaultSellingOption(PDO $pdo, string $productId): ?array

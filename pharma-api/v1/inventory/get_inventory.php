@@ -46,6 +46,8 @@ try {
             pc.category_name,
             pt.type_name,
             md.generic_name,
+            classification_values.medicine_classification,
+            classification_values.medicine_classification_badge,
             md.strength,
             md.strength_value,
             md.strength_unit,
@@ -114,9 +116,21 @@ try {
                 ON pts.type_id = specification_product.type_id
                AND pts.specification_id = psv.specification_id
             LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = psv.measurement_unit_id
-            WHERE NULLIF(TRIM(psv.value_text), '') IS NOT NULL OR psv.value_number IS NOT NULL
+            WHERE (NULLIF(TRIM(psv.value_text), '') IS NOT NULL OR psv.value_number IS NOT NULL)
+              AND LOWER(TRIM(ps.specification_name)) <> 'medicine classification'
             GROUP BY psv.product_id
          ) specs ON specs.product_id = p.product_id
+         LEFT JOIN (
+            SELECT psv.product_id,
+                   psv.value_text AS medicine_classification,
+                   CASE
+                       WHEN LOWER(TRIM(psv.value_text)) = 'prescription (rx)' THEN 'Rx'
+                       ELSE NULL
+                   END AS medicine_classification_badge
+            FROM product_specification_values psv
+            INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
+            WHERE LOWER(TRIM(ps.specification_name))='medicine classification'
+         ) classification_values ON classification_values.product_id=p.product_id
          LEFT JOIN (
             SELECT
                 product_id,

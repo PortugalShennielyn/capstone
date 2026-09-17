@@ -37,6 +37,17 @@ function formatQuantity(value, emptyValue = "—") {
     });
 }
 
+function distinctDisplayParts(parts) {
+    const seen = new Set();
+    return parts.filter((part) => {
+        const value = String(part || "").trim();
+        const key = value.toLowerCase();
+        if (!value || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
 function displayUnitLabel(unit, quantity = 1) {
     const clean = String(unit || "").trim();
     if (!clean) return "";
@@ -69,9 +80,17 @@ export function renderPurchaseRequestDocument(
             const shelf = inventoryQuantity(inventory, item, "shelf_quantity", "shelf_stock");
             const storage = inventoryQuantity(inventory, item, "storage_quantity", "storage_stock");
             const onHand = inventory?.on_hand ?? item?.on_hand ?? shelf + storage;
-            const identity =
-                [product.brand_name, product.product_name].filter(Boolean).join(" - ") ||
-                "Unnamed product";
+            const displayName = String(
+                product.generic_name ||
+                    item.generic_name ||
+                    product.product_name ||
+                    item.product_name ||
+                    "",
+            ).trim() || "Unnamed product";
+            const secondaryIdentity = distinctDisplayParts([
+                product.brand_name || item.brand_name,
+                formatProductSpecification(product, item.specification || "Not specified"),
+            ]).join(" • ");
             const baseInventoryUnit = String(
                 item.base_inventory_unit || product.base_inventory_unit || "",
             ).trim();
@@ -84,7 +103,7 @@ export function renderPurchaseRequestDocument(
                 item.approved_qty == null
                     ? "—"
                     : `${formatQuantity(item.approved_qty)} ${displayUnitLabel(item.unit, item.approved_qty)}`;
-            return `<tr><td>${index + 1}</td><td class="product-description"><strong>${escapeHtml(identity)}</strong><span>${escapeHtml(formatProductSpecification(product, item.specification || "Not specified"))}</span></td><td>${escapeHtml(baseInventoryUnit || formatProductPacking(product, "Unit not configured"))}</td><td>${escapeHtml(shelf)}</td><td>${escapeHtml(storage)}</td><td><strong>${escapeHtml(Number(onHand || 0))}</strong></td><td class="quantity-cell"><div class="quantity-stack"><span>${escapeHtml(requestedQty)}</span>${equivalent ? `<small>${escapeHtml(equivalent)}</small>` : ""}</div></td><td class="quantity-cell">${escapeHtml(approvedQty)}</td></tr>`;
+            return `<tr><td>${index + 1}</td><td class="product-description"><strong>${escapeHtml(displayName)}</strong><span>${escapeHtml(secondaryIdentity)}</span></td><td>${escapeHtml(baseInventoryUnit || formatProductPacking(product, "Unit not configured"))}</td><td>${escapeHtml(shelf)}</td><td>${escapeHtml(storage)}</td><td><strong>${escapeHtml(Number(onHand || 0))}</strong></td><td class="quantity-cell"><div class="quantity-stack"><span>${escapeHtml(requestedQty)}</span>${equivalent ? `<small>${escapeHtml(equivalent)}</small>` : ""}</div></td><td class="quantity-cell">${escapeHtml(approvedQty)}</td></tr>`;
         })
         .join("");
 

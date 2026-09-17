@@ -7,6 +7,8 @@ require_once 'purchase_order_payment_helpers.php';
 require_once '../products/product_pricing_schema.php';
 require_once '../suppliers/purchasing_conversion.php';
 
+ensurePurchaseOrderSchema($pdo);
+
 const RECEIVING_DRAFT_PREFIX = "[INSPECTION_DRAFT_V1]\n";
 const RECEIVING_META_PREFIX = "[RECEIVING_META_V1]\n";
 
@@ -108,6 +110,7 @@ try {
     $orderStatement->execute([':po_id' => $poId]);
     $order = $orderStatement->fetch(PDO::FETCH_ASSOC);
     if (!$order) throw new InvalidArgumentException('Purchase order not found.');
+    assertPurchaseOrderHasProducts($pdo, $poId);
     if ($order['status'] !== 'Arrived') throw new InvalidArgumentException('Only arrived purchase orders can be inspected.');
 
     $receivingHeaderStatement = $pdo->prepare(
@@ -337,7 +340,8 @@ try {
             $validatedBatches[] = [
                 'batch_number' => receiveBatchNumber($order['po_number'], $poItemId, $batchIndex, (string) ($batch['batch_identifier'] ?? '')),
                 'quantity' => $quantity,
-                'expiry_date' => $noExpiry ? null : $expiry
+                'expiry_date' => $noExpiry ? null : $expiry,
+                'no_expiry' => $noExpiry,
             ];
             $allocated += $quantity;
         }
@@ -389,8 +393,8 @@ try {
     }
 
     $receiveItemStatement = $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, received_quantity, accepted_quantity, damaged_quantity, missing_quantity) VALUES (:id, :receiving_id, :po_item_id, :received, :accepted, :damaged, :missing)');
-    $inventoryStatement = $pdo->prepare("INSERT INTO product_inventory (inventory_id, receiving_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, expiry_date, status) VALUES (:id, :receiving_id, :product_id, :batch_number, :quantity, :remaining, :expiry, :expiry_copy, :status)");
-    $batchStatement = $pdo->prepare("INSERT INTO inventory_batches (batch_id, legacy_inventory_id, po_id, po_item_id, product_id, supplier_id, received_date, expiry_date, received_qty, storage_qty, shelf_qty, damaged_qty, returned_qty, unit_cost, batch_status) VALUES (:batch_id, :inventory_id, :po_id, :po_item_id, :product_id, :supplier_id, CURRENT_TIMESTAMP, :expiry, :received, :storage, 0, :damaged, :returned, :unit_cost, :status)");
+    $inventoryStatement = $pdo->prepare("INSERT INTO product_inventory (inventory_id, receiving_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, expiry_date, no_expiry, status) VALUES (:id, :receiving_id, :product_id, :batch_number, :quantity, :remaining, :expiry, :expiry_copy, :no_expiry, :status)");
+    $batchStatement = $pdo->prepare("INSERT INTO inventory_batches (batch_id, legacy_inventory_id, po_id, po_item_id, product_id, supplier_id, received_date, expiry_date, no_expiry, received_qty, storage_qty, shelf_qty, damaged_qty, returned_qty, unit_cost, batch_status) VALUES (:batch_id, :inventory_id, :po_id, :po_item_id, :product_id, :supplier_id, CURRENT_TIMESTAMP, :expiry, :no_expiry, :received, :storage, 0, :damaged, :returned, :unit_cost, :status)");
     $claimStatement = $pdo->prepare('INSERT INTO supplier_claims (claim_id, po_item_id, damaged_quantity, damaged_unit_conversion_id, action_quantity, action_unit_conversion_id, affected_quantity, unit_conversion_id, damage_reason, disposition, resolution_type, requested_resolution_type, claim_status, reported_by, remarks) VALUES (:id, :po_item_id, :damaged_quantity, :damaged_conversion_id, :action_quantity, :action_conversion_id, :quantity, :conversion_id, :reason, :disposition, :resolution, :requested_resolution, :status, :reported_by, :remarks)');
     $damageLineStatement = $pdo->prepare('INSERT INTO supplier_claim_damage_lines (damage_line_id, claim_id, receiving_item_id, sequence_no, affected_unit_conversion_id, affected_quantity, damaged_quantity, damaged_unit_conversion_id, inventory_batch_id) VALUES (:id, :claim_id, :receiving_item_id, :sequence_no, :affected_conversion_id, :affected_quantity, :damaged_quantity, :damaged_conversion_id, :inventory_batch_id)');
     $creditStatement = $pdo->prepare("INSERT INTO supplier_credits (credit_id, claim_id, credit_amount, credit_status) VALUES (:credit_id, :claim_id, :amount, :status)");
@@ -414,7 +418,7 @@ try {
             $inventoryStatement->execute([
                 ':id' => $inventoryId, ':receiving_id' => $receivingId, ':product_id' => cleanId($validated['po_item']['product_id']),
                 ':batch_number' => $batch['batch_number'], ':quantity' => $storageQuantity, ':remaining' => $storageQuantity,
-                ':expiry' => $batch['expiry_date'], ':expiry_copy' => $batch['expiry_date'], ':status' => $storageQuantity > 0 ? 'Available' : 'Out of Stock'
+                ':expiry' => $batch['expiry_date'], ':expiry_copy' => $batch['expiry_date'], ':no_expiry' => $batch['no_expiry'] ? 1 : 0, ':status' => $storageQuantity > 0 ? 'Available' : 'Out of Stock'
             ]);
             $pricingBatchId = newUuid($pdo);
             $inventoryBatchIds[$batchIndex] = $pricingBatchId;
@@ -422,7 +426,7 @@ try {
                 ':batch_id' => $pricingBatchId, ':inventory_id' => $inventoryId,
                 ':po_id' => $batchIndex === 0 ? $poId : null, ':po_item_id' => $validated['poItemId'],
                 ':product_id' => cleanId($validated['po_item']['product_id']), ':supplier_id' => cleanId($order['supplier_id']),
-                ':expiry' => $batch['expiry_date'], ':received' => $batch['quantity'], ':storage' => $storageQuantity,
+                ':expiry' => $batch['expiry_date'], ':no_expiry' => $batch['no_expiry'] ? 1 : 0, ':received' => $batch['quantity'], ':storage' => $storageQuantity,
                 ':damaged' => 0,
                 ':returned' => 0,
                 ':unit_cost' => $validated['unitPrice'], ':status' => 'active'

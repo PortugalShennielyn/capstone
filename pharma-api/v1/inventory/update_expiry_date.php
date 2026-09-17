@@ -46,7 +46,13 @@ try {
 
     $pdo->beginTransaction();
     $lookup = $pdo->prepare(
-        'SELECT batch_id, legacy_inventory_id, product_id
+        'SELECT batch_id, legacy_inventory_id, product_id, received_date,
+                CASE
+                    WHEN received_date >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                     AND NOT EXISTS (SELECT 1 FROM inventory_transfer_allocations ita WHERE ita.source_batch_id = inventory_batches.batch_id)
+                     AND NOT EXISTS (SELECT 1 FROM product_selling_stock pss WHERE pss.source_batch_id = inventory_batches.batch_id)
+                    THEN 1 ELSE 0
+                END AS can_edit_expiry
          FROM inventory_batches
          WHERE batch_id = :batch_id
             OR legacy_inventory_id = :inventory_id
@@ -57,6 +63,9 @@ try {
     $batch = $lookup->fetch(PDO::FETCH_ASSOC);
     if (!$batch) {
         throw new InvalidArgumentException('Inventory batch not found.');
+    }
+    if ((int) ($batch['can_edit_expiry'] ?? 0) !== 1) {
+        throw new InvalidArgumentException('Expiry date locked. Expiry information can only be corrected within 24 hours of receiving the batch before inventory activity occurs.');
     }
 
     $updateBatch = $pdo->prepare('UPDATE inventory_batches SET expiry_date = :expiry_date WHERE batch_id = :batch_id');

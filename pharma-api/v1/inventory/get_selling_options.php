@@ -11,6 +11,8 @@ try {
         'status' => 'success',
         'base_unit' => productSellingBaseUnit($pdo, $productId),
         'shelf_base_quantity' => productShelfBaseQuantity($pdo, $productId),
+        'shelf_usable_base_quantity' => productShelfBaseQuantity($pdo, $productId, true),
+        'candidate_units' => productSellableUnitCandidates($pdo, $productId),
         'options' => productSellingOptions($pdo, $productId),
     ]);
 } catch (InvalidArgumentException $error) {
@@ -20,4 +22,3 @@ try {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to load Selling Setup.']);
 }
-

@@ -58,12 +58,18 @@ try {
                 pss.batch_number, pss.expiration_date expiry_date, pss.selling_stock_id
             FROM product_selling_stock pss INNER JOIN inventory_batches ib ON ib.batch_id=pss.source_batch_id
             WHERE pss.product_id=:product_id AND pss.quantity_remaining>0
+              AND (pss.expiration_date IS NULL OR pss.expiration_date>=CURDATE())
             ORDER BY pss.expiration_date IS NULL, pss.expiration_date, pss.created_at, pss.selling_stock_id FOR UPDATE");
     }
     $stockStmt->execute([':product_id'=>$productId]);
     $stocks = $stockStmt->fetchAll(PDO::FETCH_ASSOC);
     $available = array_sum(array_map(static fn($r)=>(int)$r['available_qty'], $stocks));
-    if ($baseQty > $available) throw new InvalidArgumentException("Converted transfer quantity ({$baseQty} {$baseUnit}) exceeds current {$source} availability ({$available} {$baseUnit}).");
+    if ($baseQty > $available) {
+        $maxSelected = intdiv($available, $factor);
+        $selectedLabel = purchasingQuantityUnitLabel((string) $unit['unit'], $maxSelected);
+        $baseLabel = purchasingQuantityUnitLabel($baseUnit, $available);
+        throw new InvalidArgumentException("Only {$maxSelected} {$selectedLabel} can be transferred from the current {$available} {$baseLabel}.");
+    }
 
     $transferId = $requestId !== '' ? $requestId : newUuid($pdo);
     $insertTransfer = $pdo->prepare('INSERT INTO inventory_transfers (transfer_id,product_id,movement_type,selected_quantity,selected_unit,base_quantity,base_unit,source_location,destination_location,transferred_by) VALUES (:id,:product,:type,:selected_qty,:selected_unit,:base_qty,:base_unit,:source,:destination,:user)');
@@ -88,7 +94,7 @@ try {
                 $pdo->prepare('INSERT INTO product_selling_stock (selling_stock_id,product_id,source_inventory_id,source_batch_id,batch_number,quantity_stocked,quantity_remaining,expiration_date) VALUES (:id,:product,:inventory,:batch,:number,:qty,:remaining,:expiry)')->execute([':id'=>$sellingId,':product'=>$productId,':inventory'=>$stock['inventory_id'],':batch'=>$stock['batch_id'],':number'=>$stock['batch_number'],':qty'=>$move,':remaining'=>$move,':expiry'=>$stock['expiry_date']]);
             }
         } else {
-            $update = $pdo->prepare('UPDATE product_selling_stock SET quantity_remaining=quantity_remaining-:qty WHERE selling_stock_id=:id AND quantity_remaining>=:guard');
+            $update = $pdo->prepare('UPDATE product_selling_stock SET quantity_remaining=quantity_remaining-:qty WHERE selling_stock_id=:id AND quantity_remaining>=:guard AND (expiration_date IS NULL OR expiration_date>=CURDATE())');
             $update->execute([':qty'=>$move,':id'=>$sellingId,':guard'=>$move]);
             if ($update->rowCount() !== 1) throw new RuntimeException('Shelf stock changed during transfer; no stock was moved.');
             $pdo->prepare("UPDATE inventory_batches SET storage_qty=storage_qty+:qty,batch_status=CASE WHEN expiry_date<CURDATE() THEN 'expired' ELSE 'active' END WHERE batch_id=:batch")->execute([':qty'=>$move,':batch'=>$stock['batch_id']]);

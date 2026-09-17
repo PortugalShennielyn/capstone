@@ -17,13 +17,14 @@ try {
     ensurePurchaseRequestSchema($pdo);
     ensurePurchaseOrderSchema($pdo);
     ensurePurchaseOrderInvoiceSchema($pdo);
+    ensurePurchaseOrderPaymentSchema($pdo);
     $status = trim((string) ($_GET['status'] ?? ''));
     $paymentStatusFilter = trim((string) ($_GET['payment_status'] ?? ''));
     $scope = trim((string) ($_GET['scope'] ?? 'active'));
     $whereClause = '';
     $params = [];
 
-    if ($paymentStatusFilter !== '' && !in_array($paymentStatusFilter, ['Paid', 'Partially Paid', 'Unpaid'], true)) {
+    if ($paymentStatusFilter !== '' && !in_array($paymentStatusFilter, ['Paid', 'Unpaid'], true)) {
         throw new InvalidArgumentException('Invalid payment status filter.');
     }
 
@@ -56,17 +57,18 @@ try {
             poi.supplier_invoice_total AS invoice_total,
             po.final_payment AS stored_final_payment,
             COALESCE(payments.total_paid, 0) AS stored_total_paid,
+            COALESCE(payments.advance_payment_count, 0) AS advance_payment_count,
             COALESCE(credits.total_credit, 0) AS supplier_credit_applied,
             po.expected_delivery_date,
             po.status,
             CASE WHEN poi.invoice_id IS NULL THEN 0 ELSE 1 END AS invoice_recorded,
             COALESCE(claims.open_claim_count, 0) AS open_claim_count,
-            CASE
+            COALESCE(credit_badges.badge, CASE
                 WHEN COALESCE(claims.open_replacement_count, 0) > 0 THEN 'Replacement Pending'
                 WHEN COALESCE(claims.open_credit_count, 0) > 0 THEN 'Supplier Credit Pending'
                 WHEN COALESCE(claims.open_claim_count, 0) > 0 THEN 'Claim Pending'
                 ELSE NULL
-            END AS open_claim_badge,
+            END) AS open_claim_badge,
             receiving.received_date,
             receiving.receiving_remarks,
             receiving.inspection_status,
@@ -81,7 +83,8 @@ try {
          LEFT JOIN purchase_order_invoices poi ON poi.po_id = po.po_id
          LEFT JOIN purchase_requests pr ON pr.pr_id = po.pr_id
          LEFT JOIN (
-            SELECT po_id, SUM(amount) AS total_paid
+            SELECT po_id, SUM(amount) AS total_paid,
+                   SUM(CASE WHEN payment_type = 'Advance Payment' THEN 1 ELSE 0 END) AS advance_payment_count
             FROM purchase_order_payments
             GROUP BY po_id
          ) payments ON payments.po_id = po.po_id
@@ -90,6 +93,20 @@ try {
             FROM supplier_credit_applications
             GROUP BY po_id
          ) credits ON credits.po_id = po.po_id
+            LEFT JOIN (
+                SELECT source_item.po_id,
+                         CASE
+                              WHEN SUM(cr.credit_status = 'Available') > 0 THEN 'Supplier Credit Pending'
+                              WHEN SUM(cr.credit_status = 'Partially Applied') > 0 THEN 'Supplier Credit Partially Applied'
+                              WHEN SUM(cr.credit_status = 'Applied') > 0 THEN 'Supplier Credit Applied'
+                              ELSE NULL
+                         END AS badge
+                FROM supplier_credits cr
+                INNER JOIN supplier_claims sc ON sc.claim_id = cr.claim_id
+                INNER JOIN purchase_order_items source_item ON source_item.po_item_id = sc.po_item_id
+                WHERE sc.resolution_type = 'Next PO Credit'
+                GROUP BY source_item.po_id
+            ) credit_badges ON credit_badges.po_id = po.po_id
          LEFT JOIN (
             SELECT
                 poi.po_id,
@@ -267,7 +284,7 @@ try {
             $order['receiving_record_available'] = (bool) ($order['receiving_record_available'] ?? false);
             $order['invoice_recorded'] = (bool)($order['invoice_recorded'] ?? false);
             $order['payment_available'] = in_array(($order['status'] ?? ''), ['Pending','Arrived','Delivered'], true) && $order['invoice_recorded'] && $payable > 0;
-            $order['payment_timing'] = ($order['status'] ?? '') === 'Pending' && $totalPaid > 0 ? 'Prepaid' : 'Standard';
+            $order['payment_timing'] = (int) ($order['advance_payment_count'] ?? 0) > 0 ? 'Prepaid' : 'Standard';
             $order['item_names'] = array_map(static fn($item) => $item['product_name'], $orderItems);
             $order['brand_names'] = array_map(static fn($item) => $item['brand_name'], $orderItems);
             $order['quantities'] = array_map(static fn($item) => (int) ($item['purchase_qty'] ?: 1), $orderItems);

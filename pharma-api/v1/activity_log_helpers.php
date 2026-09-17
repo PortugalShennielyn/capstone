@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../config/audit_log.php';
+
 function ensureActivityLogSchema(PDO $pdo): void
 {
     $pdo->exec(
@@ -59,11 +61,66 @@ function recordActivityLog(
             ':description' => trim($description),
             ':reference_id' => $referenceId,
         ]);
+        logAudit($pdo, [
+            'module' => auditModuleName($module),
+            'action' => auditActionName($action),
+            'description' => $description,
+            'target_type' => auditTargetType($module),
+            'target_id' => $referenceId,
+            'reference_id' => $referenceId,
+            'user_id' => $userId ?? activityCurrentUserId(),
+            'role' => $role ?? activityCurrentRole(),
+            'success' => true,
+            'idempotency_key' => null,
+        ]);
         return true;
     } catch (Throwable $e) {
         error_log('Activity log write failed: ' . $e->getMessage());
         return false;
     }
+}
+
+function auditActionName(string $action): string
+{
+    $normalized = strtolower(trim($action));
+    if (in_array($normalized, ['added', 'created', 'submitted', 'generated'], true)) return 'CREATE';
+    if (in_array($normalized, ['updated', 'edited', 'supplier invoice', 'supplier response', 'replacement arrival', 'product pricing updated', 'category markup update', 'selected category markup applied', 'automatic delivery update', 'inspection draft saved'], true)) return 'UPDATE';
+    if (in_array($normalized, ['deleted', 'deactivated', 'cancelled', 'voided'], true)) return 'DELETE';
+    if (in_array($normalized, ['approved', 'approve'], true)) return 'APPROVE';
+    if (in_array($normalized, ['rejected', 'reject'], true)) return 'REJECT';
+    if (str_contains($normalized, 'payment')) return 'PAYMENT';
+    if (str_contains($normalized, 'moved') || str_contains($normalized, 'transfer') || str_contains($normalized, 'returned to storage')) return 'TRANSFER';
+    if (str_contains($normalized, 'inspection') || str_contains($normalized, 'received') || str_contains($normalized, 'claim')) return 'INSPECT';
+    if (str_contains($normalized, 'status') || in_array($normalized, ['active', 'inactive', 'activated', 'partially received', 'received', 'closed'], true)) return 'STATUS_CHANGE';
+    return strtoupper(preg_replace('/[^A-Z0-9_]+/', '_', trim($action)));
+}
+
+function auditModuleName(string $module): string
+{
+    $module = trim($module);
+    return match (strtolower($module)) {
+        'products' => 'Product Master',
+        'pricing' => 'Product Master',
+        'inventory' => 'Storage',
+        'goods received note' => 'Inspect Deliveries',
+        'return/damage' => 'Inspect Deliveries',
+        'user management' => 'Users',
+        default => $module,
+    };
+}
+
+function auditTargetType(string $module): string
+{
+    return match (strtolower(trim($module))) {
+        'products', 'pricing' => 'Product',
+        'purchase request' => 'Purchase Request',
+        'purchase order' => 'Purchase Order',
+        'inventory' => 'Inventory',
+        'goods received note' => 'GRN',
+        'return/damage' => 'Delivery Claim',
+        'user management' => 'User',
+        default => trim($module) ?: 'Record',
+    };
 }
 
 function seedActivityLogsFromExistingDashboardSources(PDO $pdo): void

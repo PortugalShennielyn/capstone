@@ -1126,10 +1126,9 @@
                     );
             }
             .po-edit-item-row {
-                grid-template-columns: minmax(260px, 1.8fr) minmax(86px, 0.55fr) minmax(
-                        125px,
-                        0.75fr
-                    ) minmax(145px, 0.85fr) minmax(120px, 0.7fr) minmax(145px, 0.85fr);
+                grid-template-columns:
+                    minmax(260px, 1.8fr) minmax(86px, 0.55fr) minmax(125px, 0.75fr)
+                    minmax(145px, 0.85fr) minmax(120px, 0.7fr) minmax(145px, 0.85fr);
                 position: relative;
                 z-index: 1;
             }
@@ -2455,10 +2454,9 @@
                     grid-template-columns: repeat(2, minmax(180px, 1fr));
                 }
                 .po-edit-item-row {
-                    grid-template-columns: minmax(240px, 1.7fr) repeat(
-                            2,
-                            minmax(105px, 0.7fr)
-                        ) repeat(2, minmax(125px, 0.8fr)) minmax(135px, 0.8fr);
+                    grid-template-columns:
+                        minmax(240px, 1.7fr) repeat(2, minmax(105px, 0.7fr))
+                        repeat(2, minmax(125px, 0.8fr)) minmax(135px, 0.8fr);
                 }
             }
             @container (max-width: 1080px) {
@@ -3531,10 +3529,9 @@
             }
             .receive-batch-row {
                 display: grid;
-                grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.6fr) minmax(
-                        150px,
-                        0.8fr
-                    ) auto;
+                grid-template-columns:
+                    minmax(130px, 1fr) minmax(100px, 0.6fr) minmax(150px, 0.8fr)
+                    auto;
                 gap: 8px;
                 align-items: end;
             }
@@ -4795,16 +4792,13 @@
                 width: 11%;
             }
             .supplier-invoice-lines th:nth-child(4) {
-                width: 12%;
+                width: 14%;
             }
             .supplier-invoice-lines th:nth-child(5) {
-                width: 12%;
+                width: 20%;
             }
             .supplier-invoice-lines th:nth-child(6) {
                 width: 18%;
-            }
-            .supplier-invoice-lines th:nth-child(7) {
-                width: 12%;
             }
             .supplier-invoice-product {
                 font-size: 13px;
@@ -4924,6 +4918,28 @@
             .supplier-invoice-total-row.emphasis > span {
                 letter-spacing: 0.015em;
                 text-transform: uppercase;
+            }
+            .supplier-invoice-total-row.payable {
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid #d7e8e3;
+            }
+            .supplier-invoice-total-row.payable > span,
+            .supplier-invoice-total-row.payable > strong {
+                color: #075e54;
+                font-weight: 800;
+            }
+            .supplier-invoice-credit-source {
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+                margin-top: 12px;
+                padding: 10px 12px;
+                border: 1px solid #d7e8e3;
+                border-radius: 7px;
+                background: #f0faf7;
+                color: #176b5d;
+                font-size: 12px;
             }
             .supplier-invoice-total-input {
                 display: grid;
@@ -6312,7 +6328,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-        <script type="module" src="./js/modules/purchase_orders.js?v=122"></script>
+        <script type="module" src="./js/modules/purchase_orders.js?v=123"></script>
         <script type="module">
             import verifySession from "./js/modules/auth.js?v=8";
 

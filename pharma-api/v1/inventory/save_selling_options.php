@@ -25,6 +25,10 @@ try {
         throw new InvalidArgumentException('At least one Selling Option is required.');
     }
     $baseUnit = productSellingBaseUnit($pdo, $productId);
+    $candidateUnits = [];
+    foreach (productSellableUnitCandidates($pdo, $productId) as $candidate) {
+        $candidateUnits[mb_strtolower((string) $candidate['unit'])] = (int) $candidate['base_quantity'];
+    }
     $normalized = [];
     $seenUnits = [];
     $defaultCount = 0;
@@ -36,15 +40,13 @@ try {
         if (isset($seenUnits[$unitKey])) throw new InvalidArgumentException("Duplicate Selling Unit: {$unit}");
         $seenUnits[$unitKey] = true;
         $baseQuantity = sellingOptionWholeNumber($option['base_quantity'] ?? null, 'Base Quantity');
+        if (!isset($candidateUnits[$unitKey]) || $candidateUnits[$unitKey] !== $baseQuantity) {
+            throw new InvalidArgumentException("{$unit} is not a configured selling unit for this product.");
+        }
         $price = $option['selling_price'] ?? null;
         if (!is_numeric($price) || (float) $price < 0) throw new InvalidArgumentException("Selling Price for {$unit} must be zero or greater.");
         $active = !empty($option['is_active']);
         $posEnabled = $active && !empty($option['pos_enabled']);
-        if ($posEnabled && ($baseQuantity !== 1 || mb_strtolower($unit) !== mb_strtolower($baseUnit))) {
-            throw new InvalidArgumentException(
-                "POS can only sell the Product Master inventory unit ({$baseUnit}). Package content and parent purchasing units are not POS selling units."
-            );
-        }
         $isDefault = $active && $posEnabled && !empty($option['is_default']);
         if ($isDefault) $defaultCount++;
         $normalized[] = [

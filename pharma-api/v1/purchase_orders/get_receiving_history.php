@@ -30,6 +30,13 @@ try {
         );
         if (!$details) continue;
         $firstItem = $details['items'][0] ?? [];
+        $hasDiscrepancy = (int) ($details['totals']['affected_units'] ?? 0) > 0 || array_reduce(
+            $details['items'],
+            static fn(bool $hasIssue, array $item): bool => $hasIssue ||
+                !empty($item['resolution']) && $item['resolution'] !== 'none' ||
+                (int) ($item['replacement_expected_quantity'] ?? 0) > 0,
+            false
+        );
         $history[] = [
             'receiving_id' => $details['receiving_id'], 'po_id' => $details['po_id'],
             'grn_number' => $details['grn_number'], 'po_number' => $details['po_number'],
@@ -39,6 +46,7 @@ try {
             'ordered_units' => $details['totals']['ordered_units'],
             'accepted_units' => $details['totals']['accepted_units'], 'affected_units' => $details['totals']['affected_units'],
             'inventory_added' => $details['totals']['inventory_added'], 'receiving_result' => $details['receiving_result'],
+            'has_discrepancy' => $hasDiscrepancy,
             'received_by' => $details['received_by'], 'po_status' => $details['status']
         ];
     }

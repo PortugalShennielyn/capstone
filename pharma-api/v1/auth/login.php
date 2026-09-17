@@ -7,6 +7,12 @@ function sendInvalidLoginResponse(PDO $pdo, string $username = '', ?string $user
 {
     if ($username !== '') {
         recordLoginAttempt($pdo, $username, $userId, false, $reason);
+        auditAuthenticationEvent($pdo, 'LOGIN_FAILED', [
+            'success' => false,
+            'user_id' => $userId,
+            'user_name' => $userId ? $username : 'System / Unknown',
+            'details' => 'Failed login attempt for username: ' . $username,
+        ]);
     }
 
     http_response_code(401);
@@ -17,8 +23,13 @@ function sendInvalidLoginResponse(PDO $pdo, string $username = '', ?string $user
     exit();
 }
 
-function sendLockoutResponse(): void
+function sendLockoutResponse(PDO $pdo, string $username): void
 {
+    auditAuthenticationEvent($pdo, 'LOGIN_FAILED', [
+        'success' => false,
+        'user_name' => 'System / Unknown',
+        'details' => 'Failed login attempt for username: ' . $username,
+    ]);
     http_response_code(429);
     echo json_encode([
         'status' => 'error',
@@ -30,6 +41,12 @@ function sendLockoutResponse(): void
 function sendInactiveAccountResponse(PDO $pdo, string $username, string $userId): void
 {
     recordLoginAttempt($pdo, $username, $userId, false, 'inactive_account');
+    auditAuthenticationEvent($pdo, 'LOGIN_FAILED', [
+        'success' => false,
+        'user_id' => $userId,
+        'user_name' => $username,
+        'details' => 'Failed login attempt for username: ' . $username,
+    ]);
     http_response_code(403);
     echo json_encode([
         'status' => 'error',
@@ -84,7 +101,7 @@ try {
     ensureUserManagementSchema($pdo);
 
     if (loginLockoutSecondsRemaining($pdo, $username) > 0) {
-        sendLockoutResponse();
+        sendLockoutResponse($pdo, $username);
     }
 
     $statement = $pdo->prepare(
@@ -163,6 +180,13 @@ try {
     $_SESSION['tenant_slug'] = $accountContext['tenant_slug'];
     $_SESSION['primary_domain'] = $accountContext['primary_domain'];
     $tabToken = createAuthSession($pdo, $user['user_id'], $accountContext['account_id'], $accountContext['tenant_id']);
+    auditAuthenticationEvent($pdo, 'LOGIN_SUCCESS', [
+        'user_id' => $user['user_id'],
+        'user_name' => $user['full_name'] ?: $user['username'],
+        'role' => $role,
+        'auth_session_id' => $_SESSION['auth_session_id'] ?? null,
+        'details' => 'User logged in',
+    ]);
     authDiagnosticLog('Session verified', [
         'function' => 'login',
         'auth_session' => maskedAuthIdentifier((string) ($_SESSION['auth_session_id'] ?? '')),

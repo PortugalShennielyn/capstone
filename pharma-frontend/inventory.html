@@ -80,6 +80,9 @@
         .inventory-table tbody tr.has-search-match:hover td { background:#f8f4ff; }
         .inventory-table tbody tr.is-selected td { background:#f5f2ff!important; }
         .brand-cell,.product-cell { display:block; max-width:100%; text-align:left; color:var(--text-main); font-size:13px; font-weight:750; line-height:1.28; white-space:normal; overflow:visible; overflow-wrap:break-word; word-break:normal; text-transform:uppercase; }
+        .inventory-product-name { font-weight:800; }
+        .inventory-rx-badge { display:inline-flex; align-items:center; margin-left:6px; padding:2px 7px; border:1px solid #fca5a5; border-radius:999px; color:#b42318; background:#fef3f2; font-size:10px; font-weight:900; line-height:1.35; vertical-align:middle; }
+        .inventory-generic-name { margin-top:3px; color:var(--text-muted); font-size:11px; font-weight:650; text-transform:none; }
         .specification-cell { display:block; max-width:100%; overflow:visible; color:#465166; font-size:12px; font-weight:700; line-height:1.35; white-space:normal; overflow-wrap:break-word; word-break:normal; }
         .search-match { padding:0 .08em; border-radius:3px; color:inherit; background:#ddd0ff; box-shadow:0 0 0 1px rgba(124,58,237,.1); }
         .qty-number { font-variant-numeric:tabular-nums; font-weight:850; }
@@ -112,12 +115,31 @@
         .inventory-view-tabs { display:flex; gap:6px; margin:0 0 14px; padding:4px; width:max-content; max-width:100%; overflow-x:auto; border:1px solid var(--border-soft); border-radius:9px; background:#f8fafc; }
         .inventory-view-tab { border:0; border-radius:7px; padding:7px 13px; color:#64748b; background:transparent; font-size:12px; font-weight:800; white-space:nowrap; }
         .inventory-view-tab.active { color:#5b21b6; background:#fff; box-shadow:0 1px 4px rgba(15,23,42,.12); }
-        .transfer-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-        .transfer-route { display:flex; align-items:center; justify-content:center; gap:12px; margin:12px 0; color:#475569; font-size:13px; font-weight:800; }
-        .transfer-equivalent { margin-top:6px; color:#5b21b6; font-size:12px; font-weight:800; }
-        .move-summary-grid { display:grid; grid-template-columns:minmax(220px,1.35fr) minmax(130px,.7fr) minmax(160px,.85fr); gap:12px; margin-bottom:14px; align-items:stretch; }
-        .move-summary-grid .detail-box { min-width:0; }
-        .move-summary-grid .detail-box strong { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .transfer-modal-body { display:grid; gap:14px; }
+        #moveShelfModal .modal-dialog { width:min(1080px,calc(100vw - 32px)); max-width:1080px; }
+        #moveShelfModal .modal-content { max-height:90vh; overflow:hidden; }
+        #moveShelfModal .modal-header,#moveShelfModal .modal-footer { flex:0 0 auto; background:#fff; z-index:2; }
+        #moveShelfModal .modal-body { overflow-y:auto; }
+        #moveShelfModal .modal-footer { position:sticky; bottom:0; border-top:1px solid #e5e7eb; }
+        .transfer-product-summary { display:grid; grid-template-columns:minmax(190px,1.25fr) minmax(130px,.75fr) minmax(170px,1fr); gap:12px; }
+        .transfer-product-summary div { min-width:0; }
+        .transfer-product-summary span,.transfer-panel h6,.transfer-input-grid label > span,.transfer-kv span { display:block; color:#7b8494; font-size:11px; font-weight:850; line-height:1.2; text-transform:uppercase; }
+        .transfer-product-summary strong { display:block; margin-top:5px; overflow:hidden; color:#111827; font-size:14px; font-weight:850; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
+        .transfer-route { display:flex; align-items:center; justify-content:center; gap:12px; margin:0; color:#475569; font-size:13px; font-weight:850; }
+        .transfer-route i { color:#334155; font-size:12px; }
+        .transfer-panel { display:grid; gap:10px; padding:13px 14px; border:1px solid var(--border-soft); border-radius:8px; background:#fff; }
+        .transfer-panel h6 { margin:0; color:#334155; }
+        .transfer-kv { display:flex; align-items:center; justify-content:space-between; gap:14px; padding-top:8px; border-top:1px solid #eef2f7; }
+        .transfer-kv:first-of-type { padding-top:0; border-top:0; }
+        .transfer-kv strong { min-width:max-content; color:#111827; font-size:14px; font-weight:850; text-align:right; }
+        .transfer-input-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(120px,180px); gap:12px; align-items:start; }
+        .transfer-input-grid label { min-width:0; }
+        .transfer-input-grid .form-select,.transfer-input-grid .form-control { margin-top:5px; min-height:42px; }
+        .transfer-helper,.transfer-equivalent { color:#5b21b6; font-size:12px; font-weight:800; }
+        .transfer-preview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 18px; }
+        .transfer-preview-grid .transfer-kv:nth-of-type(1),.transfer-preview-grid .transfer-kv:nth-of-type(2) { padding-top:0; border-top:0; }
+        .transfer-preview-grid .transfer-kv:nth-of-type(n+3) { margin-top:8px; }
+        #moveSubmitButton:disabled { opacity:.55; cursor:not-allowed; }
         .inventory-table .table-actions { display:flex!important; align-items:center!important; justify-content:center!important; flex-wrap:wrap; gap:2px!important; white-space:normal!important; }
         .inventory-table .table-actions .btn { width:24px!important; min-width:24px!important; height:24px!important; min-height:24px!important; padding:0!important; display:inline-flex!important; align-items:center!important; justify-content:center!important; gap:0!important; border-radius:6px; background:#fff; font-size:10px!important; font-weight:800; }
         .inventory-table .table-actions .view-inventory-btn { color:#475569; border-color:#cbd5e1; }
@@ -250,7 +272,8 @@
             .page-body { padding:18px 12px; }
             .topbar { padding:0 14px; }
             .inventory-summary-grid { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
-            .move-summary-grid { grid-template-columns:1fr; }
+            .transfer-product-summary,.transfer-input-grid,.transfer-preview-grid { grid-template-columns:1fr; }
+            .transfer-preview-grid .transfer-kv:nth-of-type(2) { margin-top:8px; padding-top:8px; border-top:1px solid #eef2f7; }
             .move-batch-row { grid-template-columns:1fr; }
             .inventory-header-stock-cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .inventory-filters { grid-template-columns:minmax(220px,1fr) repeat(2,minmax(160px,1fr)); }
@@ -340,6 +363,15 @@
         .transfer-allocation-preview h6 { margin:0; padding:9px 11px; background:#f8fafc; font-size:11px; font-weight:850; text-transform:uppercase; }
         .transfer-allocation-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; padding:8px 11px; border-top:1px solid var(--border-soft); font-size:11px; }
         .transfer-allocation-row strong { font-weight:850; }
+        #moveShelfModal .modal-dialog { height:auto; margin:.75rem auto; }
+        #moveShelfModal .modal-content { max-height:calc(100vh - 1.5rem); display:flex; overflow:hidden; }
+        #moveShelfModal form { min-height:0; display:flex; flex-direction:column; }
+        #moveShelfModal .modal-header { padding:12px 16px; }
+        #moveShelfModal .modal-body { flex:1 1 auto; min-height:0; padding:12px 16px; overflow-y:auto; }
+        #moveShelfModal .modal-footer { position:sticky; bottom:0; padding:10px 16px; background:#fff; }
+        #moveShelfModal .transfer-modal-body { gap:10px; }
+        #moveShelfModal .transfer-panel { gap:8px; padding:10px 12px; }
+        #moveShelfModal .transfer-product-summary strong { white-space:normal; }
   </style>
  </head>
  <body>
@@ -478,7 +510,7 @@
    </div>
   </div>
   <div class="modal fade" id="moveShelfModal" tabindex="-1">
-   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
      <form id="moveShelfForm">
       <div class="modal-header">
@@ -493,38 +525,39 @@
        <button class="btn-close" data-bs-dismiss="modal" type="button">
        </button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body transfer-modal-body">
        <input id="moveProductId" type="hidden"/>
        <input id="moveDirection" type="hidden" value="STORAGE_TO_SHELF"/>
-       <div class="move-summary-grid">
-        <div class="detail-box">
-         <span>
-          Product
-         </span>
-        <strong id="moveProductName">
-         </strong>
-        </div>
-        <div class="detail-box">
-         <span>Brand</span>
-         <strong id="moveBrandName"></strong>
-        </div>
-        <div class="detail-box">
-         <span>Specification</span>
-         <strong id="moveSpecification"></strong>
-        </div>
+       <div class="transfer-product-summary">
+        <div><span>Product</span><strong id="moveProductName"></strong></div>
+        <div><span>Brand</span><strong id="moveBrandName"></strong></div>
+        <div><span>Specification</span><strong id="moveSpecification"></strong></div>
        </div>
        <div class="transfer-route"><span id="moveSourceLocation">Storage Inventory</span><i class="fa-solid fa-arrow-right"></i><span id="moveDestinationLocation">Shelf Inventory</span></div>
-       <div class="transfer-form-grid">
-        <div class="detail-box"><span>Selling / Inventory Unit</span><strong id="moveInventoryUnit"></strong></div>
-        <div><label class="form-label small fw-bold" for="moveUnit">Transfer Unit</label><select class="form-select" id="moveUnit" required></select></div>
-        <div><label class="form-label small fw-bold" for="moveQuantity">Transfer Quantity</label><input class="form-control" id="moveQuantity" min="1" step="1" inputmode="numeric" required type="number"/></div>
-        <div class="detail-box"><span>Current Storage Qty</span><strong id="moveStorageAvailable"></strong></div>
-        <div class="detail-box"><span>Current Shelf Qty</span><strong id="moveShelfBefore"></strong></div>
-        <div class="detail-box"><span>Conversion Preview</span><strong id="moveEquivalent">Enter a quantity</strong></div>
-        <div class="detail-box"><span>Shelf Will Receive</span><strong id="moveShelfReceive"></strong></div>
-        <div class="detail-box"><span>Storage Remaining</span><strong id="moveStorageRemaining"></strong></div>
-        <div class="detail-box"><span>Shelf After</span><strong id="moveShelfAfter"></strong></div>
-       </div>
+       <section class="transfer-panel">
+        <h6>Stock</h6>
+        <div class="transfer-kv"><span>Available in Storage</span><strong id="moveStorageAvailable"></strong></div>
+        <div class="transfer-kv"><span>Currently on Shelf</span><strong id="moveShelfBefore"></strong></div>
+        <div class="transfer-kv"><span>Selling / Inventory Unit</span><strong id="moveInventoryUnit"></strong></div>
+       </section>
+       <section class="transfer-panel">
+        <h6>Transfer</h6>
+        <div class="transfer-input-grid">
+         <label><span>Transfer By</span><select class="form-select" id="moveUnit" required></select></label>
+         <label><span>Quantity</span><input class="form-control" id="moveQuantity" min="1" step="1" inputmode="numeric" required type="number"/></label>
+        </div>
+        <div class="transfer-helper" id="moveMaxHelper">Maximum: -</div>
+       </section>
+       <section class="transfer-panel">
+        <h6>Transfer Preview</h6>
+        <div class="transfer-preview-grid">
+         <div class="transfer-kv"><span>Moving</span><strong id="moveMoving">Enter a quantity</strong></div>
+         <div class="transfer-kv"><span>Shelf Receives</span><strong id="moveShelfReceive"></strong></div>
+         <div class="transfer-kv"><span>Storage After</span><strong id="moveStorageRemaining"></strong></div>
+         <div class="transfer-kv"><span>Shelf After</span><strong id="moveShelfAfter"></strong></div>
+        </div>
+        <div class="transfer-equivalent" id="moveEquivalent">Enter a quantity</div>
+       </section>
        <div class="small text-muted mt-3" id="moveBatchList">Enter a quantity to preview batch / expiry allocation.</div>
        <div aria-live="polite" class="move-feedback mt-2" id="moveBatchFeedback">
        </div>

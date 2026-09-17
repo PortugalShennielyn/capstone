@@ -156,7 +156,7 @@ async function initializeNavbar(container) {
 
     try {
         const rbac = await import("./modules/rbac.js?v=7");
-        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v48";
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v49";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -239,6 +239,7 @@ async function initializeNavbar(container) {
             "return_damage.html": "return-damage",
             "expiry_monitoring.html": "expiry-monitoring",
             "reports.html": "reports",
+            "audit_logs.html": "audit-logs",
             "admin_settings.html": "settings",
             "pos.html": "pos",
             "clerk.html": "clerk",

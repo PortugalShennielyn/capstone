@@ -42,6 +42,7 @@ function shiftSummaryEmptyData(
             'cash_variance' => 0.0,
             'completed_transactions' => 0,
             'cancelled_voided_transactions' => 0,
+            'refunded_transactions' => 0,
         ],
         'activity' => [
             'first_transaction_time' => null,
@@ -225,7 +226,9 @@ try {
     $cancelledVoided = (int) $cancelStmt->fetchColumn();
 
     $refundStmt = $pdo->prepare(
-        "SELECT COALESCE(SUM(COALESCE(NULLIF(p.final_amount, 0), p.total_amount)), 0)
+        "SELECT
+            COUNT(DISTINCT p.order_id) AS refunded_transactions,
+            COALESCE(SUM(COALESCE(NULLIF(p.final_amount, 0), p.total_amount)), 0) AS refunded_amount
          FROM sales_payments p
          INNER JOIN sales_orders o ON o.order_id = p.order_id
          WHERE p.payment_status = 'refunded'
@@ -234,7 +237,9 @@ try {
            AND COALESCE(p.paid_at, p.created_at) < :date_end"
     );
     $refundStmt->execute($completedParams);
-    $refunds = cashierMoney($refundStmt->fetchColumn());
+    $refundRow = $refundStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $refundedTransactions = (int) ($refundRow['refunded_transactions'] ?? 0);
+    $refunds = cashierMoney($refundRow['refunded_amount'] ?? 0);
 
     $paymentStmt = $pdo->prepare(
         "SELECT
@@ -277,14 +282,15 @@ try {
            AND o.completed_at >= :date_start
            AND o.completed_at < :date_end
          ORDER BY o.completed_at DESC, o.order_id DESC
-         LIMIT 8"
+         LIMIT 10"
     );
     $recentStmt->execute($completedParams);
-    $recentTransactions = array_map(static function (array $row): array {
+    $recentTransactions = array_map(static function (array $row) use ($cashierName): array {
         return [
             'order_id' => (int) $row['order_id'],
             'receipt_no' => cashierDisplay($row['receipt_no'] ?? '', '-'),
             'order_no' => cashierDisplay($row['order_no'] ?? '', (string) $row['order_id']),
+            'cashier_name' => $cashierName,
             'customer_name' => cashierDisplay($row['customer_name'] ?? '', 'Walk-in Customer'),
             'payment_method' => cashierDisplay($row['payment_method'] ?? '', 'cash'),
             'total_amount' => cashierMoney($row['total_amount'] ?? 0),
@@ -302,7 +308,7 @@ try {
     $cashPaidSales = cashierMoney($summary['cash_paid_sales'] ?? 0);
 
     $data = shiftSummaryEmptyData($startDate, $endDate, $isAdminView, $cashiers, $targetCashierId, $cashierName);
-    $data['has_records'] = $completedTransactions > 0 || $cancelledVoided > 0 || $refunds > 0;
+    $data['has_records'] = $completedTransactions > 0 || $cancelledVoided > 0 || $refundedTransactions > 0 || $refunds > 0;
     $data['summary'] = [
         'total_completed_sales' => $completedSales,
         'cash_tendered' => $cashTendered,
@@ -312,6 +318,7 @@ try {
         'cash_variance' => cashierMoney($netCashSales - $cashPaidSales),
         'completed_transactions' => $completedTransactions,
         'cancelled_voided_transactions' => $cancelledVoided,
+        'refunded_transactions' => $refundedTransactions,
     ];
     $data['activity'] = [
         'first_transaction_time' => $summary['first_transaction_time'] ?? null,
