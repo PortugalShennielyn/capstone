@@ -20,12 +20,20 @@ try {
             po.po_number,
             COALESCE(batch_supplier.supplier_name, po_supplier.supplier_name) AS supplier_name,
             ib.received_date,
+            ib.created_at,
+            CASE
+                WHEN ib.received_date >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                 AND NOT EXISTS (SELECT 1 FROM inventory_transfer_allocations ita WHERE ita.source_batch_id = ib.batch_id)
+                 AND NOT EXISTS (SELECT 1 FROM product_selling_stock pss WHERE pss.source_batch_id = ib.batch_id)
+                THEN 1 ELSE 0
+            END AS can_edit_expiry,
             ib.received_qty AS received_quantity,
             ib.storage_qty,
             COALESCE(selling.shelf_qty, 0) AS shelf_qty,
             ib.damaged_qty,
             (ib.storage_qty + COALESCE(selling.shelf_qty, 0)) AS available_quantity,
             ib.expiry_date,
+            ib.no_expiry,
             COALESCE(pi.expiry_alert_days, 30) AS expiry_alert_days,
             DATEDIFF(ib.expiry_date, CURRENT_DATE) AS days_until_expiry,
             ib.batch_status,
@@ -111,9 +119,10 @@ try {
         $row['expiry_status'] = inventoryExpiryStatus(
             $row['expiry_date'] ?? null,
             $row['days_until_expiry'] ?? null,
-            $row['expiry_alert_days']
+            $row['expiry_alert_days'],
+            (int) ($row['no_expiry'] ?? 0) === 1
         );
-        if ($row['expiry_status'] === 'Not Recorded') {
+        if (in_array($row['expiry_status'], ['Not Recorded', 'No Expiry'], true)) {
             $row['days_until_expiry'] = null;
         }
         return $row;

@@ -341,6 +341,36 @@ export function formatProductIdentity(product = {}) {
     return [brand, name].filter(Boolean).join(' ') || 'Unnamed product';
 }
 
+export function isPrescriptionProduct(product = {}) {
+    const badge = clean(product.medicine_classification_badge);
+    const classification = clean(product.medicine_classification || product.classification || product.rx_classification).toLowerCase();
+    return badge.toLowerCase() === 'rx'
+        || classification === 'prescription (rx)'
+        || classification === 'prescription'
+        || classification === 'rx';
+}
+
+export function cleanProductSpecificationText(value = '') {
+    return clean(value)
+        .split(/\s*•\s*/)
+        .map(part => clean(part))
+        .filter(part => part && !/^(?:prescription(?:\s*\(rx\))?|rx|otc|non[-\s]?prescription)$/i.test(part))
+        .join(' • ');
+}
+
+export function formatProductIdentityParts(product = {}) {
+    const brand = clean(product.brand_name);
+    const productName = clean(product.product_name);
+    const genericName = clean(product.generic_name);
+    const displayName = productName || brand || genericName || 'Unnamed product';
+    const generic = genericName && genericName.toLowerCase() !== displayName.toLowerCase() ? genericName : '';
+    return {
+        productName: displayName,
+        genericName: generic,
+        isPrescription: isPrescriptionProduct(product)
+    };
+}
+
 export function formatProductPacking(product = {}, fallback = 'pcs') {
     return formatMeasurementText(product.packaging_size)
         || formatMeasurementText(product.pack_content)

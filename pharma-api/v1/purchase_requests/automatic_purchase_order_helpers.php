@@ -10,9 +10,12 @@ function purchaseRequestProductDetails(PDO $pdo, array $productIds): array
 
     $placeholders = implode(',', array_fill(0, count($productIds), '?'));
     $productStatement = $pdo->prepare(
-        "SELECT p.product_id, p.product_name, p.brand_name, p.status AS product_status,
+        "SELECT p.product_id,
+                COALESCE(NULLIF(TRIM(md.generic_name), ''), p.product_name) AS product_name,
+                p.brand_name, p.status AS product_status,
                 pc.category_name, pt.type_name,
-                md.generic_name, md.strength,
+                COALESCE(NULLIF(TRIM(md.generic_name), ''), p.product_name) AS generic_name,
+                md.strength,
                 md.strength_value AS medicine_strength_value, md.strength_unit,
                 md.net_content_value, md.net_content_unit, md.dosage_form,
                 COALESCE(md.package_type, gd.package_type, msd.package_type) AS package_type,
@@ -120,7 +123,41 @@ function automaticPurchaseOrderNumber(): string
 
 function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, array $assignments, array $supplierEtas = []): array
 {
-    if (!$pdo->inTransaction()) ensureSupplierPurchasingConversionSchema($pdo);
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) {
+        ensureSupplierPurchasingConversionSchema($pdo);
+        $pdo->beginTransaction();
+    }
+    $pdo->exec('SAVEPOINT generate_purchase_orders');
+    try {
+        $prId = cleanId($request['pr_id'] ?? null);
+        $request = purchaseRequestById($pdo, $prId, true);
+        if (!$request || $request['status'] !== 'Approved') throw new InvalidArgumentException('Only Supervisor-approved requests can generate purchase orders.');
+        assertPurchaseRequestHasValidItems($pdo, $prId, 'Cannot generate Purchase Order because this Purchase Request has no products.');
+        $existing = array_values(array_filter(purchaseRequestPurchaseOrders($pdo, $prId), static fn($po) => !in_array($po['status'], ['Cancelled', 'Rejected'], true)));
+        if ($existing) {
+            $result = $existing;
+        } else {
+            $allocated = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items poi INNER JOIN purchase_request_items pri ON pri.pr_item_id=poi.pr_item_id INNER JOIN purchase_orders po ON po.po_id=poi.po_id WHERE pri.pr_id=? AND po.status NOT IN ('Cancelled','Rejected')");
+            $allocated->execute([$prId]);
+            if ((int)$allocated->fetchColumn() > 0) throw new InvalidArgumentException('Requested products have already been allocated to a purchase order.');
+            $result = insertPurchaseOrdersForApprovedRequest($pdo, $request, $assignments, $supplierEtas);
+        }
+        $pdo->exec('RELEASE SAVEPOINT generate_purchase_orders');
+        if ($ownsTransaction) $pdo->commit();
+        return $result;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) {
+            if ($ownsTransaction) $pdo->rollBack();
+            else $pdo->exec('ROLLBACK TO SAVEPOINT generate_purchase_orders');
+        }
+        throw $error;
+    }
+}
+
+function insertPurchaseOrdersForApprovedRequest(PDO $pdo, array $request, array $assignments, array $supplierEtas = []): array
+{
+    if (!$pdo->inTransaction()) throw new LogicException('PO insertion requires a transaction.');
     if (($request['status'] ?? '') !== 'Approved') throw new InvalidArgumentException('Only Supervisor-approved requests can generate purchase orders.');
     $prId = cleanId($request['pr_id'] ?? null);
     $requestItems = purchaseRequestItems($pdo, $prId);
@@ -235,6 +272,9 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
                 ':unit_cost' => null, ':line_total' => null,
             ]);
         }
+        $countItems = $pdo->prepare('SELECT COUNT(*) FROM purchase_order_items WHERE po_id=?');
+        $countItems->execute([$poId]);
+        if ((int)$countItems->fetchColumn() !== count($group['items']) || !$group['items']) throw new RuntimeException('Purchase order item insertion failed.');
         $generated[] = [
             'po_id' => $poId, 'po_number' => $poNumber, 'supplier_id' => $supplierId,
             'supplier_name' => $group['supplier_name'], 'item_count' => count($group['items']), 'total_amount' => null,

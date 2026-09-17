@@ -6,9 +6,12 @@ import {
     optionList as ruleOptionList
 } from './variation_rules.js';
 import {
+    cleanProductSpecificationText,
+    formatProductIdentityParts,
     formatProductSpecification,
+    isPrescriptionProduct,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=8';
+} from './product_specification.js?v=9';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits as loadSharedMeasurementUnits, measurementUnitsForContext, upsertMeasurementUnitCache } from './measurement_units.js?v=2';
@@ -240,14 +243,15 @@ function removeBrandPrefix(productName, brandName) {
 }
 
 function productDisplayName(product) {
-    const brand = cleanText(product.brand_name);
-    const name = removeBrandPrefix(product.product_name, brand);
-    const base = [brand, name].filter(Boolean).join(' ');
-    return base || cleanText(product.product_name) || 'Unnamed product';
+    return formatProductIdentityParts(product).productName || cleanText(product.product_name) || 'Unnamed product';
+}
+
+function supplierRxBadge(product) {
+    return isPrescriptionProduct(product) ? '<span class="supplier-rx-badge" title="Prescription medicine">Rx</span>' : '';
 }
 
 function variantStrengthSize(product) {
-    return formatProductSpecification(product, 'Not set');
+    return cleanProductSpecificationText(formatProductSpecification(product, 'Not set')) || 'Not set';
     /* Legacy branches retained below for compatibility documentation. */
     const category = cleanText(product.category_name).toLowerCase();
     if (category === 'medicine') {
@@ -501,7 +505,9 @@ function renderSupplierProducts(rows) {
     if (!body) return;
     document.getElementById('table-supplier-products')?.classList.add('supplier-product-table');
     body.innerHTML = rows.length
-        ? rows.map((product) => `
+        ? rows.map((product) => {
+            const identity = formatProductIdentityParts(product);
+            return `
             <tr class="supplier-product-row" tabindex="0" data-supplier-product-id="${esc(product.supplier_product_id)}" aria-label="View details for ${esc(productDisplayName(product))}">
                 <td class="col-supplier">
                     <strong>${esc(displayOrNotSet(product.supplier_name))}</strong>
@@ -509,8 +515,8 @@ function renderSupplierProducts(rows) {
                 </td>
                 <td class="col-product">
                     <div class="supplier-product-name">
-                        <strong>${esc(displayOrNotSet(product.brand_name))}</strong>
-                        <small>${esc(displayOrNotSet(removeBrandPrefix(product.product_name, product.brand_name)))}</small>
+                        <strong>${esc(displayOrNotSet(identity.productName))}${supplierRxBadge(product)}</strong>
+                        ${identity.genericName ? `<small>${esc(identity.genericName)}</small>` : ''}
                     </div>
                 </td>
                 <td class="col-specification">${esc(variantStrengthSize(product))}</td>
@@ -527,7 +533,7 @@ function renderSupplierProducts(rows) {
                     </div>` : '<span class="text-muted small">Read only</span>'}
                 </td>
             </tr>
-        `).join('')
+        `;}).join('')
         : '<tr><td colspan="6" class="text-center text-muted py-4">No supplier products found.</td></tr>';
     window.PharmacySearchHighlight?.apply(body, document.getElementById('supplierProductSearch')?.value || '');
 }

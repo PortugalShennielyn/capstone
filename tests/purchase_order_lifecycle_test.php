@@ -39,7 +39,7 @@ $phpSessionId = 'codexpolifecycle' . bin2hex(random_bytes(8));
 $tabToken = bin2hex(random_bytes(32));
 
 try {
-    $fixtures = $pdo->query("SELECT sp.supplier_id,sp.product_id,COALESCE(NULLIF(sp.purchase_unit,''),'Box') purchase_unit,COALESCE(sp.units_per_purchase_unit,1) units_per_purchase_unit FROM supplier_products sp INNER JOIN suppliers s ON s.supplier_id=sp.supplier_id WHERE s.archived_at IS NULL AND sp.supplier_id=(SELECT supplier_id FROM supplier_products GROUP BY supplier_id HAVING COUNT(*)>=2 LIMIT 1) LIMIT 2")->fetchAll(PDO::FETCH_ASSOC);
+    $fixtures = $pdo->query("SELECT sp.supplier_id,sp.product_id,COALESCE(NULLIF(sp.purchase_unit,''),'Box') purchase_unit,COALESCE(sp.units_per_purchase_unit,1) units_per_purchase_unit FROM supplier_products sp INNER JOIN suppliers s ON s.supplier_id=sp.supplier_id WHERE s.archived_at IS NULL AND sp.supplier_id=(SELECT sp2.supplier_id FROM supplier_products sp2 WHERE NOT EXISTS (SELECT 1 FROM purchase_order_items source_item INNER JOIN supplier_claims sc ON sc.po_item_id=source_item.po_item_id INNER JOIN supplier_credits cr ON cr.claim_id=sc.claim_id WHERE source_item.po_id IN (SELECT po_id FROM purchase_orders WHERE supplier_id=sp2.supplier_id) AND sc.resolution_type='Next PO Credit' AND cr.credit_status IN ('Available','Partially Applied')) GROUP BY sp2.supplier_id HAVING COUNT(*)>=2 LIMIT 1) LIMIT 2")->fetchAll(PDO::FETCH_ASSOC);
     $supplierId = $fixtures[0]['supplier_id'] ?? null;
     $user = $pdo->query("SELECT user_id,username,full_name,role,status FROM users WHERE role IN ('admin','manager','super_admin') AND status='Active' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
     lifecycleAssert(is_string($supplierId) && $supplierId !== '', 'An active supplier fixture is required.');
@@ -101,7 +101,7 @@ try {
 
     $invoice = lifecycleRequest('POST', 'purchase_orders/save_purchase_order_invoice.php', $phpSessionId, $tabToken, [
         'po_id'=>$poId,'invoice_number'=>'INV-TEST-6540','invoice_date'=>date('Y-m-d'),'discount'=>100,'other_charges'=>50,'supplier_invoice_total'=>6540,
-        'items'=>[['po_item_id'=>$poItemId,'invoice_qty'=>999,'unit_cost'=>850],['po_item_id'=>$secondPoItemId,'invoice_qty'=>999,'unit_cost'=>780]]
+        'items'=>[['po_item_id'=>$poItemId,'invoice_qty'=>5,'unit_cost'=>850],['po_item_id'=>$secondPoItemId,'invoice_qty'=>3,'unit_cost'=>780]]
     ]);
     lifecycleAssert($invoice['status'] === 200 && ($invoice['body']['invoice']['match_status'] ?? '') === 'Matched', 'Pending PO must accept a matched line-level supplier invoice: '.json_encode($invoice));
     lifecycleAssert((float)$invoice['body']['invoice']['subtotal']===6590.0 && (float)$invoice['body']['invoice']['calculated_total']===6540.0 && (float)$invoice['body']['invoice']['difference']===0.0, 'Invoice totals must be derived as 5x850 + 3x780 - 100 + 50 = 6540.');
@@ -116,11 +116,11 @@ try {
     lifecycleAssert($paymentDetails['status'] === 200 && ($paymentDetails['body']['payment_details']['invoice_number'] ?? '') === 'INV-TEST-6540' && (float) ($paymentDetails['body']['payment_details']['payment']['remaining_balance'] ?? 0) === 6540.0, 'Pending invoiced PO payment details must load without a receiving record.');
 
     $payment = lifecycleRequest('POST', 'purchase_orders/record_purchase_order_payment.php', $phpSessionId, $tabToken, ['po_id'=>$poId,'amount'=>500,'payment_method'=>'cash','payment_date'=>date('Y-m-d'),'payment_request_key'=>'test-'.bin2hex(random_bytes(12)),'expected_remaining_balance'=>6540]);
-    lifecycleAssert($payment['status']===200 && ($payment['body']['payment_status']??'')==='Partially Paid' && ($payment['body']['payment_timing']??'')==='Prepaid', 'Pending PO must support partial prepayment without changing delivery status.');
+    lifecycleAssert($payment['status']===200 && ($payment['body']['payment_status']??'')==='Unpaid' && ($payment['body']['payment_timing']??'')==='Prepaid' && ($payment['body']['payment_type']??'')==='Advance Payment', 'Pending PO must support partial advance payment without changing delivery status.');
     $partiallyPaidUnpaidFilter = lifecycleRequest('GET', 'purchase_orders/get_purchase_orders.php?status=Pending&payment_status=Unpaid', $phpSessionId, $tabToken);
     lifecycleAssert(in_array($poId, array_column($partiallyPaidUnpaidFilter['body']['purchase_orders'] ?? [], 'po_id'), true), 'Pending + Unpaid must include a partially paid invoiced PO.');
     $finalPayment = lifecycleRequest('POST', 'purchase_orders/record_purchase_order_payment.php', $phpSessionId, $tabToken, ['po_id'=>$poId,'amount'=>6040,'payment_method'=>'cash','payment_date'=>date('Y-m-d'),'payment_request_key'=>'test-'.bin2hex(random_bytes(12)),'expected_remaining_balance'=>6040]);
-    lifecycleAssert($finalPayment['status']===200 && ($finalPayment['body']['payment_status']??'')==='Paid' && ($finalPayment['body']['payment_timing']??'')==='Prepaid', 'A Pending invoiced PO must be payable in full before delivery.');
+    lifecycleAssert($finalPayment['status']===200 && ($finalPayment['body']['payment_status']??'')==='Paid' && ($finalPayment['body']['payment_timing']??'')==='Prepaid' && ($finalPayment['body']['payment_type']??'')==='Advance Payment', 'A Pending invoiced PO must be payable in full before delivery.');
     $duplicateFullPayment = lifecycleRequest('POST', 'purchase_orders/record_purchase_order_payment.php', $phpSessionId, $tabToken, ['po_id'=>$poId,'amount'=>1,'payment_method'=>'cash','payment_date'=>date('Y-m-d'),'payment_request_key'=>'test-'.bin2hex(random_bytes(12)),'expected_remaining_balance'=>0]);
     lifecycleAssert($duplicateFullPayment['status']===409, 'A second payment must be rejected after the PO is fully paid.');
     $paidPending = $pdo->prepare('SELECT status,payment_status FROM purchase_orders WHERE po_id=:id'); $paidPending->execute([':id'=>$poId]); $paidPendingRow=$paidPending->fetch(PDO::FETCH_ASSOC);
@@ -155,6 +155,7 @@ try {
 } finally {
     $pdo->prepare('DELETE FROM auth_sessions WHERE auth_session_id=:id')->execute([':id' => $authSessionId]);
     $pdo->prepare('DELETE FROM purchase_order_payments WHERE po_id=:id')->execute([':id'=>$poId]);
+    $pdo->prepare('DELETE FROM supplier_credit_applications WHERE po_id=:id')->execute([':id'=>$poId]);
     $invoiceId=$pdo->prepare('SELECT invoice_id FROM purchase_order_invoices WHERE po_id=:id');$invoiceId->execute([':id'=>$poId]);$savedInvoiceId=$invoiceId->fetchColumn();
     if($savedInvoiceId){$pdo->prepare('DELETE FROM purchase_order_invoice_items WHERE invoice_id=:id')->execute([':id'=>$savedInvoiceId]);$pdo->prepare('DELETE FROM purchase_order_invoices WHERE invoice_id=:id')->execute([':id'=>$savedInvoiceId]);}
     $pdo->prepare('DELETE FROM purchase_order_items WHERE po_id=:id')->execute([':id'=>$poId]);

@@ -88,6 +88,21 @@ function sendPurchaseRequestJson(bool $success, string $message, $data = null, i
     exit();
 }
 
+function assertPurchaseRequestHasValidItems(PDO $pdo, string $prId, string $message): void
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM purchase_request_items
+         WHERE pr_id = :pr_id
+           AND product_id IS NOT NULL
+           AND requested_qty > 0'
+    );
+    $stmt->execute([':pr_id' => $prId]);
+    if ((int)$stmt->fetchColumn() <= 0) {
+        throw new InvalidArgumentException($message);
+    }
+}
+
 function readPurchaseRequestPayload(): array
 {
     $payload = json_decode(file_get_contents('php://input'), true);
@@ -205,7 +220,7 @@ function purchaseRequestItemsForRequests(PDO $pdo, array $prIds): array
         'SELECT pri.*,
                 pri.stock_qty_at_request AS current_stock_snapshot,
                 pri.unit_label_at_request AS unit_snapshot,
-                p.product_name, p.brand_name, pmu.unit_name AS base_inventory_unit,
+                p.product_name, p.brand_name, md.generic_name, pmu.unit_name AS base_inventory_unit,
                 TRIM(CONCAT_WS(" · ",
                     NULLIF(CONCAT_WS(" ", NULLIF(md.generic_name,""), COALESCE(NULLIF(md.strength,""),NULLIF(CONCAT_WS(" ",md.strength_value,md.strength_unit),""))), ""),
                     NULLIF(CONCAT_WS(" ",gd.variant,gd.size,gd.net_weight,gd.unit),""),
@@ -301,19 +316,28 @@ function nextPurchaseRequestNumber(): string
 
 function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
 {
+    require_once __DIR__ . '/../purchase_orders/purchase_order_invoice_helpers.php';
+    ensurePurchaseOrderInvoiceSchema($pdo);
     $stmt = $pdo->prepare(
         'SELECT pr.pr_id, pr.pr_number,
-                po.po_id, po.po_number, po.supplier_id, po.total_amount,
+                po.po_id, po.po_number, po.supplier_id,
+                po.total_amount AS legacy_total_amount,
+                invoice.supplier_invoice_total AS invoice_total,
                 po.expected_delivery_date, po.status, po.created_at AS order_date,
                 s.supplier_name,
                 COUNT(DISTINCT poi.product_id) AS product_count,
                 GROUP_CONCAT(
                     DISTINCT COALESCE(
-                        NULLIF(TRIM(poi.product_name_snapshot), ""),
+                        NULLIF(TRIM(poi.generic_name_snapshot), ""),
+                        NULLIF(TRIM(md.generic_name), ""),
                         NULLIF(TRIM(p.product_name), ""),
                         "Unnamed product"
                     )
-                    ORDER BY COALESCE(NULLIF(TRIM(poi.product_name_snapshot), ""), NULLIF(TRIM(p.product_name), ""))
+                    ORDER BY COALESCE(
+                        NULLIF(TRIM(poi.generic_name_snapshot), ""),
+                        NULLIF(TRIM(md.generic_name), ""),
+                        NULLIF(TRIM(p.product_name), "")
+                    )
                     SEPARATOR ", "
                 ) AS item_names
          FROM purchase_requests pr
@@ -321,9 +345,12 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
          LEFT JOIN suppliers s ON s.supplier_id = po.supplier_id
          LEFT JOIN purchase_order_items poi ON poi.po_id = po.po_id
          LEFT JOIN product p ON p.product_id = poi.product_id
+         LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         LEFT JOIN purchase_order_invoices invoice ON invoice.po_id = po.po_id
          WHERE pr.pr_id = :pr_id
          GROUP BY pr.pr_id, pr.pr_number, po.po_id, po.po_number, po.supplier_id,
-                  po.total_amount, po.expected_delivery_date, po.status, po.created_at,
+                  po.total_amount, invoice.supplier_invoice_total,
+                  po.expected_delivery_date, po.status, po.created_at,
                   s.supplier_name
          ORDER BY po.created_at, po.po_number'
     );
@@ -332,6 +359,14 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
     if (!$rows) return null;
 
     $orders = array_values(array_filter($rows, static fn(array $row): bool => !empty($row['po_id'])));
+    foreach ($orders as &$order) {
+        $invoiceTotal = $order['invoice_total'] === null ? null : round((float) $order['invoice_total'], 2);
+        $legacyTotal = $order['legacy_total_amount'] === null ? null : round((float) $order['legacy_total_amount'], 2);
+        $order['invoice_total'] = $invoiceTotal;
+        $order['total_amount'] = $invoiceTotal ?? $legacyTotal;
+        $order['total_source'] = $invoiceTotal !== null ? 'supplier_invoice' : ($legacyTotal !== null ? 'legacy_po' : null);
+    }
+    unset($order);
     return [
         'pr_id' => (string) $rows[0]['pr_id'],
         'pr_number' => (string) $rows[0]['pr_number'],
@@ -565,9 +600,6 @@ function validatePurchaseRequestPackage(array $options, $quantity, string $unit)
     $configuredUnit = purchaseRequestConfiguredUnit($options);
     if ($configuredUnit === null) {
         throw new InvalidArgumentException('The selected product does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
-    }
-    if (strcasecmp(trim($unit), $configuredUnit) !== 0) {
-        throw new InvalidArgumentException('The requested unit is controlled by Supplier Product Setup and must be ' . $configuredUnit . '.');
     }
     $canonical = null;
     foreach (purchaseRequestPackagingUnits($options) as $level) {

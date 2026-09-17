@@ -600,6 +600,11 @@ function renderSummary() {
     document.getElementById("rejectedPrCount").textContent = count("Rejected");
 }
 
+function requestItemDisplayName(item = {}) {
+    const isMedicine = String(item.category_name || "").trim().toLowerCase() === "medicine";
+    return String((isMedicine ? item.generic_name : "") || item.product_name || "").trim();
+}
+
 function filteredRequests() {
     const search = String(document.getElementById("prSearch")?.value || "")
         .trim()
@@ -611,7 +616,12 @@ function filteredRequests() {
         const haystack = [
             request.pr_number,
             request.requested_by_name,
-            ...(request.items || []).flatMap((item) => [item.product_name, item.brand_name]),
+            ...(request.items || []).flatMap((item) => [
+                requestItemDisplayName(item),
+                item.product_name,
+                item.generic_name,
+                item.brand_name,
+            ]),
         ]
             .join(" ")
             .toLowerCase();
@@ -1096,7 +1106,7 @@ function renderTable() {
             const items = request.items || [];
             const names = items
                 .slice(0, 2)
-                .map((item) => item.product_name)
+                .map(requestItemDisplayName)
                 .join(", ");
             const overflow = items.length > 2 ? ` +${items.length - 2} more` : "";
             const poCount = Math.max(0, Number(request.po_generated_count || 0));

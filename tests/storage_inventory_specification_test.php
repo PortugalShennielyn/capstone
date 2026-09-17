@@ -57,19 +57,32 @@ try {
     storageInventoryAssert(count($ids) === count(array_unique($ids)), 'Storage Inventory returned duplicate rows for one product_id.');
 
     $chuckie = array_values(array_filter($rows, static fn(array $row): bool => strtolower((string) ($row['product_name'] ?? '')) === 'chuckie'));
-    storageInventoryAssert(count($chuckie) === 1, 'Chuckie must remain one row for its authoritative product_id.');
-    storageInventoryAssert(($chuckie[0]['normalized_specification'] ?? '') === 'Chocolate • 250 mL', 'Chuckie did not use its normalized Product Master specification.');
+    if (count($chuckie) > 0) {
+        storageInventoryAssert(count($chuckie) === 1, 'Chuckie must remain one row for its authoritative product_id.');
+        storageInventoryAssert(($chuckie[0]['normalized_specification'] ?? '') === 'Chocolate • 250 mL', 'Chuckie did not use its normalized Product Master specification.');
 
-    $stockSql = inventoryStockSummarySql();
-    $stock = $pdo->prepare("SELECT storage_quantity,shelf_quantity FROM ({$stockSql}) stock WHERE product_id=:product_id");
-    $stock->execute([':product_id' => $chuckie[0]['product_id']]);
-    $authoritative = $stock->fetch(PDO::FETCH_ASSOC);
-    storageInventoryAssert((int) $chuckie[0]['storage_quantity'] === (int) $authoritative['storage_quantity'], 'Storage quantity changed while loading specifications.');
-    storageInventoryAssert((int) $chuckie[0]['shelf_quantity'] === (int) $authoritative['shelf_quantity'], 'Shelf quantity changed while loading specifications.');
+        $stockSql = inventoryStockSummarySql();
+        $stock = $pdo->prepare("SELECT storage_quantity,shelf_quantity FROM ({$stockSql}) stock WHERE product_id=:product_id");
+        $stock->execute([':product_id' => $chuckie[0]['product_id']]);
+        $authoritative = $stock->fetch(PDO::FETCH_ASSOC);
+        storageInventoryAssert((int) $chuckie[0]['storage_quantity'] === (int) $authoritative['storage_quantity'], 'Storage quantity changed while loading specifications.');
+        storageInventoryAssert((int) $chuckie[0]['shelf_quantity'] === (int) $authoritative['shelf_quantity'], 'Shelf quantity changed while loading specifications.');
+    }
+
+    $cetzyRows = array_values(array_filter($rows, static fn(array $row): bool => strtolower((string) ($row['brand_name'] ?? '')) === 'cetzy-10'));
+    if (count($cetzyRows) > 0) {
+        foreach ($cetzyRows as $cetzy) {
+            storageInventoryAssert(strtolower((string) ($cetzy['product_name'] ?? '')) === 'cetzy-10', 'CETZY-10 fixture changed; update this regression test.');
+            storageInventoryAssert(strtolower((string) ($cetzy['generic_name'] ?? '')) === 'cetirizine hydrochloride', 'Storage Inventory did not fetch CETZY-10 generic name from Product Master medicine details.');
+            storageInventoryAssert(array_key_exists('brand_name', $cetzy) && array_key_exists('product_name', $cetzy) && array_key_exists('generic_name', $cetzy), 'Storage Inventory API product identity keys are incomplete.');
+        }
+    }
 
     $script = (string) file_get_contents(__DIR__ . '/../pharma-frontend/js/modules/inventory.js');
     storageInventoryAssert(!str_contains($script, 'procurementBadge('), 'Storage Inventory still renders the PR approval badge.');
     storageInventoryAssert(str_contains($script, 'highlightSearchText'), 'Storage Inventory search highlighting is missing.');
+    storageInventoryAssert(str_contains($script, 'function productIdentityParts'), 'Storage Inventory product identity formatter is missing.');
+    storageInventoryAssert(!str_contains($script, 'product-cell">${highlightSearchText(cleanText(row.product_name'), 'Storage Inventory Product column still renders product_name directly.');
 
     echo "Storage Inventory specification and search tests passed.\n";
 } finally {

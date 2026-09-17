@@ -45,6 +45,18 @@ function uniqueParts(parts) {
     });
 }
 
+function isPrescription(row) {
+    const explicit = row.is_prescription ?? row.prescription_required ?? row.requires_prescription;
+    if (explicit !== undefined && explicit !== null && explicit !== '') {
+        return explicit === true || explicit === 1 || ['1', 'true', 'yes'].includes(String(explicit).toLowerCase());
+    }
+    return /prescription\s*\(?(?:rx)\)?|\brx\b/i.test(String(row.normalized_specification || ''));
+}
+
+function prescriptionTag(row) {
+    return isPrescription(row) ? '<span class="prescription-tag" title="Prescription medicine">Rx</span>' : '';
+}
+
 function joinedMeasurement(value, unit) {
     const amount = meaningful(value);
     const label = meaningful(unit);
@@ -53,11 +65,16 @@ function joinedMeasurement(value, unit) {
 
 function specification(row) {
     const normalizedSpecification = meaningful(row.normalized_specification);
-    if (normalizedSpecification) return normalizedSpecification;
+    if (normalizedSpecification) {
+        return normalizedSpecification
+            .replace(/\bPrescription\s*\(\s*Rx\s*\)\s*•?\s*/gi, '')
+            .replace(/(^|\s*[•|]\s*)\bRx\b(?=\s*[•|]|$)/gi, '$1')
+            .replace(/^\s*[•|]\s*|\s*[•|]\s*$/g, '')
+            .trim();
+    }
     if (String(row.category_name || '').toLowerCase() === 'medicine') {
         const strength = meaningful(row.strength) || joinedMeasurement(row.strength_value, row.strength_unit);
         return uniqueParts([
-            row.generic_name,
             strength,
             joinedMeasurement(row.net_content_value, row.net_content_unit),
             row.dosage_form,
@@ -116,6 +133,14 @@ function alertText(value) {
     return `${days} day${days === 1 ? '' : 's'} before`;
 }
 
+function canEditExpiry(row) {
+    return Number(row.can_edit_expiry) === 1;
+}
+
+function expiryLockNotice(row) {
+    return canEditExpiry(row) ? '' : '<div class="expiry-lock-notice"><strong>Expiry date locked</strong><span>Expiry information can only be corrected within 24 hours of receiving the batch before inventory activity occurs.</span></div>';
+}
+
 function renderSummaryCards(rows) {
     const container = document.getElementById('expirySummaryCards');
     if (!container) return;
@@ -157,11 +182,19 @@ function applySearchHighlight() {
 }
 
 function productReference(row) {
-    return `<span class="product-primary">${escapeHtml(meaningful(row.product_name) || 'Unnamed product')}</span><span class="product-secondary">${escapeHtml(productSecondary(row))}</span>`;
+    const productName = meaningful(row.product_name) || 'Unnamed product';
+    const genericName = meaningful(row.generic_name);
+    const brandName = meaningful(row.brand_name);
+    const identity = uniqueParts([productName, genericName]);
+    const separateBrand = brandName && !identity.some((part) => part.toLowerCase() === brandName.toLowerCase());
+    return `<span class="product-primary">${escapeHtml(identity.join(' • '))} ${prescriptionTag(row)}</span>${separateBrand ? `<span class="product-secondary">${escapeHtml(brandName)}</span>` : ''}<span class="product-secondary">${escapeHtml(productSpecification(row))}</span>`;
 }
 
 function productSecondary(row) {
-    return uniqueParts([row.brand_name, ...productSpecification(row).split('•')]).join(' • ') || '—';
+    const identity = uniqueParts([row.product_name, row.generic_name]);
+    const brand = meaningful(row.brand_name);
+    const brandPart = brand && !identity.some((part) => part.toLowerCase() === brand.toLowerCase()) ? brand : '';
+    return uniqueParts([brandPart, ...productSpecification(row).split('•')]).join(' • ') || '—';
 }
 
 function productSpecification(row) {
@@ -207,7 +240,7 @@ function renderExpiryRows(rows, totalFiltered = rows.length) {
             <td class="expiry-action-cell">
                 <div class="expiry-actions">
                     <button class="btn btn-sm btn-outline-secondary view-expiry-btn" type="button" title="View Expiry Details" aria-label="View Expiry Details" data-bs-toggle="tooltip" data-batch-id="${escapeHtml(row.batch_id)}"><i class="fa-regular fa-eye"></i></button>
-                    <button class="btn btn-sm btn-outline-primary edit-expiry-btn" type="button" title="Edit Expiry" aria-label="Edit Expiry" data-bs-toggle="tooltip" data-batch-id="${escapeHtml(row.batch_id)}"><i class="fa-solid fa-pen"></i></button>
+                    ${canEditExpiry(row) ? `<button class="btn btn-sm btn-outline-primary edit-expiry-btn" type="button" title="Edit Expiry" aria-label="Edit Expiry" data-bs-toggle="tooltip" data-batch-id="${escapeHtml(row.batch_id)}"><i class="fa-solid fa-pen"></i></button>` : ''}
                 </div>
             </td>
         </tr>
@@ -227,7 +260,7 @@ function filteredExpiryRows() {
         if (status && String(row.expiry_status || 'Not Recorded') !== status) return false;
         if (category && String(row.category_name || '') !== category) return false;
         if (!search) return true;
-        return [row.product_name, row.brand_name, specification(row), row.inventory_unit_name, row.inventory_unit_symbol, row.batch_number, row.batch_id, row.po_number, row.category_name, row.type_name]
+        return [row.product_name, row.generic_name, row.brand_name, specification(row), row.inventory_unit_name, row.inventory_unit_symbol, row.batch_number, row.batch_id, row.po_number, row.category_name, row.type_name]
             .some((value) => String(value ?? '').toLocaleLowerCase().includes(search));
     });
 }
@@ -286,7 +319,7 @@ function openExpiryDetails(batchId, show = true) {
         <section class="expiry-modal-section">
             <h3>Product Identity</h3>
             <div class="expiry-identity-grid">
-                <div class="expiry-identity-field"><span>Product / Brand</span><strong>${escapeHtml(meaningful(row.product_name) || 'Unnamed product')}</strong><span class="expiry-identity-brand">${escapeHtml(meaningful(row.brand_name) || '—')}</span></div>
+                <div class="expiry-identity-field"><span>Product Identity</span><strong>${escapeHtml(uniqueParts([row.product_name, row.generic_name]).join(' • ') || 'Unnamed product')} ${prescriptionTag(row)}</strong>${meaningful(row.brand_name) && !uniqueParts([row.product_name, row.generic_name]).some((part) => part.toLowerCase() === meaningful(row.brand_name).toLowerCase()) ? `<span class="expiry-identity-brand">${escapeHtml(row.brand_name)}</span>` : ''}</div>
                 <div class="expiry-identity-field"><span>Specification</span><div class="expiry-identity-specification">${escapeHtml(productSpecification(row))}</div></div>
             </div>
         </section>
@@ -305,14 +338,20 @@ function openExpiryDetails(batchId, show = true) {
                 ${detailField('Alert Before', alertText(row.expiry_alert_days))}
                 ${detailField('Days Left', daysText(row.days_until_expiry))}
                 <div class="expiry-info-item"><span>Status</span><strong>${statusBadge(row.expiry_status)}</strong></div>
-            </div>
+            </div>${expiryLockNotice(row)}
         </section>`;
+    const editButton = document.getElementById('btnEditExpiryFromDetails');
+    if (editButton) editButton.hidden = !canEditExpiry(row);
     if (show) bootstrap.Modal.getOrCreateInstance(document.getElementById('expiryDetailsModal')).show();
 }
 
 function openEditExpiryModal(batchId) {
     const row = expiryRows.find((item) => String(item.batch_id) === String(batchId));
     if (!row) return;
+    if (!canEditExpiry(row)) {
+        PharmaUtils.toast.error('Expiry date locked. Expiry information can only be corrected within 24 hours of receiving the batch before inventory activity occurs.');
+        return;
+    }
     document.getElementById('editExpiryBatchId').value = row.batch_id;
     document.getElementById('editExpiryInventoryId').value = row.inventory_id || '';
     document.getElementById('editExpiryProductName').textContent = meaningful(row.product_name) || 'Unnamed product';

@@ -101,14 +101,18 @@ function sessionTimeoutConfig() {
     };
 }
 
-async function clearServerSession() {
+async function clearServerSession(reason = 'logout') {
     const token = tabToken();
     try {
         await fetch(`${API_BASE_URL}/auth/logout.php`, {
             method: 'POST',
             credentials: 'include',
             cache: 'no-store',
-            headers: token ? { 'X-Tab-Token': token } : {}
+            headers: {
+                ...(token ? { 'X-Tab-Token': token } : {}),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reason })
         });
     } catch (error) {}
 }
@@ -150,7 +154,7 @@ async function expireInactiveSession() {
 
     inactivityLogoutStarted = true;
     window.clearTimeout(inactivityTimer);
-    await clearServerSession();
+    await clearServerSession('timeout');
     clearTabToken();
     window.alert('Your session has expired due to inactivity. Please log in again.');
     window.location.replace('login.html');

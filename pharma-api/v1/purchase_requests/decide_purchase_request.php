@@ -27,6 +27,7 @@ try {
     }
 
     if ($decision === 'approve') {
+        assertPurchaseRequestHasValidItems($pdo, $prId, 'Cannot approve an empty Purchase Request.');
         $submittedQuantities = is_array($payload['approved_quantities'] ?? null) ? $payload['approved_quantities'] : [];
         $items = purchaseRequestItems($pdo, $prId);
         $quantitiesByItem = [];

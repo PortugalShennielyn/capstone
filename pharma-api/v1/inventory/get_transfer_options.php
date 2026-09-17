@@ -8,10 +8,12 @@ try {
     if ($productId === '') throw new InvalidArgumentException('Product is required.');
     $units = inventoryTransferUnits($pdo, $productId);
     $stmt = $pdo->prepare(
-        "SELECT p.product_id, p.product_name, p.brand_name,
+        "SELECT p.product_id, p.product_name, p.brand_name, md.generic_name,
             COALESCE((SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id=p.product_id AND batch_status='active'),0) storage_quantity,
             COALESCE((SELECT SUM(quantity_remaining) FROM product_selling_stock WHERE product_id=p.product_id),0) shelf_quantity
-         FROM product p WHERE p.product_id=:product_id LIMIT 1"
+         FROM product p
+         LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         WHERE p.product_id=:product_id LIMIT 1"
     );
     $stmt->execute([':product_id' => $productId]);
     $product = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -36,6 +38,7 @@ try {
                 pss.expiration_date expiry_date,pss.quantity_remaining available_quantity
          FROM product_selling_stock pss
          WHERE pss.product_id=:product_id AND pss.quantity_remaining>0
+           AND (pss.expiration_date IS NULL OR pss.expiration_date>=CURDATE())
          ORDER BY pss.expiration_date IS NULL,pss.expiration_date,pss.created_at,pss.selling_stock_id"
     );
     $shelfStmt->execute([':product_id'=>$productId]);

@@ -858,13 +858,13 @@ function paymentStatusBadge(status = "Unpaid") {
             : state === "unpaid"
               ? "Unpaid"
               : state === "partially paid"
-                ? "Partially Paid"
+                ? "Unpaid"
                 : state === "awaiting invoice"
                   ? "Awaiting Invoice"
                   : status === "Fully Paid"
                     ? "Paid"
                     : status;
-    const normalized = ["Awaiting Invoice", "Unpaid", "Partially Paid", "Paid"].includes(current)
+    const normalized = ["Awaiting Invoice", "Unpaid", "Paid"].includes(current)
         ? current
         : "Unpaid";
     return `<span class="po-payment-badge ${normalized.toLowerCase().replaceAll(" ", "-")}">${escapeHtml(normalized)}</span>`;
@@ -3997,6 +3997,28 @@ function supplierInvoiceQuantityLabel(item = {}) {
     return `${quantity} ${unit}s`;
 }
 
+function supplierInvoicePaymentSummaryMarkup(poId, invoice = {}, payment = {}) {
+    const invoiceTotal = Number(invoice.supplier_invoice_total || 0);
+    const amountPaid = Number(payment.total_paid || 0);
+    const balanceDue = Number(payment.remaining_balance ?? Math.max(0, invoiceTotal - amountPaid));
+    const status = payment.payment_status || (balanceDue <= 0 && invoiceTotal > 0 ? "Paid" : "Unpaid");
+    const paid = isPurchaseOrderPaid(status, balanceDue);
+    return `
+        <div class="supplier-invoice-payment-summary">
+            <h3 class="supplier-invoice-section-title">Invoice Summary</h3>
+            <div class="po-payment-financial-summary">
+                <div><span>Invoice Total</span><strong>${peso(invoiceTotal)}</strong></div>
+                <div><span>Amount Paid</span><strong>${peso(amountPaid)}</strong></div>
+                <div class="balance"><span>Balance Due</span><strong>${peso(balanceDue)}</strong></div>
+                <div><span>Payment Status</span>${paymentStatusBadge(status)}</div>
+            </div>
+            <div class="po-view-invoice-actions">
+                <button class="po-view-invoice-action" type="button" data-po-invoice-action="close"><span>Close</span></button>
+                <button class="po-view-invoice-action" type="button" data-po-invoice-action="payment" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-wallet" aria-hidden="true"></i><span>${paid ? "View Payment" : "Record Payment"}</span></button>
+            </div>
+        </div>`;
+}
+
 async function openSupplierInvoice(poId, options = {}) {
     try {
         const [order, invoicePayload] = await Promise.all([
@@ -4007,6 +4029,15 @@ async function openSupplierInvoice(poId, options = {}) {
         ]);
         const invoice = invoicePayload.invoice || {};
         if (invoice.invoice_id && !options.edit) {
+            let paymentSummary = {};
+            try {
+                const paymentPayload = await fetchJson(
+                    `${API_BASE_URL}/purchase_orders/get_purchase_order_payment_details.php?po_id=${encodeURIComponent(poId)}`,
+                );
+                paymentSummary = paymentPayload.payment_details?.payment || {};
+            } catch (_) {
+                paymentSummary = {};
+            }
             const result = await Swal.fire({
                 title: "Supplier Invoice",
                 html: `<div class="supplier-invoice-view">
@@ -4021,19 +4052,34 @@ async function openSupplierInvoice(poId, options = {}) {
                     <h3 class="supplier-invoice-section-title">Supplier Invoice Items</h3>
                     ${supplierInvoiceItemsMarkup(invoice.items || [])}
                     <div class="supplier-invoice-view-total"><span>Supplier Invoice Total</span><strong>${peso(invoice.supplier_invoice_total || 0)}</strong></div>
+                    ${supplierInvoicePaymentSummaryMarkup(poId, invoice, paymentSummary)}
                 </div>`,
                 showCloseButton: true,
-                showDenyButton: ["Pending", "Arrived"].includes(order.status || ""),
-                confirmButtonText: "Close",
+                showConfirmButton: false,
+                showDenyButton:
+                    ["Pending", "Arrived"].includes(order.status || "") &&
+                    getPoPaymentStatus(order) !== "paid",
                 denyButtonText: "Edit Supplier Invoice",
-                confirmButtonColor: "#4f46e5",
                 denyButtonColor: "#64748b",
                 width: 1080,
                 customClass: {
                     popup: "supplier-invoice-modal supplier-invoice-view-modal",
                     htmlContainer: "supplier-invoice-modal-body",
                 },
+                didOpen: () => {
+                    document
+                        .querySelector(".supplier-invoice-view")
+                        ?.addEventListener("click", (event) => {
+                            const button = event.target.closest("[data-po-invoice-action]");
+                            if (!button) return;
+                            const action = button.dataset.poInvoiceAction;
+                            if (action === "close") Swal.close();
+                            if (action === "payment") Swal.clickConfirm();
+                        });
+                },
+                preConfirm: () => "payment",
             });
+            if (result.isConfirmed && result.value === "payment") await openSupplierPayment(poId);
             if (result.isDenied) await openSupplierInvoice(poId, { edit: true });
             return;
         }
@@ -4336,16 +4382,14 @@ async function openSupplierInvoice(poId, options = {}) {
 }
 
 function receiveBatchRow(batch = {}, requiresExpiry = false, autoAllocate = false) {
-    const noExpiry =
-        !requiresExpiry &&
-        (batch.no_expiry === true || (!batch.expiry_date && batch.no_expiry !== false));
+    const noExpiry = !requiresExpiry && batch.no_expiry === true;
     return `
         <div class="receive-batch-row" data-auto-allocation="${autoAllocate ? "1" : "0"}">
             <div class="receive-field"><label>Batch Identifier <span class="text-muted">(optional)</span></label><input class="form-control form-control-sm receive-batch-id" maxlength="50" value="${escapeHtml(batch.batch_identifier || "")}" placeholder="Supplier batch or auto-generated"></div>
             <div class="receive-field"><label>Batch Quantity</label><input class="form-control form-control-sm receive-batch-qty" type="number" min="1" step="1" value="${escapeHtml(batch.quantity ?? "")}"></div>
-            <div class="receive-field"><label>Expiry Date${requiresExpiry ? " *" : ""}</label><input class="form-control form-control-sm receive-batch-expiry" type="date" value="${escapeHtml(batch.expiry_date || "")}" ${noExpiry ? "disabled" : ""}></div>
+            <div class="receive-field receive-expiry-field"><label>Expiry Date${requiresExpiry || !noExpiry ? " *" : ""}</label><input class="form-control form-control-sm receive-batch-expiry" type="date" value="${escapeHtml(batch.expiry_date || "")}" ${noExpiry ? "disabled" : ""}><span class="receive-no-expiry-display" ${noExpiry ? "" : "hidden"}>N/A — No Expiry</span></div>
             <div>
-                ${requiresExpiry ? "" : `<label class="receive-no-expiry"><input class="form-check-input receive-batch-no-expiry" type="checkbox" ${noExpiry ? "checked" : ""}> No Expiry</label>`}
+                ${requiresExpiry ? "" : `<label class="receive-no-expiry"><input class="form-check-input receive-batch-no-expiry" type="checkbox" ${noExpiry ? "checked" : ""}> No Expiry Date</label>`}
                 <button class="btn btn-sm btn-outline-danger receive-remove-batch" type="button" title="Remove batch" aria-label="Remove batch"><i class="fa-solid fa-trash"></i></button>
             </div>
         </div>`;
@@ -4695,7 +4739,7 @@ function renderReceiveItems(order) {
                             {
                                 quantity: accepted,
                                 expiry_date: "",
-                                no_expiry: !requiresExpiry,
+                                no_expiry: false,
                                 auto_allocate: true,
                             },
                         ]
@@ -4825,6 +4869,21 @@ function setReceiveCardLocked(card, locked) {
     });
 }
 
+function setReceiveControlValidation(control, invalid, message = "") {
+    if (!control) return;
+    control.classList.toggle("receive-invalid-control", invalid);
+    control.setAttribute("aria-invalid", invalid ? "true" : "false");
+    const field = control.closest(".receive-field");
+    if (!field) return;
+    let helper = field.querySelector(":scope > .receive-required-message");
+    if (!helper) {
+        helper = document.createElement("small");
+        helper.className = "receive-required-message";
+        field.appendChild(helper);
+    }
+    helper.textContent = invalid ? message : "";
+}
+
 function receiveFormState(strict = true) {
     const state = {
         ordered: 0,
@@ -4841,15 +4900,33 @@ function receiveFormState(strict = true) {
         applicable: { inspection: true, batches: true, confirmation: true },
     };
 
+    const deliveredByControl = document.getElementById("receiveDeliveredByName");
+    const receiptControl = document.getElementById("receiveDeliveryReceiptNo");
+    const showDeliveryErrors = strict && receiveValidationAttempted;
+    const driverMissing = showDeliveryErrors && !String(deliveredByControl?.value || "").trim();
+    const receiptMissing = showDeliveryErrors && !String(receiptControl?.value || "").trim();
+    setReceiveControlValidation(deliveredByControl, driverMissing, "Driver name is required.");
+    setReceiveControlValidation(
+        receiptControl,
+        receiptMissing,
+        "Supplier delivery receipt no. is required.",
+    );
+    if (driverMissing) state.errors.push("Delivery Information: Driver name is missing.");
+    if (receiptMissing)
+        state.errors.push("Delivery Information: Supplier Delivery Receipt No. is missing.");
     document
         .querySelectorAll("#receiveInspectionCards .receive-item-card")
         .forEach((card, cardIndex) => {
+            const productValidationAttempted =
+                receiveValidationAttempted || card.dataset.validationAttempted === "1";
             const orderItem = activeReceiveOrder?.items.find(
                 (item) => String(item.po_item_id) === String(card.dataset.poItemId),
             );
             syncReceiveDamageBatchSelectors(card);
             syncReceivePackageSequenceSelectors(card);
-            const deliveredPurchase = Number(card.querySelector(".receive-qty-input")?.value || 0);
+            const deliveredQuantityControl = card.querySelector(".receive-qty-input");
+            const deliveredQuantityRaw = String(deliveredQuantityControl?.value ?? "").trim();
+            const deliveredPurchase = Number(deliveredQuantityRaw || 0);
             const purchaseSetup = purchasingConversion(orderItem || {});
             const purchaseConversion =
                 (orderItem?.package_conversions || []).find(
@@ -4904,21 +4981,42 @@ function receiveFormState(strict = true) {
                         ? `${purchaseSetup.purchaseUnit} ${packageSequence} is already selected.`
                         : damagedBaseQuantity > affectedUnitBaseQuantity
                           ? `Damage cannot exceed ${affectedUnitBaseQuantity} ${orderItem?.unit || "units"} in one ${purchaseSetup.purchaseUnit}.`
-                          : receiveValidationAttempted && !rowValid
+                          : productValidationAttempted && !rowValid
                             ? "Select a physical package and enter a positive damaged quantity using a configured unit."
                             : "";
                 row.querySelector(".damage-package-sequence")?.classList.toggle(
                     "is-invalid",
-                    !Number.isInteger(packageSequence) ||
-                        packageSequence < 1 ||
-                        packageSequence > deliveredPurchase ||
-                        duplicatePackage,
+                    productValidationAttempted &&
+                        (!Number.isInteger(packageSequence) ||
+                            packageSequence < 1 ||
+                            packageSequence > deliveredPurchase ||
+                            duplicatePackage),
                 );
                 row.querySelector(".damage-line-qty")?.classList.toggle(
                     "is-invalid",
-                    !Number.isInteger(damagedQuantity) ||
-                        damagedQuantity <= 0 ||
-                        damagedBaseQuantity > affectedUnitBaseQuantity,
+                    productValidationAttempted &&
+                        (!Number.isInteger(damagedQuantity) ||
+                            damagedQuantity <= 0 ||
+                            damagedBaseQuantity > affectedUnitBaseQuantity),
+                );
+                setReceiveControlValidation(
+                    row.querySelector(".damage-package-sequence"),
+                    strict &&
+                        productValidationAttempted &&
+                        (!Number.isInteger(packageSequence) ||
+                            packageSequence < 1 ||
+                            packageSequence > deliveredPurchase ||
+                            duplicatePackage),
+                    "Select a valid affected package.",
+                );
+                setReceiveControlValidation(
+                    row.querySelector(".damage-line-qty"),
+                    strict &&
+                        productValidationAttempted &&
+                        (!Number.isInteger(damagedQuantity) ||
+                            damagedQuantity <= 0 ||
+                            damagedBaseQuantity > affectedUnitBaseQuantity),
+                    "Enter a valid damaged quantity.",
                 );
                 const lineQuantityInput = row.querySelector(".damage-line-qty");
                 if (lineQuantityInput)
@@ -5016,6 +5114,7 @@ function receiveFormState(strict = true) {
                 : [];
             const itemRemarks = card.querySelector(".receive-remarks-input")?.value.trim() || "";
             const quantitiesComplete =
+                deliveredQuantityRaw !== "" &&
                 Number.isInteger(deliveredPurchase) &&
                 deliveredPurchase >= 0 &&
                 deliveredPurchase <= orderedPurchase &&
@@ -5026,7 +5125,8 @@ function receiveFormState(strict = true) {
                 action <= delivered;
             const itemErrors = [];
 
-            if (!Number.isInteger(deliveredPurchase) || deliveredPurchase < 0)
+            if (deliveredQuantityRaw === "") itemErrors.push("Received quantity is required.");
+            else if (!Number.isInteger(deliveredPurchase) || deliveredPurchase < 0)
                 itemErrors.push(
                     "Delivered Purchase Unit quantity must be a non-negative whole number.",
                 );
@@ -5128,8 +5228,10 @@ function receiveFormState(strict = true) {
                 const expiryDate = row.querySelector(".receive-batch-expiry")?.value || "";
                 if (strict && (!Number.isInteger(quantity) || quantity <= 0))
                     itemErrors.push("Every batch needs a positive whole quantity.");
-                if (strict && accepted > 0 && card.dataset.requiresExpiry === "1" && !expiryDate)
-                    itemErrors.push("An expiry date is required for every medicine batch.");
+                if (strict && accepted > 0 && !noExpiry && !expiryDate)
+                    itemErrors.push(
+                        `Batch ${batchRows.indexOf(row) + 1}: Expiry date is required.`,
+                    );
                 allocated += Number.isFinite(quantity) ? Math.max(0, quantity) : 0;
                 batches.push({
                     batch_identifier: row.querySelector(".receive-batch-id")?.value.trim() || "",
@@ -5147,8 +5249,37 @@ function receiveFormState(strict = true) {
                 batchRowsValid && allocated === accepted && (accepted === 0 || batches.length > 0);
             const expiryComplete =
                 accepted === 0 ||
-                card.dataset.requiresExpiry !== "1" ||
-                (batches.length > 0 && batches.every((batch) => Boolean(batch.expiry_date)));
+                (batches.length > 0 &&
+                    batches.every(
+                        (batch) => batch.no_expiry === true || Boolean(batch.expiry_date),
+                    ));
+            batchRows.forEach((row) => {
+                const quantityControl = row.querySelector(".receive-batch-qty");
+                const quantity = Number(quantityControl?.value || 0);
+                setReceiveControlValidation(
+                    quantityControl,
+                    strict &&
+                        productValidationAttempted &&
+                        accepted > 0 &&
+                        (!Number.isInteger(quantity) || quantity <= 0),
+                    "A positive whole batch quantity is required.",
+                );
+                const expiryControl = row.querySelector(".receive-batch-expiry");
+                const noExpirySelected =
+                    row.querySelector(".receive-batch-no-expiry")?.checked === true;
+                expiryControl?.toggleAttribute("disabled", noExpirySelected);
+                setReceiveControlValidation(
+                    expiryControl,
+                    strict &&
+                        productValidationAttempted &&
+                        accepted > 0 &&
+                        !noExpirySelected &&
+                        !expiryControl?.value,
+                    "Expiry date is required.",
+                );
+                const noExpiryDisplay = row.querySelector(".receive-no-expiry-display");
+                if (noExpiryDisplay) noExpiryDisplay.hidden = !noExpirySelected;
+            });
             const damageBatchesComplete = damageLines.every(
                 (line) =>
                     batches.length <= 1 ||
@@ -5217,7 +5348,11 @@ function receiveFormState(strict = true) {
             state.checks.batches = state.checks.batches && batchesComplete && expiryComplete;
             state.checks.confirmation =
                 state.checks.confirmation && inspected && batchesComplete && expiryComplete;
-            state.errors.push(...itemErrors.map((error) => `Product ${cardIndex + 1}: ${error}`));
+            const productName =
+                [productTableBrand(orderItem || {}), productTableProductName(orderItem || {})]
+                    .filter(Boolean)
+                    .join(" — ") || `Product ${cardIndex + 1}`;
+            state.errors.push(...itemErrors.map((error) => `${productName}: ${error}`));
             state.items.push({
                 po_item_id: card.dataset.poItemId,
                 delivered_purchase_quantity: deliveredPurchase,
@@ -5265,12 +5400,39 @@ function receiveFormState(strict = true) {
             card.dataset.checkResolution = issueComplete ? "1" : "0";
             card.dataset.checkRemarks = issueComplete ? "1" : "0";
             card.dataset.checkFinalInspection = inspected ? "1" : "0";
+            card.dataset.validationState = productValidationAttempted
+                ? !expiryComplete
+                    ? "Missing Expiry Date"
+                    : !batchesComplete
+                      ? "Missing Batch Info"
+                      : issueSelected && !issueComplete
+                        ? "Incomplete"
+                        : inspected && issueSelected
+                          ? "Has Issue"
+                          : inspected
+                            ? "Complete"
+                            : "Incomplete"
+                : inspected
+                  ? issueSelected
+                      ? "Has Issue"
+                      : "Complete"
+                  : card.dataset.touched === "1"
+                    ? "In Progress"
+                    : "Not Started";
+            setReceiveControlValidation(
+                deliveredQuantityControl,
+                strict && productValidationAttempted && !quantitiesComplete,
+                deliveredQuantityRaw === ""
+                    ? "Received quantity is required."
+                    : "Enter a valid received quantity.",
+            );
             card.classList.toggle(
                 "has-error",
-                deliveredPurchase > orderedPurchase ||
-                    damaged > delivered ||
-                    action > delivered ||
-                    (physicalAction && action < damaged),
+                productValidationAttempted &&
+                    (deliveredPurchase > orderedPurchase ||
+                        damaged > delivered ||
+                        action > delivered ||
+                        (physicalAction && action < damaged)),
             );
             const missingQuantity = card.querySelector(".receive-missing-qty");
             if (missingQuantity) missingQuantity.textContent = String(missing);
@@ -5355,7 +5517,7 @@ function receiveFormState(strict = true) {
                           ? "Confirmed Refund Due *"
                           : "Confirmed Current Discount *";
 
-            const showFieldErrors = strict && receiveValidationAttempted;
+            const showFieldErrors = strict && productValidationAttempted;
             const fieldErrors = [
                 [
                     ".receive-qty-error",
@@ -5409,6 +5571,37 @@ function receiveFormState(strict = true) {
                 const error = card.querySelector(selector);
                 if (error) error.textContent = showFieldErrors && invalid ? message : "";
             });
+            [
+                [".receive-issue-type", issueSelected && !issueType, "Issue type is required."],
+                [
+                    ".receive-issue-other",
+                    issueSelected && issueType === "Other" && !issueDetail,
+                    "Issue details are required.",
+                ],
+                [
+                    ".receive-disposition",
+                    issueSelected && !disposition,
+                    "Affected goods action is required.",
+                ],
+                [
+                    ".receive-resolution",
+                    issueSelected && resolution === "none",
+                    "Supplier resolution is required.",
+                ],
+                [
+                    ".receive-confirmed-adjustment",
+                    issueSelected &&
+                        ["supplier_credit", "next_po_credit", "refund"].includes(resolution) &&
+                        (!Number.isFinite(confirmedAdjustment) || confirmedAdjustment <= 0),
+                    "Confirmed adjustment amount is required.",
+                ],
+            ].forEach(([selector, invalid, message]) =>
+                setReceiveControlValidation(
+                    card.querySelector(selector),
+                    strict && productValidationAttempted && invalid,
+                    message,
+                ),
+            );
             const addDamage = card.querySelector(".receive-add-damage-line");
             if (addDamage) addDamage.disabled = damageLines.length >= deliveredPurchase;
             const shortageNote = card.querySelector(".receive-shortage-note");
@@ -5441,7 +5634,10 @@ function receiveFormState(strict = true) {
                         ? `Over allocated by ${Math.abs(allocationDifference)} unit${Math.abs(allocationDifference) === 1 ? "" : "s"}.`
                         : "Complete the remaining batch details.";
             allocationSummary?.classList.toggle("is-complete", allocationComplete);
-            allocationSummary?.classList.toggle("has-error", !allocationComplete);
+            allocationSummary?.classList.toggle(
+                "has-error",
+                productValidationAttempted && !allocationComplete,
+            );
             card.querySelector(".receive-header-ordered").textContent =
                 `${orderedPurchase} ${quantities.conversion.purchaseUnit}`;
             card.querySelector(".receive-header-accepted").textContent =
@@ -5466,7 +5662,7 @@ function receiveFormState(strict = true) {
             card.classList.add(
                 inspected
                     ? "state-complete"
-                    : affected > 0
+                    : affected > 0 && productValidationAttempted
                       ? "state-issue"
                       : readyForInspection || card.dataset.touched === "1"
                         ? "state-active"
@@ -5477,7 +5673,7 @@ function receiveFormState(strict = true) {
             const completedAction = card.querySelector(".receive-completed-action");
             const reopenButton = card.querySelector(".receive-reopen-inspection");
             if (completeButton) {
-                completeButton.disabled = !readyForInspection || inspected;
+                completeButton.disabled = inspected;
                 completeButton.classList.toggle("d-none", inspected);
             }
             completedAction?.classList.toggle("d-none", !inspected);
@@ -5568,12 +5764,19 @@ function renderReceivePaymentSummary() {
                 const issueReview = item.has_issue
                     ? `<span class="receiving-issue-state">Issue recorded</span>`
                     : `<span class="receiving-no-issues">No issues</span>`;
+                const batchExpiryReview = (item.batches || [])
+                    .map(
+                        (batch, batchIndex) =>
+                            `Batch ${batchIndex + 1}: ${batch.no_expiry ? "No Expiry" : batch.expiry_date || "Missing"}`,
+                    )
+                    .join(" · ");
                 return `<article class="receiving-summary-item"><header><strong>${escapeHtml([productTableBrand(orderItem), productTableProductName(orderItem)].filter(Boolean).join(" — ") || `Product ${index + 1}`)}</strong>${issueReview}</header>${damageBreakdown ? `<div class="receiving-damage-breakdown"><span>Affected Goods Breakdown</span><ul>${damageBreakdown}</ul></div>` : ""}<dl>
             <div><dt>PO Ordered</dt><dd>${Number(orderItem.purchase_qty || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(orderItem.inventory_qty_ordered || orderItem.quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
             <div><dt>Actual Received</dt><dd>${Number(item.delivered_purchase_quantity || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(item.received_quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
             <div><dt>Physically Damaged</dt><dd>${escapeHtml(damagedLabel)}</dd></div>
             <div><dt>${escapeHtml(actionVerb)}</dt><dd>${escapeHtml(actionLabel)}</dd></div>
             <div><dt>Accepted to Inventory</dt><dd>${Number(item.accepted_quantity || 0)} ${escapeHtml(conversion.inventoryUnit)} total</dd></div>
+            <div><dt>Batch &amp; Expiry</dt><dd>${escapeHtml(batchExpiryReview || "Not set")}</dd></div>
             <div><dt>Issue</dt><dd>${escapeHtml(item.issue_type || "No issue")}</dd></div>
             <div><dt>Affected Goods Action</dt><dd>${escapeHtml(dispositionLabel)}</dd></div>
             <div><dt>Supplier Resolution</dt><dd>${escapeHtml(resolutionLabel)}</dd></div>
@@ -5600,13 +5803,23 @@ function renderReceivePaymentSummary() {
         step.classList.toggle("is-active", active);
     });
     const validation = document.getElementById("receiveValidationSummary");
-    const showValidation = receiveValidationAttempted && summary.errors.length > 0;
-    validation.classList.toggle("d-none", !showValidation);
-    validation.innerHTML = showValidation
-        ? "<strong>Please correct the highlighted fields before confirming.</strong>"
-        : "";
+    const showValidationSummary =
+        receiveValidationAttempted ||
+        (summary.errors.length > 0 &&
+            Boolean(
+                document.querySelector(
+                    '#receiveInspectionCards .receive-item-card[data-validation-attempted="1"]',
+                ),
+            ));
+    validation.classList.toggle("d-none", !showValidationSummary);
+    validation.classList.toggle("is-complete", showValidationSummary && summary.valid);
+    validation.innerHTML = !showValidationSummary
+        ? ""
+        : summary.valid
+          ? '<strong><i class="fa-solid fa-circle-check me-1" aria-hidden="true"></i>All required receiving details are complete. You can now confirm receiving.</strong>'
+          : `<strong><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>Please complete ${summary.errors.length} required field${summary.errors.length === 1 ? "" : "s"} before confirming receiving:</strong><ul>${summary.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>`;
     const confirmButton = document.getElementById("btnConfirmReceivePo");
-    if (confirmButton) confirmButton.disabled = !summary.valid || receiveSubmitting;
+    if (confirmButton) confirmButton.disabled = receiveSubmitting;
     const footer = document.getElementById("receiveFooterStatus");
     if (footer)
         footer.textContent = summary.valid
@@ -5627,10 +5840,13 @@ function renderReceivePaymentSummary() {
         );
         if (!navItem) return;
         const complete = card.querySelector(".receive-inspected-input")?.value === "1";
-        const issue = !card.querySelector(".receive-issue-flag")?.classList.contains("d-none");
+        const attempted = receiveValidationAttempted || card.dataset.validationAttempted === "1";
+        const issue =
+            attempted && !card.querySelector(".receive-issue-flag")?.classList.contains("d-none");
         navItem.classList.toggle("is-complete", complete);
         navItem.classList.toggle("has-issue", issue);
-        const status = card.querySelector(".receive-inspection-badge")?.textContent || "Waiting";
+        navItem.classList.toggle("is-incomplete", attempted && !complete);
+        const status = card.dataset.validationState || "Incomplete";
         const copy = navItem.querySelector("small");
         if (copy) copy.textContent = status;
         const icon = navItem.querySelector(".product-nav-state");
@@ -5704,6 +5920,22 @@ function scrollReceiveModalTo(target, focusTarget = null) {
     if (focusTarget && !focusTarget.disabled) {
         window.setTimeout(() => focusTarget.focus({ preventScroll: true }), 450);
     }
+}
+
+function scrollToFirstInvalidReceivingField() {
+    let control = document.querySelector(".receive-invalid-control");
+    const hiddenCard = control?.closest(".receive-item-card[hidden]");
+    if (hiddenCard) {
+        showReceiveProduct(Number(hiddenCard.dataset.productIndex || 0), false);
+        control = hiddenCard.querySelector(".receive-invalid-control") || control;
+    }
+    const target =
+        control ||
+        document.querySelector(
+            "#receiveInspectionCards .receive-item-card:not(.state-complete) .receive-complete-inspection",
+        ) ||
+        document.querySelector(".receive-delivery-information");
+    window.requestAnimationFrame(() => scrollReceiveModalTo(target, control));
 }
 
 function navigateReceiveChecklistStep(checkKey) {
@@ -6573,6 +6805,15 @@ async function submitReceivePurchaseOrder() {
     try {
         receiveValidationAttempted = true;
         renderReceivePaymentSummary();
+        const validation = receiveFormState(true);
+        if (!validation.valid) {
+            renderReceivePaymentSummary();
+            scrollToFirstInvalidReceivingField();
+            PharmaUtils.toast.error(
+                "Please complete the highlighted required fields before confirming receiving.",
+            );
+            return;
+        }
         const payload = receivePayload();
         receiveSubmitting = true;
         const button = document.getElementById("btnConfirmReceivePo");
@@ -6771,16 +7012,14 @@ function ensureReceivingUi() {
             return;
         closeReceivingUi();
     });
-    document
-        .getElementById("btnDrawerPrintGrn")
-        ?.addEventListener(
-            "click",
-            () =>
-                activeReceivingDetails &&
-                openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
-                    autoPrint: true,
-                }),
-        );
+    document.getElementById("btnDrawerPrintGrn")?.addEventListener(
+        "click",
+        () =>
+            activeReceivingDetails &&
+            openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
+                autoPrint: true,
+            }),
+    );
     document
         .getElementById("btnDrawerSupplierDiscrepancy")
         ?.addEventListener(
@@ -6795,16 +7034,14 @@ function ensureReceivingUi() {
             "click",
             () => activeReceivingDetails && openSupplierPayment(activeReceivingDetails.po_id),
         );
-    document
-        .getElementById("btnGrnPreviewPrint")
-        ?.addEventListener(
-            "click",
-            () =>
-                activeReceivingDetails &&
-                openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
-                    autoPrint: true,
-                }),
-        );
+    document.getElementById("btnGrnPreviewPrint")?.addEventListener(
+        "click",
+        () =>
+            activeReceivingDetails &&
+            openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
+                autoPrint: true,
+            }),
+    );
     document
         .getElementById("btnGrnPreviewSupplier")
         ?.addEventListener(
@@ -6813,16 +7050,14 @@ function ensureReceivingUi() {
                 activeReceivingDetails &&
                 openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails)),
         );
-    document
-        .getElementById("btnGrnPreviewPrintSupplier")
-        ?.addEventListener(
-            "click",
-            () =>
-                activeReceivingDetails &&
-                openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails), {
-                    autoPrint: true,
-                }),
-        );
+    document.getElementById("btnGrnPreviewPrintSupplier")?.addEventListener(
+        "click",
+        () =>
+            activeReceivingDetails &&
+            openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails), {
+                autoPrint: true,
+            }),
+    );
     document.getElementById("btnCancelGrnEdit")?.addEventListener("click", closeGrnEditForm);
     document.getElementById("btnSaveGrnEdit")?.addEventListener("click", saveGrnEdit);
     document
@@ -6831,7 +7066,7 @@ function ensureReceivingUi() {
     document.getElementById("supplierPaymentBody")?.addEventListener("click", (event) => {
         const invoiceButton = event.target.closest("[data-payment-view-invoice]");
         if (invoiceButton) {
-            openSupplierInvoiceDocument(invoiceButton.dataset.poId || "");
+            openSupplierInvoice(invoiceButton.dataset.poId || "");
             return;
         }
         const creditButton = event.target.closest(".apply-supplier-credit-btn");
@@ -6967,6 +7202,16 @@ async function renderPoSupplierInvoice(order) {
             content.innerHTML = `<div class="po-view-invoice-empty"><p><strong>Awaiting Supplier Invoice</strong><br><span>No supplier invoice has been recorded for this purchase order.</span></p>${canRecord ? `<button class="po-view-invoice-action" type="button" data-po-invoice-action="record" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>Record Supplier Invoice</span></button>` : ""}</div>`;
             return;
         }
+        let paymentSummary = {};
+        try {
+            const paymentPayload = await fetchJson(
+                `${API_BASE_URL}/purchase_orders/get_purchase_order_payment_details.php?po_id=${encodeURIComponent(poId)}&t=${Date.now()}`,
+                { retryGet: false },
+            );
+            paymentSummary = paymentPayload.payment_details?.payment || {};
+        } catch (_) {
+            paymentSummary = {};
+        }
         content.innerHTML = `
             <div class="po-view-invoice-meta">
                 <div><span>Invoice Number</span><strong>${escapeHtml(invoice.invoice_number || "—")}</strong></div>
@@ -6982,7 +7227,8 @@ async function renderPoSupplierInvoice(order) {
                 <div><span>Other Charges</span><strong>${peso(invoice.other_charges)}</strong></div>
                 <div class="final"><span>Final Invoice Total</span><strong>${peso(invoice.supplier_invoice_total)}</strong></div>
             </div>
-            <div class="po-view-invoice-actions"><span class="supplier-invoice-status">Recorded</span><button class="po-view-invoice-action" type="button" data-po-invoice-action="print" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>View / Print Supplier Invoice</span></button><button class="po-view-invoice-action" type="button" data-po-invoice-action="edit" data-po-id="${escapeHtml(poId)}">Edit Invoice</button></div>`;
+            ${supplierInvoicePaymentSummaryMarkup(poId, invoice, paymentSummary)}
+            <div class="po-view-invoice-actions"><span class="supplier-invoice-status">Recorded</span><button class="po-view-invoice-action" type="button" data-po-invoice-action="print" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>View / Print Supplier Invoice</span></button>${getPoPaymentStatus({ ...order, payment_status: paymentSummary.payment_status || order.payment_status }) === "paid" ? "" : `<button class="po-view-invoice-action" type="button" data-po-invoice-action="edit" data-po-id="${escapeHtml(poId)}">Edit Invoice</button>`}</div>`;
     } catch (error) {
         if (String(activeViewOrder?.po_id || "") !== poId) return;
         content.innerHTML = `<div class="po-receiving-documents-loading po-receiving-documents-error"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(error.message || "Unable to load the supplier invoice.")}</span></div>`;
@@ -7171,9 +7417,10 @@ async function fetchPurchaseOrderPaymentDetails(poId) {
 }
 
 function receivingItemDisplayName(item) {
-    return [
+    const mainName = String(item.generic_name || item.product_name || "Product").trim();
+    const parts = [
+        mainName,
         item.brand_name,
-        item.product_name,
         item.generic_or_variant,
         item.strength,
         item.size_value,
@@ -7181,6 +7428,11 @@ function receivingItemDisplayName(item) {
         item.packaging,
     ]
         .filter((value) => String(value || "").trim())
+        .filter((value, index, values) => {
+            const normalized = String(value).trim().toLowerCase();
+            return values.findIndex((candidate) => String(candidate).trim().toLowerCase() === normalized) === index;
+        });
+    return parts
         .join(" · ");
 }
 
@@ -7214,14 +7466,14 @@ function receivingSupplierResolution(details) {
 function renderPaymentHistory(payments = []) {
     if (!payments.length)
         return '<div class="payment-history-card"><div class="text-muted small">No supplier payments recorded.</div></div>';
-    return `<div class="payment-history-card"><table class="payment-history-table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Remarks</th></tr></thead><tbody>${payments
+    return `<div class="payment-history-card"><table class="payment-history-table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Payment Type</th><th>Reference</th><th>Recorded By</th><th>Remarks</th></tr></thead><tbody>${payments
         .map((payment) => {
             const method = payment.display_method || paymentMethodLabel(payment.payment_method);
             const reference = payment.display_reference || payment.reference_number || "—";
             const remarks = payment.display_remarks || payment.remarks || "—";
             const dateNote =
                 payment.date_note || `Entered ${receiptDisplayDate(payment.created_at)}`;
-            return `<tr><td>${escapeHtml(formatDate(payment.payment_date))}<span class="payment-date-note" title="${escapeHtml(receiptDisplayDate(payment.created_at))}">${escapeHtml(dateNote)}</span></td><td><strong>${peso(payment.amount)}</strong></td><td>${escapeHtml(method)}</td><td>${escapeHtml(reference)}</td><td>${escapeHtml(payment.recorded_by_name || "System")}</td><td><span class="payment-remarks" title="${escapeHtml(remarks)}">${escapeHtml(remarks)}</span></td></tr>`;
+            return `<tr><td>${escapeHtml(formatDate(payment.payment_date))}<span class="payment-date-note" title="${escapeHtml(receiptDisplayDate(payment.created_at))}">${escapeHtml(dateNote)}</span></td><td><strong>${peso(payment.amount)}</strong></td><td>${escapeHtml(method)}</td><td>${escapeHtml(payment.payment_type || "Advance Payment")}</td><td>${escapeHtml(reference)}</td><td>${escapeHtml(payment.recorded_by_name || "System")}</td><td><span class="payment-remarks" title="${escapeHtml(remarks)}">${escapeHtml(remarks)}</span></td></tr>`;
         })
         .join("")}</tbody></table></div>`;
 }
@@ -7250,7 +7502,7 @@ function renderReceivingDetails(details) {
         ${items
             .map(
                 (item, index) => `
-            <article class="receiving-item-detail"><div class="receiving-item-head"><div class="receiving-product-name"><strong>${index + 1}. ${escapeHtml(item.product_name || "Product")}</strong>${item.brand_name ? `<span>${escapeHtml(item.brand_name)}</span>` : ""}</div><span class="receiving-result-badge">${escapeHtml(receivingResolutionLabel(item.resolution))}</span></div>
+                    <article class="receiving-item-detail"><div class="receiving-item-head"><div class="receiving-product-name"><strong>${index + 1}. ${escapeHtml(item.generic_name || item.product_name || "Product")}</strong>${item.brand_name && String(item.brand_name).trim().toLowerCase() !== String(item.generic_name || item.product_name || "").trim().toLowerCase() ? `<span>${escapeHtml(item.brand_name)}</span>` : ""}</div><span class="receiving-result-badge">${escapeHtml(receivingResolutionLabel(item.resolution))}</span></div>
                 <div class="receiving-qty-grid">
                     ${[
                         ["Ordered", receivingQuantityLabel(item.ordered_quantity, item.unit)],
@@ -7697,6 +7949,8 @@ function renderSupplierPayment(details) {
     const remainingBalance = Number(
         payment.remaining_balance ?? Math.max(netAmountDue - previousPayments, 0),
     );
+    const receiving = details.receiving || {};
+    const paymentType = details.payment_type || "Advance Payment";
     const fullyPaid = isPurchaseOrderPaid(payment.payment_status, remainingBalance);
     const replacementQuantity = Number(details.claim_summary?.replacement_pending_quantity || 0);
     const quantityUnit = "units";
@@ -7709,19 +7963,20 @@ function renderSupplierPayment(details) {
         )
         .join("");
     return `
-        <div class="po-payment-section-heading"><i class="fa-solid fa-file-invoice-dollar"></i><span>Supplier Invoice Reference</span></div>
-        <div class="supplier-payment-invoice-reference">
-            <div><span>Supplier Invoice</span><strong>#${escapeHtml(details.invoice_number || "—")}</strong><small>${escapeHtml(details.po_number || "—")} · ${escapeHtml(details.supplier_name || "—")}</small></div>
-            <div class="supplier-payment-invoice-reference-actions">${paymentStatusBadge(payment.payment_status || "Unpaid")}<button class="btn btn-sm btn-outline-primary" type="button" data-payment-view-invoice data-po-id="${escapeHtml(details.po_id || "")}"><i class="fa-solid fa-file-invoice-dollar me-1"></i>View Supplier Invoice</button></div>
+        <div class="supplier-payment-status-strip">
+            <span>PO Status: <strong>${escapeHtml(details.status || "Pending")}</strong></span>
+            <span>Payment Status: <strong>${escapeHtml(payment.payment_status || "Unpaid")}</strong></span>
         </div>
         <div class="po-payment-section-heading"><i class="fa-solid fa-receipt"></i><span>Payment Summary</span></div>
         <div class="po-payment-financial-summary">
+            <div><span>PO Number</span><strong>${escapeHtml(details.po_number || "—")}</strong></div>
+            <div><span>Supplier</span><strong>${escapeHtml(details.supplier_name || "—")}</strong></div>
+            <div><span>Invoice Number</span><strong>${escapeHtml(details.invoice_number || "—")}</strong></div>
             <div><span>Invoice Total</span><strong>${peso(originalTotal)}</strong></div>
-            <div><span>Credit Applied</span><strong>-${peso(futureCreditApplied)}</strong></div>
-            <div class="net"><span>Net Amount Due${currentDiscount > 0 ? `<small class="supplier-payment-adjustment-note">Includes approved current-invoice discount of ${peso(currentDiscount)}</small>` : ""}</span><strong>${peso(netAmountDue)}</strong></div>
-            <div><span>Previous Payments</span><strong>${peso(previousPayments)}</strong></div>
-            <div class="balance"><span>Remaining Balance</span><strong>${peso(remainingBalance)}</strong></div>
+            <div><span>Amount Paid</span><strong>${peso(previousPayments)}</strong></div>
+            <div class="balance"><span>Balance Due</span><strong>${peso(remainingBalance)}</strong></div>
         </div>
+        ${currentDiscount + futureCreditApplied > 0 ? `<div class="payment-mode-note">Balance due reflects supplier credits or approved invoice adjustments already applied to this PO.</div>` : ""}
         ${replacementQuantity > 0 ? `<div class="alert alert-warning mt-3 mb-0"><strong>Replacement Pending — ${escapeHtml(receivingQuantityLabel(replacementQuantity, quantityUnit))}</strong><div>This claim does not reduce the current PO amount due.</div></div>` : ""}
         ${futureCreditCreated > 0 ? `<div class="alert alert-info mt-3 mb-0"><strong>Future Supplier Credit: ${peso(futureCreditCreated)}</strong><div>Available for a future PO from this supplier.</div></div>` : ""}
         ${availableCreditRows && remainingBalance > 0 ? `<div class="po-payment-section-heading"><i class="fa-solid fa-ticket"></i><span>Available Supplier Credit</span></div><p class="payment-mode-note">Confirm how much credit from previous supplier claims should be applied to this PO.</p><div class="supplier-credit-apply-list">${availableCreditRows}</div>` : ""}
@@ -7732,9 +7987,9 @@ function renderSupplierPayment(details) {
         <div class="po-payment-section-heading"><i class="fa-solid fa-money-bill-wave"></i><span>Payment Details</span></div>
         <form class="supplier-payment-form" id="supplierPaymentForm" novalidate>
             <div class="form-field"><label for="supplierPaymentDate">Payment Date</label><input class="form-control" id="supplierPaymentDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
-            <div class="form-field"><label for="supplierPaymentMode">Payment Mode</label><input class="form-control" id="supplierPaymentMode" type="text" value="Cash" readonly></div>
-            <div class="form-field full"><label for="supplierPaymentReference">Reference / Receipt No. <span class="text-muted">(optional)</span></label><input class="form-control" id="supplierPaymentReference" maxlength="100" placeholder="Receipt or acknowledgment number"></div>
+            <div class="form-field"><label for="supplierPaymentMode">Payment Method</label><input class="form-control" id="supplierPaymentMode" type="text" value="Cash" readonly></div>
             <div class="form-field full"><label for="supplierPaymentAmount">Amount to Pay</label><div class="payment-amount-control"><span class="payment-currency-prefix">₱</span><input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" max="${remainingBalance}" value="${remainingBalance.toFixed(2)}" inputmode="decimal" autocomplete="off" aria-describedby="supplierPaymentValidation"></div><div class="payment-validation" id="supplierPaymentValidation" aria-live="polite"></div></div>
+            <div class="form-field full"><label for="supplierPaymentReference">Payment Reference / Receipt No. <span class="text-muted">(optional)</span></label><input class="form-control" id="supplierPaymentReference" maxlength="100" placeholder="Receipt or acknowledgment number"></div>
             <div class="form-field full"><label for="supplierPaymentRemarks">Remarks <span class="text-muted">(optional)</span></label><textarea class="form-control" id="supplierPaymentRemarks" maxlength="500" placeholder="Payment notes"></textarea></div>
             <div class="payment-calculation-card full">
                 <div><span>Amount to Pay Now</span><strong id="supplierPaymentAmountSummary">${peso(0)}</strong></div>
@@ -7808,7 +8063,10 @@ function captureSupplierPaymentState() {
     return {
         poId: activeReceivingDetails?.po_id || "",
         poNumber: activeReceivingDetails?.po_number || "",
+        poStatus: activeReceivingDetails?.status || "Pending",
         supplier: activeReceivingDetails?.supplier_name || "",
+        invoiceNumber: activeReceivingDetails?.invoice_number || "",
+        paymentType: activeReceivingDetails?.payment_type || "Advance Payment",
         amount: Math.round(amount * 100) / 100,
         amountInput: document.getElementById("supplierPaymentAmount")?.value || "",
         paymentMethod: "cash",
@@ -7821,7 +8079,7 @@ function captureSupplierPaymentState() {
         previouslyPaid: values.previouslyPaid,
         remainingBalance: values.remainingBalance,
         balanceAfter: Math.max(0, Math.round((values.remainingBalance - amount) * 100) / 100),
-        resultingStatus: amount >= values.remainingBalance - 0.005 ? "Paid" : "Partially Paid",
+        resultingStatus: amount >= values.remainingBalance - 0.005 ? "Paid" : "Unpaid",
         idempotencyKey: supplierPaymentSubmissionKey,
     };
 }
@@ -7906,8 +8164,10 @@ function renderSupplierPaymentConfirmation(state) {
         summary.innerHTML = `
         <div><span>Supplier</span><strong>${escapeHtml(state.supplier)}</strong></div>
         <div><span>Purchase Order</span><strong>${escapeHtml(state.poNumber)}</strong></div>
+        <div><span>Supplier Invoice Number</span><strong>${escapeHtml(state.invoiceNumber || "—")}</strong></div>
         <div class="primary-value"><span>Payment Amount</span><strong>${peso(state.amount)}</strong></div>
         <div><span>Payment Method</span><strong>${escapeHtml(paymentMethodLabel(state.paymentMethod))}</strong></div>
+        <div><span>Payment Type</span><strong>${escapeHtml(state.paymentType)}</strong></div>
         <div><span>Payment Date</span><strong>${escapeHtml(supplierPaymentLongDate(state.paymentDate))}</strong></div>
         ${referenceRow}
         ${remarksRow}
@@ -7917,9 +8177,13 @@ function renderSupplierPaymentConfirmation(state) {
     const message = document.getElementById("supplierPaymentConfirmMessage");
     if (message)
         message.textContent =
-            state.resultingStatus === "Paid"
-                ? "This payment will settle the remaining balance and mark this purchase order as Paid."
-                : `This payment will be recorded as a partial supplier payment. A remaining balance of ${peso(state.balanceAfter)} will remain.`;
+            state.paymentType === "Advance Payment"
+                ? state.poStatus === "Pending"
+                    ? "This payment will be applied to the supplier invoice, but the purchase order will remain Pending until the delivery is received."
+                    : `This payment will be applied to the supplier invoice, but the purchase order will remain ${state.poStatus} until inspection is completed.`
+                : state.resultingStatus === "Paid"
+                  ? "This payment will settle the remaining payable balance after receiving and inspection."
+                  : `This post-inspection payment will leave a remaining balance of ${peso(state.balanceAfter)}.`;
 }
 
 async function openSupplierPaymentConfirmation(state) {
@@ -8090,6 +8354,9 @@ async function openSupplierPayment(poId, options = {}) {
                         details.payment?.remaining_balance,
                     ),
                 );
+            if (save && !save.classList.contains("d-none")) {
+                save.innerHTML = '<i class="fa-solid fa-money-check-dollar me-1"></i>Record Payment';
+            }
             document
                 .getElementById("supplierPaymentAmount")
                 ?.addEventListener("input", updateSupplierPaymentValidation);
@@ -8207,7 +8474,7 @@ async function confirmSupplierPayment() {
             title: "Payment Recorded",
             poId: state.poId,
             message: fullyPaid
-                ? `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. This purchase order is now Paid.`
+                ? `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. Payment status is now Paid; the PO remains ${activeReceivingDetails?.status || "unchanged"}.`
                 : `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. Remaining balance: ${peso(data.remaining_balance)}.`,
         });
     } catch (error) {
@@ -8527,10 +8794,13 @@ function inspectionQueueProductSummary(order) {
     const items = Array.isArray(order.items) ? order.items : [];
     const first = items[0] || order;
     const count = order.receiving_completed === true ? Number(order.products || 0) : items.length;
-    const product = first.product_name_snapshot || first.product_name || "Product";
+    const product = first.generic_name || first.generic_name_snapshot || first.product_name || first.product_name_snapshot || "Product";
     const brand = first.brand_name_snapshot || first.brand_name || "";
     const more = Math.max(0, count - 1);
-    const secondary = [brand, more > 0 ? `+${more} more` : ""].filter(Boolean).join(" • ");
+    const secondary = [
+        brand && brand.trim().toLowerCase() !== product.trim().toLowerCase() ? brand : "",
+        more > 0 ? `+${more} more` : "",
+    ].filter(Boolean).join(" • ");
     return `<div class="queue-product-summary"><strong>${escapeHtml(product)}</strong>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ""}</div>`;
 }
 
@@ -8552,7 +8822,7 @@ function renderInspectionQueue() {
                 : order.inspection_snapshot || inspectionQueueSnapshot(order);
         const firstItem = Array.isArray(order.items) ? order.items[0] || {} : order;
         const haystack =
-            `${order.po_number || ""} ${order.grn_number || ""} ${order.supplier_name || ""} ${firstItem.product_name_snapshot || firstItem.product_name || ""} ${firstItem.brand_name_snapshot || firstItem.brand_name || ""}`.toLowerCase();
+            `${order.po_number || ""} ${order.grn_number || ""} ${order.supplier_name || ""} ${firstItem.generic_name || firstItem.generic_name_snapshot || firstItem.product_name_snapshot || firstItem.product_name || ""} ${firstItem.brand_name_snapshot || firstItem.brand_name || ""}`.toLowerCase();
         const arrival = String(
             order.received_date ||
                 order.arrival_date ||
@@ -8607,7 +8877,7 @@ function renderInspectionQueue() {
             const actionLabel =
                 snapshot.key === "awaiting" ? "Start Inspection" : "Continue Inspection";
             const actions = completed
-                ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Goods Received Note" aria-label="View Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-primary queue-action-icon queue-edit-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Edit Goods Received Note" aria-label="Edit Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-outline-secondary queue-action-icon queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Print Goods Received Note" aria-label="Print Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-print"></i></button>`
+                ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Goods Received Note" aria-label="View Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-primary queue-action-icon queue-edit-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Edit Goods Received Note" aria-label="Edit Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-outline-secondary queue-document-button queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" data-receiving-id="${escapeHtml(order.receiving_id || "")}" title="Goods Received Note" aria-label="Open Goods Received Note for ${escapeHtml(order.po_number || "")}">GRN</button>${order.has_discrepancy || Number(order.affected_units || 0) > 0 ? `<button class="btn btn-sm btn-outline-secondary queue-document-button queue-discrepancy" type="button" data-po-id="${escapeHtml(order.po_id)}" data-receiving-id="${escapeHtml(order.receiving_id || "")}" title="Delivery Discrepancy & Replacement Acknowledgement" aria-label="Open Delivery Discrepancy & Replacement Acknowledgement for ${escapeHtml(order.po_number || "")}">Discrepancy</button>` : ""}`
                 : `<button class="btn btn-sm ${snapshot.key === "awaiting" ? "btn-outline-primary" : "btn-primary"} queue-action-icon inspect-queue-action" type="button" data-po-id="${escapeHtml(order.po_id)}" title="${actionLabel}" aria-label="${actionLabel} for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-clipboard-check"></i></button>`;
             return `<tr class="queue-row" data-po-id="${escapeHtml(order.po_id)}">
             <td><span class="queue-po" title="${escapeHtml(order.po_number || "-")}">${escapeHtml(order.po_number || "-")}</span><span class="queue-secondary" title="${escapeHtml(completed ? order.grn_number : "No GRN yet")}">${escapeHtml(completed ? order.grn_number : "No GRN yet")}</span></td>
@@ -8883,7 +9153,14 @@ function bindReceiveWorkspaceEvents() {
         const complete = event.target.closest(".receive-complete-inspection");
         if (complete) {
             const card = complete.closest(".receive-item-card");
-            if (!card || card.dataset.ready !== "1") return;
+            if (!card) return;
+            card.dataset.validationAttempted = "1";
+            renderReceivePaymentSummary();
+            if (card.dataset.ready !== "1") {
+                const invalid = card.querySelector(".receive-invalid-control");
+                if (invalid) scrollReceiveModalTo(invalid, invalid);
+                return;
+            }
             const input = card.querySelector(".receive-inspected-input");
             if (input) input.value = "1";
             renderReceivePaymentSummary();
@@ -8966,10 +9243,17 @@ function initInspectDeliveries() {
         const view = event.target.closest(".queue-view-receiving");
         const edit = event.target.closest(".queue-edit-receiving");
         const print = event.target.closest(".queue-print-grn");
+        const discrepancy = event.target.closest(".queue-discrepancy");
         if (inspect) openInspectionWorkspace(inspect.dataset.poId, { pushHistory: true });
         else if (view) openReceivingDetails(view.dataset.poId);
         else if (edit) openGrnEditor(edit.dataset.poId);
-        else if (print) openDeliveredReceipt(print.dataset.poId, true);
+        else if (print) openDeliveredReceipt(print.dataset.poId, false, print.dataset.receivingId || "");
+        else if (discrepancy)
+            openSupplierDiscrepancyForPo(
+                discrepancy.dataset.poId,
+                false,
+                discrepancy.dataset.receivingId || "",
+            );
     });
     window.addEventListener("popstate", () => {
         const nextParams = new URLSearchParams(window.location.search);
@@ -9224,6 +9508,14 @@ function initPurchaseOrders() {
             const poId = button.dataset.poId || "";
             if (button.dataset.poInvoiceAction === "print") {
                 openSupplierInvoiceDocument(poId);
+                return;
+            }
+            if (button.dataset.poInvoiceAction === "payment") {
+                await openSupplierPayment(poId);
+                return;
+            }
+            if (button.dataset.poInvoiceAction === "close") {
+                document.querySelector("[data-close-po-view]")?.click();
                 return;
             }
             if (["record", "edit"].includes(button.dataset.poInvoiceAction)) {

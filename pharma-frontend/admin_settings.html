@@ -3168,7 +3168,6 @@
                                     <button type="button" data-admin-section="backup"><i class="fa-solid fa-box-archive"></i><span>Backup &amp; Restore</span></button>
                                     <button type="button" data-admin-section="security"><i class="fa-solid fa-shield-halved"></i><span>Security</span></button>
                                     <button type="button" data-admin-section="appearance"><i class="fa-solid fa-palette"></i><span>Appearance</span></button>
-                                    <button type="button" data-admin-section="audit"><i class="fa-solid fa-list-check"></i><span>Audit Logs</span></button>
                                     <button type="button" data-admin-section="about"><i class="fa-solid fa-circle-info"></i><span>About</span></button>
                                 </nav>
 
@@ -3705,10 +3704,6 @@
                                                 <span class="admin-setting-label">Sign-in Alerts</span>
                                                 <label class="admin-switch" aria-label="Sign-in Alerts"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Login History</span>
-                                                <button class="btn btn-outline-primary" type="button" id="viewLoginHistoryBtn">View History</button>
-                                            </div>
                                         </div>
                                     </section>
 
@@ -3729,56 +3724,6 @@
                                                     <option>Compact</option>
                                                 </select>
                                             </div>
-                                        </div>
-                                    </section>
-
-                                    <section class="admin-setting-card is-wide">
-                                        <header>
-                                            <h3>Audit Logs</h3>
-                                            <p>Review important activity across the pharmacy system.</p>
-                                        </header>
-                                        <div class="admin-setting-list">
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Date Range</span>
-                                                <select class="admin-setting-control" aria-label="Date Range">
-                                                    <option selected>Today</option>
-                                                    <option>Last 7 days</option>
-                                                    <option>Last 30 days</option>
-                                                </select>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">User</span>
-                                                <input class="admin-setting-control" type="text" placeholder="All users" aria-label="User">
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Module</span>
-                                                <select class="admin-setting-control" aria-label="Module">
-                                                    <option selected>All modules</option>
-                                                    <option>Products</option>
-                                                    <option>Inventory</option>
-                                                    <option>Purchase Orders</option>
-                                                    <option>Sales</option>
-                                                    <option>Settings</option>
-                                                </select>
-                                            </div>
-                                            <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Action Type</span>
-                                                <select class="admin-setting-control" aria-label="Action Type">
-                                                    <option selected>All actions</option>
-                                                    <option>Added</option>
-                                                    <option>Updated</option>
-                                                    <option>Deleted</option>
-                                                    <option>Approved</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div class="audit-list">
-                                            <div class="audit-item"><strong>Login/logout</strong><button class="btn btn-sm btn-outline-primary" type="button" data-audit-log="Login/logout">View</button></div>
-                                            <div class="audit-item"><strong>Settings changes</strong><button class="btn btn-sm btn-outline-primary" type="button" data-audit-log="Settings changes">View</button></div>
-                                            <div class="audit-item"><strong>User actions</strong><button class="btn btn-sm btn-outline-primary" type="button" data-audit-log="User actions">View</button></div>
-                                            <div class="audit-item"><strong>PO changes</strong><button class="btn btn-sm btn-outline-primary" type="button" data-audit-log="PO changes">View</button></div>
-                                            <div class="audit-item"><strong>Inventory adjustments</strong><button class="btn btn-sm btn-outline-primary" type="button" data-audit-log="Inventory adjustments">View</button></div>
-                                            <div class="audit-item"><strong>Deleted records</strong><button class="btn btn-sm btn-outline-primary" type="button" data-audit-log="Deleted records">View</button></div>
                                         </div>
                                     </section>
 
@@ -3928,38 +3873,6 @@
                         <button class="btn btn-purple" type="submit">Save</button>
                     </div>
                 </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="loginHistoryModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold">Login History</h5>
-                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="table-responsive d-none" id="loginHistoryTableWrap">
-                        <table class="login-history-table">
-                            <thead>
-                                <tr>
-                                    <th>Date &amp; Time</th>
-                                    <th>User</th>
-                                    <th>Role</th>
-                                    <th>Action</th>
-                                    <th>Status</th>
-                                    <th>IP Address / Device</th>
-                                </tr>
-                            </thead>
-                            <tbody id="loginHistoryTableBody"></tbody>
-                        </table>
-                    </div>
-                    <p class="settings-empty-state" id="loginHistoryEmptyState">No login history available yet.</p>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
-                </div>
             </div>
         </div>
     </div>
@@ -5536,7 +5449,6 @@
                 'Backup History': 'backup',
                 'Security': 'security',
                 'Appearance': 'appearance',
-                'Audit Logs': 'audit',
                 'About': 'about'
             };
 
@@ -5617,18 +5529,6 @@
                 });
             });
 
-            document.querySelectorAll('[data-audit-log]').forEach(button => {
-                button.addEventListener('click', () => {
-                    const logName = button.dataset.auditLog || 'Audit Logs';
-                    showEmptyModal(logName, `No ${logName.toLowerCase()} available yet.`);
-                });
-            });
-
-            const loginHistoryModalEl = document.getElementById('loginHistoryModal');
-            const loginHistoryModal = loginHistoryModalEl && window.bootstrap ? new bootstrap.Modal(loginHistoryModalEl) : null;
-            document.getElementById('viewLoginHistoryBtn')?.addEventListener('click', () => {
-                loginHistoryModal?.show();
-            });
         })();
         (function setupTenantIdentityEditor() {
             const storageKey = 'drpTenantIdentityDraft';

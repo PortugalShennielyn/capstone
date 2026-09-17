@@ -5,6 +5,8 @@ require_once __DIR__ . '/../suppliers/purchasing_conversion.php';
 require_once __DIR__ . '/supplier_claim_helpers.php';
 function ensurePurchaseOrderSchema(PDO $pdo): void
 {
+    $pdo->exec("ALTER TABLE inventory_batches ADD COLUMN IF NOT EXISTS no_expiry TINYINT(1) NOT NULL DEFAULT 0");
+    $pdo->exec("ALTER TABLE product_inventory ADD COLUMN IF NOT EXISTS no_expiry TINYINT(1) NOT NULL DEFAULT 0");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(40) NULL");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS expected_delivery_date DATE NULL");
     $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_status VARCHAR(40) NOT NULL DEFAULT 'Unpaid'");
@@ -596,10 +598,25 @@ function applySupplierProductSetup(PDO $pdo, string $supplierId, array $items): 
     return $hydratedItems;
 }
 
+function assertPurchaseOrderHasProducts(PDO $pdo, string $poId): void
+{
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM purchase_order_items poi INNER JOIN product p ON p.product_id=poi.product_id WHERE poi.po_id=? AND poi.quantity>0');
+    $stmt->execute([$poId]);
+    if ((int)$stmt->fetchColumn() < 1) throw new InvalidArgumentException('Invalid Purchase Order: no products.');
+}
+
 function updatePurchaseOrderStatus(PDO $pdo, string $poId, string $status, ?string $requiredCurrentStatus = null): void
 {
     if (!in_array($status, purchaseOrderStatuses(), true)) {
         throw new InvalidArgumentException('Invalid purchase order status.');
+    }
+    if (!in_array($status, ['Cancelled', 'Rejected'], true)) {
+        $exists = $pdo->prepare('SELECT po_id FROM purchase_orders WHERE po_id = :po_id LIMIT 1');
+        $exists->execute([':po_id' => $poId]);
+        if ($exists->fetchColumn() === false) {
+            throw new InvalidArgumentException('Purchase order not found.');
+        }
+        assertPurchaseOrderHasProducts($pdo, $poId);
     }
 
     $sql = 'UPDATE purchase_orders SET status = :status WHERE po_id = :po_id';

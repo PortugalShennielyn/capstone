@@ -1,5 +1,6 @@
 import API_BASE_URL from '../config/config.js';
 import { savedTransactionTotals } from './sales_financials.js?v=1';
+import { cleanProductSpecificationText, formatProductIdentityParts, isPrescriptionProduct } from './product_specification.js?v=9';
 
 let shellReady = false;
 
@@ -55,6 +56,7 @@ function injectStyles() {
         .receipt-items-head-print{margin-bottom:1.5mm;font-weight:800}
         .receipt-item-print{margin:0 0 1.8mm}
         .receipt-item-name-print{display:block;min-width:0;overflow-wrap:anywhere}
+        .receipt-rx-badge{display:inline-flex;align-items:center;margin-left:1.5mm;padding:.2mm 1.2mm;border:1px solid #000;border-radius:2mm;color:#000;background:#fff;font-size:8px;font-weight:800;line-height:1.2;vertical-align:middle}
         .receipt-item-spec-print{display:block;margin-top:.6mm;font-size:10px;overflow-wrap:anywhere}
         .receipt-money-print{text-align:right;white-space:nowrap}
         .receipt-total-print.is-grand{margin-top:1.5mm;font-size:12px;font-weight:800}
@@ -120,17 +122,14 @@ async function api(path) {
 }
 
 function itemName(item) {
-    const brand = String(item.brand_name || '').trim();
-    const product = String(item.product_name || 'Item').trim();
-    if (brand && product && brand.toLowerCase() !== product.toLowerCase()) return `${brand} ${product}`;
-    return product || brand || 'Item';
+    return formatProductIdentityParts(item).productName || 'Item';
 }
 
 function itemSpec(item) {
-    return [item.generic_name, item.strength || item.net_weight || item.specification]
+    return [formatProductIdentityParts(item).genericName, item.strength || item.net_weight || cleanProductSpecificationText(item.specification)]
         .map((part) => String(part || '').trim())
         .filter(Boolean)
-        .join(' / ');
+        .join('\n');
 }
 
 function totals(order) {
@@ -142,12 +141,14 @@ function receiptHtml(order) {
     const items = Array.isArray(order.items) ? order.items : [];
     const rows = items.length ? items.map((item) => {
         const spec = itemSpec(item);
+        const specLines = spec.split('\n').filter(Boolean);
+        const rx = isPrescriptionProduct(item) ? '<span class="receipt-rx-badge">Rx</span>' : '';
         return `
             <div class="receipt-item-print">
                 <span>${esc(Number(item.quantity || 0).toLocaleString('en-PH'))}</span>
                 <span>
-                    <span class="receipt-item-name-print">${esc(itemName(item))}</span>
-                    ${spec ? `<span class="receipt-item-spec-print">${esc(spec)}</span>` : ''}
+                    <span class="receipt-item-name-print">${esc(itemName(item))}${rx}</span>
+                    ${specLines.map(line => `<span class="receipt-item-spec-print">${esc(line)}</span>`).join('')}
                 </span>
                 <span class="receipt-money-print">${esc(plainMoney(item.line_total))}</span>
             </div>
