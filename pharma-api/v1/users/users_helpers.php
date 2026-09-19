@@ -78,6 +78,7 @@ function readUserJsonPayload(): array
     return is_array($payload) ? $payload : $_POST;
 }
 
+<<<<<<< HEAD
 function isStrongUserPassword(string $password): bool
 {
     $len = strlen($password);
@@ -89,6 +90,8 @@ function isStrongUserPassword(string $password): bool
     return $hasUpper && $hasLower && $hasDigit && $hasSpecial;
 }
 
+=======
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
 function normalizeUserRole(string $role): string
 {
     $value = strtolower(trim($role));

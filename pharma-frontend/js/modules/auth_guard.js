@@ -487,7 +487,11 @@ async function initializePageSession() {
         document.querySelectorAll('button, a').forEach(control => {
             const copy = `${control.textContent || ''} ${control.getAttribute('title') || ''} ${control.getAttribute('aria-label') || ''}`.toLowerCase();
             if (/\b(add|create|edit|update|delete|remove|adjust|move|transfer|receive|inspect|process|record|resolve|save)\b/.test(copy)) {
+<<<<<<< HEAD
                 if (control.closest('#navbar-container') || control.closest('#requestModal') || control.closest('[data-user-settings]') || control.matches('[data-action], [data-modal-decision]')) return;
+=======
+                if (control.closest('#navbar-container') || control.closest('#requestModal') || control.matches('[data-action], [data-modal-decision]')) return;
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
                 control.classList.add('d-none');
                 control.setAttribute('aria-hidden', 'true');
             }

@@ -2,7 +2,6 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../../config/auth_context.php';
-require_once '../users/users_helpers.php';
 
 if (!isset($_SESSION['user_id'], $_SESSION['role'])) {
     http_response_code(401);
@@ -55,11 +54,11 @@ if ($newPassword !== $confirmPassword) {
     exit();
 }
 
-if (!isStrongUserPassword($newPassword)) {
+if (strlen($newPassword) < 8 || strlen($newPassword) > 72) {
     http_response_code(422);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Enter a password of at least 8 characters, with an uppercase, number and a symbol.'
+        'message' => 'New password must be between 8 and 72 characters.'
     ]);
     exit();
 }
