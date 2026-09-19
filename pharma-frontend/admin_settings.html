@@ -4003,7 +4003,11 @@
                             </div>
                             <div class="password-field">
                                 <label class="form-label" for="tempPasswordInput">Temporary Password</label>
+<<<<<<< HEAD
+                                <input class="form-control" id="tempPasswordInput" type="password" minlength="8" maxlength="72" autocomplete="new-password"><div class="form-text">Enter a password of at least 8 characters, with an uppercase, number and a symbol.</div>
+=======
                                 <input class="form-control" id="tempPasswordInput" type="password" autocomplete="new-password">
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
                             </div>
                             <div class="password-field">
                                 <label class="form-label" for="confirmPasswordInput">Confirm Password</label>
@@ -4078,7 +4082,11 @@
                         <div class="row g-3">
                             <div class="col-12">
                                 <label class="form-label" for="resetPasswordInput">Temporary Password</label>
+<<<<<<< HEAD
+                                <input class="form-control" id="resetPasswordInput" type="password" minlength="8" maxlength="72" autocomplete="new-password" required><div class="form-text">Enter a password of at least 8 characters, with an uppercase, number and a symbol.</div>
+=======
                                 <input class="form-control" id="resetPasswordInput" type="password" autocomplete="new-password" required>
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
                             </div>
                             <div class="col-12">
                                 <label class="form-label" for="resetConfirmPasswordInput">Confirm Password</label>
@@ -5465,7 +5473,19 @@
                 if (payload.role === 'supervisor' && payload.status === 'Active' && anotherActiveSupervisor) {
                     return setError(els.error, 'Only one active CEO account is allowed.');
                 }
+<<<<<<< HEAD
+                if (!isEdit) {
+                    if (payload.password !== payload.confirm_password) return setError(els.error, 'Password and Confirm Password must match.');
+                    const isStrongPassword = payload.password.length >= 8
+                        && payload.password.length <= 72
+                        && /[A-Z]/.test(payload.password)
+                        && /\\d/.test(payload.password)
+                        && /[^\\w\\s]/.test(payload.password);
+                    if (!isStrongPassword) return setError(els.error, 'Enter a password of at least 8 characters, with an uppercase, number and a symbol.');
+                }
+=======
                 if (!isEdit && payload.password !== payload.confirm_password) return setError(els.error, 'Password and Confirm Password must match.');
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
                 try {
                     await userRequest(isEdit ? 'update_user.php' : 'add_user.php', {
                         method: 'POST',
@@ -5484,6 +5504,18 @@
                 if (els.resetPassword.value !== els.resetConfirm.value) {
                     return setError(els.resetError, 'Password and Confirm Password must match.');
                 }
+<<<<<<< HEAD
+                const resetPassword = els.resetPassword.value;
+                const isStrongResetPassword = resetPassword.length >= 8
+                    && resetPassword.length <= 72
+                    && /[A-Z]/.test(resetPassword)
+                    && /\\d/.test(resetPassword)
+                    && /[^\\w\\s]/.test(resetPassword);
+                if (!isStrongResetPassword) {
+                    return setError(els.resetError, 'Enter a password of at least 8 characters, with an uppercase, number and a symbol.');
+                }
+=======
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
                 try {
                     await userRequest('reset_user_password.php', {
                         method: 'POST',

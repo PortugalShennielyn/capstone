@@ -40,6 +40,10 @@ function mapSessionUser(user) {
     window.__drpNavbarProfileDisplay?.render(document.getElementById('navbar-container'), user, { cache: true });
 
     setText('userSettingsInitials', initials);
+<<<<<<< HEAD
+    setText('profileIdentityInitials', initials);
+=======
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
     setDbText('userSettingsName', displayName, hasDbValue(user.full_name) || hasDbValue(user.username));
     setDbText('userSettingsRole', roles, hasDbValue(user.roles) || hasDbValue(user.role));
     setDbText('userSettingsUsername', dbValue(user.username, 'Not configured'), hasDbValue(user.username));
@@ -185,8 +189,22 @@ function initPasswordUpdate() {
                     Swal.showValidationMessage('All password fields are required.');
                     return false;
                 }
+<<<<<<< HEAD
+                // Enforce strong password: 12-72 chars, upper & lower case, digit and special char
+                const np = data.new_password;
+                const isStrong = typeof np === 'string'
+                    && np.length >= 8
+                    && np.length <= 72
+                    && /[A-Z]/.test(np)
+                    && /[a-z]/.test(np)
+                    && /\d/.test(np)
+                    && /[^\w\s]/.test(np);
+                if (!isStrong) {
+                    Swal.showValidationMessage('Enter a password of at least 8 characters, with an uppercase, number and a symbol.');
+=======
                 if (data.new_password.length < 8 || data.new_password.length > 72) {
                     Swal.showValidationMessage('New password must be between 8 and 72 characters.');
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
                     return false;
                 }
                 if (data.new_password !== data.confirm_password) {
@@ -298,6 +316,10 @@ function buildPasswordUpdateForm() {
             <div class="mb-3">
                 <label class="form-label fw-semibold" for="passwordNew">New password</label>
                 <input class="form-control" id="passwordNew" type="password" autocomplete="new-password" minlength="8" maxlength="72">
+<<<<<<< HEAD
+                <div class="small text-muted">Enter a password of at least 8 characters, with an uppercase, number and a symbol.</div>
+=======
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
             </div>
             <div>
                 <label class="form-label fw-semibold" for="passwordConfirm">Confirm new password</label>

@@ -94,7 +94,21 @@ async function loadReport(){
     state.controller?.abort();state.controller=new AbortController();destroyCharts();qs('#reportContent').classList.add('d-none');qs('#reportError').classList.add('d-none');qs('#reportLoading').classList.remove('d-none');
     try{const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams()}`,{credentials:'include',cache:'no-store',signal:state.controller.signal});const data=await response.json();if(response.status===403&&data.access?.available_categories?.length){state.category=data.access.available_categories[0];state.page=1;return loadReport();}if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to generate this report.');
         state.data=data;if(data.access?.supervisor){categories.overview='Inventory Overview';categories.purchases='Purchase Requests';reportViews.overview=['Inventory Overview'];reportViews.purchases=['Purchase Request Summary'];visibility.purchases=['view','dates'];}
+<<<<<<< HEAD
+        if(!state.options){populateBaseOptions(data.filters||{});if(state.needsInitialFilterReload){state.needsInitialFilterReload=false;return loadReport();}}if(!data.access.available_categories.includes(state.category)){state.category=data.access.available_categories[0];return loadReport();}renderTabs(data.access.available_categories);
+        try {
+            renderReport(data);
+        } catch (renderError) {
+            console.error('Report render error', renderError);
+            qs('#reportError').classList.remove('d-none');
+            qs('#reportError').textContent = 'Failed to render report: ' + (renderError.message || String(renderError));
+            qs('#reportLoading').classList.add('d-none');
+            return;
+        }
+        syncUrl();}
+=======
         if(!state.options){populateBaseOptions(data.filters||{});if(state.needsInitialFilterReload){state.needsInitialFilterReload=false;return loadReport();}}if(!data.access.available_categories.includes(state.category)){state.category=data.access.available_categories[0];return loadReport();}renderTabs(data.access.available_categories);renderReport(data);syncUrl();}
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
     catch(error){if(error.name==='AbortError')return;qs('#reportLoading').classList.add('d-none');qs('#reportError').classList.remove('d-none');qs('#reportError').textContent=error.message;}
 }
 function syncUrl(){
@@ -103,6 +117,38 @@ function syncUrl(){
     history.replaceState(null,'',`${location.pathname}?${params}`);
 }
 function renderReport(data){
+<<<<<<< HEAD
+    // Defensive defaults: ensure the report renderer never attempts to read .rows from undefined
+    data = data || {};
+    data.system = data.system || { date_range: { start: '', end: '' }, generated_at: new Date().toISOString(), timezone: 'UTC', generated_by: '' };
+    data.summary = data.summary || [];
+    data.charts = data.charts || [];
+    data.overview_previews = data.overview_previews || {};
+    data.overview_previews.top_products = data.overview_previews.top_products || { rows: [], href: '' };
+    data.overview_previews.inventory_health = data.overview_previews.inventory_health || { healthy: 0, total_products: 0, low_stock: 0, out_of_stock: 0, data_issues: 0, total_on_hand: 0, shelf_stock: 0, storage_stock: 0, href: '' };
+    data.overview_previews.expiry_risk = data.overview_previews.expiry_risk || { chart_rows: [], href: '' };
+    data.overview_previews.purchase_status = data.overview_previews.purchase_status || { statuses: {}, href: '' };
+    data.overview_previews.purchase_status.statuses = data.overview_previews.purchase_status.statuses || {};
+    data.overview_previews.staff_activity = data.overview_previews.staff_activity || { rows: [], href: '' };
+    data.overview_previews.staff_activity.rows = data.overview_previews.staff_activity.rows || [];
+    data.insights = Array.isArray(data.insights) ? data.insights : [];
+    data.insights.forEach(insight => {
+        insight.rows = Array.isArray(insight.rows) ? insight.rows : [];
+    });
+    data.table_insights = Array.isArray(data.table_insights) ? data.table_insights : [];
+    data.table_insights.forEach(insight => {
+        insight.columns = insight.columns || {};
+        insight.rows = Array.isArray(insight.rows) ? insight.rows : [];
+    });
+    data.charts = data.charts.filter(chart => chart && typeof chart === 'object').map(chart => ({
+        ...chart,
+        rows: Array.isArray(chart.rows) ? chart.rows : []
+    }));
+    data.table_insights = data.table_insights || [];
+    data.notes = data.notes || [];
+
+=======
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
     qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.remove('d-none');
     qs('#reportContent').classList.toggle('is-overview',state.category==='overview');
     state.defaultStart=data.system.date_range.start;state.defaultEnd=data.system.date_range.end;const form=qs('#reportFilters');if(!form.elements.start_date.value)form.elements.start_date.value=state.defaultStart;if(!form.elements.end_date.value)form.elements.end_date.value=state.defaultEnd;
@@ -142,6 +188,20 @@ function staffActivityPanel(title,rows,tone,href){
     return `<article class="overview-panel tone-${tone}">${overviewPanelHeading(title,href,'View Staff Performance')}${content}</article>`;
 }
 function renderOverview(previews){
+<<<<<<< HEAD
+    previews = previews || {};
+    previews.top_products = previews.top_products || { rows: [], href: '' };
+    previews.top_products.rows = Array.isArray(previews.top_products.rows) ? previews.top_products.rows : [];
+    previews.inventory_health = previews.inventory_health || {};
+    previews.expiry_risk = previews.expiry_risk || { chart_rows: [] };
+    previews.expiry_risk.chart_rows = Array.isArray(previews.expiry_risk.chart_rows) ? previews.expiry_risk.chart_rows : [];
+    previews.purchase_status = previews.purchase_status || { statuses: {} };
+    previews.purchase_status.statuses = previews.purchase_status.statuses || {};
+    previews.staff_activity = previews.staff_activity || {};
+    previews.staff_activity.cashiers = Array.isArray(previews.staff_activity.cashiers) ? previews.staff_activity.cashiers : [];
+    previews.staff_activity.sales_clerks = Array.isArray(previews.staff_activity.sales_clerks) ? previews.staff_activity.sales_clerks : [];
+=======
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
     const target=qs('#overviewGrid');target.hidden=!previews;if(!previews){target.innerHTML='';return;}
     const products=previews.top_products.rows||[],inventory=previews.inventory_health,expiry=previews.expiry_risk,purchase=previews.purchase_status,staff=previews.staff_activity;
     const productMode=state.productMode,productField=productMode==='revenue'?'net_revenue':'quantity_sold',sortedProducts=[...products].sort((a,b)=>Number(b[productField])-Number(a[productField])),productMax=Math.max(1,...sortedProducts.map(row=>Number(row[productField])));

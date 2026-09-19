@@ -17,6 +17,10 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'expiry_monitoring.html',
         'reports.html',
         'admin_settings.html',
+<<<<<<< HEAD
+        'user_settings.html',
+=======
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
         'sales_history.html',
         'cashier_shift_summary.html'
     ]),
@@ -33,7 +37,12 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'return_damage.html',
         'expiry_monitoring.html',
         'reports.html',
+<<<<<<< HEAD
+        'supervisor_approval.html',
+        'user_settings.html'
+=======
         'supervisor_approval.html'
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
     ]),
     cashier: new Set([
         'cashier_dashboard.html',
@@ -46,13 +55,23 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'receipt_history.html',
         'cashier_shift_summary.html',
         'cashier_profile.html',
+<<<<<<< HEAD
+        'reports.html',
+        'user_settings.html'
+=======
         'reports.html'
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
     ]),
     salesclerk: new Set([
         'clerk.html',
         'sales_clerk_pos.html',
         'sales_clerk_orders.html',
+<<<<<<< HEAD
+        'reports.html',
+        'user_settings.html'
+=======
         'reports.html'
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
     ])
 });
 

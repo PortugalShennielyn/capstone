@@ -509,10 +509,13 @@ async function initializeNavbar(container) {
 
             if (accessRole === "supervisor") {
                 window.__drpNavbarBootstrap?.renderSupervisorNavigation(container);
+<<<<<<< HEAD
+=======
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
                     link.classList.add("d-none");
                     link.setAttribute("aria-hidden", "true");
                 });
+>>>>>>> 2ed0554fe1db566e6833390b8a9bc5cd726661b2
             }
 
             container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
