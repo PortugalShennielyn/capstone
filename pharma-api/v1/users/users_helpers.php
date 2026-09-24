@@ -121,6 +121,17 @@ function normalizeUserStatus(string $status): string
     return strtolower(trim($status)) === 'inactive' ? 'Inactive' : 'Active';
 }
 
+function isStrongUserPassword(string $password): bool
+{
+    if (strlen($password) < 8 || strlen($password) > 72) {
+        return false;
+    }
+
+    return preg_match('/[A-Z]/', $password) === 1
+        && preg_match('/\d/', $password) === 1
+        && preg_match('/[^A-Za-z0-9]/', $password) === 1;
+}
+
 function requireUserAdmin(PDO $pdo): void
 {
     $allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'Super Admin', 'ro-admin', 'ro-super-admin', 'ro-manager'];

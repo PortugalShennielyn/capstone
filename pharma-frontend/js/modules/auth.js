@@ -189,6 +189,10 @@ function initPasswordUpdate() {
                     Swal.showValidationMessage('New password must be between 8 and 72 characters.');
                     return false;
                 }
+                if (!/[A-Z]/.test(data.new_password) || !/\d/.test(data.new_password) || !/[^A-Za-z0-9]/.test(data.new_password)) {
+                    Swal.showValidationMessage('New password must include an uppercase letter, a number, and a symbol.');
+                    return false;
+                }
                 if (data.new_password !== data.confirm_password) {
                     Swal.showValidationMessage('New password and confirmation do not match.');
                     return false;
