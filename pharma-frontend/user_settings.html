@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dr. R Pharmacy | User Settings</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=36" rel="stylesheet">
+    <script src="./js/navbar.js?v=83" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <style>
+        .settings-shell { max-width: 980px; margin: 0 auto; padding: 32px 24px 56px; }
+        .settings-card { border: 1px solid #e8ecf3; border-radius: 14px; background: #fff; box-shadow: 0 12px 30px rgba(15,23,42,.06); }
+        .settings-hero { display:flex; align-items:center; gap:16px; padding:24px; }
+        .settings-avatar { width:64px; height:64px; display:grid; place-items:center; border-radius:50%; color:#fff; background:#7c3aed; font-size:22px; font-weight:800; }
+        .settings-actions { display:flex; flex-wrap:wrap; gap:10px; padding:0 24px 24px; }
+        .settings-detail { padding:18px 24px; border-top:1px solid #eef1f5; }
+        .settings-detail small { display:block; color:#6b7280; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+        .settings-detail strong { display:block; margin-top:4px; overflow-wrap:anywhere; }
+    </style>
+</head>
+<body class="role-loading">
+<div id="navbar-container"></div>
+<main class="main-wrapper" id="mainWrapper">
+    <header class="topbar"><div class="topbar-left"><button class="icon-btn" id="sidebarToggle" aria-label="Toggle navigation"><i class="fa-solid fa-bars"></i></button><div class="page-title-mini"><strong>User Settings</strong><span>Manage your profile and account security</span></div></div></header>
+    <section class="settings-shell">
+        <div class="settings-card" data-user-settings>
+            <div class="settings-hero"><div class="settings-avatar" id="profileIdentityInitials">--</div><div><h1 class="h4 mb-1" id="profileSummaryName">Loading profile</h1><p class="text-muted mb-0" id="profileSummaryText">Loading account details...</p></div></div>
+            <div class="settings-actions"><button class="btn btn-purple" id="editProfileIdentityBtn" type="button"><i class="fa-solid fa-user-pen me-2"></i>Edit profile</button><button class="btn btn-outline-secondary" id="updatePasswordBtn" type="button"><i class="fa-solid fa-key me-2"></i>Change password</button><button class="btn btn-outline-secondary" id="reviewCurrentSessionBtn" type="button"><i class="fa-solid fa-shield-halved me-2"></i>Review session</button></div>
+            <div class="row g-0">
+                <div class="col-12 col-md-6 settings-detail"><small>Username</small><strong id="profileIdentityUsername">Loading</strong></div>
+                <div class="col-12 col-md-6 settings-detail"><small>Email</small><strong id="profileIdentityEmail">Loading</strong></div>
+                <div class="col-12 col-md-6 settings-detail"><small>First name</small><strong id="profileFirstName">Loading</strong></div>
+                <div class="col-12 col-md-6 settings-detail"><small>Last name</small><strong id="profileLastName">Loading</strong></div>
+                <div class="col-12 col-md-6 settings-detail"><small>Role</small><strong id="profileAccountRoles">Loading</strong></div>
+                <div class="col-12 col-md-6 settings-detail"><small>Account</small><strong id="profileAccountType">Loading</strong></div>
+            </div>
+        </div>
+    </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module">import verifySession from './js/modules/auth.js?v=9'; await verifySession();</script>
+</body>
+</html>
