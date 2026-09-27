@@ -155,7 +155,7 @@ async function initializeNavbar(container) {
     const revealFailSafe = window.setTimeout(revealShell, 2500);
 
     try {
-        const rbac = await import("./modules/rbac.js?v=7");
+        const rbac = await import("./modules/rbac.js?v=8");
         const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v48";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
@@ -525,6 +525,13 @@ async function initializeNavbar(container) {
             });
 
             if (accessRole === "cashier") {
+                const dashboardLink = container.querySelector(".sidebar-nav [data-nav-page='dashboard']");
+                if (dashboardLink) {
+                    dashboardLink.href = "cashier_dashboard.html";
+                    dashboardLink.title = "Cashier Dashboard";
+                    const label = dashboardLink.querySelector(".nav-label");
+                    if (label) label.textContent = "Cashier Dashboard";
+                }
                 container.querySelector(".sidebar-brand")?.setAttribute("href", "cashier_pos.html");
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
                     const isUserSettings = link.dataset.navPage === "user-settings";
