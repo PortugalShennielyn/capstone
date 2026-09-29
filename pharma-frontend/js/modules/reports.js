@@ -31,6 +31,17 @@ const qs=s=>document.querySelector(s),qsa=s=>[...document.querySelectorAll(s)];
 const state={category:'overview',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity'};
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const format=(v,type)=>type==='currency'?money.format(Number(v||0)):number.format(Number(v||0));
+function isCashierReport(access=state.data?.access){return Boolean(access?.cashier&&!access.management);}
+function configureCashierPage(access){
+    const cashier=isCashierReport(access);document.body.classList.toggle('cashier-report',cashier);
+    if(!cashier)return;
+    const title='Cashier Reports',subtitle='View and monitor your daily sales and transaction records.';
+    document.title=`Dr. R Pharmacy | ${title}`;qs('.page-title-mini strong').textContent='Reports';qs('.report-heading h1').textContent=title;qs('.report-heading > div > p').textContent=subtitle;
+    qs('.report-view-filter .filter-label').textContent='Report Type';const dateLabels=qsa('.date-range label > span');if(dateLabels[0])dateLabels[0].textContent='Start Date';if(dateLabels[1])dateLabels[1].textContent='End Date';
+    const tableSubtitle=qs('#tableSubtitle');if(tableSubtitle){tableSubtitle.textContent='List of your transactions for the selected date range.';tableSubtitle.hidden=false;}
+    reportViews.sales=['Sales Report'];const view=qs('[name="report_view"]');view.innerHTML='<option>Sales Report</option>';view.value='Sales Report';
+    qs('[name="group_by"]').value='day';qs('#tableTitle').textContent='Sales Details';
+}
 
 function initialQuery(){
     const query=new URLSearchParams(location.search);if(categories[query.get('category')])state.category=query.get('category');
@@ -107,10 +118,13 @@ function renderReport(data){
     qs('#reportContent').classList.toggle('is-overview',state.category==='overview');
     state.defaultStart=data.system.date_range.start;state.defaultEnd=data.system.date_range.end;const form=qs('#reportFilters');if(!form.elements.start_date.value)form.elements.start_date.value=state.defaultStart;if(!form.elements.end_date.value)form.elements.end_date.value=state.defaultEnd;
     const generated=new Date(data.system.generated_at);qs('#reportGenerated').textContent=`Generated ${generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} · ${data.system.timezone} · ${data.system.generated_by}`;
-    qs('#summaryCards').innerHTML=(data.summary||[]).map(card=>`<article class="summary-card tone-${esc(card.tone||'purple')}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong></article>`).join('');
-    renderCharts(data.charts||[]);renderInsights(data);
+    const cashierReport=isCashierReport(data.access);configureCashierPage(data.access);
+    const today=data.system.generated_at?.slice(0,10),isToday=form.elements.start_date.value===today&&form.elements.end_date.value===today;
+    const summary=(data.summary||[]).map(card=>({...card,title:cashierReport&&card.title==="Today's Net Sales"&&!isToday?'Period Net Sales':card.title}));
+    qs('#summaryCards').innerHTML=summary.map(card=>`<article class="summary-card tone-${esc(card.tone||'purple')}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong></article>`).join('');
+    renderCharts(cashierReport?[]:(data.charts||[]));renderInsights(cashierReport?{insights:[]} : data);
     if(state.category==='overview'){const attention=qs('#reportInsights .attention-card');if(attention){qs('#reportCharts').appendChild(attention);qs('#reportCharts').classList.remove('single-chart');}}
-    renderOverview(data.overview_previews);renderTableInsights(data.table_insights||[]);renderTable(data);qs('.report-table-card').hidden=state.category==='overview';renderNotes(data.notes||[]);renderFilterChips();
+    renderOverview(cashierReport?null:data.overview_previews);renderTableInsights(cashierReport?[]:(data.table_insights||[]));renderTable(data);qs('.report-table-card').hidden=state.category==='overview';renderNotes(cashierReport?[]:(data.notes||[]));renderFilterChips();
 }
 function destroyCharts(){state.charts.forEach(chart=>chart.destroy());state.charts.clear();}
 function semanticChartColors(rows,tone){if(tone==='status'||tone==='expiry')return rows.map(r=>tones[statusColors[r.label]||(/expired|critical/i.test(r.label)?'red':/soon|days/i.test(r.label)?'amber':'green')]);const base=tones[tone]||tones.blue;return rows.map((_,i)=>i===0?base:`${base}${Math.max(55,210-i*28).toString(16).padStart(2,'0')}`);}
@@ -163,16 +177,21 @@ const poTones={'Draft':'gray','Pending':'amber','Arrived':'teal','Delivered':'gr
 function renderTableInsights(insights){qs('#tableInsights').innerHTML=insights.map(insight=>`<article class="table-insight-card"><h2>${esc(insight.title)}</h2><div class="report-table-scroll"><table class="report-table compact"><thead><tr>${Object.values(insight.columns).map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${insight.rows.map(row=>`<tr>${Object.keys(insight.columns).map(key=>`<td class="${(insight.currency_columns||[]).includes(key)||(insight.numeric_columns||[]).includes(key)?'numeric':''}">${esc((insight.currency_columns||[]).includes(key)?money.format(Number(row[key]||0)):row[key]??'—')}</td>`).join('')}</tr>`).join('')||`<tr class="empty-table"><td colspan="${Object.keys(insight.columns).length}">No completed supplier deliveries in this period.</td></tr>`}</tbody></table></div></article>`).join('');}
 function statusClass(value){return statusColors[String(value)]||(/paid|healthy|complete|accept/i.test(value)?'green':/cancel|expired|out of stock|data issue/i.test(value)?'red':/pending|partial|low|damage|slow/i.test(value)?'amber':'gray');}
 function cellHtml(key,value,row){
-    const text=value===null||value===''?'—':String(value);if(/status|performance/i.test(key))return `<span class="status-chip ${statusClass(text)}">${esc(text)}</span>`;
+    const text=value===null||value===''?'—':String(value);if(key==='payment_method'){const normalized=text.toLowerCase(),label=normalized==='gcash'?'GCash':normalized==='cash'?'Cash':normalized.replace(/\b\w/g,letter=>letter.toUpperCase());return `<span class="payment-chip payment-${esc(normalized.replace(/[^a-z0-9-]/g,''))}">${esc(label)}</span>`;}if(/status|performance/i.test(key)){const label=key==='status'?text.replace(/\b\w/g,letter=>letter.toUpperCase()):text;return `<span class="status-chip ${statusClass(text)}">${esc(label)}</span>`;}
     if(state.data.currency_columns.includes(key))return esc(money.format(Number(value||0)));if(key==='sell_through_rate')return `${esc(text)}%`;if(/date|activity/.test(key))return esc(text.replace(' ',' · '));
     return `<span class="cell-text" title="${esc(text)}">${esc(text)}</span>`;
 }
 function renderTable(data){
     let columns=Object.entries(data.columns||{});if(!data.access.management&&data.access.cashier)columns=columns.filter(([key])=>key!=='sales_clerk');
-    qs('#tableTitle').textContent=`${categories[state.category]} details`;qs('#reportTableHead').innerHTML=`<tr>${columns.map(([key,label])=>`<th class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}"><button class="sort-button" type="button" data-sort="${esc(key)}">${esc(label)}${state.sort===key?` <i class="fa-solid fa-sort-${state.direction==='asc'?'up':'down'}"></i>`:''}</button></th>`).join('')}</tr>`;
+    qs('#tableTitle').textContent=isCashierReport(data.access)?'Sales Details':`${categories[state.category]} details`;const tableSubtitle=qs('#tableSubtitle');if(tableSubtitle)tableSubtitle.hidden=!isCashierReport(data.access);qs('#reportTableHead').innerHTML=`<tr>${columns.map(([key,label])=>`<th class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}"><button class="sort-button" type="button" data-sort="${esc(key)}">${esc(label)}${state.sort===key?` <i class="fa-solid fa-sort-${state.direction==='asc'?'up':'down'}"></i>`:''}</button></th>`).join('')}</tr>`;
     qs('#reportTableBody').innerHTML=data.rows?.length?data.rows.map(row=>`<tr>${columns.map(([key])=>`<td class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}">${cellHtml(key,row[key],row)}</td>`).join('')}</tr>`).join(''):`<tr class="empty-table"><td colspan="${columns.length}">${esc(data.empty_message||'No records were found for the selected filters.')}</td></tr>`;
     window.PharmacySearchHighlight?.apply(qs('#reportTableBody'),qs('#reportSearch')?.value||'');
-    const p=data.pagination;qs('#resultCount').textContent=`${number.format(p.total)} result${p.total===1?'':'s'}`;qs('#pageSummary').textContent=`Page ${p.page} of ${p.pages}`;qs('#previousPage').disabled=p.page<=1;qs('#nextPage').disabled=p.page>=p.pages;
+    const p=data.pagination,start=p.total===0?0:(p.page-1)*p.page_size+1,end=Math.min(p.page*p.page_size,p.total);qs('#resultCount').textContent=`${number.format(p.total)} result${p.total===1?'':'s'}`;qs('#pageSummary').textContent=`Showing ${number.format(start)} to ${number.format(end)} of ${number.format(p.total)} result${p.total===1?'':'s'}`;qs('#previousPage').disabled=p.page<=1;qs('#nextPage').disabled=p.page>=p.pages;renderPageNumbers(p);
+}
+function renderPageNumbers(p){
+    const target=qs('#pageNumbers');if(!target)return;
+    const first=Math.max(1,Math.min(p.page-2,p.pages-4)),last=Math.min(p.pages,first+4);
+    target.innerHTML=Array.from({length:last-first+1},(_,index)=>first+index).map(page=>`<button class="page-number ${page===p.page?'active':''}" type="button" data-page="${page}" aria-label="Page ${page}" aria-current="${page===p.page?'page':'false'}">${page}</button>`).join('');
 }
 function renderNotes(notes){qs('#formulaNotes').innerHTML=notes.length?`<h2><i class="fa-solid fa-circle-info"></i> Calculation notes</h2><ul>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'';}
 function displayValue(key,value){
@@ -191,10 +210,11 @@ function clearCategoryFilters(){
 function csvCell(value){let text=String(value??'');if(/^[=+\-@]/.test(text))text=`'${text}`;return `"${text.replace(/"/g,'""')}"`;}
 async function exportCsv(){
     if(!state.data)return;const button=qs('#reportExport');button.disabled=true;
-    try{const first=state.data,rows=[...first.rows];for(let page=2;page<=first.pagination.pages;page++){const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams({page,page_size:100})}`,{credentials:'include',cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(payload.message||'Export failed.');rows.push(...payload.rows);}
+    try{let first=state.data,pageCount=Math.max(1,first.pagination.pages);const rows=[],pageSize=100;for(let page=1;page<=pageCount;page++){const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams({page,page_size:pageSize})}`,{credentials:'include',cache:'no-store'});const payload=await response.json();if(!response.ok||payload.status!=='success')throw new Error(payload.message||'Export failed.');if(page===1){first=payload;pageCount=Math.max(1,first.pagination.pages);}rows.push(...payload.rows);}
         const columns=Object.entries(first.columns),applied=qsa('.filter-chip').map(x=>x.textContent.trim().replace(/\s*×$/,'')).join('; ')||'Default period';
-        const lines=[[first.system.pharmacy_name],[`${qs('[name=report_view]').value} Report`],[`Date range: ${first.system.date_range.start} to ${first.system.date_range.end}`],[`Applied filters: ${applied}`],[`Generated: ${first.system.generated_at}`],[`Generated by: ${first.system.generated_by}`],[],['Summary'],...first.summary.map(x=>[x.title,format(x.value,x.format)]),[],columns.map(([,label])=>label)];
-        rows.forEach(row=>lines.push(columns.map(([key])=>row[key]??'')));const blob=new Blob(['\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${state.category}-report-${first.system.date_range.end}.csv`;document.body.appendChild(link);link.click();const url=link.href;link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+        const reportLabel=isCashierReport(first.access)?'Cashier Sales Report':`${qs('[name=report_view]').value} Report`;
+        const lines=[[first.system.pharmacy_name],[reportLabel],[`Date range: ${first.system.date_range.start} to ${first.system.date_range.end}`],[`Applied filters: ${applied}`],[`Generated: ${first.system.generated_at}`],[`Generated by: ${first.system.generated_by}`],[],['Summary'],...first.summary.map(x=>[x.title,format(x.value,x.format)]),[],columns.map(([,label])=>label)];
+        rows.forEach(row=>lines.push(columns.map(([key])=>row[key]??'')));const blob=new Blob(['\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${isCashierReport(first.access)?'cashier-sales':state.category}-report-${first.system.date_range.end}.csv`;document.body.appendChild(link);link.click();const url=link.href;link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch(error){alert(error.message);}finally{button.disabled=false;}
 }
 
@@ -202,6 +222,7 @@ qs('#reportTabs').addEventListener('click',event=>{const button=event.target.clo
 qs('#reportFilters').addEventListener('submit',event=>{event.preventDefault();state.page=1;state.explicitDates=true;loadReport();});
 qs('#clearFilters').addEventListener('click',resetFilters);qs('#reportRefresh').addEventListener('click',loadReport);qs('#reportPrint').addEventListener('click',()=>window.print());qs('#reportExport').addEventListener('click',exportCsv);
 qs('#previousPage').addEventListener('click',()=>{state.page--;loadReport();});qs('#nextPage').addEventListener('click',()=>{state.page++;loadReport();});
+qs('#pageNumbers').addEventListener('click',event=>{const button=event.target.closest('[data-page]');if(!button)return;state.page=Number(button.dataset.page);loadReport();});
 qs('#reportSearch').addEventListener('input',()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(()=>{state.page=1;loadReport();},350);});
 qs('#reportTableHead').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.direction=state.sort===button.dataset.sort&&state.direction==='asc'?'desc':'asc';state.sort=button.dataset.sort;state.page=1;loadReport();});
 qs('#moreFiltersToggle').addEventListener('click',event=>{const panel=qs('#secondaryFilters'),expanded=panel.hidden;panel.hidden=!expanded;event.currentTarget.setAttribute('aria-expanded',String(expanded));event.currentTarget.lastElementChild.className=`fa-solid fa-chevron-${expanded?'up':'down'}`;});

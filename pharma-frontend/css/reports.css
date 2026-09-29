@@ -17,3 +17,50 @@
 .dark-mode .mini-toggle,.dark-mode .compact-empty{background:#202b3d}.dark-mode .mini-toggle button.active{background:#2d3748}.dark-mode .compact-empty.success{background:#153326;color:#86efac}.dark-mode .compact-bar-track{background:#2b394c}.dark-mode .staff-rank>b{background:color-mix(in srgb,var(--tone) 20%,#182131)}
 @media(max-width:991.98px){.is-overview #reportCharts,.overview-grid{grid-template-columns:1fr}.staff-supporting-metrics{grid-column:auto;grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:575.98px){.panel-heading{align-items:flex-start;flex-direction:column}.mini-toggle{margin-left:0}.product-rank{grid-template-columns:22px minmax(0,1fr)}.product-rank>span{grid-column:2;text-align:left}.status-summary{grid-template-columns:1fr}.mini-metrics{grid-template-columns:1fr}.mini-metrics.two{grid-template-columns:1fr 1fr}.staff-supporting-metrics{grid-template-columns:1fr 1fr}}
+
+body.cashier-report [hidden]{display:none!important}
+body.cashier-report #reportTabs,body.cashier-report #reportCharts,body.cashier-report #reportInsights,body.cashier-report #overviewGrid,body.cashier-report #tableInsights,body.cashier-report #formulaNotes,body.cashier-report #moreFiltersToggle,body.cashier-report #secondaryFilters{display:none!important}
+body.cashier-report [data-filter="group"],body.cashier-report [data-filter="primary-category"],body.cashier-report [data-filter="primary-supplier"],body.cashier-report [data-filter="primary-stock"],body.cashier-report [data-filter="primary-expiry"]{display:none!important}
+body.cashier-report .summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+body.cashier-report .report-table{min-width:940px}
+@media(max-width:1300px){body.cashier-report .summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:991.98px){body.cashier-report .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:575.98px){body.cashier-report .summary-grid{grid-template-columns:1fr}body.cashier-report .primary-filters .filter-group{flex:1 1 100%;min-width:0}}
+@media print{body.cashier-report .summary-grid{grid-template-columns:repeat(4,1fr)}body.cashier-report .report-table{min-width:0;font-size:8px}}
+
+body.cashier-report{--body-bg:#081426;--panel:#10213a;--text-main:#e2eaf7;--text-muted:#9aacc5;--border-soft:#233956;--purple:#6654f4;--purple-dark:#5541e7;--purple-soft:#25224a;background:var(--body-bg);color:var(--text-main)}
+body.cashier-report .topbar,body.cashier-report .report-filter-card,body.cashier-report .report-table-card,body.cashier-report .summary-card{background:#10213a;border-color:#233956;color:var(--text-main)}
+body.cashier-report .topbar{background:#0e1d33}
+body.cashier-report .report-heading p,body.cashier-report .page-title-mini span,body.cashier-report .report-generated,body.cashier-report .report-table-heading p{color:#9aacc5}
+body.cashier-report .report-filter-card{padding:15px 16px}
+body.cashier-report .filter-group .filter-label,body.cashier-report .date-range>span:first-child{color:#9aacc5}
+body.cashier-report .form-control,body.cashier-report .form-select{background-color:#0c1a2e;border-color:#2a4263;color:#e2eaf7}
+body.cashier-report .form-control:focus,body.cashier-report .form-select:focus{border-color:#7b6dff;box-shadow:0 0 0 .18rem rgba(102,84,244,.2)}
+body.cashier-report .summary-card{min-height:95px;padding:12px 16px;border:1px solid #233956;border-top:2px solid var(--tone,var(--purple));border-radius:8px;box-shadow:none}
+body.cashier-report .summary-card>span{color:#b3c0d4;font-size:11px}
+body.cashier-report .summary-card>strong{color:#f1f5fb;font-size:16px}
+body.cashier-report .summary-card .summary-icon{background:color-mix(in srgb,var(--tone,var(--purple)) 30%,#10213a);color:var(--tone,var(--purple))}
+body.cashier-report .report-table-card{padding:12px;border-radius:8px;box-shadow:none}
+body.cashier-report .table-toolbar{align-items:center}
+body.cashier-report .report-table-heading h2{display:flex;align-items:center;gap:10px;color:#edf3fc;font-size:14px}
+body.cashier-report .table-section-icon{display:grid;width:30px;height:30px;place-items:center;border-radius:6px;background:#644af0;color:#fff}
+body.cashier-report .report-table-heading p{margin:3px 0 0 40px;font-size:10px}
+body.cashier-report #resultCount{display:none}
+body.cashier-report .report-table-scroll{overflow-x:auto}
+body.cashier-report .report-table{min-width:920px;color:#d9e3f2}
+body.cashier-report .report-table th{background:#182b47!important;color:#afbed2;border-color:#273b58}
+body.cashier-report .report-table td{background:#10213a;color:#d9e3f2;border-color:#223653}
+body.cashier-report .report-table tbody tr:hover td{background:#152944}
+body.cashier-report .cell-text{max-width:310px}
+body.cashier-report .payment-chip,.dark-mode.cashier-report .payment-chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:5px;background:#087f73;color:#c9fff3;font-size:10px;font-weight:800}
+body.cashier-report .payment-chip.payment-gcash{background:#075fae;color:#d6efff}
+body.cashier-report .status-chip.green{background:#087f73;color:#c9fff3}
+body.cashier-report .table-footer{align-items:center;color:#aabbd1;font-size:10px}
+body.cashier-report .pagination-actions{display:flex;align-items:center;gap:4px}
+body.cashier-report .page-number-list{display:flex;gap:4px}
+body.cashier-report .pagination-arrow,body.cashier-report .page-number{display:grid;width:30px;height:30px;place-items:center;padding:0;border:1px solid #263a57;border-radius:6px;background:#13243c;color:#c3d0e2;font-size:11px}
+body.cashier-report .page-number.active{border-color:#6654f4;background:#6654f4;color:#fff}
+body.cashier-report .pagination-arrow:disabled{opacity:.45}
+@media(max-width:991.98px){body.cashier-report .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:575.98px){body.cashier-report .summary-grid{grid-template-columns:1fr}body.cashier-report .table-toolbar{align-items:stretch}.cashier-report .report-search{width:100%}body.cashier-report .table-footer{align-items:flex-start;flex-direction:column;gap:10px}}
+@media print{body.cashier-report .report-table th,body.cashier-report .report-table td{background:#fff!important;color:#111;border-color:#bbb}}

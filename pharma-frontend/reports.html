@@ -12,7 +12,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=36" rel="stylesheet">
-    <link href="./css/reports.css?v=9" rel="stylesheet">
+    <link href="./css/reports.css?v=11" rel="stylesheet">
     <script src="./js/navbar.js?v=85" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 </head>
@@ -22,7 +22,7 @@
         <header class="topbar">
             <div class="topbar-left">
                 <button class="icon-btn" type="button" id="sidebarToggle" aria-label="Toggle navigation"><i class="fa-solid fa-bars"></i></button>
-                <div class="page-title-mini"><strong>Reports</strong><span>Business performance and pharmacy operations</span></div>
+                <div class="page-title-mini"><strong id="reportMiniTitle">Reports</strong><span id="reportMiniSubtitle">Business performance and pharmacy operations</span></div>
             </div>
             <div class="topbar-actions">
                 <button class="btn btn-sm btn-light" type="button" id="reportRefresh"><i class="fa-solid fa-rotate"></i><span>Refresh</span></button>
@@ -34,7 +34,7 @@
         <section class="page-body">
             <div class="reports-workspace">
                 <div class="report-heading">
-                    <div><h1>Reports</h1><p>Business performance, inventory, purchasing, and pharmacy operations</p></div>
+                    <div><h1 id="reportPageTitle">Reports</h1><p id="reportPageSubtitle">Business performance, inventory, purchasing, and pharmacy operations</p></div>
                     <p class="report-generated" id="reportGenerated" aria-live="polite"></p>
                 </div>
 
@@ -88,11 +88,11 @@
                     <section class="table-insights" id="tableInsights"></section>
                     <section class="report-table-card">
                         <div class="table-toolbar">
-                            <div><h2 id="tableTitle">Report details</h2><p id="resultCount">0 results</p></div>
+                            <div class="report-table-heading"><h2><span class="table-section-icon"><i class="fa-solid fa-receipt"></i></span><span id="tableTitle">Report details</span></h2><p id="tableSubtitle" hidden></p><p id="resultCount">0 results</p></div>
                             <label class="report-search"><i class="fa-solid fa-magnifying-glass"></i><input class="form-control form-control-sm" id="reportSearch" type="search" placeholder="Search this report" autocomplete="off"></label>
                         </div>
                         <div class="report-table-scroll"><table class="report-table"><thead id="reportTableHead"></thead><tbody id="reportTableBody"></tbody></table></div>
-                        <div class="table-footer"><span id="pageSummary"></span><div class="pagination-actions"><button class="btn btn-sm btn-light" id="previousPage" type="button">Previous</button><button class="btn btn-sm btn-light" id="nextPage" type="button">Next</button></div></div>
+                        <div class="table-footer"><span id="pageSummary"></span><div class="pagination-actions"><button class="btn btn-sm btn-light pagination-arrow" id="previousPage" type="button" aria-label="Previous page" title="Previous page"><i class="fa-solid fa-chevron-left"></i></button><nav id="pageNumbers" class="page-number-list" aria-label="Report pages"></nav><button class="btn btn-sm btn-light pagination-arrow" id="nextPage" type="button" aria-label="Next page" title="Next page"><i class="fa-solid fa-chevron-right"></i></button></div></div>
                     </section>
                     <aside class="formula-notes" id="formulaNotes" aria-label="Calculation notes"></aside>
                 </div>
@@ -101,6 +101,6 @@
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script type="module" src="./js/modules/reports.js?v=21"></script>
+    <script type="module" src="./js/modules/reports.js?v=25"></script>
 </body>
 </html>

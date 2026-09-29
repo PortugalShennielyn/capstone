@@ -127,22 +127,52 @@ function salesReport(PDO $pdo, array $f, array $role): array
 
     $charts = [$groupChart];
     if ($group !== 'product') $charts[] = ['id'=>'top-products','title'=>'Top five products by units sold','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>$topProducts];
-    $columns=['report_date'=>'Date','reference'=>'Receipt / Transaction','cashier'=>'Cashier','sales_clerk'=>'Sales Clerk','item_count'=>'Items','subtotal'=>'Gross / Subtotal','discount'=>'Discount','vatable_sales'=>'VATable Sales','vat'=>'VAT','refund_reversal'=>'Refund / Reversal','final_total'=>'Final Sales','payment_method'=>'Payment Method','status'=>'Status'];
-    if(!$role['management']&&$role['cashier']){unset($columns['sales_clerk']);foreach($rows as &$row)unset($row['sales_clerk']);unset($row);}
+    $cashierReport = !$role['management'] && $role['cashier'];
+    $paymentSales = array_column($payment, 'value', 'label');
+    if ($cashierReport) {
+      $sortMap = ['transaction_id'=>'o.order_no','date_time'=>'o.completed_at','items'=>'items','total_amount'=>'total_amount','discount'=>'discount','vat'=>'vat','payment_method'=>'payment_method','status'=>'status'];
+      $sort = $sortMap[$f['sort']] ?? 'o.completed_at';
+      $rows = reportRows($pdo, "SELECT o.order_no transaction_id,DATE_FORMAT(o.completed_at,'%Y-%m-%d %H:%i') date_time,
+        COALESCE(items.item_summary,'') items,pay.final_amount total_amount,
+        COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0) discount,
+        o.vat vat,UPPER(pay.payment_method) payment_method,o.status status
+        FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+        LEFT JOIN (SELECT order_id,GROUP_CONCAT(CONCAT(product_name,' (x',quantity,')') ORDER BY order_item_id SEPARATOR ', ') item_summary FROM sales_order_items GROUP BY order_id) items ON items.order_id=o.order_id
+        LEFT JOIN sales_receipts r ON r.order_id=o.order_id
+        WHERE {$rowWhere} ORDER BY {$sort} {$f['direction']} LIMIT :limit OFFSET :offset", $rowParams);
+      $columns = ['transaction_id'=>'Transaction ID','date_time'=>'Date & Time','items'=>'Items','total_amount'=>'Total Amount','discount'=>'Discount','vat'=>'VAT','payment_method'=>'Payment Method','status'=>'Status'];
+      $numericColumns = [];
+      $currencyColumns = ['total_amount','discount','vat'];
+      $summaryCards = [
+        reportCard('Today\'s Net Sales',(float)$summary['net_sales'],'currency','fa-peso-sign','blue'),
+        reportCard('Completed Transactions',(int)$summary['transactions'],'number','fa-receipt','blue'),
+        reportCard('Items Sold',(int)$summary['items_sold'],'number','fa-box','teal'),
+        reportCard('Cash Sales',(float)($paymentSales['CASH']??0),'currency','fa-money-bill-wave','green'),
+        reportCard('GCash Sales',(float)($paymentSales['GCASH']??0),'currency','fa-mobile-screen-button','blue'),
+        reportCard('Discounts',(float)$summary['discounts'],'currency','fa-tags','amber'),
+        reportCard('VAT',(float)$summary['vat'],'currency','fa-percent','teal'),
+        reportCard('Average Transaction',(float)$summary['average_transaction'],'currency','fa-chart-line','purple'),
+      ];
+    } else {
+      $columns=['report_date'=>'Date','reference'=>'Receipt / Transaction','cashier'=>'Cashier','sales_clerk'=>'Sales Clerk','item_count'=>'Items','subtotal'=>'Gross / Subtotal','discount'=>'Discount','vatable_sales'=>'VATable Sales','vat'=>'VAT','refund_reversal'=>'Refund / Reversal','final_total'=>'Final Sales','payment_method'=>'Payment Method','status'=>'Status'];
+      $numericColumns=['item_count'];
+      $currencyColumns=['subtotal','discount','vatable_sales','vat','refund_reversal','final_total'];
+      $summaryCards=[
+        reportCard('Net Sales',(float)$summary['net_sales'],'currency','fa-peso-sign','blue','Final completed amount paid, inclusive of calculated VAT and after discounts.'),
+        reportCard('Completed Transactions',(int)$summary['transactions'],'number','fa-receipt','blue'),
+        reportCard('Items Sold',(int)$summary['items_sold'],'number','fa-box','teal'),
+        reportCard('Average Transaction',(float)$summary['average_transaction'],'currency','fa-chart-line','blue'),
+        reportCard('Discounts',(float)$summary['discounts'],'currency','fa-tags','amber'),
+        reportCard('VATable Sales',(float)$summary['vatable_sales'],'currency','fa-file-invoice-dollar','teal'),
+        reportCard('VAT',(float)$summary['vat'],'currency','fa-percent','blue'),
+      ];
+    }
     return [
-        'summary'=>[
-            reportCard('Net Sales',(float)$summary['net_sales'],'currency','fa-peso-sign','blue','Final completed amount paid, inclusive of calculated VAT and after discounts.'),
-            reportCard('Completed Transactions',(int)$summary['transactions'],'number','fa-receipt','blue'),
-            reportCard('Items Sold',(int)$summary['items_sold'],'number','fa-box','teal'),
-            reportCard('Average Transaction',(float)$summary['average_transaction'],'currency','fa-chart-line','blue'),
-            reportCard('Discounts',(float)$summary['discounts'],'currency','fa-tags','amber'),
-            reportCard('VATable Sales',(float)$summary['vatable_sales'],'currency','fa-file-invoice-dollar','teal'),
-            reportCard('VAT',(float)$summary['vat'],'currency','fa-percent','blue'),
-        ],
+      'summary'=>$summaryCards,
         'charts'=>$charts,
         'insights'=>[['title'=>'Payment methods','tone'=>'sales','rows'=>$payment,'format'=>'currency']],
         'columns'=>$columns,
-        'numeric_columns'=>['item_count'],'currency_columns'=>['subtotal','discount','vatable_sales','vat','refund_reversal','final_total'],'rows'=>$rows,
+        'numeric_columns'=>$numericColumns,'currency_columns'=>$currencyColumns,'rows'=>$rows,
         'pagination'=>reportPagination((int)($count['total']??0),$f),
         'notes'=>[
             'Net Sales = completed paid final amounts − recorded refunded amounts. Cancelled, unpaid, and incomplete transactions are excluded.',
@@ -539,7 +569,7 @@ function overviewReport(PDO $pdo,array $f,array $role): array
 }
 
 try {
-    reportApplyConfiguredTimezone($pdo);$role=reportRoleContext();$f=reportFilters();$category=strtolower(trim((string)($_GET['category']??'overview')));
+    reportApplyConfiguredTimezone($pdo);$role=reportRoleContext();$f=reportFilters();$defaultCategory=$role['cashier']&&!$role['management']?'sales':'overview';$category=strtolower(trim((string)($_GET['category']??$defaultCategory)));
     if(!in_array($category,$role['available_categories'],true)){http_response_code(403);echo json_encode(['status'=>'error','message'=>'You do not have access to this report category.','access'=>$role]);exit;}
     $report=match($category){'sales'=>salesReport($pdo,$f,$role),'inventory'=>inventoryReport($pdo,$f),'purchases'=>(!empty($role['supervisor'])?supervisorPurchaseRequestReport($pdo,$f):purchasesReport($pdo,$f)),'expiry'=>expiryReport($pdo,$f),'products'=>(!empty($role['supervisor'])?supervisorProductReport($pdo,$f,$role):productReport($pdo,$f,$role)),'staff'=>staffReport($pdo,$f,$role),default=>overviewReport($pdo,$f,$role)};
     echo json_encode(['status'=>'success','category'=>$category,'access'=>$role,'system'=>reportSystem($pdo,$role,$f),'filters'=>reportFilterOptions($pdo,$role)]+$report,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);

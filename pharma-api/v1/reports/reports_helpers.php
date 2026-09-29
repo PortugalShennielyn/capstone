@@ -34,7 +34,7 @@ function reportRoleContext(): array
         'available_categories' => $management
             ? ['overview', 'sales', 'inventory', 'purchases', 'expiry', 'products', 'staff']
             : ($supervisor ? ['overview', 'inventory', 'purchases', 'expiry', 'products']
-            : ($cashier ? ['sales', 'staff'] : ['sales', 'products', 'staff'])),
+            : ($cashier ? ['sales'] : ['sales', 'products', 'staff'])),
     ];
 }
 
@@ -66,14 +66,18 @@ function reportDate(string $key, string $fallback): string
 
 function reportFilters(): array
 {
-    $start = reportDate('start_date', date('Y-m-01'));
+    $roles = reportSessionRoles();
+    $managementRoles = ['super_admin', 'admin', 'manager', 'ro_super_admin', 'ro_admin', 'ro_manager'];
+    $cashierRoles = ['cashier', 'ro_cashier'];
+    $cashierOnly = count(array_intersect($roles, $cashierRoles)) > 0 && count(array_intersect($roles, $managementRoles)) === 0;
+    $start = reportDate('start_date', $cashierOnly ? date('Y-m-d') : date('Y-m-01'));
     $end = reportDate('end_date', date('Y-m-d'));
     if ($start > $end) throw new InvalidArgumentException('Start date cannot be after end date.');
     $days = (new DateTime($start))->diff(new DateTime($end))->days;
     if ($days > 3660) throw new InvalidArgumentException('Date range cannot exceed ten years.');
 
     $page = max(1, (int) ($_GET['page'] ?? 1));
-    $pageSize = min(100, max(10, (int) ($_GET['page_size'] ?? 20)));
+    $pageSize = $cashierOnly ? 5 : min(100, max(10, (int) ($_GET['page_size'] ?? 20)));
     return [
         'start_date' => $start,
         'end_date' => $end,
@@ -206,6 +210,20 @@ function reportProductFilterSql(array $filters, array &$params, string $productA
 
 function reportFilterOptions(PDO $pdo, array $role): array
 {
+    if (!$role['management'] && $role['cashier']) {
+        return [
+            'categories' => [],
+            'types' => [],
+            'products' => [],
+            'brands' => [],
+            'suppliers' => [],
+            'payment_methods' => ['cash', 'gcash', 'card', 'mixed'],
+            'po_statuses' => [],
+            'stock_statuses' => [],
+            'cashiers' => [],
+            'sales_clerks' => [],
+        ];
+    }
     $options = [
         'categories' => reportRows($pdo, 'SELECT category_id AS id, category_name AS name FROM product_categories ORDER BY category_name'),
         'types' => reportRows($pdo, 'SELECT type_id AS id, type_name AS name, category_id FROM product_types ORDER BY type_name'),
