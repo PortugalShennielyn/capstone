@@ -415,13 +415,14 @@ function supervisorOverviewReport(PDO $pdo, array $f, array $role): array
     $expiryFilters=$filters; $expiryFilters['expiry_days']=90;
     $expiry=expiryReport($pdo,$expiryFilters);
     $products=supervisorProductReport($pdo,$filters,$role);
-    $prs=supervisorPurchaseRequestReport($pdo,$filters);
+
+    // ⚠️ Purchase Requests have their own section — they are NOT part of this Overview.
     return [
-        'summary'=>array_merge(array_slice($inventory['summary'],0,5),array_slice($prs['summary'],0,1)),
-        'charts'=>[$inventory['charts'][1],$products['charts'][0],$expiry['charts'][0],$prs['charts'][0]],
+        'summary'=>array_slice($inventory['summary'],0,5),
+        'charts'=>[$inventory['charts'][1],$products['charts'][0],$expiry['charts'][0]],
         'attention'=>[], 'overview_previews'=>[], 'columns'=>[], 'numeric_columns'=>[], 'currency_columns'=>[], 'rows'=>[],
         'pagination'=>reportPagination(0,$f),
-        'notes'=>['Inventory Supervisor overview contains current inventory, expiry, product movement, and purchase-request approval information only. Financial and staff-performance reports are excluded.']];
+        'notes'=>['Inventory Supervisor overview contains current inventory, expiry, and product movement information only. Purchase requests have their own section.']];
 }
 
 function overviewReport(PDO $pdo,array $f,array $role): array
