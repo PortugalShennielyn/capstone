@@ -1,197 +1,81 @@
 <?php
 require_once '../../config/db_connection.php';
-require_once '../../config/require_auth.php';
 require_once '../../config/auth_context.php';
 
-if (!isset($_SESSION['user_id'], $_SESSION['role'])) {
-    http_response_code(401);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Unauthorized'
-    ]);
-    exit();
-}
+header('Content-Type: application/json; charset=UTF-8');
+header('Access-Control-Allow-Origin: ' . ($_SERVER['HTTP_ORIGIN'] ?? '*'));
+header('Access-Control-Allow-Credentials: true');
+header('Access-Control-Allow-Headers: Content-Type, X-Tab-Token');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
 
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit(); }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Only POST requests are allowed.'
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Only POST allowed.']);
     exit();
 }
 
-$payload = json_decode(file_get_contents('php://input'), true);
+requireValidSession($pdo, []);
 
-if (!is_array($payload)) {
-    http_response_code(400);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Invalid profile update payload.'
-    ]);
-    exit();
-}
-
-$username = trim((string) ($payload['username'] ?? ($_SESSION['username'] ?? '')));
-$email = trim((string) ($payload['email'] ?? ''));
+$payload = json_decode(file_get_contents('php://input'), true) ?: [];
+$fullName      = trim((string) ($payload['full_name'] ?? ''));
+$email         = trim((string) ($payload['email'] ?? ''));
 $contactNumber = trim((string) ($payload['contact_number'] ?? ''));
-$fullName = trim((string) ($payload['full_name'] ?? ''));
-$firstName = trim((string) ($payload['first_name'] ?? ''));
-$lastName = trim((string) ($payload['last_name'] ?? ''));
 
-$username = preg_replace('/\s+/', '', $username);
-$email = preg_replace('/\s+/', '', $email);
-$contactNumber = preg_replace('/\s+/', ' ', $contactNumber);
-$fullName = preg_replace('/\s+/', ' ', $fullName);
-$firstName = preg_replace('/\s+/', ' ', $firstName);
-$lastName = preg_replace('/\s+/', ' ', $lastName);
-
-if ($username === '' || mb_strlen($username) > 50) {
+if ($fullName === '') {
     http_response_code(422);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Username is required and must be 50 characters or fewer.'
-    ]);
+    echo json_encode(['success' => false, 'message' => 'Please enter a display name.']);
+    exit();
+}
+if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Invalid email address.']);
     exit();
 }
 
-if (!preg_match('/^[A-Za-z0-9._-]+$/', $username)) {
-    http_response_code(422);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Username can only include letters, numbers, dots, underscores, and hyphens.'
-    ]);
-    exit();
-}
-
-if ($email !== '' && (mb_strlen($email) > 255 || !filter_var($email, FILTER_VALIDATE_EMAIL))) {
-    http_response_code(422);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Enter a valid email address.'
-    ]);
-    exit();
-}
-
-if ($fullName === '' || mb_strlen($fullName) > 100) {
-    http_response_code(422);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Full name is required and must be 100 characters or fewer.'
-    ]);
-    exit();
-}
-
-if (mb_strlen($firstName) > 100 || mb_strlen($lastName) > 100) {
-    http_response_code(422);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'First name and last name must be 100 characters or fewer.'
-    ]);
-    exit();
-}
-
-if (mb_strlen($contactNumber) > 50) {
-    http_response_code(422);
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Contact number must be 50 characters or fewer.'
-    ]);
-    exit();
-}
+$userId = (string) $_SESSION['user_id'];
 
 try {
-    $pdo->beginTransaction();
-
-    $duplicateStmt = $pdo->prepare(
-        'SELECT user_id
-         FROM users
-         WHERE username = :username
-           AND user_id <> :user_id
-         LIMIT 1'
-    );
-    $duplicateStmt->execute([
-        ':username' => $username,
-        ':user_id' => $_SESSION['user_id'],
-    ]);
-
-    if ($duplicateStmt->fetchColumn()) {
-        $pdo->rollBack();
-        http_response_code(409);
-        echo json_encode([
-            'status' => 'error',
-            'message' => 'That username is already in use.'
-        ]);
-        exit();
-    }
-
     if ($email !== '') {
-        $emailStmt = $pdo->prepare(
-            'SELECT user_id
-             FROM users
-             WHERE email = :email
-               AND user_id <> :user_id
-             LIMIT 1'
+        $check = $pdo->prepare(
+            'SELECT COUNT(*) FROM users
+             WHERE LOWER(email) = LOWER(:email) AND user_id <> :user_id'
         );
-        $emailStmt->execute([
-            ':email' => $email,
-            ':user_id' => $_SESSION['user_id'],
-        ]);
-
-        if ($emailStmt->fetchColumn()) {
-            $pdo->rollBack();
+        $check->execute([':email' => $email, ':user_id' => $userId]);
+        if ((int) $check->fetchColumn() > 0) {
             http_response_code(409);
-            echo json_encode([
-                'status' => 'error',
-                'message' => 'That email address is already in use.'
-            ]);
+            echo json_encode(['success' => false, 'message' => 'Email already in use.']);
             exit();
         }
     }
 
     $stmt = $pdo->prepare(
         'UPDATE users
-         SET username = :username,
-             email = :email,
+         SET full_name      = :full_name,
+             email          = :email,
              contact_number = :contact_number,
-             full_name = :full_name,
-             first_name = :first_name,
-             last_name = :last_name
-         WHERE user_id = :user_id'
+             updated_at     = NOW()
+         WHERE user_id = :user_id
+           AND COALESCE(is_deleted, 0) = 0'
     );
     $stmt->execute([
-        ':username' => $username,
-        ':email' => $email === '' ? null : $email,
-        ':contact_number' => $contactNumber === '' ? null : $contactNumber,
-        ':full_name' => $fullName,
-        ':first_name' => $firstName === '' ? null : $firstName,
-        ':last_name' => $lastName === '' ? null : $lastName,
-        ':user_id' => $_SESSION['user_id'],
+        ':full_name'      => $fullName,
+        ':email'          => $email !== '' ? $email : null,
+        ':contact_number' => $contactNumber !== '' ? $contactNumber : null,
+        ':user_id'        => $userId,
     ]);
 
-    $pdo->commit();
+    $_SESSION['full_name']      = $fullName;
+    $_SESSION['email']          = $email;
+    $_SESSION['contact_number'] = $contactNumber;
 
-    $_SESSION['username'] = $username;
-    $_SESSION['email'] = $email === '' ? null : $email;
-    $_SESSION['contact_number'] = $contactNumber === '' ? null : $contactNumber;
-    $_SESSION['full_name'] = $fullName;
-    $_SESSION['first_name'] = $firstName === '' ? null : $firstName;
-    $_SESSION['last_name'] = $lastName === '' ? null : $lastName;
-
-    http_response_code(200);
-    echo json_encode(array_merge([
-        'status' => 'success',
-        'message' => 'Profile identity updated.'
-    ], currentSessionPayload()));
-} catch (PDOException $e) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
-
-    http_response_code(500);
     echo json_encode([
-        'status' => 'error',
-        'message' => 'Unable to update profile identity.'
+        'success' => true,
+        'message' => 'Profile updated.',
+        'session' => currentSessionPayload(),
     ]);
+} catch (PDOException $e) {
+    error_log('[UPDATE_PROFILE] ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Server error.']);
 }
-?>
