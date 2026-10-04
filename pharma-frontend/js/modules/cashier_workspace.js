@@ -70,27 +70,18 @@ function badge(status) {
     return `<span class="status-pill status-${group}">${esc(String(status || 'Waiting').replace(/_/g, ' '))}</span>`;
 }
 
-function receiptProductLineMarkup(item) {
-    const product = String(item.product_name || 'Item').trim();
-    return `${esc(product || 'Item')}${isPrescriptionItem(item) ? ' <span class="receipt-rx-print">Rx</span>' : ''}`;
-}
-
-function isPrescriptionItem(item) {
-    return String(item?.medicine_classification_badge || '').trim() === 'Rx'
-        || String(item?.medicine_classification || '').trim().toLowerCase() === 'prescription (rx)';
-}
-
-function receiptSpecMarkup(item) {
-    const generic = String(item.generic_name || '').trim();
+function receiptProductLine(item) {
     const brand = String(item.brand_name || '').trim();
-    const explicitDetail = [item.strength || item.net_weight, item.dosage_form].map((part) => String(part || '').trim()).filter(Boolean).join(' • ');
-    const fallbackDetail = String(item.specification || '')
-        .split(/\s*[•/]\s*/)
+    const product = String(item.product_name || 'Item').trim();
+    if (brand && product && brand.toLowerCase() !== product.toLowerCase()) return `${brand} ${product}`;
+    return product || brand || 'Item';
+}
+
+function receiptSpec(item) {
+    return [item.generic_name, item.strength || item.net_weight || item.specification]
         .map((part) => String(part || '').trim())
-        .filter((part) => part && part.toLowerCase() !== generic.toLowerCase())
-        .join(' • ');
-    const detail = explicitDetail || fallbackDetail;
-    return [brand ? esc(brand) : '', detail ? esc(detail) : ''].filter(Boolean).join('<br>');
+        .filter(Boolean)
+        .join(' / ');
 }
 
 function receiptTotals(order) {
@@ -103,13 +94,13 @@ function receiptItems(order) {
         return '<div class="receipt-item-print"><span>0</span><span>No items found.</span><span class="receipt-money-print">0.00</span></div>';
     }
     return items.map((item) => {
-        const spec = receiptSpecMarkup(item);
+        const spec = receiptSpec(item);
         return `
             <div class="receipt-item-print">
                 <span>${esc(count(item.quantity))}</span>
                 <span>
-                    <span class="receipt-item-name-print">${receiptProductLineMarkup(item)}</span>
-                    ${spec ? `<span class="receipt-item-spec-print">${spec}</span>` : ''}
+                    <span class="receipt-item-name-print">${esc(receiptProductLine(item))}</span>
+                    ${spec ? `<span class="receipt-item-spec-print">${esc(spec)}</span>` : ''}
                 </span>
                 <span class="receipt-money-print">${esc(plainMoney(item.line_total))}</span>
             </div>
@@ -493,11 +484,298 @@ async function loadShift() {
     setText('shiftLastTime', dt(data.last_transaction_time));
 }
 
+function initialsFromName(value) {
+    return String(value || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join('') || 'C';
+}
+
+function profileHeaders() {
+    const token = sessionStorage.getItem('pharma_tab_token') || '';
+    return {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        ...(token ? { 'X-Tab-Token': token } : {})
+    };
+}
+
+function setProfileMessage(id, message = '', success = false) {
+    const node = document.getElementById(id);
+    if (!node) return;
+    node.textContent = message;
+    node.style.color = success ? '#16803c' : '#b42318';
+}
+
+function loadStoredProfileImage(id, storageKey) {
+    try {
+        const image = localStorage.getItem(storageKey);
+        const node = document.getElementById(id);
+        if (image && node) {
+            node.classList.add('has-image');
+            node.style.backgroundImage = `url("${image}")`;
+        }
+    } catch (error) {}
+}
+
+function bindProfilePhotoInput(inputId, targetId, storageKey) {
+    const input = document.getElementById(inputId);
+    const target = document.getElementById(targetId);
+    if (!input || !target) return;
+    input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        if (!file || !file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+            const image = String(reader.result || '');
+            target.classList.add('has-image');
+            target.style.backgroundImage = `url("${image}")`;
+            try { localStorage.setItem(storageKey, image); } catch (error) {}
+        });
+        reader.readAsDataURL(file);
+    });
+}
+
+function bindProfileControls() {
+    const cover = document.getElementById('profileCover');
+    try {
+        const storedCover = localStorage.getItem('pharmacyCashierCoverPhoto');
+        if (storedCover && cover) cover.style.backgroundImage = `url("${storedCover}")`;
+    } catch (error) {}
+    bindProfilePhotoInput('profilePhotoInput', 'profileAvatar', 'pharmacyCashierProfilePhoto');
+    const coverInput = document.getElementById('coverPhotoInput');
+    document.getElementById('changeProfilePhotoBtn')?.addEventListener('click', () => document.getElementById('profilePhotoInput')?.click());
+    document.getElementById('changeCoverBtn')?.addEventListener('click', () => coverInput?.click());
+    coverInput?.addEventListener('change', () => {
+        const file = coverInput.files?.[0];
+        if (!file || !file.type.startsWith('image/') || !cover) return;
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+            const image = String(reader.result || '');
+            cover.style.backgroundImage = `url("${image}")`;
+            cover.style.backgroundPosition = 'center';
+            cover.style.backgroundSize = 'cover';
+            try { localStorage.setItem('pharmacyCashierCoverPhoto', image); } catch (error) {}
+        });
+        reader.readAsDataURL(file);
+    });
+    loadStoredProfileImage('profileAvatar', 'pharmacyCashierProfilePhoto');
+}
+
+function bindProfileForms() {
+    document.getElementById('cashierProfileForm')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const fullName = document.getElementById('profileNameInput')?.value.trim() || '';
+        if (!fullName) return setProfileMessage('profileMessage', 'Full name is required.');
+        const submit = event.currentTarget.querySelector('button[type="submit"]');
+        if (submit) submit.disabled = true;
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/update_profile.php`, {
+                method: 'POST', credentials: 'include', headers: profileHeaders(),
+                body: JSON.stringify({
+                    full_name: fullName,
+                    email: event.currentTarget.dataset.email || '',
+                    contact_number: event.currentTarget.dataset.contactNumber || '',
+                    first_name: event.currentTarget.dataset.firstName || '',
+                    last_name: event.currentTarget.dataset.lastName || ''
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status === 'error') throw new Error(data.message || 'Unable to update profile.');
+            setText('profileName', fullName);
+            setText('profileNameDetail', fullName);
+            setText('profileUsername', `@${data.username || document.getElementById('profileUsernameDetail')?.textContent || ''}`);
+            setProfileMessage('profileMessage', 'Profile updated successfully.', true);
+            window.__drpNavbarProfileDisplay?.cache({ ...data, full_name: fullName });
+            window.bootstrap?.Modal.getOrCreateInstance(document.getElementById('editProfileModal'))?.hide();
+        } catch (error) {
+            setProfileMessage('profileMessage', error.message || 'Unable to update profile.');
+        } finally {
+            if (submit) submit.disabled = false;
+        }
+    });
+
+    document.getElementById('cashierPasswordForm')?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const values = Object.fromEntries(new FormData(form).entries());
+        if (values.new_password !== values.confirm_password) return setProfileMessage('passwordMessage', 'New passwords do not match.');
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/update_password.php`, {
+                method: 'POST', credentials: 'include', headers: profileHeaders(), body: JSON.stringify(values)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status === 'error') throw new Error(data.message || 'Unable to update password.');
+            form.reset();
+            setProfileMessage('passwordMessage', data.message || 'Password updated successfully.', true);
+        } catch (error) {
+            setProfileMessage('passwordMessage', error.message || 'Unable to update password.');
+        }
+    });
+
+    bindCashierOtpReset();
+}
+
+function setOtpStep(step) {
+    document.querySelectorAll('[data-otp-panel]').forEach((panel) => {
+        panel.hidden = Number(panel.dataset.otpPanel) !== step;
+    });
+    document.querySelectorAll('[data-otp-step]').forEach((marker) => {
+        marker.classList.toggle('active', Number(marker.dataset.otpStep) <= step);
+    });
+}
+
+async function cashierOtpRequest(action, payload = {}) {
+    const response = await fetch(`${API_BASE_URL}/auth/cashier_password_reset_otp.php`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: profileHeaders(),
+        cache: 'no-store',
+        body: JSON.stringify({ action, ...payload }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.status === 'error' || data.success === false) {
+        throw new Error(data.message || 'OTP service is currently unavailable.');
+    }
+    return data.data || data;
+}
+
+function bindCashierOtpReset() {
+    const modalElement = document.getElementById('otpResetModal');
+    const modal = modalElement && window.bootstrap?.Modal.getOrCreateInstance(modalElement);
+    const setBusy = (busy) => {
+        ['sendOtpBtn', 'verifyOtpBtn', 'resendOtpBtn', 'resetWithOtpBtn'].forEach((id) => {
+            const button = document.getElementById(id);
+            if (button) button.disabled = busy;
+        });
+    };
+    const sendOtp = async () => {
+        const identifier = document.getElementById('otpIdentifier')?.value.trim() || '';
+        if (!identifier) {
+            setProfileMessage('otpResetMessage', 'Enter your cashier username or registered email.');
+            document.getElementById('otpIdentifier')?.focus();
+            return;
+        }
+        setBusy(true);
+        setProfileMessage('otpResetMessage', 'Sending OTP...');
+        try {
+            const data = await cashierOtpRequest('request', { identifier });
+            const destination = data.masked_email ? ` (${data.masked_email})` : '';
+            const sentText = document.getElementById('otpSentText');
+            if (sentText) sentText.textContent = `Enter the 6-digit code sent to your registered email${destination}.`;
+            setOtpStep(2);
+            setProfileMessage('otpResetMessage', data.message || 'OTP sent to your registered email.', true);
+        } catch (error) {
+            setProfileMessage('otpResetMessage', error.message || 'Unable to send OTP. Please check your email configuration.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    document.getElementById('openOtpResetBtn')?.addEventListener('click', () => {
+        setOtpStep(1);
+        document.getElementById('otpCode').value = '';
+        document.getElementById('otpNewPassword').value = '';
+        document.getElementById('otpConfirmPassword').value = '';
+        setProfileMessage('otpResetMessage', '');
+        modal?.show();
+    });
+    document.getElementById('sendOtpBtn')?.addEventListener('click', sendOtp);
+    document.getElementById('resendOtpBtn')?.addEventListener('click', sendOtp);
+    document.getElementById('otpIdentifier')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        sendOtp();
+    });
+    document.getElementById('verifyOtpBtn')?.addEventListener('click', async () => {
+        const code = document.getElementById('otpCode')?.value.trim() || '';
+        if (!/^\d{6}$/.test(code)) {
+            setProfileMessage('otpResetMessage', 'Enter the 6-digit OTP sent to your registered email.');
+            return;
+        }
+        setBusy(true);
+        setProfileMessage('otpResetMessage', 'Verifying OTP...');
+        try {
+            const data = await cashierOtpRequest('verify', { otp: code });
+            setOtpStep(3);
+            setProfileMessage('otpResetMessage', data.message || 'OTP verified. Create your new password.', true);
+        } catch (error) {
+            setProfileMessage('otpResetMessage', error.message || 'Unable to verify OTP.');
+        } finally {
+            setBusy(false);
+        }
+    });
+    document.getElementById('resetWithOtpBtn')?.addEventListener('click', async () => {
+        const newPassword = document.getElementById('otpNewPassword')?.value || '';
+        const confirmPassword = document.getElementById('otpConfirmPassword')?.value || '';
+        if (newPassword.length < 8 || newPassword.length > 72) {
+            setProfileMessage('otpResetMessage', 'New password must be between 8 and 72 characters.');
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setProfileMessage('otpResetMessage', 'New passwords do not match.');
+            return;
+        }
+        setBusy(true);
+        setProfileMessage('otpResetMessage', 'Updating password...');
+        try {
+            const data = await cashierOtpRequest('reset', { new_password: newPassword, confirm_password: confirmPassword });
+            document.getElementById('cashierPasswordForm')?.reset();
+            setProfileMessage('passwordMessage', data.message || 'Password reset successfully.', true);
+            setProfileMessage('otpResetMessage', data.message || 'Password reset successfully.', true);
+            modal?.hide();
+        } catch (error) {
+            setProfileMessage('otpResetMessage', error.message || 'Unable to reset password.');
+        } finally {
+            setBusy(false);
+        }
+    });
+}
+
+function updateProfileDateTime() {
+    const node = document.getElementById('profileDateTime');
+    if (node) node.textContent = new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date());
+}
+
 async function loadProfile() {
     const data = await api('/auth/check_session.php');
-    setText('profileName', data.full_name || data.username || '-');
-    setText('profileUsername', data.username || '-');
+    const fullName = data.full_name || data.username || 'Cashier';
+    const username = data.username || '-';
+    const initials = initialsFromName(fullName);
+
+    setText('profileName', fullName);
+    setText('profileUsername', `@${username}`);
+    setText('profileNameDetail', fullName);
+    setText('profileUsernameDetail', username);
     setText('profileRole', 'Cashier');
+
+    const profileNameInput = document.getElementById('profileNameInput');
+    const profileUsernameInput = document.getElementById('profileUsernameInput');
+    const profileRoleInput = document.getElementById('profileRoleInput');
+    const profileForm = document.getElementById('cashierProfileForm');
+    const modalAvatar = document.getElementById('modalAvatar');
+    const profileAvatar = document.getElementById('profileAvatar');
+
+    if (profileNameInput) profileNameInput.value = fullName;
+    if (profileUsernameInput) profileUsernameInput.value = username;
+    const otpIdentifier = document.getElementById('otpIdentifier');
+    if (otpIdentifier) otpIdentifier.value = data.email || username;
+    if (profileRoleInput) profileRoleInput.value = 'Cashier';
+    if (profileForm) {
+        profileForm.dataset.email = data.email || '';
+        profileForm.dataset.contactNumber = data.contact_number || '';
+        profileForm.dataset.firstName = data.first_name || '';
+        profileForm.dataset.lastName = data.last_name || '';
+    }
+    if (modalAvatar) modalAvatar.textContent = initials;
+    if (profileAvatar) profileAvatar.textContent = initials;
+    bindProfileControls();
+    bindProfileForms();
+    updateProfileDateTime();
+    window.setInterval(updateProfileDateTime, 30000);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -512,7 +790,7 @@ document.addEventListener('DOMContentLoaded', () => {
             body.innerHTML = `<div class="empty-state">${esc(error.message)}</div>`;
         });
     });
-    if (page === 'dashboard') loadDashboard().catch(console.error);
+    if (page === 'dashboard' && !document.getElementById('salesTodayChart')) loadDashboard().catch(console.error);
     if (page === 'queue') { bindSearch(loadQueue); bindQueueTabs(); loadQueue().catch(console.error); }
     if (page === 'completed') {
         const urlFilters = new URLSearchParams(window.location.search);

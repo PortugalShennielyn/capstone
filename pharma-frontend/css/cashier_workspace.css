@@ -129,11 +129,93 @@ body { min-height: 100vh; margin: 0; color: var(--ink); background: var(--soft);
 .receipt-item-print { margin: 0 0 1.8mm; }
 .receipt-item-name-print { display: block; min-width: 0; overflow-wrap: anywhere; }
 .receipt-item-spec-print { display: block; margin-top: .6mm; font-size: 10px; overflow-wrap: anywhere; }
-.receipt-rx-print { display: inline; margin-left: 1.5mm; color: #000; font-size: 8px; font-weight: 800; line-height: 1.1; vertical-align: baseline; white-space: nowrap; }
 .receipt-money-print { text-align: right; white-space: nowrap; }
 .receipt-total-print.is-grand { margin-top: 1.5mm; font-size: 12px; font-weight: 800; }
 .receipt-payment-spaced { margin-top: 3mm; }
 .receipt-footer-print { margin-top: 3mm; text-align: center; }
+.fb-profile-page { min-height: calc(100vh - 70px); padding: clamp(22px, 3vw, 42px); background: #101936; }
+.fb-profile-page .fb-profile-cover, .fb-profile-page .fb-profile-header, .fb-profile-page .fb-profile-tabs, .fb-profile-page .fb-settings-layout, .fb-profile-page .fb-logout { width: min(1120px, 100%); margin-inline: auto; }
+.fb-profile-cover { position: relative; min-height: 246px; overflow: visible; border-radius: 18px 18px 0 0; background: #202b4a; box-shadow: 0 20px 40px rgba(0, 0, 0, .18); }
+.fb-cover-pattern { position: absolute; inset: 0; opacity: .32; background-image: radial-gradient(#93a4d2 1px, transparent 1px), radial-gradient(#596a9b 1px, transparent 1px); background-position: 0 0, 17px 17px; background-size: 34px 34px; }
+.fb-cover-pattern::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, rgba(32,43,74,.1), rgba(16,25,54,.68)); }
+.fb-cover-edit, .fb-photo-btn, .fb-edit-btn, .fb-secondary-btn, .fb-primary-btn, .fb-cancel-btn { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 9px; padding: 0 15px; font: inherit; font-size: 12px; font-weight: 850; cursor: pointer; }
+.fb-cover-edit { position: absolute; right: 22px; top: 20px; color: #e7ebf7; background: rgba(16,25,54,.68); border: 1px solid rgba(255,255,255,.14); }
+.fb-profile-avatar { position: absolute; z-index: 2; left: 42px; bottom: -58px; width: 142px; height: 142px; display: grid; place-items: center; overflow: hidden; border: 7px solid #fff; border-radius: 50%; color: #fff; background: linear-gradient(135deg, #6d28d9, #9368ed); box-shadow: 0 12px 25px rgba(16,25,54,.2); font-size: 48px; font-weight: 900; }
+.fb-profile-avatar.has-image { color: transparent; background-position: center; background-size: cover; }
+.fb-profile-header { min-height: 142px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 68px 42px 24px; background: #fff; }
+.fb-profile-name-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.fb-profile-name-row h1 { margin: 0; color: #17213f; font-size: clamp(22px, 2.4vw, 31px); font-weight: 900; letter-spacing: -.4px; }
+.fb-profile-name-row p { display: flex; align-items: center; gap: 10px; margin: 7px 0 0; color: #72809b; font-size: 13px; font-weight: 700; }
+.profile-role-label { padding-left: 10px; border-left: 1px solid #d9deea; color: #6575a1; }
+.fb-role-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border-radius: 999px; color: #5b21b6; background: #eee7ff; font-size: 11px; font-weight: 900; }
+.fb-profile-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+.fb-photo-btn { color: #344054; background: #eef2f8; }
+.fb-edit-btn, .fb-primary-btn { color: #fff; background: #315eea; box-shadow: 0 8px 18px rgba(49,94,234,.18); }
+.fb-profile-tabs { display: flex; gap: 28px; padding: 0 42px; background: #fff; border-bottom: 1px solid #e7ebf2; }
+.fb-tab { position: relative; min-height: 54px; padding: 0 2px; border: 0; color: #74809a; background: transparent; font: inherit; font-size: 13px; font-weight: 850; cursor: pointer; }
+.fb-tab.active { color: #315eea; }
+.fb-tab.active::after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 3px; border-radius: 3px 3px 0 0; background: #315eea; }
+.fb-settings-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr); gap: 16px; padding: 22px 0 0; background: #101936; }
+.fb-settings-card, .fb-side-card { min-width: 0; border: 1px solid #e2e7f0; border-radius: 13px; background: #fff; box-shadow: 0 12px 25px rgba(0,0,0,.12); }
+.fb-settings-card { padding: 25px; }
+.fb-settings-title { display: flex; align-items: flex-start; gap: 13px; }
+.fb-settings-icon { width: 38px; height: 38px; flex: 0 0 38px; display: grid; place-items: center; border-radius: 10px; color: #6d28d9; background: #f0eaff; }
+.fb-settings-title h2 { margin: 0; color: #17213f; font-size: 17px; font-weight: 900; }
+.fb-settings-title p { margin: 5px 0 0; color: #7a849a; font-size: 12px; font-weight: 650; }
+.fb-info-list { display: grid; gap: 0; margin: 24px 0; }
+.fb-info-row { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 14px; padding: 14px 0; border-bottom: 1px solid #edf0f5; font-size: 13px; }
+.fb-info-row span { color: #8a93a7; font-weight: 750; }
+.fb-info-row strong { color: #253050; font-weight: 850; overflow-wrap: anywhere; }
+.fb-secondary-btn { color: #315eea; background: #edf2ff; }
+.fb-side-card { padding: 25px; }
+.fb-side-card h3 { margin: 0; color: #17213f; font-size: 17px; font-weight: 900; }
+.fb-side-card > p { margin: 12px 0 24px; color: #747f95; font-size: 12px; line-height: 1.7; font-weight: 650; }
+.fb-side-line { display: flex; align-items: center; gap: 10px; padding: 13px 0; border-top: 1px solid #edf0f5; color: #253050; font-size: 12px; font-weight: 850; }
+.fb-side-line i { color: #315eea; }
+.fb-logout { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; color: #ff7777; font-size: 12px; font-weight: 850; text-decoration: none; }
+.fb-logout:hover { color: #ff9b9b; }
+.topbar-meta { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+body[data-cashier-page="profile"] .cashier-topbar { color: #eef2ff; background: #101936; border-bottom-color: #293657; }
+body[data-cashier-page="profile"] .cashier-topbar .icon-btn { color: #d4dcf0; background: #1b2747; }
+body[data-cashier-page="profile"] .cashier-topbar .title-wrap span { color: #8490ad; }
+.topbar-status { display: inline-flex; align-items: center; gap: 7px; color: #aeb9d6; font-size: 12px; font-weight: 800; }
+.topbar-status i { color: #f4a261; font-size: 8px; }
+.topbar-icon { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #293657; border-radius: 9px; color: #c4cce0; background: #1b2747; }
+.topbar-clock { color: #8490ad; font-size: 12px; font-weight: 750; white-space: nowrap; }
+.profile-input { width: 100%; min-height: 42px; margin-top: 7px; padding: 0 12px; border: 1px solid #dfe4ed; border-radius: 8px; color: #253050; background: #fff; font: inherit; font-size: 13px; font-weight: 650; }
+.fb-modal label { display: block; margin-top: 15px; color: #344054; font-size: 12px; font-weight: 850; }
+.readonly-input { color: #7a849a; background: #f4f6fa; }
+.fb-profile-page .modal-content { border: 0; border-radius: 13px; box-shadow: 0 24px 70px rgba(16,25,54,.26); }
+.profile-message { min-height: 20px; margin-top: 12px; color: #b42318; font-size: 12px; font-weight: 750; }
+.fb-password-form { max-width: 600px; margin-top: 22px; }
+.fb-password-form small { display: block; margin-top: 5px; color: #8993a8; font-size: 11px; }
+.fb-forgot-link { display: block; margin: 15px 0 0; padding: 0; border: 0; color: #315eea; background: transparent; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.otp-code-input { display: block; width: 100%; margin: 14px 0; padding: 12px; border: 1px solid #dfe4ed; border-radius: 8px; text-align: center; letter-spacing: 8px; font-size: 22px; font-weight: 850; }
+#otpResetModal .modal-content { --bs-modal-color: #17213f; --bs-modal-bg: #fff; --bs-modal-border-color: #e4e8f0; color: #17213f !important; background: #fff !important; }
+#otpResetModal .modal-header, #otpResetModal .modal-body { color: #17213f; background: #fff; }
+#otpResetModal .modal-header { border-bottom-color: #e8ebf2; }
+#otpResetModal .modal-title, #otpResetModal h6, #otpResetModal label { color: #202a47 !important; }
+#otpResetModal .modal-title { font-size: 17px; font-weight: 850; }
+#otpResetModal .text-muted, #otpResetModal small, #otpResetModal .otp-help { color: #667085 !important; }
+#otpResetModal .otp-help { margin: 7px 0 14px; font-size: 12px; line-height: 1.5; }
+#otpResetModal .otp-steps { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 0 0 20px; }
+#otpResetModal .otp-steps span { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid #d7dce6; border-radius: 50%; color: #667085; background: #f3f5f9; font-size: 11px; font-weight: 800; }
+#otpResetModal .otp-steps span.active { border-color: #315eea; color: #fff; background: #315eea; }
+#otpResetModal .otp-steps i { width: 30px; height: 2px; background: #d7dce6; }
+#otpResetModal .profile-message { color: #b42318; }
+#otpResetModal .btn-close { opacity: .65; filter: none; }
+@media (max-width: 760px) {
+    .fb-profile-page { padding: 14px; }
+    .fb-profile-cover { min-height: 190px; }
+    .fb-profile-avatar { left: 18px; bottom: -48px; width: 112px; height: 112px; border-width: 5px; font-size: 38px; }
+    .fb-profile-header { align-items: flex-start; flex-direction: column; padding: 62px 20px 20px; }
+    .fb-profile-actions { justify-content: flex-start; }
+    .fb-profile-tabs { gap: 20px; padding-inline: 20px; overflow-x: auto; }
+    .fb-settings-layout { grid-template-columns: 1fr; }
+    .fb-settings-card, .fb-side-card { padding: 20px; }
+    .topbar-meta { gap: 8px; }
+    .topbar-status, .topbar-clock { display: none; }
+}
 @media (max-width: 1200px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .workspace-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { .cashier-topbar { padding: 12px 16px; } .cashier-page { padding: 12px; } .summary-grid { grid-template-columns: 1fr; } .search-row { align-items: stretch; flex-direction: column; } .transaction-toolbar #cashierSearch, .date-range-button, #paymentMethodFilter { width: 100%; } .date-range-popover { left: 0; right: 0; width: min(315px, calc(100vw - 44px)); } .cashier-table th, .cashier-table td { padding: 10px 8px; font-size: 11px; } .title-wrap span { display: none; } }
 @media print {
