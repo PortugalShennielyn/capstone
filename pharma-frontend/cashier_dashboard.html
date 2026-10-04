@@ -2,41 +2,91 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <script src="./js/navbar_bootstrap.js?v=12"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Cashier Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=39" rel="stylesheet">
-    <link href="./css/cashier_workspace.css?v=3" rel="stylesheet">
-    <script src="./js/navbar.js?v=86" defer></script>
+    <link href="./css/navbar.css?v=36" rel="stylesheet">
+    <link href="./css/cashier_workspace.css?v=4" rel="stylesheet">
+    <link href="./css/cashier_dashboard.css?v=1" rel="stylesheet">
+    <script src="./js/navbar.js?v=85" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 </head>
 <body data-cashier-page="dashboard">
     <div id="navbar-container"></div>
     <main class="main-wrapper" id="mainWrapper">
-        <header class="cashier-topbar"><button class="icon-btn" id="sidebarToggle" type="button"><i class="fa-solid fa-bars"></i></button><span class="brand-tile"><i class="fa-solid fa-gauge-high"></i></span><div class="title-wrap"><strong>Dashboard</strong><span>Cashier workspace overview</span></div></header>
+        <header class="cashier-topbar dashboard-topbar">
+            <div class="dashboard-topbar-left">
+                <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
+                <span class="brand-tile"><i class="fa-solid fa-gauge-high"></i></span>
+                <div class="title-wrap"><strong>Cashier Dashboard</strong><span>Point of sale workspace</span></div>
+            </div>
+            <button class="today-control" id="currentDateButton" type="button" aria-label="Today's date">
+                <i class="fa-regular fa-calendar"></i><span>Today</span><time id="dashboardDate">--</time>
+            </button>
+            <div class="dashboard-topbar-meta">
+                <span class="topbar-status"><i></i>Closed</span>
+                <div class="notification-wrap">
+                    <button class="topbar-icon" id="dashboardNotifications" type="button" aria-label="Notifications" aria-expanded="false" aria-controls="notificationPopover"><i class="fa-regular fa-bell"></i></button>
+                    <div class="notification-popover" id="notificationPopover" hidden><strong>Notifications</strong><span>No new notifications.</span></div>
+                </div>
+                <span class="topbar-date" id="topbarDate">--</span>
+                <time class="topbar-clock" id="topbarClock">--:--</time>
+            </div>
+        </header>
         <section class="cashier-page">
-            <div class="summary-grid">
-                <article class="summary-card"><i class="fa-solid fa-hourglass-half"></i><div><span>Waiting Orders</span><strong id="waitingOrders">0</strong></div></article>
-                <article class="summary-card"><i class="fa-solid fa-cash-register"></i><div><span>Processing Orders</span><strong id="processingOrders">0</strong></div></article>
-                <article class="summary-card"><i class="fa-solid fa-circle-check"></i><div><span>Completed Today</span><strong id="completedToday">0</strong></div></article>
-                <article class="summary-card"><i class="fa-solid fa-chart-line"></i><div><span>Total Sales Today</span><strong id="totalSalesToday">₱0.00</strong></div></article>
-                <article class="summary-card"><i class="fa-solid fa-money-bill-wave"></i><div><span>Cash Collected Today</span><strong id="cashCollectedToday">₱0.00</strong></div></article>
+            <div class="dashboard-heading">
+                <div><h1>Dashboard Overview</h1><p>Daily cashier sales and transaction summary</p></div>
+                <a class="new-sale-button" href="cashier_pos.html"><i class="fa-solid fa-cart-shopping"></i><span>New Sale</span></a>
             </div>
-            <div class="workspace-grid">
-                <section class="panel"><div class="panel-head"><div><h1>Recent Cashier Activities</h1><p>Latest cashier-side actions</p></div></div><div class="activity-list" id="activityList"></div></section>
-                <aside class="panel"><div class="panel-head"><div><h2>Quick Actions</h2><p>Cashier shortcuts</p></div></div><div class="quick-grid">
-                    <a class="quick-action" href="cashier_pos.html"><i class="fa-solid fa-cash-register"></i><strong>Open Cashier POS</strong></a>
-                    <a class="quick-action" href="completed_sales.html"><i class="fa-solid fa-clock-rotate-left"></i><strong>Transaction History</strong></a>
-                    <a class="quick-action" href="cashier_shift_summary.html"><i class="fa-solid fa-calendar-day"></i><strong>View Shift Summary</strong></a>
-                </div></aside>
-            </div>
+            <section class="summary-grid dashboard-summary" aria-label="Today's cashier summary">
+                <article class="summary-card"><span class="dashboard-card-icon tone-purple"><i class="fa-solid fa-peso-sign"></i></span><div><span>Total Sales</span><strong id="totalSalesToday">₱0.00</strong></div></article>
+                <article class="summary-card"><span class="dashboard-card-icon tone-blue"><i class="fa-solid fa-receipt"></i></span><div><span>Transactions</span><strong id="completedToday">0</strong></div></article>
+                <article class="summary-card"><span class="dashboard-card-icon tone-teal"><i class="fa-solid fa-box"></i></span><div><span>Units Sold</span><strong id="unitsSoldToday">0</strong></div></article>
+                <article class="summary-card"><span class="dashboard-card-icon tone-amber"><i class="fa-solid fa-wallet"></i></span><div><span>Cash Received</span><strong id="cashCollectedToday">₱0.00</strong></div></article>
+                <article class="summary-card"><span class="dashboard-card-icon tone-red"><i class="fa-solid fa-arrow-rotate-left"></i></span><div><span>Returns Today</span><strong id="returnsToday">0</strong></div></article>
+            </section>
+            <section class="dashboard-insights-grid">
+                <article class="panel sales-overview-panel">
+                    <div class="panel-head"><div><h2>Sales Overview</h2><p>Completed POS sales for today</p></div><a class="panel-link" id="salesReportLink" href="cashier_shift_summary.html">View Report <i class="fa-solid fa-arrow-up-right-from-square"></i></a></div>
+                    <div class="overview-metrics">
+                        <div class="overview-primary"><span>Total Sales</span><strong id="overviewTotalSales">₱0.00</strong><small>Today's completed sales</small></div>
+                        <div><span>Average Sale</span><strong id="averageSaleToday">₱0.00</strong></div>
+                        <div><span>Transactions</span><strong id="overviewTransactions">0</strong></div>
+                        <div><span>Units Sold</span><strong id="overviewUnits">0</strong></div>
+                    </div>
+                </article>
+                <article class="panel sales-summary-panel">
+                    <div class="panel-head"><div><h2>Sales Summary</h2><p id="salesSummaryDate">Today</p></div><i class="fa-solid fa-chart-pie panel-head-icon" aria-hidden="true"></i></div>
+                    <dl class="sales-summary-list">
+                        <div><dt>Total Sales</dt><dd id="summaryTotalSales">₱0.00</dd></div>
+                        <div><dt>Transactions</dt><dd id="summaryTransactions">0</dd></div>
+                        <div><dt>Units Sold</dt><dd id="summaryUnits">0</dd></div>
+                        <div><dt>Average Sale</dt><dd id="summaryAverage">₱0.00</dd></div>
+                    </dl>
+                </article>
+            </section>
+            <section class="panel transactions-panel">
+                <div class="panel-head"><div><h2>Recent Transactions</h2><p>Your latest completed POS transactions</p></div><a class="panel-link" href="cashier_transaction_history.html">View All <i class="fa-solid fa-arrow-right"></i></a></div>
+                <div class="table-wrap"><table class="cashier-table dashboard-transactions-table">
+                    <thead><tr><th>Transaction #</th><th>Customer</th><th class="money">Amount</th><th>Payment</th><th>Date &amp; Time</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody id="dashboardTransactions"><tr class="empty-row"><td colspan="7">Loading transactions...</td></tr></tbody>
+                </table></div>
+            </section>
+            <section class="dashboard-charts-grid" aria-label="Sales charts">
+                <article class="panel chart-panel"><div class="panel-head"><div><h2>Sales Today</h2><p>Sales by hour for this day</p></div></div><div class="dashboard-chart-box"><canvas id="salesTodayChart" aria-label="Hourly sales today" role="img"></canvas></div></article>
+                <article class="panel chart-panel"><div class="panel-head"><div><h2>Sales This Week</h2><p>Daily sales from Monday to Sunday</p></div></div><div class="dashboard-chart-box"><canvas id="salesWeekChart" aria-label="Daily sales this week" role="img"></canvas></div></article>
+                <article class="panel chart-panel"><div class="panel-head"><div><h2>Sales This Month</h2><p>Daily sales for the current month</p></div></div><div class="dashboard-chart-box"><canvas id="salesMonthChart" aria-label="Daily sales this month" role="img"></canvas></div></article>
+            </section>
+            <section class="panel activity-panel"><div class="panel-head"><div><h2>Recent Cashier Activities</h2><p>Latest cashier-side actions</p></div></div><div class="activity-list" id="activityList"></div></section>
         </section>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script type="module" src="./js/modules/cashier_workspace.js?v=7"></script>
+    <script type="module" src="./js/modules/cashier_dashboard.js?v=1"></script>
 </body>
 </html>
