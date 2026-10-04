@@ -1,5 +1,5 @@
 <?php
-$allowedRoles = ['super_admin','admin','manager','supervisor','Admin','ro-super-admin','ro-admin','ro-manager','ro-supervisor'];
+$allowedRoles = ['super_admin','admin','manager','supervisor','salesclerk','Admin','Sales Clerk','ro-super-admin','ro-admin','ro-manager','ro-supervisor','ro-sales-clerk','ro_sales_clerk'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'expiry_status_helpers.php';

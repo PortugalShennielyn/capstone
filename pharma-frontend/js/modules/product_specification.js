@@ -197,17 +197,9 @@ export function formatProductContainer(product = {}, empty = '—') {
     return SELLABLE_CONTAINER_UNITS.has(normalizedKey(sellingUnit)) ? presentationText(sellingUnit) : empty;
 }
 
-/**
- * Product Master uses one compact bullet-separated line for simple medicine
- * specifications and a semantic multi-line layout for concentrations. Every
- * displayed part is assembled from the existing normalized fields.
- */
-export function formatMedicineSpecificationLines(product = {}, empty = '-') {
-    if (normalizedKey(product.category_name) !== 'medicine') {
-        const specification = formatProductSpecification(product, empty);
-        return specification ? [specification] : [];
-    }
-
+/** Separates medicine form, strength, and pack details for the catalog cell. */
+export function medicineCatalogSpecificationParts(product = {}) {
+    if (normalizedKey(product.category_name) !== 'medicine') return null;
     const specifications = Array.isArray(product.specifications) ? product.specifications : [];
     const specificationName = specification => normalizedKey(specification?.specification_name || specification?.display_name);
     const byName = new Map(specifications.map(specification => [specificationName(specification), specification]));
@@ -242,10 +234,60 @@ export function formatMedicineSpecificationLines(product = {}, empty = '-') {
         addUnique(detailParts, presentationText(specificationValue(specification)));
     });
 
-    const lines = [presentationText(dosageForm), strength, detailParts.join(' \u2022 ')].filter(Boolean);
+    return {
+        dosageForm: presentationText(dosageForm),
+        strength,
+        details: detailParts.join(' \u2022 '),
+        detailCount: detailParts.length,
+        hasConcentration: Boolean(denominator) || strength.includes('/')
+    };
+}
+
+/** Builds the catalog-style medicine lines from the flattened inventory API fields. */
+export function inventoryMedicineSpecificationParts(product = {}) {
+    const parts = medicineCatalogSpecificationParts(product);
+    if (!parts) return null;
+
+    const cleanDecimals = value => String(value || '').replace(/\b\d+\.\d+\b/g, number => formatMeasurementValue(number));
+    const details = parts.details ? parts.details.split(/\s*•\s*/).map(cleanDecimals) : [];
+    const form = normalizedKey(parts.dosageForm);
+    const flattened = cleanProductSpecificationText(product.normalized_specification);
+    const values = flattened.split(/\s*•\s*/);
+    let displayStrength = cleanDecimals(parts.strength);
+    if (displayStrength && !displayStrength.includes('/') && /powder|suspension|syrup|solution|drops|liquid/.test(form)) {
+        const strengthIndex = values.findIndex(value => normalizedKey(cleanDecimals(value)) === normalizedKey(displayStrength));
+        const denominator = values[strengthIndex + 1];
+        if (strengthIndex >= 0 && /^\d+(?:\.\d+)?\s*mL$/i.test(clean(denominator))) {
+            displayStrength = `${displayStrength} / ${presentationText(cleanDecimals(denominator))}`;
+        }
+    }
+    const strength = normalizedKey(displayStrength).replace(/\s*\/\s*/g, ' / ');
+    const container = normalizedKey(formatProductContainer(product, ''));
+    const type = normalizedKey(product.type_name);
+    values.forEach(value => {
+        const item = normalizedKey(cleanDecimals(value));
+        if (!item || item === form || item === type || item === container
+            || item === strength || (item.length > 2 && strength.includes(item))) return;
+        let display = presentationText(cleanDecimals(value));
+        display = display.replace(/^(\d+(?:\.\d+)?)\s+(tablet|capsule|bottle|vial|ampule|sachet|piece|box)$/i,
+            (_, count, unitName) => `${count} ${Number(count) === 1 ? unitName : unitName === 'box' ? 'boxes' : `${unitName}s`}`);
+        addUnique(details, display);
+    });
+    return { ...parts, strength: displayStrength, details: details.join(' • ') };
+}
+
+/** Retains the compact text format used outside the Product Master table. */
+export function formatMedicineSpecificationLines(product = {}, empty = '-') {
+    const parts = medicineCatalogSpecificationParts(product);
+    if (!parts) {
+        const specification = formatProductSpecification(product, empty);
+        return specification ? [specification] : [];
+    }
+
+    const { dosageForm, strength, details, detailCount, hasConcentration } = parts;
+    const lines = [dosageForm, strength, details].filter(Boolean);
     const simpleLine = lines.join(' \u2022 ');
-    const hasConcentration = Boolean(denominator) || strength.includes('/');
-    const isSimple = !hasConcentration && detailParts.length <= 2 && simpleLine.length <= 72;
+    const isSimple = !hasConcentration && detailCount <= 2 && simpleLine.length <= 72;
     if (isSimple && simpleLine) return [simpleLine];
     return lines.length ? lines : (empty ? [empty] : []);
 }

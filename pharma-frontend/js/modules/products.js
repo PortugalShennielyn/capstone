@@ -16,8 +16,9 @@ import {
     formatProductCatalogSpecificationLines,
     formatProductContainer,
     formatProductSpecification,
+    medicineCatalogSpecificationParts,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=14';
+} from './product_specification.js?v=15';
 import {
     loadMeasurementUnits,
     measurementUnitsForContext
@@ -768,6 +769,26 @@ function medicineRxBadge(product) {
 }
 
 function productCatalogSpecification(product) {
+    const medicineParts = medicineCatalogSpecificationParts(product);
+    if (medicineParts) {
+        const { dosageForm, strength, details } = medicineParts;
+        const form = dosageForm.toLowerCase();
+        const icon = /powder/.test(form) ? 'fa-solid fa-flask'
+            : /suspension|syrup|solution|drops|liquid/.test(form) ? 'fa-solid fa-droplet'
+            : /supplement/.test(form) ? 'fa-solid fa-leaf'
+            : /capsule/.test(form) ? 'fa-solid fa-capsules'
+            : 'fa-regular fa-circle-dot';
+        const strengthParts = strength.split(/\s*\/\s*/);
+        const strengthHtml = strengthParts.length > 1
+            ? `<strong>${escapeHtml(strengthParts[0])}</strong><span class="catalog-specification-ratio"> / ${escapeHtml(strengthParts.slice(1).join(' / '))}</span>`
+            : `<strong>${escapeHtml(strength)}</strong>`;
+        return `<div class="catalog-specification catalog-specification-medicine">
+            ${dosageForm ? `<span class="catalog-specification-form"><i class="${icon}" aria-hidden="true"></i>${escapeHtml(dosageForm)}</span>` : ''}
+            ${strength ? `<span class="catalog-specification-strength">${strengthHtml}</span>` : ''}
+            ${details ? `<span class="catalog-specification-details">${escapeHtml(details)}</span>` : ''}
+            ${!dosageForm && !strength && !details ? '<span>—</span>' : ''}
+        </div>`;
+    }
     const lines = formatProductCatalogSpecificationLines(product, '—');
     return `<div class="catalog-specification">${lines.map(line => `<span>${escapeHtml(line)}</span>`).join('')}</div>`;
 }
@@ -1264,7 +1285,7 @@ function setMedicineFields(mode, categoryName, { clear = true } = {}) {
     document.getElementById(mode === 'edit' ? 'editProductModal' : 'addProductModal')?.classList.toggle('medicine-product-mode', medicine);
     const selector = mode === 'edit' ? '.edit-medicine-basic-field' : '.medicine-basic-field';
     document.querySelectorAll(selector).forEach(field => field.classList.toggle('d-none', !medicine));
-    document.querySelectorAll(`${selector}.medicine-classification-basic-field`).forEach(field => field.classList.toggle('d-none', medicine));
+    document.querySelectorAll(`${selector}.medicine-classification-basic-field`).forEach(field => field.classList.toggle('d-none', !medicine));
     document.getElementById(mode === 'edit' ? 'editProductTypeField' : 'productTypeField')?.classList.toggle('d-none', medicine);
     const classification = document.getElementById(`${prefix}MedicineClassification`);
     const generic = document.getElementById(`${prefix}GenericName`);
@@ -1344,7 +1365,7 @@ function buildProductPayload() {
         barcode: firstVariation.barcode || '',
         generic_name: genericName,
         medicine_classification: firstVariation.medicine_classification || getValue('productMedicineClassification'),
-        status: getValue('productStatus') || 'Active',
+        status: 'Active',
         pricing_method: pricingMethod,
         variations
     };

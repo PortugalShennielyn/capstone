@@ -254,8 +254,7 @@ function insertPurchaseOrdersForApprovedRequest(PDO $pdo, array $request, array 
         $eta = trim((string) ($supplierEtas[$supplierId] ?? ''));
         $paymentTerms = 'Cash';
         if ($eta === '') throw new InvalidArgumentException('ETA is required for every supplier purchase order.');
-        $date = DateTime::createFromFormat('Y-m-d', $eta);
-        if (!$date || $date->format('Y-m-d') !== $eta) throw new InvalidArgumentException('ETA must be a valid date.');
+        $eta = validateDateNotBeforeToday($eta, 'ETA must be a valid date.', 'ETA cannot be earlier than today.');
         $insertPo->execute([
             ':po_id' => $poId, ':pr_id' => $prId, ':supplier_id' => $supplierId,
             ':po_number' => $poNumber, ':payment_terms' => $paymentTerms, ':eta' => $eta,

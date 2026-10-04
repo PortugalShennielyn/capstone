@@ -27,9 +27,7 @@ function replacementDate($value, bool $required): ?string
         if ($required) throw new InvalidArgumentException('An expiry date is required for every medicine batch.');
         return null;
     }
-    $parsed = DateTime::createFromFormat('Y-m-d', $date);
-    if (!$parsed || $parsed->format('Y-m-d') !== $date) throw new InvalidArgumentException('Expiry date must be valid.');
-    return $date;
+    return validateDateNotBeforeToday($date, 'Expiry date must be valid.', 'Expiry date cannot be earlier than today.');
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') replacementResponse(false, 'Only POST requests are allowed.', [], 405);

@@ -206,17 +206,7 @@ async function initializeNavbar(container) {
         try {
             localStorage.removeItem("drpSidebarCollapsed");
         } catch (error) {}
-        let sidebarBackdrop = document.getElementById("sidebarBackdrop");
-        if (!sidebarBackdrop) {
-            sidebarBackdrop = document.createElement("div");
-            sidebarBackdrop.id = "sidebarBackdrop";
-            sidebarBackdrop.className = "sidebar-backdrop";
-            sidebarBackdrop.setAttribute("aria-hidden", "true");
-            document.body.appendChild(sidebarBackdrop);
-        }
-        document.querySelectorAll(".sidebar-backdrop").forEach(backdrop => {
-            if (backdrop !== sidebarBackdrop) backdrop.remove();
-        });
+        document.querySelectorAll(".sidebar-backdrop").forEach(backdrop => backdrop.remove());
         const filename = window.location.pathname.split("/").pop() || "dashboard.html";
         let isRestoringNavbarScroll = false;
         let navbarScrollRestoreFrame = 0;
@@ -807,12 +797,11 @@ async function initializeNavbar(container) {
         function openSidebar() {
             sidebar?.classList.remove("collapsed");
             sidebar?.classList.add("is-expanded");
-            mainWrapper?.classList.add("collapsed");
+            mainWrapper?.classList.remove("collapsed");
             document.body.classList.remove("navbar-sidebar-collapsed");
             document.body.classList.add("sidebar-open");
             document.documentElement.classList.remove("sidebar-collapsed");
             document.documentElement.classList.add("sidebar-expanded");
-            sidebarBackdrop?.setAttribute("aria-hidden", "false");
             updateSidebarToggleState(true);
             closeSlimFlyout();
         }
@@ -825,7 +814,6 @@ async function initializeNavbar(container) {
             document.body.classList.remove("sidebar-open");
             document.documentElement.classList.add("sidebar-collapsed");
             document.documentElement.classList.remove("sidebar-expanded");
-            sidebarBackdrop?.setAttribute("aria-hidden", "true");
             updateSidebarToggleState(false);
         }
 
@@ -911,17 +899,6 @@ async function initializeNavbar(container) {
                     restoreNavbarScrollPosition(ensureActive);
                 });
             });
-        }
-
-        function closeSidebarFromOutside(event) {
-            if (!sidebar || sidebar.classList.contains("collapsed")) return;
-            if (sidebar.contains(event.target)) return;
-            if (event.target.closest("#sidebarToggle, #sidebarOpenToggle")) return;
-            if (event.target.closest(".modal, .modal-backdrop, .swal2-container, .toast, .toast-container")) return;
-
-            saveNavbarScrollPosition(true);
-            setSidebarState(true);
-            scheduleNavbarScrollRestore(false);
         }
 
         function setCollapseArrow(collapse) {
@@ -1077,11 +1054,10 @@ async function initializeNavbar(container) {
         };
         sidebarToggle?.addEventListener("click", handleSidebarToggle);
         headerSidebarToggle?.addEventListener("click", handleSidebarToggle);
-        sidebarBackdrop.addEventListener("click", () => {
-            if (!document.body.classList.contains("sidebar-open")) return;
-            saveNavbarScrollPosition(true);
-            setSidebarState(true);
-            scheduleNavbarScrollRestore(false);
+        sidebar?.addEventListener("transitionend", event => {
+            if (event.target === sidebar && event.propertyName === "width") {
+                window.dispatchEvent(new Event("resize"));
+            }
         });
         getNavbarScrollContainer()?.addEventListener("scroll", () => saveNavbarScrollPosition(), { passive: true });
         container.addEventListener("click", handleSlimCollapseClick, true);
@@ -1089,7 +1065,6 @@ async function initializeNavbar(container) {
         container.addEventListener("pointerover", prefetchNavigationTarget);
         container.addEventListener("focusin", prefetchNavigationTarget);
         container.addEventListener("click", handleUserPopoverClick);
-        document.addEventListener("pointerdown", closeSidebarFromOutside);
         document.addEventListener("pointerdown", closeUserPopoverFromOutside);
         document.addEventListener("pointerdown", closeSlimFlyoutFromOutside);
         document.addEventListener("keydown", handleNavbarKeydown);
@@ -1506,6 +1481,8 @@ function initModalWorkspaceBounds() {
     const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
     const sidebarWidth = () => {
+        const sidebar = document.querySelector('#navbar-container .app-sidebar');
+        if (sidebar) return Math.max(0, sidebar.getBoundingClientRect().width);
         const value = window.getComputedStyle(document.documentElement)
             .getPropertyValue('--sidebar-collapsed-width');
         const parsed = Number.parseFloat(value);
@@ -1899,13 +1876,13 @@ function ensureNavbarRuntimeStyles() {
             margin-left: var(--sidebar-collapsed-width) !important;
             width: calc(100% - var(--sidebar-collapsed-width)) !important;
             animation: drpPageEnter .16s ease-out both;
-            transition: none !important;
+            transition: margin-left .24s var(--navbar-ease), width .24s var(--navbar-ease) !important;
         }
 
         .app-main {
             margin-left: var(--sidebar-collapsed-width) !important;
             width: calc(100% - var(--sidebar-collapsed-width)) !important;
-            transition: none !important;
+            transition: margin-left .24s var(--navbar-ease), width .24s var(--navbar-ease) !important;
         }
 
         body.navbar-sidebar-collapsed #mainWrapper,

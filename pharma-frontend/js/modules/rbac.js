@@ -52,6 +52,8 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'clerk.html',
         'sales_clerk_pos.html',
         'sales_clerk_orders.html',
+        'inventory.html',
+        'shelf_inventory.html',
         'reports.html'
     ])
 });
@@ -96,6 +98,8 @@ const ROLE_NAV_ACCESS = Object.freeze({
     salesclerk: new Set([
         'sales-clerk-pos',
         'sales-clerk-orders',
+        'inventory',
+        'shelf-inventory',
         'reports',
         'user-settings'
     ])

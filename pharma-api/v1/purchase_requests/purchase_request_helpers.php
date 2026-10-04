@@ -39,6 +39,10 @@ function ensurePurchaseRequestSchema(PDO $pdo): void
     if ((int) $approvedQtyCheck->fetchColumn() === 0) {
         $pdo->exec('ALTER TABLE purchase_request_items ADD COLUMN approved_qty DECIMAL(12,2) NULL AFTER requested_qty');
     }
+    $decisionReasonCheck = $pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_requests' AND COLUMN_NAME = 'decision_reason'");
+    if ((int) $decisionReasonCheck->fetchColumn() === 0) {
+        $pdo->exec('ALTER TABLE purchase_requests ADD COLUMN decision_reason TEXT NULL AFTER decided_at');
+    }
     $pdo->exec(
         "UPDATE purchase_request_items pri
          INNER JOIN purchase_requests pr ON pr.pr_id = pri.pr_id
@@ -383,42 +387,35 @@ function activePurchaseRequestStatuses(): array
 
 function activePurchaseRequestConflict(PDO $pdo, string $productId, ?string $excludePrId = null): ?array
 {
-    $statuses = activePurchaseRequestStatuses();
-    $statusPlaceholders = implode(',', array_fill(0, count($statuses), '?'));
     $sql = "SELECT pr.pr_id, pr.pr_number, pr.status, pri.requested_qty
             FROM purchase_request_items pri
             INNER JOIN purchase_requests pr ON pr.pr_id = pri.pr_id
             WHERE pri.product_id = ?
-              AND pr.status IN ({$statusPlaceholders})
-              AND (
-                pr.status <> 'Approved'
-                OR 0 = COALESCE((
-                    SELECT SUM(poi.inventory_qty_ordered)
-                    FROM purchase_order_items poi
-                    INNER JOIN purchase_orders po ON po.po_id = poi.po_id
-                    WHERE poi.pr_item_id = pri.pr_item_id
-                      AND po.status NOT IN ('Cancelled', 'Rejected')
-                ), 0)
-              )";
-    $params = array_merge([$productId], $statuses);
+              AND pr.status IS NOT NULL";
+    $params = [$productId];
     if ($excludePrId !== null && $excludePrId !== '') {
         $sql .= ' AND pr.pr_id <> ?';
         $params[] = $excludePrId;
     }
-    $sql .= " ORDER BY
-                CASE pr.status
-                    WHEN 'Approved' THEN 1
-                    WHEN 'Pending Supervisor Approval' THEN 2
-                    WHEN 'Revision Requested' THEN 3
-                    WHEN 'Draft' THEN 4
-                    ELSE 5
-                END,
-                pr.created_at DESC
+    $sql .= " ORDER BY pr.created_at DESC, pr.request_date DESC
               LIMIT 1";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row ?: null;
+    if (!$row || !in_array((string) $row['status'], activePurchaseRequestStatuses(), true)) return null;
+    if ((string) $row['status'] !== 'Approved') return $row;
+
+    $ordered = $pdo->prepare(
+        "SELECT COALESCE(SUM(poi.inventory_qty_ordered), 0)
+         FROM purchase_order_items poi
+         INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+         INNER JOIN purchase_request_items pri ON pri.pr_item_id = poi.pr_item_id
+         WHERE pri.pr_id = :pr_id
+           AND pri.product_id = :product_id
+           AND po.status NOT IN ('Cancelled', 'Rejected')"
+    );
+    $ordered->execute([':pr_id' => $row['pr_id'], ':product_id' => $productId]);
+    return (float) $ordered->fetchColumn() > 0 ? null : $row;
 }
 
 function assertNoActivePurchaseRequestConflict(PDO $pdo, string $productId, string $productName, ?string $excludePrId = null): void

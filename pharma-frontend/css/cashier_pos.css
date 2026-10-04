@@ -560,6 +560,25 @@ body {
     overflow-wrap: anywhere;
 }
 
+.item-generic-line {
+    display: block;
+    margin-top: 4px;
+    color: #34476b;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.rx-inline {
+    display: inline;
+    margin-left: 4px;
+    color: #000;
+    font-size: .92em;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
 .totals-list {
     flex: 0 0 auto;
     margin: 0 24px;
@@ -957,6 +976,19 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
         margin-top: .6mm;
         font-size: 10px;
         overflow-wrap: anywhere;
+    }
+
+    #cashierReceiptPrintArea .receipt-rx-print {
+        display: inline;
+        margin-left: 1.5mm;
+        padding: 0;
+        border: 0;
+        color: #000;
+        font-size: 8px;
+        font-weight: 800;
+        line-height: 1.1;
+        vertical-align: baseline;
+        white-space: nowrap;
     }
 
     #cashierReceiptPrintArea .receipt-money-print {

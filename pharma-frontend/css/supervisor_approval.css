@@ -198,3 +198,19 @@ body.dark-mode #generatePoModal .supplier-po-card .supplier-po-identity h4{color
 body.dark-mode #generatePoModal .supplier-po-identity address,body.dark-mode #generatePoModal .supplier-po-identity p{color:#aebbd0}
 @media(max-width:900px){#generatePoModal .supplier-po-card>header{grid-template-columns:1fr;text-align:center}#generatePoModal .supplier-po-order,#generatePoModal .supplier-po-fields{justify-self:center}#generatePoModal .supplier-po-fields label{justify-content:center}}
 @media(max-width:575px){#generatePoModal .supplier-po-identity p{align-items:center;flex-direction:column;gap:1px}#generatePoModal .supplier-po-identity p span{display:none}}
+
+/* Purchase request and approval queue product previews match the PO item list. */
+.request-items-summary{text-align:center}
+.request-items-preview{display:grid;gap:7px;margin:0;padding:0;list-style:none}
+.request-items-preview li{min-width:0;overflow-wrap:anywhere;line-height:1.25}
+.request-items-preview strong,.request-items-preview span{display:block}
+.request-items-preview strong{font-size:12px;font-weight:700}
+.request-items-preview span{margin-top:2px;color:#667085;font-size:11px;font-weight:500}
+.request-items-more{display:block;margin-top:7px;color:#087e8b;font-size:11px;font-weight:600;line-height:1.2}
+body.dark-mode .request-items-preview span{color:#aab4c3}
+body.dark-mode .request-items-more{color:#67d4df}
+
+.approval-table th,.approval-table td,.approval-table td :is(strong,span,small,button,i){font-size:14px !important}
+.approval-table th:nth-child(3),.approval-table td:nth-child(3),.approval-table td:nth-child(3) .request-items-summary,.approval-table td:nth-child(3) .request-items-preview li{text-align:center !important}
+.approval-table .request-items-preview{justify-items:center}
+.approval-table .request-items-preview li{width:100%}

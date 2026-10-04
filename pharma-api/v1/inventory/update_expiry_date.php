@@ -1,6 +1,7 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once '../purchase_orders/purchase_order_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -37,12 +38,12 @@ try {
     if ($alertDays <= 0 || $alertDays > 3650) {
         throw new InvalidArgumentException('Alert before expiry must be between 1 and 3650 days.');
     }
-    if ($expiryDate !== '') {
-        $parsed = DateTime::createFromFormat('Y-m-d', $expiryDate);
-        if (!$parsed || $parsed->format('Y-m-d') !== $expiryDate) {
-            throw new InvalidArgumentException('Expiry date must be a valid date.');
-        }
-    }
+    $expiryDate = validateDateNotBeforeToday(
+        $expiryDate,
+        'Expiry date must be a valid date.',
+        'Expiry date cannot be earlier than today.',
+        true
+    );
 
     $pdo->beginTransaction();
     $lookup = $pdo->prepare(

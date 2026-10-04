@@ -7,11 +7,13 @@ import {
 } from './variation_rules.js';
 import {
     cleanProductSpecificationText,
+    formatProductCatalogSpecificationLines,
     formatProductIdentityParts,
     formatProductSpecification,
+    inventoryMedicineSpecificationParts,
     isPrescriptionProduct,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=9';
+} from './product_specification.js?v=12';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits as loadSharedMeasurementUnits, measurementUnitsForContext, upsertMeasurementUnitCache } from './measurement_units.js?v=2';
@@ -285,6 +287,24 @@ function variantStrengthSize(product) {
     ].filter(Boolean).join(' • ') || 'Not set';
 }
 
+function supplierCatalogSpecification(product) {
+    const parts = inventoryMedicineSpecificationParts(product);
+    if (parts) {
+        const form = parts.dosageForm.toLowerCase();
+        const icon = /powder/.test(form) ? 'fa-solid fa-flask'
+            : /suspension|syrup|solution|drops|liquid/.test(form) ? 'fa-solid fa-droplet'
+            : /supplement|vitamin/.test(form) ? 'fa-solid fa-leaf'
+            : /capsule/.test(form) ? 'fa-solid fa-capsules' : 'fa-regular fa-circle-dot';
+        return `<span class="supplier-catalog-specification">
+            ${parts.dosageForm ? `<span class="supplier-catalog-specification-form"><i class="${icon}" aria-hidden="true"></i>${esc(parts.dosageForm)}</span>` : ''}
+            ${parts.strength ? `<strong class="supplier-catalog-specification-strength">${esc(parts.strength)}</strong>` : ''}
+            ${parts.details ? `<span class="supplier-catalog-specification-details">${esc(parts.details)}</span>` : ''}
+        </span>`;
+    }
+    const lines = formatProductCatalogSpecificationLines(product, 'Not set');
+    return `<span class="supplier-catalog-specification">${lines.map(line => `<span>${esc(line)}</span>`).join('')}</span>`;
+}
+
 const selectedAddCategoryName = () => document.getElementById('supplierProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
 const selectedAddTypeName = () => document.getElementById('supplierProductType')?.selectedOptions?.[0]?.textContent?.trim() || '';
 
@@ -515,12 +535,11 @@ function renderSupplierProducts(rows) {
                 </td>
                 <td class="col-product">
                     <div class="supplier-product-name">
-                        <strong>${esc(displayOrNotSet(identity.productName))}${supplierRxBadge(product)}</strong>
+                        <strong><span class="supplier-product-primary">${esc(displayOrNotSet(identity.productName))}</span>${supplierRxBadge(product)}</strong>
                         ${identity.genericName ? `<small>${esc(identity.genericName)}</small>` : ''}
                     </div>
                 </td>
-                <td class="col-specification">${esc(variantStrengthSize(product))}</td>
-                <td class="col-type">${esc(displayOrNotSet(product.type_name))}</td>
+                <td class="col-specification">${supplierCatalogSpecification(product)}</td>
                 <td class="col-purchase-unit"><div class="supplier-purchase-unit-display"><strong>${esc(displayOrNotSet(product.purchase_unit))}</strong><small>${esc(supplierContainsLabel(product))}</small></div></td>
                 <td class="col-actions actions-column">
                     ${supplierCatalogCanModify() ? `<div class="supplier-product-actions">
@@ -534,7 +553,7 @@ function renderSupplierProducts(rows) {
                 </td>
             </tr>
         `;}).join('')
-        : '<tr><td colspan="6" class="text-center text-muted py-4">No supplier products found.</td></tr>';
+        : '<tr><td colspan="5" class="text-center text-muted py-4">No supplier products found.</td></tr>';
     window.PharmacySearchHighlight?.apply(body, document.getElementById('supplierProductSearch')?.value || '');
 }
 

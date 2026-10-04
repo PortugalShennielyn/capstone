@@ -180,9 +180,28 @@ function validatePaymentTerms(array $payload): string
 function validateExpectedDeliveryDate(array $payload): string
 {
     $date = requireStringField($payload, 'expected_delivery_date');
-    $parsed = DateTime::createFromFormat('Y-m-d', $date);
-    if (!$parsed || $parsed->format('Y-m-d') !== $date) {
-        throw new InvalidArgumentException('Expected delivery date must be a valid date.');
+    return validateDateNotBeforeToday(
+        $date,
+        'Expected delivery date must be a valid date.',
+        'ETA cannot be earlier than today.'
+    );
+}
+
+function validateDateNotBeforeToday(string $value, string $invalidMessage, string $pastMessage, bool $allowEmpty = false): ?string
+{
+    $date = trim($value);
+    if ($date === '') {
+        if ($allowEmpty) return null;
+        throw new InvalidArgumentException($invalidMessage);
+    }
+
+    $parsed = DateTime::createFromFormat('!Y-m-d', $date);
+    $errors = DateTime::getLastErrors();
+    if (!$parsed || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) || $parsed->format('Y-m-d') !== $date) {
+        throw new InvalidArgumentException($invalidMessage);
+    }
+    if ($date < date('Y-m-d')) {
+        throw new InvalidArgumentException($pastMessage);
     }
     return $date;
 }

@@ -4,6 +4,7 @@ require_once '../../config/require_auth.php';
 require_once '../activity_log_helpers.php';
 require_once '../products/product_category_schema.php';
 require_once '../products/product_status_schema.php';
+require_once '../purchase_orders/purchase_order_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -42,6 +43,11 @@ try {
         ]);
         exit();
     }
+    $expirationDate = validateDateNotBeforeToday(
+        $expirationDate,
+        'Expiration date must be a valid date.',
+        'Expiry date cannot be earlier than today.'
+    );
     $activeProduct = $pdo->prepare("SELECT 1 FROM product WHERE product_id = :product_id AND status = 'Active'");
     $activeProduct->execute([':product_id' => $productId]);
     if (!$activeProduct->fetchColumn()) {

@@ -51,10 +51,30 @@ try {
     }
 
     $itemsStmt = $pdo->prepare(
-        "SELECT brand_name, product_name, specification, quantity, unit_price, line_total
-         FROM sales_order_items
-         WHERE order_id = :order_id
-         ORDER BY order_item_id ASC"
+        "SELECT
+            i.brand_name,
+            i.product_name,
+            i.specification,
+            i.quantity,
+            i.unit_price,
+            i.line_total,
+            md.generic_name,
+            classification_values.medicine_classification,
+            classification_values.medicine_classification_badge,
+            COALESCE(NULLIF(md.strength, ''), TRIM(CONCAT(COALESCE(md.strength_value, ''), CASE WHEN md.strength_unit IS NULL OR md.strength_unit = '' THEN '' ELSE CONCAT(' ', md.strength_unit) END))) AS medicine_strength,
+            md.dosage_form
+         FROM sales_order_items i
+         LEFT JOIN medicine_details md ON md.product_id = i.product_id
+         LEFT JOIN (
+            SELECT psv.product_id,
+                   psv.value_text AS medicine_classification,
+                   CASE WHEN LOWER(TRIM(psv.value_text)) = 'prescription (rx)' THEN 'Rx' ELSE NULL END AS medicine_classification_badge
+            FROM product_specification_values psv
+            INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+            WHERE LOWER(TRIM(ps.specification_name)) = 'medicine classification'
+         ) classification_values ON classification_values.product_id = i.product_id
+         WHERE i.order_id = :order_id
+         ORDER BY i.order_item_id ASC"
     );
     $itemsStmt->execute([':order_id' => $orderId]);
     $items = array_map(static function (array $item): array {
@@ -62,6 +82,11 @@ try {
             'brand_name' => salesDisplayValue($item['brand_name'], '-'),
             'product_name' => salesDisplayValue($item['product_name'], '-'),
             'specification' => salesDisplayValue($item['specification'], '-'),
+            'generic_name' => salesDisplayValue($item['generic_name']),
+            'medicine_classification' => salesDisplayValue($item['medicine_classification']),
+            'medicine_classification_badge' => salesDisplayValue($item['medicine_classification_badge']),
+            'strength' => salesDisplayValue($item['medicine_strength']),
+            'dosage_form' => salesDisplayValue($item['dosage_form']),
             'quantity' => (int) ($item['quantity'] ?? 0),
             'unit_price' => salesMoneyValue($item['unit_price'] ?? 0),
             'line_total' => salesMoneyValue($item['line_total'] ?? 0),

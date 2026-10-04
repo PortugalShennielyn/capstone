@@ -13,8 +13,12 @@ $payload = readPurchaseRequestPayload();
 $prId = cleanId($payload['pr_id'] ?? null);
 $decision = strtolower(trim((string) ($payload['decision'] ?? '')));
 $statuses = ['approve' => 'Approved', 'reject' => 'Rejected'];
+$rejectionReason = trim((string) ($payload['rejection_reason'] ?? $payload['decision_reason'] ?? ''));
 
 if ($prId === '' || !isset($statuses[$decision])) sendPurchaseRequestJson(false, 'A valid purchase request decision is required.', null, 422);
+if ($decision === 'reject' && $rejectionReason === '') {
+    sendPurchaseRequestJson(false, 'Please enter a reason for rejection.', null, 422);
+}
 
 try {
     ensurePurchaseRequestSchema($pdo);
@@ -65,11 +69,12 @@ try {
     $stmt = $pdo->prepare(
         'UPDATE purchase_requests
          SET status = :status, supervisor_user_id = :supervisor_user_id,
-             decided_at = NOW(), updated_at = NOW()
+             decided_at = NOW(), decision_reason = :decision_reason, updated_at = NOW()
          WHERE pr_id = :pr_id AND status = "Pending Supervisor Approval"'
     );
     $stmt->execute([
         ':status' => $statuses[$decision], ':supervisor_user_id' => cleanId($_SESSION['user_id'] ?? null),
+        ':decision_reason' => $decision === 'reject' ? $rejectionReason : null,
         ':pr_id' => $prId,
     ]);
     if ($stmt->rowCount() !== 1) throw new RuntimeException('Purchase request changed while it was being reviewed.');
@@ -81,6 +86,7 @@ try {
     sendPurchaseRequestJson(true, $message, [
         'pr_id' => $prId,
         'status' => $statuses[$decision],
+        'rejection_reason' => $decision === 'reject' ? $rejectionReason : null,
         'purchase_orders' => [],
     ]);
 } catch (InvalidArgumentException $e) {

@@ -10,8 +10,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=36" rel="stylesheet">
-    <script src="./js/navbar.js?v=83" defer></script>
+    <link href="./css/navbar.css?v=39" rel="stylesheet">
+    <script src="./js/navbar.js?v=86" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root { --purple:#7c3aed; --purple-dark:#5b21b6; --ink:#101936; --muted:#667085; --line:#e6eaf2; --body:#f6f8fc; --shadow:0 14px 34px rgba(16,25,54,.07); --blue:#2563eb; --green:#16a34a; --red:#dc2626; --orange:#d97706; }
@@ -27,18 +27,19 @@
         .date-pill { display:inline-flex; align-items:center; gap:10px; min-height:42px; padding:0 16px; border:1px solid var(--line); border-radius:8px; color:#253050; background:#fff; font-size:13px; font-weight:800; white-space:nowrap; }
         .page-body { padding:clamp(18px,1.7vw,28px); }
         .panel { border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:var(--shadow); overflow:hidden; }
-        .status-tabs { display:flex; align-items:center; gap:8px; padding:14px 16px 0; border-bottom:1px solid var(--line); overflow-x:auto; }
-        .status-tab { min-height:42px; display:inline-flex; align-items:center; gap:8px; flex:0 0 auto; padding:0 12px 13px; border:0; border-bottom:3px solid transparent; color:#253050; background:transparent; font-size:13px; font-weight:900; white-space:nowrap; }
-        .status-tab.active { color:var(--purple); border-bottom-color:var(--purple); }
-        .count-badge { min-width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; padding:0 7px; border-radius:999px; color:#34405f; background:#eef2f7; font-size:11px; font-weight:900; }
-        .toolbar { display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap; padding:18px 16px; }
+        .toolbar { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; padding:20px 16px 18px; }
         .toolbar h2 { margin:0; font-size:18px; font-weight:900; }
         .toolbar p { margin:5px 0 0; color:#475467; font-size:13px; font-weight:600; }
+        .table-controls { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+        .status-filter { display:flex; align-items:center; gap:10px; min-width:240px; }
+        .status-filter label { margin:0; color:#34405f; font-size:13px; font-weight:900; white-space:nowrap; }
+        .status-filter select { min-height:40px; min-width:210px; border-color:var(--line); border-radius:8px; color:#253050; font-size:13px; font-weight:800; }
         .search-box { position:relative; width:clamp(280px,30vw,390px); }
         .search-box input { min-height:40px; padding-right:40px; border-color:var(--line); border-radius:8px; font-size:13px; font-weight:700; }
         .search-box i { position:absolute; top:50%; right:14px; color:#667085; transform:translateY(-50%); }
-        .orders-table { min-width:1000px; margin:0; }
-        .orders-table th,.orders-table td { padding:13px 14px !important; color:#162044 !important; font-size:13px !important; font-weight:750 !important; text-align:left !important; vertical-align:middle !important; white-space:nowrap; }
+        .orders-table-wrap { width:100%; overflow:visible; }
+        .orders-table { width:100%; margin:0; table-layout:fixed; }
+        .orders-table th,.orders-table td { padding:13px 14px !important; color:#162044 !important; font-size:13px !important; font-weight:750 !important; text-align:left !important; vertical-align:middle !important; white-space:normal; overflow-wrap:anywhere; }
         .orders-table th { color:#34405f !important; background:#f8fafc !important; font-weight:900 !important; }
         .orders-table .empty-row td { padding:40px 16px !important; text-align:center !important; white-space:normal; }
         .empty-title { display:block; color:#253050; font-size:15px; font-weight:900; }
@@ -127,6 +128,7 @@
         .drawer-item-row span { color:#253050; font-size:12px; font-weight:850; white-space:nowrap; }
         .drawer-item-row strong { display:block; color:var(--ink); font-size:13px; font-weight:900; line-height:1.3; overflow-wrap:anywhere; }
         .drawer-item-row small { display:block; margin-top:2px; color:#667085; font-size:11px; font-weight:700; line-height:1.25; }
+        .rx-inline { display:inline; margin-left:4px; color:#000; font-size:.92em; font-weight:900; white-space:nowrap; }
         .drawer-item-price,.drawer-item-amount { text-align:right; }
         .totals-list { display:grid; gap:7px; margin-top:12px; padding:13px 14px; border:1px solid var(--line); border-radius:8px; background:#fff; }
         .totals-list div { display:flex; justify-content:space-between; gap:12px; font-size:13px; font-weight:850; }
@@ -134,7 +136,7 @@
         .totals-list div strong { color:var(--ink); text-align:right; }
         .totals-list .grand { margin-top:4px; padding-top:10px; border-top:1px dashed #cbd5e1; color:var(--purple); font-size:18px; font-weight:900; }
         .totals-list .grand span,.totals-list .grand strong { color:var(--purple); }
-        @media (max-width:720px) { .topbar { align-items:flex-start; flex-direction:column; padding:14px 18px; } .topbar-right,.search-box { width:100%; } .drawer-footer { flex-direction:column; } .drawer-footer .btn { width:100%; } .row-actions { flex-wrap:wrap; } .drawer-items-head,.drawer-item-row { grid-template-columns:34px minmax(0,1fr) 76px 82px; gap:7px; } .drawer-body { padding:16px; } }
+        @media (max-width:720px) { .topbar { align-items:flex-start; flex-direction:column; padding:14px 18px; } .topbar-right,.search-box,.status-filter,.status-filter select { width:100%; } .table-controls { align-items:stretch; } .drawer-footer { flex-direction:column; } .drawer-footer .btn { width:100%; } .row-actions { flex-wrap:wrap; } .drawer-items-head,.drawer-item-row { grid-template-columns:34px minmax(0,1fr) 76px 82px; gap:7px; } .drawer-body { padding:16px; } }
         @media print {
             @page { size:80mm auto; margin:4mm; }
             body * { visibility:hidden !important; }
@@ -160,12 +162,23 @@
         </header>
         <section class="page-body">
             <section class="panel" aria-label="My sales clerk orders">
-                <div class="status-tabs" id="statusTabs" role="tablist" aria-label="Order status tabs"></div>
                 <div class="toolbar">
-                    <div><h2 id="activeTabTitle">Waiting for Cashier</h2><p>Orders you create will appear here based on their status.</p></div>
-                    <div class="search-box"><input id="orderSearch" class="form-control" type="search" placeholder="Search order no. or customer..."><i class="fa-solid fa-magnifying-glass"></i></div>
+                    <div><h2>Clerk Transactions</h2><p>View and track your submitted transactions.</p></div>
+                    <div class="table-controls">
+                        <div class="status-filter">
+                            <label for="statusFilter">Status:</label>
+                            <select id="statusFilter" class="form-select" aria-label="Filter transactions by status">
+                                <option value="all">All Transactions</option>
+                                <option value="waiting_cashier">Waiting for Cashier</option>
+                                <option value="processing">Processing</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        <div class="search-box"><input id="orderSearch" class="form-control" type="search" placeholder="Search order no. or customer..."><i class="fa-solid fa-magnifying-glass"></i></div>
+                    </div>
                 </div>
-                <div class="table-responsive">
+                <div class="orders-table-wrap">
                     <table class="table orders-table">
                         <thead><tr><th>Order No.</th><th>Customer</th><th>Items</th><th>Total Amount</th><th>Status</th><th>Time Created</th><th>Last Updated</th><th>Action</th></tr></thead>
                         <tbody id="ordersTableBody"><tr class="empty-row"><td colspan="8">Loading orders...</td></tr></tbody>
@@ -237,16 +250,12 @@
 
         const peso = new Intl.NumberFormat('en-PH', { style:'currency', currency:'PHP' });
         const numberFormat = new Intl.NumberFormat('en-PH');
-        const tabs = [
-            { key:'draft', label:'Draft', icon:'fa-regular fa-file-lines' },
-            { key:'waiting_cashier', label:'Waiting for Cashier', icon:'fa-solid fa-user-clock' },
-            { key:'processing', label:'Processing', icon:'fa-solid fa-spinner' },
-            { key:'completed', label:'Completed', icon:'fa-regular fa-circle-check' },
-            { key:'cancelled', label:'Cancelled', icon:'fa-regular fa-circle-xmark' }
-        ];
-        const state = { activeTab:new URLSearchParams(location.search).get('tab') || 'waiting_cashier', orders:[], summary:{}, activeOrder:null };
+        const statusFilters = ['all', 'waiting_cashier', 'processing', 'completed', 'cancelled'];
+        const initialStatus = new URLSearchParams(location.search).get('status') || new URLSearchParams(location.search).get('tab') || 'all';
+        const state = { activeStatus:statusFilters.includes(initialStatus) && initialStatus !== 'draft' ? initialStatus : 'all', orders:[], summary:{}, activeOrder:null };
         const ordersTableBody = document.getElementById('ordersTableBody');
         const searchInput = document.getElementById('orderSearch');
+        const statusFilter = document.getElementById('statusFilter');
         const drawer = document.getElementById('orderDetailsDrawer');
         const backdrop = document.getElementById('orderDrawerBackdrop');
 
@@ -260,15 +269,30 @@
         function receiptProductName(item) {
             const brand = normalizeReceiptText(item.brand_name);
             let product = normalizeReceiptText(item.product_name);
+            if (brand) return brand;
             if (brand && product.toLowerCase().startsWith(brand.toLowerCase())) product = product.slice(brand.length).trim();
             return [brand, product].filter(Boolean).join(' ') || product || brand || '-';
         }
         function receiptShortSpec(item) {
-            const parts = String(item.specification || '').split('/').map(part => normalizeReceiptText(part)).filter(Boolean);
+            const explicitParts = [item.strength, item.dosage_form].map(part => normalizeReceiptText(part)).filter(Boolean);
+            if (explicitParts.length) return explicitParts.join(' • ');
+            const generic = normalizeReceiptText(item.generic_name).toLowerCase();
+            const parts = String(item.specification || '').split(/[•/]/).map(part => normalizeReceiptText(part)).filter(Boolean).filter(part => part.toLowerCase() !== generic);
             const packageWords = /^(bottle|blister pack|sachet|box|pack|piece|tablet|capsule|solution|cream|ointment|syrup|suspension)$/i;
             const measurement = parts.find(part => /\b\d+(\.\d+)?\s?(mg|mcg|g|kg|ml|l)\b/i.test(part));
             if (measurement) return measurement.replace(/(\d)(mg|mcg|g|kg|ml|l)\b/i, '$1 $2');
             return parts.find(part => !packageWords.test(part) && !/%/.test(part)) || '';
+        }
+        function isPrescriptionItem(item) {
+            return normalizeReceiptText(item?.medicine_classification_badge) === 'Rx'
+                || normalizeReceiptText(item?.medicine_classification).toLowerCase() === 'prescription (rx)';
+        }
+        function rxMarkup(item) {
+            return isPrescriptionItem(item) ? '<span class="rx-inline">Rx</span>' : '';
+        }
+        function itemGenericLineMarkup(item) {
+            const generic = normalizeReceiptText(item.generic_name);
+            return generic ? `${escapeHtml(generic)}${rxMarkup(item)}` : '';
         }
         function cachedOrderCash(orderId) {
             try {
@@ -293,20 +317,12 @@
             if (!response.ok || data.status === 'error') throw new Error(data.message || 'Request failed.');
             return responsePayload(data);
         }
-        function renderTabs() {
-            document.getElementById('statusTabs').innerHTML = tabs.map(tab => `
-                <button class="status-tab ${state.activeTab === tab.key ? 'active' : ''}" type="button" data-tab="${tab.key}">
-                    <i class="${tab.icon}"></i>${tab.label}<span class="count-badge">${numberFormat.format(Number(state.summary[tab.key] || 0))}</span>
-                </button>
-            `).join('');
-            document.getElementById('activeTabTitle').textContent = tabs.find(tab => tab.key === state.activeTab)?.label || 'My Orders';
-        }
         function renderOrders() {
             if (!state.orders.length) {
-                ordersTableBody.innerHTML = '<tr class="empty-row"><td colspan="8"><span class="empty-title">No orders found</span><span class="empty-subtitle">Orders you create will appear here based on their status.</span></td></tr>';
+                ordersTableBody.innerHTML = '<tr class="empty-row"><td colspan="8"><span class="empty-title">No transactions found</span><span class="empty-subtitle">Submitted transactions will appear here.</span></td></tr>';
             } else {
                 ordersTableBody.innerHTML = state.orders.map(order => {
-                    const canCancel = ['draft','waiting_cashier'].includes(order.status_code);
+                    const canCancel = order.status_code === 'waiting_cashier';
                     const actionButtons = order.status_code === 'completed'
                         ? `<button class="action-btn btn-receipt" type="button" title="View Order Summary" aria-label="View Order Summary" data-receipt-order="${escapeHtml(order.order_id)}"><i class="fa-solid fa-receipt"></i></button>`
                         : `<button class="action-btn btn-view" type="button" title="View Order Details" aria-label="View Order Details" data-view-order="${escapeHtml(order.order_id)}"><i class="fa-regular fa-eye"></i></button>`;
@@ -378,6 +394,7 @@
                         <span>${numberFormat.format(Number(item.quantity || 0))}</span>
                         <div>
                             <strong>${escapeHtml(receiptProductName(item))}</strong>
+                            ${itemGenericLineMarkup(item) ? `<small>${itemGenericLineMarkup(item)}</small>` : ''}
                             ${receiptShortSpec(item) ? `<small>${escapeHtml(receiptShortSpec(item))}</small>` : ''}
                         </div>
                         <span class="drawer-item-price">${money(item.unit_price)}</span>
@@ -415,6 +432,7 @@
                             <span>${numberFormat.format(Number(item.quantity || 0))}</span>
                             <div>
                                 <strong>${escapeHtml(receiptProductName(item))}</strong>
+                                ${itemGenericLineMarkup(item) ? `<small>${itemGenericLineMarkup(item)}</small>` : ''}
                                 ${receiptShortSpec(item) ? `<small>${escapeHtml(receiptShortSpec(item))}</small>` : ''}
                             </div>
                             <span class="receipt-price">${plainMoney(item.unit_price)}</span>
@@ -448,13 +466,13 @@
         }
         async function loadOrders({ silent = false } = {}) {
             if (!silent) ordersTableBody.innerHTML = '<tr class="empty-row"><td colspan="8">Loading orders...</td></tr>';
-            const params = new URLSearchParams({ tab:state.activeTab, search:searchInput.value.trim() });
+            const params = new URLSearchParams({ status:state.activeStatus, search:searchInput.value.trim() });
             const data = await apiFetch(`sales/get_my_sales_clerk_orders.php?${params.toString()}`);
             const nextOrders = Array.isArray(data.orders) ? data.orders : [];
             const changed = JSON.stringify(nextOrders) !== JSON.stringify(state.orders) || JSON.stringify(data.summary || {}) !== JSON.stringify(state.summary);
             state.orders = nextOrders;
             state.summary = data.summary || {};
-            if (changed || !silent) { renderTabs(); renderOrders(); }
+            if (changed || !silent) renderOrders();
         }
         async function openOrder(orderId) {
             renderDrawer({ ...(state.orders.find(order => order.order_id === orderId) || {}), items:[], history:[] });
@@ -471,26 +489,23 @@
         function updateClock() { const clock = document.getElementById('currentDateTime')?.firstElementChild; if (clock) clock.textContent = new Date().toLocaleString('en-PH', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
 
         await verifySession();
-        if (!tabs.some(tab => tab.key === state.activeTab)) state.activeTab = 'waiting_cashier';
+        statusFilter.value = state.activeStatus;
         updateClock();
         setInterval(updateClock, 60000);
-        renderTabs();
         await loadOrders().catch(error => { ordersTableBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(error.message)}</td></tr>`; });
         createLiveSync({ interval: 2000, events: ['order-created', 'order-accepted', 'payment-completed'], sync: () => loadOrders({ silent: true }) });
         const initialOrderId = new URLSearchParams(location.search).get('order_id');
         if (initialOrderId) {
-            if (state.activeTab === 'completed') {
+            if (state.activeStatus === 'completed') {
                 openOrderReceipt(initialOrderId).catch(error => toastr.error(error.message));
             } else {
                 openOrder(initialOrderId).catch(error => toastr.error(error.message));
             }
         }
 
-        document.getElementById('statusTabs').addEventListener('click', event => {
-            const button = event.target.closest('[data-tab]');
-            if (!button) return;
-            state.activeTab = button.dataset.tab;
-            history.replaceState(null, '', `sales_clerk_orders.html?tab=${encodeURIComponent(state.activeTab)}`);
+        statusFilter.addEventListener('change', () => {
+            state.activeStatus = statusFilters.includes(statusFilter.value) ? statusFilter.value : 'all';
+            history.replaceState(null, '', `sales_clerk_orders.html?status=${encodeURIComponent(state.activeStatus)}`);
             loadOrders().catch(error => toastr.error(error.message));
         });
         let searchTimer = null;

@@ -202,7 +202,8 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             md.generic_name,
             classification_values.medicine_classification,
             classification_values.medicine_classification_badge,
-            COALESCE(NULLIF(md.strength, ''), TRIM(CONCAT(COALESCE(md.strength_value, ''), COALESCE(md.strength_unit, '')))) AS medicine_strength,
+            COALESCE(NULLIF(md.strength, ''), TRIM(CONCAT(COALESCE(md.strength_value, ''), CASE WHEN md.strength_unit IS NULL OR md.strength_unit = '' THEN '' ELSE CONCAT(' ', md.strength_unit) END))) AS medicine_strength,
+            md.dosage_form,
             TRIM(CONCAT(COALESCE(gd.net_weight, ''), CASE WHEN gd.unit IS NULL OR gd.unit = '' THEN '' ELSE CONCAT(' ', gd.unit) END)) AS grocery_net_weight
          FROM sales_order_items i
          LEFT JOIN product p ON p.product_id = i.product_id
@@ -230,6 +231,7 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             'medicine_classification' => cashierDisplay($item['medicine_classification'] ?? ''),
             'medicine_classification_badge' => cashierDisplay($item['medicine_classification_badge'] ?? ''),
             'strength' => cashierDisplay($item['medicine_strength'] ?? ''),
+            'dosage_form' => cashierDisplay($item['dosage_form'] ?? ''),
             'net_weight' => cashierDisplay($item['grocery_net_weight'] ?? ''),
             'quantity' => (int) (($item['selected_quantity'] ?? 0) ?: ($item['quantity'] ?? 0)),
             'selected_unit' => cashierDisplay($item['selected_unit'] ?? ''),

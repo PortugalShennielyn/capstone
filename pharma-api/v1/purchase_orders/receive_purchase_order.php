@@ -48,11 +48,7 @@ function receiveDate($value, string $label, bool $required = false): ?string
         if ($required) throw new InvalidArgumentException("{$label} is required.");
         return null;
     }
-    $parsed = DateTime::createFromFormat('Y-m-d', $date);
-    if (!$parsed || $parsed->format('Y-m-d') !== $date) {
-        throw new InvalidArgumentException("{$label} must be a valid date.");
-    }
-    return $date;
+    return validateDateNotBeforeToday($date, "{$label} must be a valid date.", 'Expiry date cannot be earlier than today.');
 }
 
 function receiveStatusForResolution(string $resolution): string

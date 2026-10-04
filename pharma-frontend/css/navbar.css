@@ -13,8 +13,7 @@
     --drp-page-background: #f6f8fc;
 }
 
-/* The collapsed rail owns the page offset. Expanding is a fixed drawer overlay,
-   so every module keeps exactly the same usable width and chart/table geometry. */
+/* Keep the page beside the sidebar in both its collapsed and expanded states. */
 #mainWrapper,
 .main-wrapper,
 .navbar-page-content,
@@ -25,27 +24,19 @@ html.sidebar-collapsed .navbar-page-content,
 html.sidebar-collapsed .app-main {
     width: calc(100% - var(--sidebar-collapsed-width)) !important;
     margin-left: var(--sidebar-collapsed-width) !important;
-    transition: none !important;
+    transition: margin-left .24s ease, width .24s ease !important;
 }
 
-.sidebar-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 1998;
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
-    background: rgba(15, 23, 42, .25);
-    -webkit-backdrop-filter: blur(3px);
-    backdrop-filter: blur(3px);
-    transition: opacity 220ms ease, visibility 0s linear 220ms;
+body.sidebar-open #mainWrapper,
+body.sidebar-open .main-wrapper,
+body.sidebar-open .navbar-page-content,
+body.sidebar-open .app-main {
+    width: calc(100% - var(--sidebar-expanded-width)) !important;
+    margin-left: var(--sidebar-expanded-width) !important;
 }
 
-body.sidebar-open .sidebar-backdrop {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-    transition: opacity 220ms ease;
+@media (max-width: 600px) {
+    :root { --sidebar-expanded-width: min(240px, 68vw) !important; }
 }
 
 #navbar-container .app-sidebar { z-index: 2000 !important; }
@@ -180,16 +171,18 @@ body.sidebar-open .drp-shared-topbar .drp-sidebar-open-toggle { display: none !i
 .drp-shared-topbar .drp-sidebar-open-toggle:hover .sidebar-tooltip,
 .drp-shared-topbar .drp-sidebar-open-toggle:focus-visible .sidebar-tooltip { transform: translateY(0); }
 
-/* Application dialogs and full-screen viewers share the permanent rail boundary.
-   Bootstrap can re-parent a shown modal, so this must not rely on a direct-child
-   selector. The named overlays are the app's non-Bootstrap full-screen dialogs. */
+/* Keep dialogs in the space beside the current sidebar width. Bootstrap can
+   re-parent a shown modal, so these selectors must not require a direct child. */
+body { --drp-dialog-sidebar-width: var(--sidebar-collapsed-width); }
+body.sidebar-open { --drp-dialog-sidebar-width: var(--sidebar-expanded-width); }
+
 body .modal,
 body .receiving-ui-backdrop,
 body .grn-modal,
 body .supplier-payment-dialog,
 body .shift-modal,
 body .receipt-modal {
-    left: var(--sidebar-collapsed-width) !important;
+    left: var(--drp-dialog-sidebar-width) !important;
     right: 0 !important;
     width: auto !important;
 }
@@ -198,7 +191,18 @@ body .receipt-modal {
    those dialogs to the modal's rail-adjusted containing block so neither edge
    can be clipped. Smaller dialogs retain their module-defined width. */
 body .modal > .modal-dialog {
-    max-width: calc(100vw - var(--sidebar-collapsed-width) - 24px) !important;
+    max-width: calc(100vw - var(--drp-dialog-sidebar-width) - 24px) !important;
+}
+
+@media (max-width: 700px) {
+    /* A phone cannot fit a readable dialog beside an expanded sidebar. */
+    body.sidebar-open .modal {
+        left: 0 !important;
+        z-index: 2010 !important;
+    }
+    body.sidebar-open .modal > .modal-dialog {
+        max-width: calc(100vw - 24px) !important;
+    }
 }
 
 #navbar-container .app-sidebar.collapsed .sidebar-tooltip {
@@ -213,9 +217,12 @@ body .modal > .modal-dialog {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .sidebar-backdrop,
     .sidebar-toggle,
     .sidebar-tooltip { transition: none !important; }
+    body.sidebar-open #mainWrapper,
+    body.sidebar-open .main-wrapper,
+    body.sidebar-open .navbar-page-content,
+    body.sidebar-open .app-main { transition: none !important; }
 }
 
 /* Shared application header. The dashboard and every module reuse the sidebar's

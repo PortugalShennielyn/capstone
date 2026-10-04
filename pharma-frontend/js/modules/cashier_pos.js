@@ -189,13 +189,41 @@ function receiptSpec(item) {
     ].filter((part) => cleanText(part)).join(' / ');
 }
 
-function receiptProductLine(item) {
-    const brand = cleanText(item.brand_name);
+function isPrescriptionItem(item) {
+    return cleanText(item?.medicine_classification_badge) === 'Rx'
+        || cleanText(item?.medicine_classification).toLowerCase() === 'prescription (rx)';
+}
+
+function rxTextMarkup(item) {
+    return isPrescriptionItem(item) ? ' <span class="rx-inline">Rx</span>' : '';
+}
+
+function itemNameMarkup(item) {
     const product = cleanText(item.product_name, 'Item');
-    if (brand && product && brand.toLowerCase() !== product.toLowerCase()) {
-        return `${brand} ${product}`;
-    }
-    return product || brand || 'Item';
+    return `${escapeHtml(product)}${rxTextMarkup(item)}`;
+}
+
+function itemSpecText(item) {
+    const detail = [item.strength || item.net_weight, item.dosage_form].map(cleanText).filter(Boolean).join(' • ')
+        || cleanText(item.specification);
+    const generic = cleanText(item.generic_name).toLowerCase();
+    if (!generic) return detail;
+    return detail
+        .split(/\s*[•/]\s*/)
+        .map(cleanText)
+        .filter((part) => part && part.toLowerCase() !== generic)
+        .join(' • ');
+}
+
+function receiptSpecMarkup(item) {
+    const brand = cleanText(item.brand_name);
+    const detail = itemSpecText(item);
+    return [brand ? escapeHtml(brand) : '', detail ? escapeHtml(detail) : ''].filter(Boolean).join('<br>');
+}
+
+function receiptProductLineMarkup(item) {
+    const product = cleanText(item.product_name, 'Item');
+    return `${escapeHtml(product)}${isPrescriptionItem(item) ? ' <span class="receipt-rx-print">Rx</span>' : ''}`;
 }
 
 function completedReceiptTotals(order) {
@@ -208,13 +236,13 @@ function receiptItemRows(order) {
     }
 
     return order.items.map((item) => {
-        const spec = receiptSpec(item);
+        const spec = receiptSpecMarkup(item);
         return `
             <div class="receipt-item-print">
                 <span>${escapeHtml(numberText(item.quantity))}</span>
                 <span>
-                    <span class="receipt-item-name-print">${escapeHtml(receiptProductLine(item))}</span>
-                    ${spec ? `<span class="receipt-item-spec-print">${escapeHtml(spec)}</span>` : ''}
+                    <span class="receipt-item-name-print">${receiptProductLineMarkup(item)}</span>
+                    ${spec ? `<span class="receipt-item-spec-print">${spec}</span>` : ''}
                 </span>
                 <span class="receipt-money-print">${escapeHtml(plainMoney(item.line_total))}</span>
             </div>
@@ -383,15 +411,18 @@ function itemRows(order) {
     }
 
     return order.items.map((item) => {
-        const specParts = [item.brand_name, item.specification].filter(Boolean).join(' / ');
-        const details = [item.product_name, specParts].filter(Boolean).join(' - ');
+        const nameMarkup = itemNameMarkup(item);
+        const brand = cleanText(item.brand_name);
+        const specText = itemSpecText(item);
+        const plainDetails = [item.product_name, item.brand_name, item.generic_name, item.strength || item.net_weight || item.specification].filter(Boolean).join(' - ');
         const inactive = String(item.product_status || 'Active').toLowerCase() === 'inactive';
         return `
-            <tr title="${escapeHtml(inactive ? `${details} - Inactive` : details)}">
+            <tr title="${escapeHtml(inactive ? `${plainDetails} - Inactive` : plainDetails)}">
                 <td>${numberText(item.quantity)}</td>
                 <td>
-                    <span class="item-name">${escapeHtml(item.product_name)}</span>
-                    ${specParts ? `<span class="item-spec">${escapeHtml(specParts)}</span>` : ''}
+                    <span class="item-name">${nameMarkup}</span>
+                    ${brand ? `<span class="item-generic-line">${escapeHtml(brand)}</span>` : ''}
+                    ${specText ? `<span class="item-spec">${escapeHtml(specText)}</span>` : ''}
                     ${inactive ? '<span class="item-spec text-danger">Inactive &mdash; cannot be sold</span>' : ''}
                 </td>
                 <td class="unit-col">${escapeHtml(displayUnit(item.selected_unit))}</td>

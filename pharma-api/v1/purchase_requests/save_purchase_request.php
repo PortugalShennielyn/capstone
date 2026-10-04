@@ -85,7 +85,7 @@ try {
         'UPDATE purchase_requests
          SET status = :status,
              submitted_at = IF(:is_submitted = 1, NOW(), NULL),
-             supervisor_user_id = NULL, decided_at = NULL, updated_at = NOW()
+             supervisor_user_id = NULL, decided_at = NULL, decision_reason = NULL, updated_at = NOW()
          WHERE pr_id = :pr_id'
     );
     $update->execute([

@@ -70,18 +70,27 @@ function badge(status) {
     return `<span class="status-pill status-${group}">${esc(String(status || 'Waiting').replace(/_/g, ' '))}</span>`;
 }
 
-function receiptProductLine(item) {
-    const brand = String(item.brand_name || '').trim();
+function receiptProductLineMarkup(item) {
     const product = String(item.product_name || 'Item').trim();
-    if (brand && product && brand.toLowerCase() !== product.toLowerCase()) return `${brand} ${product}`;
-    return product || brand || 'Item';
+    return `${esc(product || 'Item')}${isPrescriptionItem(item) ? ' <span class="receipt-rx-print">Rx</span>' : ''}`;
 }
 
-function receiptSpec(item) {
-    return [item.generic_name, item.strength || item.net_weight || item.specification]
+function isPrescriptionItem(item) {
+    return String(item?.medicine_classification_badge || '').trim() === 'Rx'
+        || String(item?.medicine_classification || '').trim().toLowerCase() === 'prescription (rx)';
+}
+
+function receiptSpecMarkup(item) {
+    const generic = String(item.generic_name || '').trim();
+    const brand = String(item.brand_name || '').trim();
+    const explicitDetail = [item.strength || item.net_weight, item.dosage_form].map((part) => String(part || '').trim()).filter(Boolean).join(' • ');
+    const fallbackDetail = String(item.specification || '')
+        .split(/\s*[•/]\s*/)
         .map((part) => String(part || '').trim())
-        .filter(Boolean)
-        .join(' / ');
+        .filter((part) => part && part.toLowerCase() !== generic.toLowerCase())
+        .join(' • ');
+    const detail = explicitDetail || fallbackDetail;
+    return [brand ? esc(brand) : '', detail ? esc(detail) : ''].filter(Boolean).join('<br>');
 }
 
 function receiptTotals(order) {
@@ -94,13 +103,13 @@ function receiptItems(order) {
         return '<div class="receipt-item-print"><span>0</span><span>No items found.</span><span class="receipt-money-print">0.00</span></div>';
     }
     return items.map((item) => {
-        const spec = receiptSpec(item);
+        const spec = receiptSpecMarkup(item);
         return `
             <div class="receipt-item-print">
                 <span>${esc(count(item.quantity))}</span>
                 <span>
-                    <span class="receipt-item-name-print">${esc(receiptProductLine(item))}</span>
-                    ${spec ? `<span class="receipt-item-spec-print">${esc(spec)}</span>` : ''}
+                    <span class="receipt-item-name-print">${receiptProductLineMarkup(item)}</span>
+                    ${spec ? `<span class="receipt-item-spec-print">${spec}</span>` : ''}
                 </span>
                 <span class="receipt-money-print">${esc(plainMoney(item.line_total))}</span>
             </div>

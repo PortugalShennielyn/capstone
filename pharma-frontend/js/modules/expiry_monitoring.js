@@ -6,6 +6,11 @@ const API_BASE_URL = window.location.port
 const EXPIRY_SYNC_KEY = 'drpInventoryExpiryChanged';
 const expiryChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('drp-inventory-expiry') : null;
 
+function localTodayDateString() {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
 let expiryRows = [];
 let activeExpiryRow = null;
 let expiryPage = 1;
@@ -358,6 +363,7 @@ function openEditExpiryModal(batchId) {
     document.getElementById('editExpiryProductMeta').textContent = productSecondary(row);
     document.getElementById('editExpiryBatchNumber').textContent = row.batch_number || '—';
     document.getElementById('editExpiryPoNumber').textContent = row.po_number || '—';
+    document.getElementById('editExpiryDateInput').min = localTodayDateString();
     document.getElementById('editExpiryDateInput').value = row.expiry_date || '';
     setAlertControls(Number(row.expiry_alert_days || 30));
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editExpiryDateModal')).show();
@@ -399,6 +405,7 @@ async function saveExpiryDate() {
         const batchId = document.getElementById('editExpiryBatchId')?.value;
         const inventoryId = document.getElementById('editExpiryInventoryId')?.value;
         const expiryDate = document.getElementById('editExpiryDateInput')?.value || '';
+        if (expiryDate && expiryDate < localTodayDateString()) throw new Error('Expiry date cannot be earlier than today.');
         const expiryAlertDays = selectedAlertDays();
         if (!batchId) throw new Error('Inventory batch is required.');
         PharmaUtils.modal.loading('Saving Expiry Date...');

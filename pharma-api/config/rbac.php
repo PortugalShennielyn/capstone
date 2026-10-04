@@ -111,12 +111,26 @@ function enforceCashierApiBoundary(): void
     }
 }
 
-function salesClerkApiRequestAllowed(string $scriptName): bool
+function salesClerkApiRequestAllowed(string $scriptName, string $requestMethod = 'GET'): bool
 {
     $relativePath = rbacRelativeApiPath($scriptName);
+    $method = strtoupper($requestMethod);
 
     if (str_starts_with($relativePath, 'auth/')) {
         return true;
+    }
+
+    if (in_array($relativePath, [
+        'inventory/get_inventory.php',
+        'inventory/get_shelf_inventory.php',
+        'inventory/get_transfer_options.php',
+        'inventory/get_stock_movements.php',
+    ], true)) {
+        return $method === 'GET';
+    }
+
+    if ($relativePath === 'inventory/transfer_stock.php') {
+        return $method === 'POST';
     }
 
     return $relativePath === 'reports/get_report.php'
@@ -136,7 +150,7 @@ function salesClerkApiRequestAllowed(string $scriptName): bool
 function enforceSalesClerkApiBoundary(): void
 {
     if (currentSessionHasRbacRole('salesclerk') || currentSessionHasRbacRole('ro_sales_clerk')) {
-        if (!salesClerkApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '')) {
+        if (!salesClerkApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '', $_SERVER['REQUEST_METHOD'] ?? 'GET')) {
             sendForbiddenResponse('Access denied.');
         }
     }

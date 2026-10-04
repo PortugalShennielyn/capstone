@@ -13,8 +13,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=36" rel="stylesheet">
-    <script src="./js/navbar.js?v=83" defer></script>
+    <link href="./css/navbar.css?v=39" rel="stylesheet">
+    <script src="./js/navbar.js?v=86" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root {
@@ -73,8 +73,9 @@
         .image-placeholder i { font-size: 20px; }
         .product-meta { min-width: 0; padding-top: 7px; flex: 1 1 auto; display: flex; flex-direction: column; }
         .brand { display: block; min-height: 17px; color: #667085; font-size: 13px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .product-name { display: block; min-height: 40px; margin-top: 1px; color: var(--ink); font-size: 16px; font-weight: 900; line-height: 1.25; overflow: hidden; }
-        .product-name .shelf-rx-badge { display:inline-flex; align-items:center; margin-left:6px; padding:2px 7px; border:1px solid #fca5a5; border-radius:999px; color:#b42318; background:#fef3f2; font-size:10px; font-weight:900; line-height:1.35; vertical-align:middle; }
+        .product-name { display: block; min-height: 20px; margin-top: 1px; color: var(--ink); font-size: 16px; font-weight: 900; line-height: 1.25; overflow: hidden; }
+        .product-generic, .order-generic-line, .receipt-generic-line { display:block; margin-top:4px; color:#51607a; font-size:13px; font-weight:800; line-height:1.25; overflow-wrap:anywhere; }
+        .rx-label { display:inline; margin-left:4px; color:#000; font-size:inherit; font-weight:600; line-height:inherit; vertical-align:baseline; white-space:nowrap; }
         .spec { display: -webkit-box; min-height: 35px; max-height: 35px; margin-top: 4px; color: #53627d; font-size: 13px; font-weight: 700; line-height: 1.35; overflow: hidden; overflow-wrap: break-word; word-break: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
         .spec-generic { color: #f97316; font-weight: 900; }
         .card-foot { min-height: 64px; display: flex; align-items: end; justify-content: space-between; gap: 10px; padding-top: 8px; }
@@ -551,9 +552,20 @@
         }
 
         function rxBadgeMarkup(product) {
-            return cleanSpecPart(product.medicine_classification_badge) === 'Rx' || cleanSpecPart(product.medicine_classification).toLowerCase() === 'prescription (rx)'
-                ? '<span class="shelf-rx-badge">Rx</span>'
+            return isPrescriptionProduct(product)
+                ? '<span class="rx-label">Rx</span>'
                 : '';
+        }
+
+        function orderRxBadgeMarkup(product) {
+            return isPrescriptionProduct(product)
+                ? '<span class="rx-label">Rx</span>'
+                : '';
+        }
+
+        function isPrescriptionProduct(product) {
+            return cleanSpecPart(product?.medicine_classification_badge) === 'Rx'
+                || cleanSpecPart(product?.medicine_classification).toLowerCase() === 'prescription (rx)';
         }
 
         function productSpecificationParts(product) {
@@ -572,7 +584,6 @@
             let parts;
             if (category === 'medicine') {
                 parts = [
-                    cleanSpecPart(product.generic_name),
                     cleanSpecPart(product.strength) || joinStrengthValueUnit(product.strength_value, product.strength_unit),
                     cleanSpecPart(product.dosage_form),
                     joinSpecValueUnit(product.net_content_value || product.volume_value, product.net_content_unit || product.volume_unit),
@@ -605,15 +616,7 @@
 
         function productSpecificationMarkup(product) {
             const parts = productSpecificationParts(product);
-            const generic = cleanSpecPart(product.generic_name);
-
-            return parts.map(part => {
-                const escaped = escapeHtml(part);
-                if (generic && isMedicineProduct(product) && part.toLowerCase() === generic.toLowerCase()) {
-                    return `<span class="spec-generic">${escaped}</span>`;
-                }
-                return escaped;
-            }).join(' &bull; ');
+            return parts.map(part => escapeHtml(part)).join(' &bull; ');
         }
 
         function buildPosSpecification(product) {
@@ -834,6 +837,7 @@
         function receiptProductName(item) {
             const brand = normalizeReceiptText(item.brand_name);
             let product = normalizeReceiptText(item.product_name);
+            if (brand) return brand;
             if (brand && product.toLowerCase().startsWith(brand.toLowerCase())) {
                 product = product.slice(brand.length).trim();
             }
@@ -841,14 +845,23 @@
         }
 
         function receiptShortSpec(item) {
+            const explicitParts = [item.strength, item.dosage_form].map(part => normalizeReceiptText(part)).filter(Boolean);
+            if (explicitParts.length) return explicitParts.join(' • ');
+            const generic = normalizeReceiptText(item.generic_name).toLowerCase();
             const parts = String(item.specification || '')
-                .split('/')
+                .split(/[•/]/)
                 .map(part => normalizeReceiptText(part))
-                .filter(Boolean);
+                .filter(Boolean)
+                .filter(part => part.toLowerCase() !== generic);
             const packageWords = /^(bottle|blister pack|sachet|box|pack|piece|tablet|capsule|solution|cream|ointment|syrup|suspension)$/i;
             const measurement = parts.find(part => /\b\d+(\.\d+)?\s?(mg|mcg|g|kg|ml|l)\b/i.test(part));
             if (measurement) return measurement.replace(/(\d)(mg|mcg|g|kg|ml|l)\b/i, '$1 $2');
             return parts.find(part => !packageWords.test(part) && !/%/.test(part)) || '';
+        }
+
+        function itemGenericLineMarkup(item) {
+            const generic = normalizeReceiptText(item.generic_name);
+            return generic ? `${escapeHtml(generic)}${orderRxBadgeMarkup(item)}` : '';
         }
 
         function renderSendConfirmSummary() {
@@ -905,7 +918,8 @@
                             </div>
                             <div class="order-product">
                                 <strong>${escapeHtml(receiptProductName(item))}</strong>
-                                ${orderShortSpecification(item) ? `<span class="order-spec">${escapeHtml(orderShortSpecification(item))}</span>` : ''}
+                                ${itemGenericLineMarkup(item) ? `<span class="order-generic-line">${itemGenericLineMarkup(item)}</span>` : ''}
+                                ${receiptShortSpec(item) ? `<span class="order-spec">${escapeHtml(receiptShortSpec(item))}</span>` : ''}
                                 <span class="order-unit">${escapeHtml(canonicalUnitLabel(item.selected_unit || sellingUnits[0]?.unit || 'Unit', Number(item.quantity || 1)))}</span>
                             </div>
                             <div class="order-action">
@@ -1051,7 +1065,13 @@
                 total_amount: totals.total,
                 cash_received: 0,
                 change_amount: 0,
-                items: Array.from(state.cart.values()).map(item => ({ product_id: item.product_id, quantity: Number(item.quantity || 0), unit: item.selected_unit }))
+                items: Array.from(state.cart.values()).map(item => ({
+                    product_id: item.product_id,
+                    quantity: Number(item.quantity || 0),
+                    unit: item.selected_unit,
+                    medicine_classification: item.medicine_classification || '',
+                    medicine_classification_badge: item.medicine_classification_badge || ''
+                }))
             };
         }
 
@@ -1080,6 +1100,7 @@
                     <span>${countFormat.format(Number(item.quantity || 0))}</span>
                     <div class="receipt-description">
                         <strong>${escapeHtml(receiptProductName(item))}</strong>
+                        ${itemGenericLineMarkup(item) ? `<small class="receipt-generic-line">${itemGenericLineMarkup(item)}</small>` : ''}
                         ${receiptShortSpec(item) ? `<small>${escapeHtml(receiptShortSpec(item))}</small>` : ''}
                     </div>
                     <span class="receipt-price">${plainMoney(item.unit_price)}</span>
@@ -1263,7 +1284,7 @@
         document.getElementById('sendConfirmModal').addEventListener('hidden.bs.modal', () => setProceedButtonLoading(false));
         document.getElementById('viewMyOrdersBtn').addEventListener('click', () => {
             clearOrder();
-            window.location.href = 'sales_clerk_orders.html?tab=waiting_cashier';
+            window.location.href = 'sales_clerk_orders.html?status=waiting_cashier';
         });
         document.getElementById('createNewOrderBtn').addEventListener('click', () => {
             bootstrap.Modal.getOrCreateInstance(document.getElementById('orderSentModal')).hide();

@@ -1,7 +1,7 @@
 import PharmaUtils from '../utils.js';
 import { configureResizableModal, resetResizableModal } from './modal_size.js?v=2';
 import { createLiveSync, publishDataUpdate } from './live_data.js?v=1';
-import { cleanProductSpecificationText, formatProductIdentityParts, isPrescriptionProduct } from './product_specification.js?v=9';
+import { cleanProductSpecificationText, formatProductIdentityParts, inventoryMedicineSpecificationParts, isPrescriptionProduct } from './product_specification.js?v=11';
 
 const API_BASE_URL = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -97,7 +97,14 @@ function uniqueParts(parts) {
 
 function productIdentityParts(row) {
     const parts = formatProductIdentityParts(row);
-    return { primary: parts.productName, secondary: parts.genericName };
+    const isMedicine = meaningful(row?.category_name).toLowerCase() === 'medicine';
+    const genericName = meaningful(row?.generic_name);
+    const productName = meaningful(row?.product_name);
+    const primary = isMedicine && genericName ? genericName : (parts.productName || productName || genericName);
+    const secondary = !isMedicine && parts.genericName && parts.genericName.toLowerCase() !== String(primary || '').toLowerCase()
+        ? parts.genericName
+        : '';
+    return { primary, secondary };
 }
 
 function productIdentityText(row, fallback = '') {
@@ -170,6 +177,21 @@ function buildInventorySpecification(product) {
 
     const parts = uniqueParts(candidates.map(meaningful));
     return parts.join(PRODUCT_IDENTITY_SEPARATOR) || 'No specification available';
+}
+
+function inventorySpecificationMarkup(product, searchTerm = '') {
+    const parts = inventoryMedicineSpecificationParts(product);
+    if (!parts) return `<span class="specification-cell" title="${esc(buildInventorySpecification(product))}">${highlightSearchText(buildInventorySpecification(product), searchTerm)}</span>`;
+    const form = parts.dosageForm.toLowerCase();
+    const icon = /powder/.test(form) ? 'fa-solid fa-flask'
+        : /suspension|syrup|solution|drops|liquid/.test(form) ? 'fa-solid fa-droplet'
+        : /supplement|vitamin/.test(form) ? 'fa-solid fa-leaf'
+        : /capsule/.test(form) ? 'fa-solid fa-capsules' : 'fa-regular fa-circle-dot';
+    return `<span class="inventory-catalog-specification">
+        ${parts.dosageForm ? `<span class="inventory-specification-form"><i class="${icon}" aria-hidden="true"></i>${highlightSearchText(parts.dosageForm, searchTerm)}</span>` : ''}
+        ${parts.strength ? `<strong class="inventory-specification-strength">${highlightSearchText(parts.strength, searchTerm)}</strong>` : ''}
+        ${parts.details ? `<span class="inventory-specification-details">${highlightSearchText(parts.details, searchTerm)}</span>` : ''}
+    </span>`;
 }
 
 function formatDate(value, fallback = '-') {
@@ -259,6 +281,22 @@ function canCreatePurchaseRequest() {
     return ['super_admin', 'admin', 'manager'].includes(inventoryActorRole);
 }
 
+function isSalesClerkInventoryView() {
+    return inventoryActorRole === 'salesclerk';
+}
+
+function applyRoleInventoryChrome() {
+    const salesClerk = isSalesClerkInventoryView();
+    document.getElementById('inventorySummaryCards')?.toggleAttribute('hidden', salesClerk);
+    document.querySelector('[data-inventory-view="history"]')?.toggleAttribute('hidden', salesClerk);
+    if (salesClerk && inventoryView !== 'storage') {
+        inventoryView = 'storage';
+        document.querySelectorAll('.inventory-view-tab').forEach((tab) => {
+            tab.classList.toggle('active', tab.dataset.inventoryView === 'storage');
+        });
+    }
+}
+
 function normalizeStockStatus(value) {
     const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     const aliases = { out: 'out_of_stock', low: 'low_stock', healthy: 'in_stock', expiring: 'expiring_soon', available: 'in_stock' };
@@ -321,7 +359,7 @@ async function showNoStorageStockModal(row) {
         showCancelButton: true,
         showConfirmButton: canCreate,
         confirmButtonText: 'Create PR',
-        cancelButtonText: canCreate ? 'Cancel' : 'Close',
+        cancelButtonText: 'Cancel',
         confirmButtonColor: '#4f46e5'
     });
     if (result.isConfirmed && canCreate && productId) {
@@ -362,6 +400,7 @@ function transferAllocationMarkup(value) {
 }
 
 function syncInventoryViewControls() {
+    applyRoleInventoryChrome();
     const historyActive = inventoryView === 'history';
     document.querySelectorAll('.inventory-only-filter').forEach((field) => { field.hidden = historyActive; });
     document.querySelectorAll('.history-only-filter').forEach((field) => { field.hidden = !historyActive; });
@@ -488,7 +527,7 @@ function renderInventoryTableHeader() {
     const selectAll = inventoryView === 'storage'
         ? '<input class="form-check-input me-1" id="inventoryPrSelectAll" type="checkbox" aria-label="Select all eligible inventory products" hidden>'
         : '';
-    const common = `<th class="inventory-col-brand">${selectAll}Brand</th><th class="inventory-col-product">Product</th><th class="inventory-col-specification">Specification</th><th class="inventory-col-type">Product Type</th>`;
+    const common = `<th class="inventory-col-brand">${selectAll}Brand</th><th class="inventory-col-product">Product</th><th class="inventory-col-specification">Specification</th>`;
     head.innerHTML = inventoryView === 'shelf'
         ? `<tr>${common}<th class="inventory-col-qty">Shelf<br>Qty</th><th class="inventory-col-qty">Storage<br>Qty</th><th class="inventory-col-expiry">Nearest<br>Expiry</th><th class="inventory-col-status">POS Status</th><th class="inventory-col-action">Action</th></tr>`
         : `<tr>${common}<th class="inventory-col-qty">Storage<br>Qty</th><th class="inventory-col-qty">Shelf<br>Qty</th><th class="inventory-col-qty">On Hand</th><th class="inventory-col-expiry">Nearest<br>Expiry</th><th class="inventory-col-action">Action</th></tr>`;
@@ -503,11 +542,16 @@ function renderInventory(rows) {
     const body = document.querySelector('#table-inventory tbody');
     if (!body) return;
 
-    renderInventorySummary(inventoryRows.filter((row) => !isInactiveProduct(row)));
+    applyRoleInventoryChrome();
+    if (isSalesClerkInventoryView()) {
+        document.getElementById('inventorySummaryCards')?.replaceChildren();
+    } else {
+        renderInventorySummary(inventoryRows.filter((row) => !isInactiveProduct(row)));
+    }
     updatePrSelectionControls(rows);
 
     if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="9" class="empty-row">No received inventory records found.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="empty-row">No received inventory records found.</td></tr>';
         return;
     }
 
@@ -534,7 +578,6 @@ function renderInventory(rows) {
             ? `<td class="inventory-col-qty"><span class="qty-number">${esc(shelfQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, shelfQty))}</small></td><td class="inventory-col-qty"><span class="qty-number">${esc(storageQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, storageQty))}</small></td><td class="inventory-col-expiry">${expiry}</td><td class="inventory-col-status"><span class="pos-status ${shelfQty > 0 && !inactive ? 'is-available' : 'is-unavailable'}">${shelfQty > 0 && !inactive ? 'Available' : 'Unavailable'}</span></td>${action}`
             : `<td class="inventory-col-qty"><span class="qty-number">${esc(storageQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, storageQty))}</small></td><td class="inventory-col-qty"><span class="qty-number">${esc(shelfQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, shelfQty))}</small></td><td class="inventory-col-qty inventory-on-hand"><span class="qty-number">${esc(storageQty + shelfQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, storageQty + shelfQty))}</small></td><td class="inventory-col-expiry">${expiry}</td>${action}`;
 
-        const specification = buildInventorySpecification(row);
         const rowClasses = [inactive ? 'is-inactive' : '', searchTerm ? 'has-search-match' : ''].filter(Boolean).join(' ');
         return `
             <tr data-product-id="${productId}" class="${rowClasses}">
@@ -542,8 +585,7 @@ function renderInventory(rows) {
                 <td class="inventory-col-product inventory-product-column">
                     <span class="product-cell">${renderProductIdentityCell(row, searchTerm)}</span>
                 </td>
-                <td class="inventory-col-specification inventory-specification-column"><span class="specification-cell" title="${esc(specification)}">${highlightSearchText(specification, searchTerm)}</span></td>
-                <td class="inventory-col-type inventory-type-column">${highlightSearchText(cleanText(row.type_name), searchTerm)}</td>
+                <td class="inventory-col-specification inventory-specification-column">${inventorySpecificationMarkup(row, searchTerm)}</td>
                 ${locationCells}
             </tr>
         `;
@@ -584,24 +626,18 @@ async function loadInventory() {
     }
 }
 
-function detailBox(label, value) {
-    return `<div class="detail-box"><span>${esc(label)}</span><strong>${esc(cleanText(value))}</strong></div>`;
+function stockSummaryItem(label, value) {
+    return `<div class="inventory-stock-summary-item"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
 }
 
-function identityItem(label, value) {
-    return `<td>${esc(cleanText(normalizeDisplayText(value), 'Not recorded'))}</td>`;
+function quantityWithUnit(quantity, unit) {
+    const cleanUnit = cleanText(unit, 'unit');
+    const suffix = Number(quantity) === 1 || cleanUnit.endsWith('s') ? cleanUnit : `${cleanUnit}s`;
+    return `${Number(quantity).toLocaleString('en-PH')} ${suffix}`;
 }
 
-function attributeRow(label, value) {
-    return `<div><span>${esc(label)}</span><strong>${esc(cleanText(value))}</strong></div>`;
-}
-
-function stockTile(label, value, color = '#7c3aed', className = '') {
-    return `<div class="inventory-header-stock-card ${esc(className)}" style="--stock-card-accent:${esc(color)}"><span class="inventory-header-stock-label">${esc(label)}</span><strong class="inventory-header-stock-value">${esc(value)}</strong></div>`;
-}
-
-function expiryRow(value) {
-    return `<div class="inventory-header-stock-card expiry-card" style="--stock-card-accent:#d97706"><span class="inventory-header-stock-label">Nearest Expiry</span><strong class="inventory-header-stock-value">${esc(value)}</strong></div>`;
+function infoItem(label, value) {
+    return `<div class="inventory-info-item"><span>${esc(label)}</span><strong>${esc(cleanText(normalizeDisplayText(value), 'Not recorded'))}</strong></div>`;
 }
 
 function batchPriorityMarkup(batch) {
@@ -610,10 +646,6 @@ function batchPriorityMarkup(batch) {
     if (batch.is_new_batch) badges.push(batchBadge('New Batch', 'batch-new'));
     if (batch.is_old_batch) badges.push(batchBadge('Old Batch', 'batch-old'));
     return badges.length ? `<div class="batch-priority-list">${badges.join('')}</div>` : '';
-}
-
-function totalRemaining(batch) {
-    return Number(batch.storage_qty || 0) + Number(batch.shelf_qty || 0);
 }
 
 function tableRows(rows, emptyText, renderer, colspan = 8) {
@@ -628,31 +660,6 @@ function openDetails(productId, show = true) {
     if (!row) return;
     activeDetailsProductId = row.product_id;
     const productSpecification = buildInventorySpecification(row);
-    const category = String(row.category_name || '').toLowerCase();
-    const attributes = (category === 'medicine'
-        ? [
-            ['Generic Name', row.generic_name],
-            ['Strength', meaningful(row.strength) || joinedMeasurement(row.strength_value, row.strength_unit)],
-            ['Net Content', joinedMeasurement(row.net_content_value, row.net_content_unit)],
-            ['Dosage Form', row.dosage_form],
-            ['Packaging', row.package_type]
-        ]
-        : (category === 'medical supply' || category === 'medical supplies')
-        ? [
-            ['Variant', row.medical_variant],
-            ['Size', row.medical_size],
-            ['Material', row.material],
-            ['Sterile Status', row.sterile_status],
-            ['Packaging', row.medical_package_type || row.package_type],
-            ['Pack Content', row.medical_pack_content]
-        ]
-        : [
-            ['Flavor / Variant', row.variant],
-            ['Size', meaningful(row.net_weight) ? '' : row.size],
-            ['Net Weight', joinedMeasurement(row.net_weight, row.unit)],
-            ['Packaging', row.package_type],
-            ['Pack Content', row.pack_content]
-        ]).filter(([, value]) => meaningful(value));
     const storageQty = Number(row.storage_quantity || 0);
     const shelfQty = Number(row.shelf_quantity || 0);
     const inventoryUnit = cleanText(row.inventory_unit_symbol || row.inventory_unit_name, 'unit');
@@ -660,7 +667,6 @@ function openDetails(productId, show = true) {
     const returnedQty = (row.batches || []).reduce((total, batch) => total + Number(batch.returned_qty || 0), 0);
     const onHandQty = storageQty + shelfQty;
     const inactive = isInactiveProduct(row);
-    const batchCount = Number(row.active_batch_count || 0);
     const hasReturned = returnedQty > 0 || (row.batches || []).some((batch) => Object.prototype.hasOwnProperty.call(batch, 'returned_qty'));
     const subtitle = document.getElementById('inventoryDetailsSubtitle');
     if (subtitle) subtitle.textContent = formatProductIdentity([row.brand_name, productIdentityText(row), productSpecification]);
@@ -675,56 +681,35 @@ function openDetails(productId, show = true) {
     const stockCards = document.getElementById('inventoryHeaderStockCards');
     if (stockCards) {
         stockCards.innerHTML = `
-            ${stockTile(`Storage Stock (${inventoryUnit})`, storageQty, '#2563eb')}
-            ${stockTile(`Shelf Stock (${inventoryUnit})`, shelfQty, '#16a34a')}
-            ${stockTile(`On Hand (${inventoryUnit})`, onHandQty, '#7c3aed', 'on-hand')}
-            ${stockTile(`Damaged (${inventoryUnit})`, damagedQty, '#dc2626')}
-            ${hasReturned ? stockTile(`Returned (${inventoryUnit})`, returnedQty, '#64748b') : stockTile(`Returned (${inventoryUnit})`, 0, '#64748b')}
-            ${expiryRow(formatDate(row.nearest_expiry_date))}
+            ${stockSummaryItem('Storage Stock', quantityWithUnit(storageQty, inventoryUnit))}
+            ${stockSummaryItem('Shelf Stock', quantityWithUnit(shelfQty, inventoryUnit))}
+            ${stockSummaryItem('On Hand', quantityWithUnit(onHandQty, inventoryUnit))}
+            ${stockSummaryItem('Damaged', quantityWithUnit(damagedQty, inventoryUnit))}
+            ${stockSummaryItem('Returned', quantityWithUnit(hasReturned ? returnedQty : 0, inventoryUnit))}
+            ${stockSummaryItem('Nearest Expiry', formatDate(row.nearest_expiry_date))}
         `;
     }
 
     document.getElementById('inventoryDetails').innerHTML = `
         <div class="inventory-details-record">
-            <section class="product-identity-section">
-                <h6>Product Identity</h6>
-                <div class="product-identity-table-wrap">
-                    <table class="product-identity-table">
-                        <thead>
-                            <tr>
-                                <th>Brand</th>
-                                <th>Product</th>
-                                <th>Category</th>
-                                <th>Product Type</th>
-                                <th>Specification</th>
-                                <th>Generic Name</th>
-                                <th>Strength</th>
-                                <th>Net Content</th>
-                                <th>Dosage Form</th>
-                                <th>Packaging</th>
-                                <th>Selling / Inventory Unit</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                ${identityItem('Brand', row.brand_name)}
-                                ${identityItem('Product', productIdentityText(row))}
-                                ${identityItem('Category', row.category_name)}
-                                ${identityItem('Product Type', row.type_name)}
-                                ${identityItem('Specification', productSpecification)}
-                                ${identityItem('Generic Name', row.generic_name)}
-                                ${identityItem('Strength', meaningful(row.strength) || joinedMeasurement(row.strength_value, row.strength_unit))}
-                                ${identityItem('Net Content', joinedMeasurement(row.net_content_value, row.net_content_unit) || joinedMeasurement(row.net_weight, row.unit) || row.size)}
-                                ${identityItem('Dosage Form', row.dosage_form)}
-                                ${identityItem('Packaging', row.package_type)}
-                                ${identityItem('Selling / Inventory Unit', inventoryUnit)}
-                            </tr>
-                        </tbody>
-                    </table>
+            <section class="inventory-flat-section product-identity-section">
+                <h6>Product Information</h6>
+                <div class="inventory-info-grid">
+                    ${infoItem('Brand', row.brand_name)}
+                    ${infoItem('Product', productIdentityText(row))}
+                    ${infoItem('Generic Name', row.generic_name)}
+                    ${infoItem('Category', row.category_name)}
+                    ${infoItem('Product Type', row.type_name)}
+                    ${infoItem('Specification', productSpecification)}
+                    ${infoItem('Strength', meaningful(row.strength) || joinedMeasurement(row.strength_value, row.strength_unit))}
+                    ${infoItem('Net Content', joinedMeasurement(row.net_content_value, row.net_content_unit) || joinedMeasurement(row.net_weight, row.unit) || row.size)}
+                    ${infoItem('Dosage Form', row.dosage_form)}
+                    ${infoItem('Packaging', row.package_type)}
+                    ${infoItem('Selling / Inventory Unit', inventoryUnit)}
                 </div>
             </section>
 
-            <section class="inventory-record-section batch-inventory-section">
+            <section class="inventory-flat-section batch-inventory-section">
                 <h6>Batch Inventory</h6>
                 <div class="batch-table-wrapper">
                 <table class="table modal-table inventory-batch-table align-middle">
@@ -737,10 +722,6 @@ function openDetails(productId, show = true) {
                             <th class="expiry-date-cell">Expiry</th>
                             <th>Storage</th>
                             <th>Shelf</th>
-                            <th>Damaged</th>
-                            <th class="returned-column">Returned</th>
-                            <th>Total</th>
-                            <th>Expiry Status</th>
                             <th class="batch-status-column">Batch Status</th>
                         </tr>
                     </thead>
@@ -753,30 +734,12 @@ function openDetails(productId, show = true) {
                             <td class="expiry-date-cell">${esc(formatDate(batch.expiry_date))}</td>
                             <td><span class="qty-number">${esc(batch.storage_qty ?? 0)}</span></td>
                             <td><span class="qty-number">${esc(batch.shelf_qty ?? 0)}</span></td>
-                            <td><span class="qty-number">${esc(batch.damaged_qty ?? 0)}</span></td>
-                            <td class="returned-column"><span class="qty-number">${esc(batch.returned_qty ?? 0)}</span></td>
-                            <td><span class="qty-number">${esc(totalRemaining(batch))}</span></td>
-                            <td>${statusBadge(batch.status)}</td>
                             <td class="batch-status-column">${batchStatusBadge(batch.batch_status)}</td>
                         </tr>
-                    `, 12)}</tbody>
+                    `, 8)}</tbody>
                 </table>
                 </div>
             </section>
-
-            <div class="inventory-secondary-sections">
-                ${attributes.length ? `<section class="inventory-record-section"><h6>Product Attributes</h6><div class="inventory-attribute-list">${attributes.map(([label, value]) => attributeRow(label, value)).join('')}</div></section>` : ''}
-                <section class="inventory-record-section">
-                    <h6>Receiving Information</h6>
-                    <div class="inventory-attribute-list">
-                        ${attributeRow('Last Received', formatDate(row.last_received_date))}
-                        ${attributeRow('Supplier', row.latest_supplier_name)}
-                        ${attributeRow('Most Recent PO', row.latest_po_number)}
-                        ${attributeRow('Nearest Expiry', formatDate(row.nearest_expiry_date))}
-                        ${attributeRow('Number of Active Batches', batchCount)}
-                    </div>
-                </section>
-            </div>
         </div>
     `;
 
@@ -1243,14 +1206,7 @@ configureResizableModal('inventoryDetailsModal', {
     minWidth: 760,
     minHeight: 520,
     maxWidthRatio: 0.96,
-    maxHeightRatio: 0.94,
-    onResize: ({ modal }) => {
-        const body = modal.querySelector('.modal-body');
-        const tableWrapper = modal.querySelector('.batch-table-wrapper');
-        if (!body || !tableWrapper) return;
-        const bodyHeight = body.getBoundingClientRect().height;
-        tableWrapper.style.maxHeight = `${Math.max(240, Math.min(470, bodyHeight * 0.48))}px`;
-    }
+    maxHeightRatio: 0.94
 });
 document.getElementById('themeToggle')?.addEventListener('click', () => setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark'));
 document.getElementById('btnRefreshInventory')?.addEventListener('click', loadInventory);
@@ -1309,7 +1265,11 @@ document.getElementById('moveQuantity')?.addEventListener('input', updateTransfe
 document.getElementById('moveUnit')?.addEventListener('change', updateTransferPreview);
 document.querySelectorAll('.inventory-view-tab').forEach((button) => button.addEventListener('click', () => {
     inventoryView = button.dataset.inventoryView || 'storage';
+    if (isSalesClerkInventoryView() && inventoryView !== 'storage') inventoryView = 'storage';
     document.querySelectorAll('.inventory-view-tab').forEach((tab) => tab.classList.toggle('active', tab === button));
+    if (isSalesClerkInventoryView()) {
+        document.querySelectorAll('.inventory-view-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.inventoryView === 'storage'));
+    }
     syncInventoryViewControls();
     const heading = document.querySelector('.inventory-card h1');
     if (heading) heading.textContent = inventoryView === 'storage' ? 'Storage Inventory' : inventoryView === 'shelf' ? 'Shelf Inventory' : 'Transfer History';
