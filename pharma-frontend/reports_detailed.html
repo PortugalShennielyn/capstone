@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Reports</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=39" rel="stylesheet">
+    <link href="./css/reports.css?v=9" rel="stylesheet">
+    <script src="./js/navbar.js?v=86" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+</head>
+<body class="role-loading">
+    <div id="navbar-container"></div>
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" type="button" id="sidebarToggle" aria-label="Toggle navigation"><i class="fa-solid fa-bars"></i></button>
+                <div class="page-title-mini"><strong>Reports</strong><span>Business performance and pharmacy operations</span></div>
+            </div>
+            <div class="topbar-actions">
+                <a class="btn btn-sm btn-light" href="./reports.html"><i class="fa-solid fa-arrow-left"></i><span>Reports</span></a>
+                <button class="btn btn-sm btn-light" type="button" id="reportRefresh"><i class="fa-solid fa-rotate"></i><span>Refresh</span></button>
+                <button class="btn btn-sm btn-light" type="button" id="reportPrint"><i class="fa-solid fa-print"></i><span>Print</span></button>
+                <button class="btn btn-sm btn-purple" type="button" id="reportExport"><i class="fa-solid fa-file-csv"></i><span>Export CSV</span></button>
+            </div>
+        </header>
+
+        <section class="page-body">
+            <div class="reports-workspace">
+                <div class="report-heading">
+                    <div><h1>Reports</h1><p>Business performance, inventory, purchasing, and pharmacy operations</p></div>
+                    <p class="report-generated" id="reportGenerated" aria-live="polite"></p>
+                </div>
+
+                <nav class="report-tabs" id="reportTabs" aria-label="Report categories"></nav>
+
+                <section class="report-filter-card" aria-labelledby="filterHeading">
+                    <div class="filter-card-heading">
+                        <div><h2 id="filterHeading"><i class="fa-solid fa-filter"></i> Filters</h2><span id="activeFilterCount">Default period</span></div>
+                        <button class="filter-collapse" id="filterCollapse" type="button" aria-expanded="true"><span>Show filters</span><i class="fa-solid fa-chevron-up"></i></button>
+                    </div>
+                    <form id="reportFilters" class="report-filters">
+                        <input type="hidden" name="payment_state" value="">
+                        <div class="primary-filters">
+                            <label class="filter-group report-view-filter" data-filter="view"><span class="filter-label">Report view</span><select class="form-select form-select-sm" name="report_view"></select></label>
+                            <label class="filter-group" data-filter="group"><span class="filter-label">Group by</span><select class="form-select form-select-sm" name="group_by"></select></label>
+                            <div class="filter-group date-range" data-filter="dates">
+                                <span class="filter-label">Date range</span>
+                                <label><span>Start</span><input class="form-control form-control-sm" type="date" name="start_date" required></label>
+                                <span class="date-separator">to</span>
+                                <label><span>End</span><input class="form-control form-control-sm" type="date" name="end_date" required></label>
+                            </div>
+                            <label class="filter-group" data-filter="primary-category"><span class="filter-label">Category</span><select class="form-select form-select-sm" name="category_id"><option value="">All categories</option></select></label>
+                            <label class="filter-group" data-filter="primary-supplier"><span class="filter-label">Supplier</span><select class="form-select form-select-sm" name="supplier_id"><option value="">All suppliers</option></select></label>
+                            <label class="filter-group" data-filter="primary-stock"><span class="filter-label">Stock status</span><select class="form-select form-select-sm" name="stock_status"><option value="">All stock</option></select></label>
+                            <label class="filter-group" data-filter="primary-expiry"><span class="filter-label">Expiry range</span><select class="form-select form-select-sm" name="expiry_days"><option value="0">Expired / today</option><option value="7">Within 7 days</option><option value="15">Within 15 days</option><option value="30" selected>Within 30 days</option><option value="60">Within 60 days</option><option value="90">Within 90 days</option></select></label>
+                            <div class="filter-actions"><button class="btn btn-sm btn-purple" type="submit">Apply Filters</button><button class="btn btn-sm btn-light" type="button" id="clearFilters">Reset</button></div>
+                        </div>
+                        <button class="more-filters-toggle" id="moreFiltersToggle" type="button" aria-expanded="false"><i class="fa-solid fa-sliders"></i> More Filters <i class="fa-solid fa-chevron-down"></i></button>
+                        <div class="secondary-filters" id="secondaryFilters" hidden>
+                            <label class="filter-group" data-filter="secondary-category"><span class="filter-label">Category</span><select class="form-select form-select-sm" name="secondary_category_id" data-mirror="category_id"><option value="">All categories</option></select></label>
+                            <label class="filter-group" data-filter="type"><span class="filter-label">Product type</span><select class="form-select form-select-sm" name="type_id"><option value="">All types</option></select></label>
+                            <label class="filter-group" data-filter="product"><span class="filter-label">Product</span><select class="form-select form-select-sm" name="product_id"><option value="">All products</option></select></label>
+                            <label class="filter-group" data-filter="brand"><span class="filter-label">Brand</span><select class="form-select form-select-sm" name="brand"><option value="">All brands</option></select></label>
+                            <label class="filter-group" data-filter="secondary-supplier"><span class="filter-label">Supplier</span><select class="form-select form-select-sm" name="secondary_supplier_id" data-mirror="supplier_id"><option value="">All suppliers</option></select></label>
+                            <label class="filter-group" data-filter="cashier"><span class="filter-label">Cashier</span><select class="form-select form-select-sm" name="cashier_id"><option value="">All cashiers</option></select></label>
+                            <label class="filter-group" data-filter="clerk"><span class="filter-label">Sales clerk</span><select class="form-select form-select-sm" name="sales_clerk_id"><option value="">All sales clerks</option></select></label>
+                            <label class="filter-group" data-filter="payment"><span class="filter-label">Payment method</span><select class="form-select form-select-sm" name="payment_method"><option value="">All methods</option></select></label>
+                            <label class="filter-group" data-filter="po"><span class="filter-label">PO status</span><select class="form-select form-select-sm" name="po_status"><option value="">All statuses</option></select></label>
+                        </div>
+                        <div class="filter-chips" id="filterChips" aria-label="Applied filters"></div>
+                    </form>
+                </section>
+
+                <div class="report-state report-loading" id="reportLoading" role="status"><span class="spinner-border spinner-border-sm"></span><span>Generating report from current records…</span></div>
+                <div class="report-state report-error d-none" id="reportError" role="alert"></div>
+                <div id="reportContent" class="d-none">
+                    <section class="summary-grid" id="summaryCards" aria-label="Report summary"></section>
+                    <section class="charts-grid" id="reportCharts" aria-label="Report charts"></section>
+                    <section class="report-insights" id="reportInsights" aria-label="Report insights"></section>
+                    <section class="overview-grid" id="overviewGrid" aria-label="Overview category previews" hidden></section>
+                    <section class="table-insights" id="tableInsights"></section>
+                    <section class="report-table-card">
+                        <div class="table-toolbar">
+                            <div><h2 id="tableTitle">Report details</h2><p id="resultCount">0 results</p></div>
+                            <label class="report-search"><i class="fa-solid fa-magnifying-glass"></i><input class="form-control form-control-sm" id="reportSearch" type="search" placeholder="Search this report" autocomplete="off"></label>
+                        </div>
+                        <div class="report-table-scroll"><table class="report-table"><thead id="reportTableHead"></thead><tbody id="reportTableBody"></tbody></table></div>
+                        <div class="table-footer"><span id="pageSummary"></span><div class="pagination-actions"><button class="btn btn-sm btn-light" id="previousPage" type="button">Previous</button><button class="btn btn-sm btn-light" id="nextPage" type="button">Next</button></div></div>
+                    </section>
+                    <aside class="formula-notes" id="formulaNotes" aria-label="Calculation notes"></aside>
+                </div>
+            </div>
+        </section>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script type="module" src="./js/modules/reports.js?v=21"></script>
+</body>
+</html>
