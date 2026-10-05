@@ -48,11 +48,12 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'cashier_profile.html',
         'reports.html'
     ]),
-    salesclerk: new Set([
-        'clerk.html',
+        salesclerk: new Set([
+        'sales_clerk_dashboard.html',
         'sales_clerk_pos.html',
         'sales_clerk_orders.html',
-        'reports.html'
+        'reports.html',
+        'sales_clerk_reports.html'
     ])
 });
 
@@ -94,11 +95,13 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'user-settings'
     ]),
     salesclerk: new Set([
-        'sales-clerk-pos',
-        'sales-clerk-orders',
-        'reports',
-        'user-settings'
-    ])
+    'sales-clerk-dashboard',
+    'sales-clerk-pos',
+    'sales-clerk-orders',
+    'sales-clerk-reports',
+    'reports',
+    'user-settings'
+])
 });
 
 function normalizeRole(role) {
@@ -143,9 +146,27 @@ function roleLabel(session) {
 
 function isPageAllowed(session, filename) {
     const role = primaryAccessRole(session);
-    if (filename === 'purchase_request_print.html' || filename === 'purchase_order_print.html') return Boolean(role);
-    if (filename === 'supervisor_approval.html') return role === 'supervisor';
-    if (role === 'super_admin' || role === 'admin') return true;
+
+    if (
+        filename === 'purchase_request_print.html' ||
+        filename === 'purchase_order_print.html'
+    ) {
+        return true;
+    }
+
+    if (filename === 'supervisor_approval.html') {
+        return role === 'supervisor';
+    }
+
+    // Sales Clerk's own profile/settings page
+    if (filename === 'sales_clerk_profile.html') {
+        return role === 'salesclerk' || role === 'ro_sales_clerk';
+    }
+
+    if (role === 'super_admin' || role === 'admin') {
+        return true;
+    }
+
     return ROLE_PAGE_ACCESS[role]?.has(filename) || false;
 }
 

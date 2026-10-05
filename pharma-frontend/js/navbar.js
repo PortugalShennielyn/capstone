@@ -155,7 +155,7 @@ async function initializeNavbar(container) {
     const revealFailSafe = window.setTimeout(revealShell, 2500);
 
     try {
-        const rbac = await import("./modules/rbac.js?v=7");
+        const rbac = await import("./modules/rbac.js?v=8");
         const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v48";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
@@ -225,6 +225,7 @@ async function initializeNavbar(container) {
             "dashboard.html": "dashboard",
             "supervisor_dashboard.html": "dashboard",
             "cashier_dashboard.html": "dashboard",
+            "sales_clerk_dashboard.html": "sales-clerk-dashboard",
             "products.html": "products",
             "inventory.html": "inventory",
             "shelf_inventory.html": "shelf-inventory",
@@ -239,6 +240,7 @@ async function initializeNavbar(container) {
             "return_damage.html": "return-damage",
             "expiry_monitoring.html": "expiry-monitoring",
             "reports.html": "reports",
+            "sales_clerk_reports.html": "reports",
             "admin_settings.html": "settings",
             "pos.html": "pos",
             "clerk.html": "clerk",
@@ -302,157 +304,935 @@ async function initializeNavbar(container) {
         }
 
         function ensureProfileModal(session) {
-            if (document.getElementById("navbarProfileModal")) return;
-            const modal = document.createElement("div");
-            modal.className = "modal fade";
-            modal.id = "navbarProfileModal";
-            modal.tabIndex = -1;
-            modal.setAttribute("aria-hidden", "true");
-            modal.innerHTML = `
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-                        <form id="navbarProfileForm" novalidate>
-                            <div class="modal-header">
-                                <h5 class="modal-title fw-bold">User Settings</h5>
-                                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+    if (document.getElementById("navbarProfileModal")) return;
+
+    const modal = document.createElement("div");
+    modal.className = "modal fade";
+    modal.id = "navbarProfileModal";
+    modal.tabIndex = -1;
+    modal.setAttribute("aria-hidden", "true");
+
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content drp-profile-modal">
+
+                <form id="navbarProfileForm" novalidate>
+
+                    <div class="drp-profile-cover">
+                        <div class="drp-profile-header">
+
+                            <div class="drp-profile-avatar-wrap">
+                                <div class="drp-profile-avatar" id="drpProfileAvatar">
+                                    <span data-profile-avatar-initials></span>
+                                </div>
+
+                                <label class="drp-profile-photo-btn" for="drpProfilePhotoInput" title="Change Profile Photo">
+                                    <i class="fa-solid fa-camera"></i>
+                                </label>
+
+                                <input
+                                    type="file"
+                                    id="drpProfilePhotoInput"
+                                    accept="image/*"
+                                    hidden
+                                >
                             </div>
-                            <div class="modal-body">
-                                <p class="navbar-profile-error" id="navbarProfileError"></p>
-                                <div class="row g-3">
-                                    <div class="col-12">
-                                        <label class="form-label" for="navbarProfileFullName">Full Name</label>
-                                        <input class="form-control" id="navbarProfileFullName" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label" for="navbarProfileEmail">Email</label>
-                                        <input class="form-control" id="navbarProfileEmail" type="email">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label" for="navbarProfileContact">Contact Number</label>
-                                        <input class="form-control" id="navbarProfileContact">
-                                    </div>
-                                    <div class="col-12"><hr class="my-1"></div>
-                                    <div class="col-12">
-                                        <label class="form-label" for="navbarCurrentPassword">Current Password</label>
-                                        <input class="form-control" id="navbarCurrentPassword" type="password" autocomplete="current-password">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label" for="navbarNewPassword">New Password</label>
-                                        <input class="form-control" id="navbarNewPassword" type="password" autocomplete="new-password">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label" for="navbarConfirmPassword">Confirm Password</label>
-                                        <input class="form-control" id="navbarConfirmPassword" type="password" autocomplete="new-password">
-                                    </div>
+
+                            <div class="drp-profile-heading">
+                                <h2 data-profile-heading-name>Sales Clerk</h2>
+                                <div class="drp-profile-role">
+                                    <i class="fa-solid fa-user-tie"></i>
+                                    <span data-profile-heading-role>Sales Clerk</span>
+                                </div>
+                                <p>Manage your account and security settings.</p>
+                            </div>
+
+                            <div class="drp-profile-header-actions">
+                                <button
+                                    type="button"
+                                    class="btn btn-light"
+                                    data-bs-dismiss="modal"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="drp-profile-tabs">
+                        <button
+                            type="button"
+                            class="drp-profile-tab active"
+                            data-profile-tab="account"
+                        >
+                            <i class="fa-solid fa-user"></i>
+                            Account
+                        </button>
+
+                        <button
+                            type="button"
+                            class="drp-profile-tab"
+                            data-profile-tab="security"
+                        >
+                            <i class="fa-solid fa-lock"></i>
+                            Password & Security
+                        </button>
+                    </div>
+
+                    <div class="modal-body drp-profile-body">
+
+                        <div
+                            class="drp-profile-error"
+                            id="navbarProfileError"
+                        ></div>
+
+                        <!-- ACCOUNT -->
+                        <section
+                            class="drp-profile-section"
+                            data-profile-section="account"
+                        >
+                            <div class="drp-profile-section-title">
+                                <div class="drp-section-icon">
+                                    <i class="fa-solid fa-user"></i>
+                                </div>
+                                <div>
+                                    <h3>Account Information</h3>
+                                    <p>Keep your account information up to date.</p>
                                 </div>
                             </div>
-                            <div class="modal-footer">
-                                <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                                <button class="btn btn-primary" type="submit">Save Changes</button>
+
+                            <div class="drp-profile-grid">
+
+                                <div class="drp-profile-field drp-profile-field-full">
+                                    <label for="navbarProfileFullName">
+                                        Full Name
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarProfileFullName"
+                                        type="text"
+                                        required
+                                        autocomplete="name"
+                                    >
+                                </div>
+
+                                <div class="drp-profile-field">
+                                    <label for="navbarProfileUsername">
+                                        Username
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarProfileUsername"
+                                        type="text"
+                                        readonly
+                                    >
+                                    <small>Username cannot be changed.</small>
+                                </div>
+
+                                <div class="drp-profile-field">
+                                    <label for="navbarProfileRole">
+                                        Role
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarProfileRole"
+                                        type="text"
+                                        readonly
+                                    >
+                                    <small>Role is assigned by the administrator.</small>
+                                </div>
+
+                                <div class="drp-profile-field">
+                                    <label for="navbarProfileEmail">
+                                        Email
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarProfileEmail"
+                                        type="email"
+                                        autocomplete="email"
+                                    >
+                                </div>
+
+                                <div class="drp-profile-field">
+                                    <label for="navbarProfileContact">
+                                        Contact Number
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarProfileContact"
+                                        type="text"
+                                        autocomplete="tel"
+                                    >
+                                </div>
+
                             </div>
-                        </form>
+
+                            <div class="drp-profile-security-note">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <div>
+                                    <strong>Role protected</strong>
+                                    <span>Your Sales Clerk role and permissions are controlled by the administrator.</span>
+                                </div>
+                            </div>
+
+                            <div class="drp-profile-security-note">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <div>
+                                    <strong>Secure account</strong>
+                                    <span>Your account information is protected by the pharmacy system.</span>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- SECURITY -->
+                        <section
+                            class="drp-profile-section d-none"
+                            data-profile-section="security"
+                        >
+                            <div class="drp-profile-section-title">
+                                <div class="drp-section-icon">
+                                    <i class="fa-solid fa-lock"></i>
+                                </div>
+                                <div>
+                                    <h3>Password & Security</h3>
+                                    <p>Keep your cashier account secure.</p>
+                                </div>
+                            </div>
+
+                            <div class="drp-profile-password-card">
+
+                                <div class="drp-profile-field">
+                                    <label for="navbarCurrentPassword">
+                                        Current Password
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarCurrentPassword"
+                                        type="password"
+                                        autocomplete="current-password"
+                                    >
+                                </div>
+
+                                <div class="drp-profile-field">
+                                    <label for="navbarNewPassword">
+                                        New Password
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarNewPassword"
+                                        type="password"
+                                        autocomplete="new-password"
+                                    >
+                                    <small>Use at least 8 characters.</small>
+                                </div>
+
+                                <div class="drp-profile-field">
+                                    <label for="navbarConfirmPassword">
+                                        Confirm New Password
+                                    </label>
+                                    <input
+                                        class="form-control"
+                                        id="navbarConfirmPassword"
+                                        type="password"
+                                        autocomplete="new-password"
+                                    >
+                                </div>
+
+                                <div class="drp-profile-otp-link">
+                                    <a href="login.html" class="drp-forgot-link">
+                                        Forgot password? Reset with OTP
+                                    </a>
+                                </div>
+
+                            </div>
+                        </section>
+
                     </div>
-                </div>`;
-            document.body.appendChild(modal);
 
-            const style = document.createElement("style");
-            style.id = "navbar-profile-modal-styles";
-            style.textContent = `
-                .navbar-profile-error{display:none;margin:0 0 12px;padding:10px 12px;border:1px solid #fecaca;border-radius:8px;color:#991b1b;background:#fef2f2;font-size:13px;font-weight:800}
-                .navbar-profile-error.is-visible{display:block}
-            `;
-            document.head.appendChild(style);
+                    <div class="modal-footer drp-profile-footer">
+                        <button
+                            class="btn btn-light"
+                            type="button"
+                            data-bs-dismiss="modal"
+                        >
+                            Cancel
+                        </button>
 
-            const form = document.getElementById("navbarProfileForm");
-            const error = document.getElementById("navbarProfileError");
-            const fields = {
-                fullName: document.getElementById("navbarProfileFullName"),
-                email: document.getElementById("navbarProfileEmail"),
-                contact: document.getElementById("navbarProfileContact"),
-                currentPassword: document.getElementById("navbarCurrentPassword"),
-                newPassword: document.getElementById("navbarNewPassword"),
-                confirmPassword: document.getElementById("navbarConfirmPassword")
-            };
+                        <button
+                            class="btn btn-primary drp-profile-save-btn"
+                            type="submit"
+                            id="navbarProfileSaveBtn"
+                        >
+                            <i class="fa-solid fa-floppy-disk me-1"></i>
+                            Save Changes
+                        </button>
+                    </div>
 
-            function setError(message = "") {
-                error.textContent = message;
-                error.classList.toggle("is-visible", Boolean(message));
+                </form>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const style = document.createElement("style");
+    style.id = "navbar-profile-modal-styles";
+
+    style.textContent = `
+        .drp-profile-modal {
+            border: 0;
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 30px 90px rgba(15, 23, 42, .25);
+        }
+
+        .drp-profile-cover {
+            padding: 28px 30px;
+            background: linear-gradient(135deg, #111a3a 0%, #172554 100%);
+            color: #fff;
+        }
+
+        .drp-profile-header {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+        }
+
+        .drp-profile-avatar-wrap {
+            position: relative;
+            flex: 0 0 auto;
+        }
+
+        .drp-profile-avatar {
+            width: 92px;
+            height: 92px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #7c3aed, #a855f7);
+            color: #fff;
+            font-size: 31px;
+            font-weight: 900;
+            border: 5px solid rgba(255,255,255,.75);
+            box-shadow: 0 14px 34px rgba(0,0,0,.2);
+            overflow: hidden;
+            background-size: cover;
+            background-position: center;
+        }
+
+        .drp-profile-avatar.has-photo span {
+            display: none;
+        }
+
+        .drp-profile-photo-btn {
+            position: absolute;
+            right: -2px;
+            bottom: 1px;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            cursor: pointer;
+            background: #fff;
+            color: #4f46e5;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 8px 20px rgba(0,0,0,.16);
+        }
+
+        .drp-profile-heading {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .drp-profile-heading h2 {
+            margin: 0;
+            font-size: 26px;
+            font-weight: 900;
+            line-height: 1.1;
+        }
+
+        .drp-profile-heading p {
+            margin: 8px 0 0;
+            color: rgba(255,255,255,.72);
+            font-size: 13px;
+        }
+
+        .drp-profile-role {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            margin-top: 8px;
+            padding: 5px 10px;
+            border-radius: 999px;
+            color: #fff;
+            background: rgba(255,255,255,.14);
+            font-size: 12px;
+            font-weight: 850;
+        }
+
+        .drp-profile-header-actions {
+            margin-left: auto;
+        }
+
+        .drp-profile-tabs {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 0 24px;
+            border-bottom: 1px solid #e8ebf2;
+            background: #fff;
+        }
+
+        .drp-profile-tab {
+            min-height: 52px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 14px;
+            border: 0;
+            border-bottom: 3px solid transparent;
+            background: transparent;
+            color: #667085;
+            font-size: 13px;
+            font-weight: 900;
+        }
+
+        .drp-profile-tab.active {
+            color: #4f46e5;
+            border-bottom-color: #4f46e5;
+        }
+
+        .drp-profile-body {
+            padding: 26px 30px;
+            background: #f7f8fc;
+            max-height: 62vh;
+            overflow-y: auto;
+        }
+
+        .drp-profile-error {
+            display: none;
+            margin-bottom: 18px;
+            padding: 11px 13px;
+            border: 1px solid #fecaca;
+            border-radius: 10px;
+            color: #991b1b;
+            background: #fef2f2;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .drp-profile-error.is-visible {
+            display: block;
+        }
+
+        .drp-profile-section {
+            background: #fff;
+            border: 1px solid #e8ebf2;
+            border-radius: 14px;
+            padding: 24px;
+        }
+
+        .drp-profile-section-title {
+            display: flex;
+            align-items: center;
+            gap: 13px;
+            margin-bottom: 22px;
+        }
+
+        .drp-section-icon {
+            width: 40px;
+            height: 40px;
+            display: grid;
+            place-items: center;
+            border-radius: 10px;
+            color: #6d28d9;
+            background: #f1eafe;
+        }
+
+        .drp-profile-section-title h3 {
+            margin: 0;
+            color: #111827;
+            font-size: 17px;
+            font-weight: 900;
+        }
+
+        .drp-profile-section-title p {
+            margin: 4px 0 0;
+            color: #667085;
+            font-size: 12px;
+            font-weight: 650;
+        }
+
+        .drp-profile-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .drp-profile-field-full {
+            grid-column: 1 / -1;
+        }
+
+        .drp-profile-field label {
+            display: block;
+            margin-bottom: 7px;
+            color: #344054;
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .drp-profile-field .form-control {
+            min-height: 44px;
+            border-color: #dfe4ed;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .drp-profile-field small {
+            display: block;
+            margin-top: 5px;
+            color: #8a94a6;
+            font-size: 11px;
+            font-weight: 650;
+        }
+
+        .drp-profile-security-note {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-top: 15px;
+            padding: 12px 14px;
+            border: 1px solid #e8ebf2;
+            border-radius: 10px;
+            background: #fafbfe;
+        }
+
+        .drp-profile-security-note i {
+            margin-top: 2px;
+            color: #4f46e5;
+        }
+
+        .drp-profile-security-note strong,
+        .drp-profile-security-note span {
+            display: block;
+        }
+
+        .drp-profile-security-note strong {
+            color: #253050;
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .drp-profile-security-note span {
+            margin-top: 2px;
+            color: #667085;
+            font-size: 11px;
+            font-weight: 650;
+            line-height: 1.45;
+        }
+
+        .drp-profile-password-card {
+            display: grid;
+            gap: 18px;
+            max-width: 720px;
+        }
+
+        .drp-profile-otp-link {
+            margin-top: -3px;
+        }
+
+        .drp-forgot-link {
+            color: #4f46e5;
+            font-size: 12px;
+            font-weight: 850;
+            text-decoration: none;
+        }
+
+        .drp-forgot-link:hover {
+            text-decoration: underline;
+        }
+
+        .drp-profile-footer {
+            padding: 15px 24px;
+            border-top: 1px solid #e8ebf2;
+            background: #fff;
+        }
+
+        .drp-profile-save-btn {
+            min-width: 145px;
+            font-weight: 850;
+        }
+
+        @media (max-width: 768px) {
+            .drp-profile-header {
+                align-items: flex-start;
+                flex-wrap: wrap;
             }
 
-            window.__drpOpenNavbarProfile = function openNavbarProfile(currentSession = session) {
-                setError("");
-                form.reset();
-                fields.fullName.value = currentSession?.full_name || "";
-                fields.email.value = currentSession?.email || "";
-                fields.contact.value = currentSession?.contact_number || "";
-                window.bootstrap?.Modal.getOrCreateInstance(modal)?.show();
+            .drp-profile-header-actions {
+                width: 100%;
+                margin-left: 0;
+            }
+
+            .drp-profile-header-actions .btn {
+                width: 100%;
+            }
+
+            .drp-profile-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .drp-profile-field-full {
+                grid-column: auto;
+            }
+
+            .drp-profile-body {
+                padding: 18px;
+            }
+
+            .drp-profile-section {
+                padding: 18px;
+            }
+
+            .drp-profile-tabs {
+                overflow-x: auto;
+            }
+        }
+    `;
+
+    document.head.appendChild(style);
+
+    const form = document.getElementById("navbarProfileForm");
+    const error = document.getElementById("navbarProfileError");
+    const saveButton = document.getElementById("navbarProfileSaveBtn");
+
+    const fields = {
+        fullName: document.getElementById("navbarProfileFullName"),
+        username: document.getElementById("navbarProfileUsername"),
+        role: document.getElementById("navbarProfileRole"),
+        email: document.getElementById("navbarProfileEmail"),
+        contact: document.getElementById("navbarProfileContact"),
+        currentPassword: document.getElementById("navbarCurrentPassword"),
+        newPassword: document.getElementById("navbarNewPassword"),
+        confirmPassword: document.getElementById("navbarConfirmPassword"),
+        photoInput: document.getElementById("drpProfilePhotoInput"),
+        avatar: document.getElementById("drpProfileAvatar")
+    };
+
+    const tabs = Array.from(modal.querySelectorAll("[data-profile-tab]"));
+    const sections = Array.from(modal.querySelectorAll("[data-profile-section]"));
+
+    let activeTab = "account";
+    let selectedPhotoData = "";
+
+    function setError(message = "") {
+        error.textContent = message;
+        error.classList.toggle("is-visible", Boolean(message));
+    }
+
+    function initials(name) {
+        return String(name || "")
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map(part => part.charAt(0).toUpperCase())
+            .join("") || "SC";
+    }
+
+    function getPhotoStorageKey(currentSession) {
+        const userId = String(currentSession?.user_id || currentSession?.id || "").trim();
+        return userId ? `drpProfilePhoto:${userId}` : "";
+    }
+
+    function loadSavedPhoto(currentSession) {
+        const key = getPhotoStorageKey(currentSession);
+        if (!key) return "";
+
+        try {
+            return localStorage.getItem(key) || "";
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function renderAvatar(currentSession) {
+        const name = currentSession?.full_name || currentSession?.username || "Sales Clerk";
+        const savedPhoto = selectedPhotoData || loadSavedPhoto(currentSession);
+
+        fields.avatar.classList.toggle("has-photo", Boolean(savedPhoto));
+        fields.avatar.style.backgroundImage = savedPhoto
+            ? `url("${savedPhoto}")`
+            : "";
+
+        const initialsNode = fields.avatar.querySelector("[data-profile-avatar-initials]");
+        if (initialsNode) initialsNode.textContent = initials(name);
+
+        modal.querySelectorAll("[data-profile-heading-name]").forEach(node => {
+            node.textContent = name;
+        });
+
+        modal.querySelectorAll("[data-profile-heading-role]").forEach(node => {
+            node.textContent = currentSession?.roleLabel
+                || currentSession?.role_label
+                || currentSession?.access_role
+                || "Sales Clerk";
+        });
+    }
+
+    function switchTab(tabName) {
+        activeTab = tabName === "security" ? "security" : "account";
+
+        tabs.forEach(tab => {
+            tab.classList.toggle("active", tab.dataset.profileTab === activeTab);
+        });
+
+        sections.forEach(section => {
+            section.classList.toggle(
+                "d-none",
+                section.dataset.profileSection !== activeTab
+            );
+        });
+
+        if (activeTab === "account") {
+            saveButton.innerHTML = `
+                <i class="fa-solid fa-floppy-disk me-1"></i>
+                Save Changes
+            `;
+        } else {
+            saveButton.innerHTML = `
+                <i class="fa-solid fa-key me-1"></i>
+                Update Password
+            `;
+        }
+
+        setError("");
+    }
+
+    tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+            switchTab(tab.dataset.profileTab);
+        });
+    });
+
+    fields.photoInput.addEventListener("change", () => {
+        const file = fields.photoInput.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith("image/")) {
+            setError("Please select a valid image file.");
+            fields.photoInput.value = "";
+            return;
+        }
+
+        const reader = new FileReader();
+
+        reader.onload = () => {
+            selectedPhotoData = String(reader.result || "");
+
+            try {
+                const current = window.__drpSession || session;
+                const key = getPhotoStorageKey(current);
+                if (key && selectedPhotoData) {
+                    localStorage.setItem(key, selectedPhotoData);
+                }
+            } catch (error) {}
+
+            renderAvatar(window.__drpSession || session);
+        };
+
+        reader.readAsDataURL(file);
+    });
+
+    window.__drpOpenNavbarProfile = function openNavbarProfile(currentSession = session) {
+        const current = currentSession || window.__drpSession || session;
+
+        setError("");
+        form.reset();
+        selectedPhotoData = "";
+
+        fields.fullName.value = current?.full_name || "";
+        fields.username.value = current?.username || "";
+        fields.role.value =
+            current?.roleLabel
+            || current?.role_label
+            || current?.access_role
+            || "Sales Clerk";
+        fields.email.value = current?.email || "";
+        fields.contact.value = current?.contact_number || "";
+
+        renderAvatar(current);
+        switchTab("account");
+
+        window.bootstrap?.Modal.getOrCreateInstance(modal)?.show();
+    };
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        setError("");
+
+        const currentSession = window.__drpSession || session;
+
+        const fullName = fields.fullName.value.trim();
+        const email = fields.email.value.trim();
+        const contactNumber = fields.contact.value.trim();
+
+        const currentPassword = fields.currentPassword.value;
+        const newPassword = fields.newPassword.value;
+        const confirmPassword = fields.confirmPassword.value;
+
+        if (activeTab === "account") {
+            if (!fullName) {
+                setError("Full Name is required.");
+                return;
+            }
+        }
+
+        if (activeTab === "security") {
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                setError(
+                    "Current password, new password, and confirmation are required."
+                );
+                return;
+            }
+
+            if (newPassword.length < 8) {
+                setError("New password must be at least 8 characters.");
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                setError("New password and confirmation do not match.");
+                return;
+            }
+        }
+
+        saveButton.disabled = true;
+        const originalButton = saveButton.innerHTML;
+
+        saveButton.innerHTML = `
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            Saving...
+        `;
+
+        try {
+            const headers = {
+                "Content-Type": "application/json",
+                "X-Requested-With": "XMLHttpRequest",
+                "X-Tab-Token": tabToken()
             };
 
-            form.addEventListener("submit", async (event) => {
-                event.preventDefault();
-                setError("");
-                const fullName = fields.fullName.value.trim();
-                const email = fields.email.value.trim();
-                const contactNumber = fields.contact.value.trim();
-                const currentPassword = fields.currentPassword.value;
-                const newPassword = fields.newPassword.value;
-                const confirmPassword = fields.confirmPassword.value;
-                if (!fullName) {
-                    setError("Full Name is required.");
-                    return;
-                }
-                if ((currentPassword || newPassword || confirmPassword) && (!currentPassword || !newPassword || !confirmPassword)) {
-                    setError("Current password, new password, and confirmation are required to change password.");
-                    return;
-                }
-                if (newPassword && newPassword !== confirmPassword) {
-                    setError("New password and confirmation do not match.");
-                    return;
-                }
-                try {
-                    const headers = {
-                        "Content-Type": "application/json",
-                        "X-Requested-With": "XMLHttpRequest",
-                        "X-Tab-Token": tabToken()
-                    };
-                    const profileResponse = await fetch(`${apiBaseUrl()}/auth/update_profile.php`, {
+            let profileData = {};
+
+            if (activeTab === "account") {
+                const profileResponse = await fetch(
+                    `${apiBaseUrl()}/auth/update_profile.php`,
+                    {
                         method: "POST",
                         credentials: "include",
                         headers,
-                        body: JSON.stringify({ full_name: fullName, email, contact_number: contactNumber })
-                    });
-                    const profileData = await profileResponse.json().catch(() => ({}));
-                    if (!profileResponse.ok || profileData.status === "error") {
-                        throw new Error(profileData.message || "Unable to update profile.");
+                        body: JSON.stringify({
+                            full_name: fullName,
+                            email,
+                            contact_number: contactNumber
+                        })
                     }
-                    if (newPassword) {
-                        const passwordResponse = await fetch(`${apiBaseUrl()}/auth/update_password.php`, {
-                            method: "POST",
-                            credentials: "include",
-                            headers,
-                            body: JSON.stringify({
-                                current_password: currentPassword,
-                                new_password: newPassword,
-                                confirm_password: confirmPassword
-                            })
-                        });
-                        const passwordData = await passwordResponse.json().catch(() => ({}));
-                        if (!passwordResponse.ok || passwordData.status === "error") {
-                            throw new Error(passwordData.message || "Unable to update password.");
-                        }
-                    }
-                    window.__drpNavbarProfileDisplay?.render(
-                        container,
-                        { ...session, ...profileData, full_name: fullName, email, contact_number: contactNumber },
-                        { cache: true, roleLabel: rbac.roleLabel(session) }
+                );
+
+                profileData = await profileResponse.json().catch(() => ({}));
+
+                if (
+                    !profileResponse.ok
+                    || profileData.status === "error"
+                ) {
+                    throw new Error(
+                        profileData.message
+                        || "Unable to update profile."
                     );
-                    window.bootstrap?.Modal.getOrCreateInstance(modal)?.hide();
-                    if (window.toastr) toastr.success("Profile updated.");
-                } catch (errorMessage) {
-                    setError(errorMessage.message || "Unable to update profile.");
                 }
-            });
+
+                const updatedSession = {
+                    ...currentSession,
+                    ...profileData,
+                    full_name: fullName,
+                    email,
+                    contact_number: contactNumber
+                };
+
+                window.__drpSession = updatedSession;
+
+                window.__drpNavbarProfileDisplay?.render(
+                    container,
+                    updatedSession,
+                    {
+                        cache: true,
+                        roleLabel: rbac.roleLabel(updatedSession),
+                        accessRole: rbac.primaryAccessRole(updatedSession)
+                    }
+                );
+
+                renderAvatar(updatedSession);
+
+                window.bootstrap?.Modal.getOrCreateInstance(modal)?.hide();
+
+                if (window.toastr) {
+                    toastr.success("Profile information updated.");
+                }
+            } else {
+                const passwordResponse = await fetch(
+                    `${apiBaseUrl()}/auth/update_password.php`,
+                    {
+                        method: "POST",
+                        credentials: "include",
+                        headers,
+                        body: JSON.stringify({
+                            current_password: currentPassword,
+                            new_password: newPassword,
+                            confirm_password: confirmPassword
+                        })
+                    }
+                );
+
+                const passwordData =
+                    await passwordResponse.json().catch(() => ({}));
+
+                if (
+                    !passwordResponse.ok
+                    || passwordData.status === "error"
+                ) {
+                    throw new Error(
+                        passwordData.message
+                        || "Unable to update password."
+                    );
+                }
+
+                fields.currentPassword.value = "";
+                fields.newPassword.value = "";
+                fields.confirmPassword.value = "";
+
+                window.bootstrap?.Modal.getOrCreateInstance(modal)?.hide();
+
+                if (window.toastr) {
+                    toastr.success("Password updated successfully.");
+                }
+            }
+        } catch (errorMessage) {
+            setError(
+                errorMessage?.message
+                || "Unable to update profile."
+            );
+        } finally {
+            saveButton.disabled = false;
+            saveButton.innerHTML = originalButton;
         }
+    });
+}
 
         function applyRoleNavigation(session) {
             const roles = rbac.sessionRoleSet(session);
@@ -497,6 +1277,13 @@ async function initializeNavbar(container) {
                 link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
             });
 
+            const reportsLink = container.querySelector("[data-nav-page='reports']");
+            if (reportsLink) {
+                const isSalesClerk = accessRole === "salesclerk";
+                reportsLink.href = isSalesClerk ? "sales_clerk_reports.html" : "reports.html";
+                reportsLink.dataset.dashboardView = isSalesClerk ? "sales-clerk-reports" : "reports";
+            }
+
             if (accessRole === "manager") {
                 const userManagementLink = container.querySelector("[data-nav-page='settings']");
                 if (userManagementLink) {
@@ -540,18 +1327,35 @@ async function initializeNavbar(container) {
             }
 
             if (accessRole === "salesclerk") {
-                container.querySelector(".sidebar-brand")?.setAttribute("href", "sales_clerk_pos.html");
-                container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
-                    const isUserSettings = link.dataset.navPage === "user-settings";
-                    link.classList.toggle("d-none", !isUserSettings);
-                    link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
-                    if (isUserSettings) {
-                        link.href = "#";
-                        link.querySelector("span").textContent = "User Settings";
-                        link.dataset.profileAction = "open";
-                    }
-                });
+
+    container.querySelector(".sidebar-brand")
+        ?.setAttribute("href", "sales_clerk_pos.html");
+
+    container
+        .querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])")
+        .forEach(link => {
+
+            const isUserSettings =
+                link.dataset.navPage === "user-settings";
+
+            link.classList.toggle("d-none", !isUserSettings);
+            link.setAttribute(
+                "aria-hidden",
+                isUserSettings ? "false" : "true"
+            );
+
+            if (isUserSettings) {
+
+                link.href = "sales_clerk_profile.html";
+
+                link.querySelector("span").textContent =
+                    "User Settings";
+
+                link.removeAttribute("data-profile-action");
+                link.removeAttribute("data-dashboard-view");
             }
+        });
+}
         }
 
         const dashboardViewMap = {
@@ -1893,13 +2697,15 @@ function ensureNavbarRuntimeStyles() {
         }
 
         #mainWrapper,
-        .main-wrapper,
-        .navbar-page-content {
-            margin-left: var(--sidebar-collapsed-width) !important;
-            width: calc(100% - var(--sidebar-collapsed-width)) !important;
-            animation: drpPageEnter .16s ease-out both;
-            transition: none !important;
-        }
+.main-wrapper,
+.navbar-page-content {
+    margin-left: var(--sidebar-collapsed-width, 56px) !important;
+    width: calc(100% - var(--sidebar-collapsed-width, 56px)) !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    animation: drpPageEnter .16s ease-out both;
+    transition: none !important;
+}
 
         .app-main {
             margin-left: var(--sidebar-collapsed-width) !important;

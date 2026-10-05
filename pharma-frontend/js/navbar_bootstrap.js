@@ -8,7 +8,7 @@
         document.head.appendChild(searchHighlightScript);
     }
 
-    const cacheKey = "drpNavbarHtml:v47";
+    const cacheKey = "drpNavbarHtml:v48";
     const expandedGroupsKey = "drpNavbarExpandedGroups";
     const supervisorNavigation = Object.freeze([
         ["supervisor_dashboard.html", "dashboard", "fa-gauge-high", "Dashboard"],
@@ -96,6 +96,12 @@
             link.classList.toggle("d-none", !isAllowed);
             link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
         });
+        const reportsLink = container.querySelector("[data-nav-page='reports']");
+        if (reportsLink) {
+            const isSalesClerk = profile.role === "salesclerk";
+            reportsLink.href = isSalesClerk ? "sales_clerk_reports.html" : "reports.html";
+            reportsLink.dataset.dashboardView = isSalesClerk ? "sales-clerk-reports" : "reports";
+        }
         container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
             const selector = trigger.getAttribute("href") || "";
             const group = selector.startsWith("#") ? container.querySelector(selector) : null;

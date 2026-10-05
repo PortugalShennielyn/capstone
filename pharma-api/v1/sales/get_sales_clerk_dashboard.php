@@ -41,6 +41,18 @@ $completedTransactions = dashboardCount(
        {$whereClerk}",
     $params
 );
+
+$todaySalesStmt = $pdo->prepare(
+    "SELECT COALESCE(SUM(total_amount), 0)
+     FROM sales_orders
+     WHERE status = 'completed'
+       AND DATE(COALESCE(completed_at, updated_at, created_at)) = CURDATE()
+       {$whereClerk}"
+);
+$todaySalesStmt->execute($params);
+$todaySales = (float) $todaySalesStmt->fetchColumn();
+
+
 $itemsStmt = $pdo->prepare(
     "SELECT COALESCE(SUM(soi.quantity), 0)
      FROM sales_order_items soi
@@ -56,6 +68,7 @@ echo json_encode([
     'message' => 'Sales Clerk dashboard loaded.',
     'data' => [
         'today_forwarded_orders' => $todayForwarded,
+        'my_sales_today' => $todaySales,
         'pending_for_cashier' => $pendingForCashier,
         'completed_transactions' => $completedTransactions,
         'total_items_sold_today' => (int) $itemsStmt->fetchColumn(),
