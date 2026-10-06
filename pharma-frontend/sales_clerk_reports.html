@@ -699,16 +699,16 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
             <option value="yesterday">Yesterday</option>
             <option value="week">This Week</option>
             <option value="month">This Month</option>
-            <option value="custom">Custom Date Range</option>
+            <option value="custom" selected>Custom Date Range</option>
           </select>
         </div>
 
-        <div class="col-md-3 custom-date-field d-none">
+        <div class="col-md-3 custom-date-field">
           <div class="filter-label">Start Date</div>
           <input type="date" class="form-control" id="startDate">
         </div>
 
-        <div class="col-md-3 custom-date-field d-none">
+        <div class="col-md-3 custom-date-field">
           <div class="filter-label">End Date</div>
           <input type="date" class="form-control" id="endDate">
         </div>
@@ -988,6 +988,18 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
       document.querySelectorAll('.custom-date-field').forEach(el => {
         el.classList.toggle('d-none', !custom);
       });
+    }
+
+    function initializeDefaultDateRange() {
+      const today = new Date();
+      const targetMonth = new Date(today.getFullYear(), today.getMonth() - 4, 1);
+      const daysInTargetMonth = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
+      const start = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(today.getDate(), daysInTargetMonth));
+      const dateValue = date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+
+      document.getElementById('periodFilter').value = 'custom';
+      document.getElementById('startDate').value = dateValue(start);
+      document.getElementById('endDate').value = dateValue(today);
     }
 
     function statusBadge(status) {
@@ -1310,6 +1322,7 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
     document.addEventListener('DOMContentLoaded', async () => {
       transactionModal = new bootstrap.Modal(document.getElementById('transactionModal'));
+      initializeDefaultDateRange();
       updateCustomDateVisibility();
 
       try {
