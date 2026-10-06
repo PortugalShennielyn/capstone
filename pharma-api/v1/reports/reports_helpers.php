@@ -32,7 +32,7 @@ function reportRoleContext(): array
         'user_id' => (string) ($_SESSION['user_id'] ?? ''),
         'user_name' => (string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User'),
         'available_categories' => $management
-            ? ['overview', 'sales', 'inventory', 'purchases', 'expiry', 'products', 'staff']
+            ? ['overview', 'sales', 'inventory', 'purchases', 'expiry', 'supplier', 'products', 'staff']
             : ($supervisor ? ['overview', 'inventory', 'purchases', 'expiry', 'products']
             : ($cashier ? ['sales', 'staff'] : ['sales', 'products', 'staff'])),
     ];
@@ -89,6 +89,7 @@ function reportFilters(): array
         'po_status' => trim((string) ($_GET['po_status'] ?? '')),
         'payment_state' => strtolower(trim((string) ($_GET['payment_state'] ?? ''))),
         'stock_status' => strtolower(trim((string) ($_GET['stock_status'] ?? ''))),
+        'rx_filter' => in_array(strtolower(trim((string) ($_GET['rx_filter'] ?? ''))), ['rx','otc'], true) ? strtolower(trim((string) $_GET['rx_filter'])) : '',
         'expiry_days' => min(3650, max(0, (int) ($_GET['expiry_days'] ?? 30))),
         'report_view' => mb_substr(trim((string) ($_GET['report_view'] ?? '')), 0, 80),
         'group_by' => strtolower(trim((string) ($_GET['group_by'] ?? 'day'))),

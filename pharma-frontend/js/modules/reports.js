@@ -1,15 +1,17 @@
 import API_BASE_URL from '../config/config.js';
 import { ensurePageTabSession as verifySession } from './auth_guard.js?v=21';
 
-const categories={overview:'Overview',sales:'Sales',inventory:'Inventory',purchases:'Purchases',expiry:'Expiry',products:'Product Performance',staff:'Staff Performance'};
+const categories={sales:'Sales',inventory:'Inventory',expiry:'Expiry & Batch',purchases:'Purchasing',supplier:'Supplier & Receiving',staff:'Cashier & Audit',products:'Product Performance',overview:'Overview'};
+const categoryIcons={sales:'fa-chart-line',inventory:'fa-cubes-stacked',expiry:'fa-calendar-clock',purchases:'fa-cart-shopping',supplier:'fa-truck',staff:'fa-shield-halved',products:'fa-box',overview:'fa-gauge'};
 const reportViews={
     overview:['Management Overview'],
-    sales:['Sales Summary','Product Sales','Staff Sales','Payment and Discount'],
-    inventory:['Inventory Summary','Stock Health'],
-    purchases:['Purchase Summary','Supplier Performance','Payment Status'],
-    expiry:['Expiry Risk Summary'],
+    sales:['Sales Summary','Product Sales','Category Sales','Cashier Sales'],
+    inventory:['Current Inventory','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation'],
+    purchases:['PR / PO Summary','Purchase History','Invoice & Payment'],
+    supplier:['Supplier Performance','Delivery / Receiving','Returns & Damage','Supplier Credits'],
+    expiry:['Expiring Products','Expired / Wastage','Batch Traceability'],
     products:['Product Performance Summary'],
-    staff:['Staff Performance Summary']
+    staff:['Shift Reports','Transaction History','Audit Activity']
 };
 const groupOptions={
     sales:[['day','Day'],['week','Week'],['month','Month'],['product','Product'],['brand','Brand'],['category','Category'],['product_type','Product Type'],['cashier','Cashier'],['sales_clerk','Sales Clerk'],['payment_method','Payment Method']]
@@ -18,27 +20,72 @@ const visibility={
     overview:['view','dates'],sales:['view','group','dates','primary-category','type','product','brand','cashier','clerk','payment'],
     inventory:['view','primary-category','primary-stock','type','product','brand','secondary-supplier'],
     purchases:['view','dates','primary-supplier','po'],expiry:['view','primary-expiry','primary-supplier','secondary-category','type','product','brand'],
-    products:['view','dates','primary-category','type','product','brand'],staff:['view','dates','cashier','clerk']
+    supplier:['view','dates','primary-supplier'],products:['view','dates','primary-category','type','product','brand'],staff:['view','dates','cashier','clerk']
 };
-const filterLabels={start_date:'From',end_date:'To',category_id:'Category',type_id:'Product type',product_id:'Product',brand:'Brand',supplier_id:'Supplier',cashier_id:'Cashier',sales_clerk_id:'Sales clerk',payment_method:'Payment',po_status:'PO status',stock_status:'Stock status',expiry_days:'Expiry range',group_by:'Group by'};
+const filterLabels={start_date:'From',end_date:'To',category_id:'Category',type_id:'Product type',product_id:'Product',brand:'Brand',supplier_id:'Supplier',cashier_id:'Cashier',sales_clerk_id:'Sales clerk',payment_method:'Payment',po_status:'PO status',stock_status:'Stock status',rx_filter:'Rx / OTC',expiry_days:'Expiry range',group_by:'Group by'};
 const tones={
     purple:'#7c3aed',blue:'#2563eb',teal:'#0f9f92',indigo:'#4f46e5',green:'#16a34a',amber:'#d97706',red:'#dc2626',gray:'#64748b',
-    sales:'#2563eb',inventory:'#0f9f92',purchases:'#4f46e5',expiry:'#dc2626'
+    sales:'#5b4cf0',inventory:'#0f9f92',purchases:'#4f46e5',expiry:'#dc2626'
 };
 const statusColors={Healthy:'green',Completed:'green',Delivered:'green',Paid:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Draft:'gray',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal',Arrived:'indigo',Watch:'amber'};
 const money=new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}),number=new Intl.NumberFormat('en-PH');
 const qs=s=>document.querySelector(s),qsa=s=>[...document.querySelectorAll(s)];
-const state={category:'overview',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity'};
+const state={category:'sales',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity',initialPeriodSet:false,period:'30',roleConfigured:false};
+const viewDescriptions={
+    'Sales Summary':'Gross to net sales, transactions and basket size.',
+    'Product Sales':'Best-selling products, with Rx and OTC classification.',
+    'Category Sales':'Quantity, sales and share by product category.',
+    'Cashier Sales':'Sales and cancellations attributed to each cashier.',
+    'Current Inventory':'Storage, Shelf and On Hand by product.',
+    'Stock Movement':'Receiving, transfers, sales and adjustments.',
+    'Low / Out of Stock':'Products at or below the reorder level.',
+    'Fast / Slow Moving':'Movement class from units sold and current stock.',
+    'Inventory Valuation':'How much money is tied up in stock.',
+    'Expiring Products':'Batches grouped by time to expiry, earliest first (FEFO).',
+    'Expired / Wastage':'Value lost to expiry and where the stock is now.',
+    'Batch Traceability':'Supplier → PO → Receiving → Storage → Shelf → POS.',
+    'PR / PO Summary':'Every purchase order with its PR, status and payment.',
+    'Purchase History':'Line-level purchases by supplier and product.',
+    'Invoice & Payment':'Supplier invoices, what is paid and what is still owed.',
+    'Supplier Performance':'Delivery completeness, issues and lead time.',
+    'Delivery / Receiving':'Inspected deliveries: ordered vs received vs accepted.',
+    'Returns & Damage':'Discrepancies found at receiving and how they were resolved.',
+    'Supplier Credits':'Credits earned from discrepancies and where they were applied.',
+    'Shift Reports':'Cash sales and transaction activity by cashier and day.',
+    'Transaction History':'Every receipt with cashier, payment and status.',
+    'Audit Activity':'Who did what, where and when.'
+};
+const groupDescriptions={sales:['Sales reports','What is selling and how much revenue it brings in.'],inventory:['Inventory reports','Storage and Shelf health, movement and value.'],expiry:['Expiry & Batch reports','Expiry exposure, wastage and batch history.'],purchases:['Purchasing reports','PR → PO activity, purchases and payables.'],supplier:['Supplier & Receiving reports','What happened after each PO arrived.'],products:['Product reports','See how products perform over time.'],staff:['Cashier & Audit reports','Shift activity and accountability.'],overview:['Overview reports','A summary of pharmacy operations.']};
 const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-const format=(v,type)=>type==='currency'?money.format(Number(v||0)):number.format(Number(v||0));
+const format=(v,type)=>type==='currency'?money.format(Number(v||0)):type==='percent'?`${number.format(Number(v||0))}%`:type==='text'?String(v??''):number.format(Number(v||0));
 
 function initialQuery(){
     const query=new URLSearchParams(location.search);if(categories[query.get('category')])state.category=query.get('category');
+    if(state.category==='expiry'&&!query.has('expiry_days'))qs('[name="expiry_days"]').value='365';
     state.explicitDates=query.has('start_date')||query.has('end_date');
-    const form=qs('#reportFilters'),staticFields=new Set(['start_date','end_date','expiry_days']);
-    ['report_view','group_by','start_date','end_date','category_id','type_id','product_id','brand','supplier_id','cashier_id','sales_clerk_id','payment_method','po_status','stock_status','expiry_days','payment_state'].forEach(key=>{if(query.has(key)){const field=form.elements[key];if(field){if(staticFields.has(key)||field.type==='hidden')field.value=query.get(key);else{field.dataset.initial=query.get(key);state.needsInitialFilterReload=true;}}}});
+    if(state.explicitDates)state.period='custom';
+    const form=qs('#reportFilters'),staticFields=new Set(['start_date','end_date','expiry_days','rx_filter']);
+    ['report_view','group_by','start_date','end_date','category_id','type_id','product_id','brand','supplier_id','cashier_id','sales_clerk_id','payment_method','po_status','stock_status','rx_filter','expiry_days','payment_state'].forEach(key=>{if(query.has(key)){const field=form.elements[key];if(field){if(staticFields.has(key)||field.type==='hidden')field.value=query.get(key);else{field.dataset.initial=query.get(key);state.needsInitialFilterReload=true;}}}});
 }
-function renderTabs(available=Object.keys(categories)){qs('#reportTabs').innerHTML=available.map(key=>`<button class="report-tab ${key===state.category?'active':''}" type="button" data-category="${key}">${categories[key]}</button>`).join('');}
+function reportToday(timezone){
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone||'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const value=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${value.year}-${value.month}-${value.day}`;
+}
+function shiftDate(date,days){const [year,month,day]=date.split('-').map(Number),value=new Date(Date.UTC(year,month-1,day+days));return value.toISOString().slice(0,10);}
+function renderTabs(available=Object.keys(categories)){
+    if(state.data?.access.management)available=['sales','inventory','expiry','purchases','supplier','staff'];
+    else if(!state.data)available=['sales','inventory','expiry','purchases','supplier','staff'];
+    qs('#reportTabs').innerHTML=available.map(key=>`<button class="report-tab ${key===state.category?'active':''}" type="button" data-category="${key}" aria-current="${key===state.category?'page':'false'}"><i class="fa-solid ${categoryIcons[key]||'fa-chart-simple'}" aria-hidden="true"></i><span>${esc(categories[key])}</span><b class="report-tab-count">${(reportViews[key]||[]).length}</b></button>`).join('');
+}
+function renderViewMenu(){
+    const selected=qs('[name="report_view"]').value,[heading,description]=groupDescriptions[state.category]||groupDescriptions.sales;
+    qs('#reportGroupTitle').textContent=heading;qs('#reportGroupDescription').textContent=description;
+    qs('#reportViewMenu').innerHTML=(reportViews[state.category]||[]).map(view=>`<button class="report-view-item ${view===selected?'active':''}" type="button" data-view="${esc(view)}"><strong>${esc(view)}</strong><small>${esc(viewDescriptions[view]||'Analyze current pharmacy records.')}</small></button>`).join('');
+    qs('#reportViewTitle').textContent=selected;qs('#reportViewDescription').textContent=viewDescriptions[selected]||description;
+    qs('#reportViewIcon').innerHTML=`<i class="fa-solid ${categoryIcons[state.category]||'fa-chart-simple'}"></i>`;
+    qs('.report-search').hidden=!['Product Sales','Cashier Sales','Current Inventory','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation','Expiring Products','Expired / Wastage','Batch Traceability','PR / PO Summary','Purchase History','Invoice & Payment'].includes(selected);
+    qs('#reportSearch').placeholder=selected==='Batch Traceability'?'Search batch number or product':state.category==='purchases'?'Search PO, PR or supplier':'Search product or batch';
+}
 function setSelect(select,items,placeholder){
     const previous=select.dataset.initial??select.value;delete select.dataset.initial;
     select.innerHTML=`<option value="">${esc(placeholder)}</option>`+items.map(item=>{const obj=typeof item==='object'?item:{id:item,name:item};return `<option value="${esc(obj.id)}">${esc(obj.name)}</option>`;}).join('');
@@ -77,43 +124,111 @@ function syncDependentOptions(clearInvalid=true){
     if(clearInvalid){if(oldType&&!validTypes.some(x=>x.id===oldType))form.elements.type_id.value='';if(oldProduct&&!validProducts.some(x=>x.id===oldProduct))form.elements.product_id.value='';if(oldBrand&&!validBrands.includes(oldBrand))form.elements.brand.value='';}
 }
 function updateVisibleFilters(){
-    const visible=new Set(visibility[state.category]||[]);
+    const view=qs('[name="report_view"]'),previous=view.dataset.initial||view.value;view.innerHTML=reportViews[state.category].map(x=>`<option>${x}</option>`).join('');if(reportViews[state.category].includes(previous))view.value=previous;delete view.dataset.initial;
+    const inventoryView=view.value;
+    const salesFields={
+        'Sales Summary':['view','dates'],
+        'Product Sales':['view','dates','primary-category','rx'],
+        'Category Sales':['view','dates'],
+        'Cashier Sales':['view','dates','cashier']
+    };
+    const inventoryFields={
+        'Current Inventory':['view','primary-category','primary-stock','product','secondary-supplier'],
+        'Stock Movement':['view','dates','primary-category','product'],
+        'Low / Out of Stock':['view','primary-category','product'],
+        'Fast / Slow Moving':['view','dates','primary-category','product','brand'],
+        'Inventory Valuation':['view','primary-category','product','secondary-supplier']
+    };
+    const visible=new Set(state.category==='inventory'&&inventoryFields[inventoryView]?inventoryFields[inventoryView]:state.category==='sales'&&salesFields[view.value]?salesFields[view.value]:visibility[state.category]||[]);
     qsa('[data-filter]').forEach(el=>el.hidden=!visible.has(el.dataset.filter));
     qs('#moreFiltersToggle').hidden=state.category==='overview';if(state.category==='overview')qs('#secondaryFilters').hidden=true;
-    const view=qs('[name="report_view"]'),previous=view.dataset.initial||view.value;view.innerHTML=reportViews[state.category].map(x=>`<option>${x}</option>`).join('');if(reportViews[state.category].includes(previous))view.value=previous;delete view.dataset.initial;
     const group=qs('[name="group_by"]'),options=groupOptions[state.category]||[];group.innerHTML=options.map(([value,label])=>`<option value="${value}">${label}</option>`).join('');const initial=group.dataset.initial;if(initial&&options.some(x=>x[0]===initial))group.value=initial;delete group.dataset.initial;
-    syncDependentOptions(false);
+    syncDependentOptions(false);renderViewMenu();
 }
 function buildParams(overrides={}){
-    syncMirrors();const params=new URLSearchParams({category:state.category,page:String(state.page),page_size:'20'});
+    syncMirrors();const params=new URLSearchParams({category:state.category,layout:'reference',page:String(state.page),page_size:'10'});
     new FormData(qs('#reportFilters')).forEach((value,key)=>{if(!key.startsWith('secondary_')&&String(value)!=='')params.set(key,value);});
     const search=qs('#reportSearch').value.trim();if(search)params.set('search',search);if(state.sort){params.set('sort',state.sort);params.set('direction',state.direction);}
     Object.entries(overrides).forEach(([k,v])=>params.set(k,String(v)));return params;
 }
 async function loadReport(){
     state.controller?.abort();state.controller=new AbortController();destroyCharts();qs('#reportContent').classList.add('d-none');qs('#reportError').classList.add('d-none');qs('#reportLoading').classList.remove('d-none');
-    try{const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams()}`,{credentials:'include',cache:'no-store',signal:state.controller.signal});const data=await response.json();if(response.status===403&&data.access?.available_categories?.length){state.category=data.access.available_categories[0];state.page=1;return loadReport();}if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to generate this report.');
-        state.data=data;if(data.access?.supervisor){categories.overview='Inventory Overview';categories.purchases='Purchase Requests';reportViews.overview=['Inventory Overview'];reportViews.purchases=['Purchase Request Summary'];visibility.purchases=['view','dates'];}
-        if(!state.options){populateBaseOptions(data.filters||{});if(state.needsInitialFilterReload){state.needsInitialFilterReload=false;return loadReport();}}if(!data.access.available_categories.includes(state.category)){state.category=data.access.available_categories[0];return loadReport();}renderTabs(data.access.available_categories);renderReport(data);syncUrl();}
+    try{const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams()}`,{credentials:'include',cache:'no-store',signal:state.controller.signal});const data=await response.json();if(response.status===403&&data.access?.available_categories?.length){state.category=data.access.available_categories[0];state.page=1;updateVisibleFilters();return loadReport();}if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to generate this report.');
+        if(!state.initialPeriodSet&&!state.explicitDates){state.initialPeriodSet=true;const today=reportToday(data.system.timezone);qs('[name="start_date"]').value=shiftDate(today,-29);qs('[name="end_date"]').value=today;return loadReport();}
+        state.initialPeriodSet=true;state.data=data;if(data.access?.supervisor){categories.overview='Inventory Overview';categories.purchases='Purchase Requests';reportViews.overview=['Inventory Overview'];reportViews.purchases=['Purchase Request Summary'];visibility.purchases=['view','dates'];}
+        if(!state.roleConfigured){state.roleConfigured=true;if(!data.access.management){reportViews.sales=['Sales Summary','Product Sales','Staff Sales','Payment and Discount'];reportViews.inventory=['Inventory Summary','Stock Health'];reportViews.staff=['Staff Performance Summary'];}updateVisibleFilters();}
+        if(!state.options){populateBaseOptions(data.filters||{});if(state.needsInitialFilterReload){state.needsInitialFilterReload=false;return loadReport();}}if(!data.access.available_categories.includes(state.category)){state.category=data.access.available_categories[0];updateVisibleFilters();return loadReport();}renderTabs(data.access.available_categories);renderReport(data);syncUrl();}
     catch(error){if(error.name==='AbortError')return;qs('#reportLoading').classList.add('d-none');qs('#reportError').classList.remove('d-none');qs('#reportError').textContent=error.message;}
 }
 function syncUrl(){
     const params=buildParams();if(!state.explicitDates&&params.get('start_date')===state.defaultStart)params.delete('start_date');if(!state.explicitDates&&params.get('end_date')===state.defaultEnd)params.delete('end_date');
-    if(params.get('expiry_days')==='30')params.delete('expiry_days');if(params.get('group_by')==='day')params.delete('group_by');params.delete('report_view');params.delete('page_size');if(params.get('page')==='1')params.delete('page');
-    history.replaceState(null,'',`${location.pathname}?${params}`);
+    if(params.get('expiry_days')==='30'&&state.category!=='expiry')params.delete('expiry_days');if(params.get('group_by')==='day')params.delete('group_by');params.delete('report_view');params.delete('page_size');if(params.get('page')==='1')params.delete('page');
+    params.set('category',state.category);if(qs('[name="report_view"]').value!==reportViews[state.category]?.[0])params.set('report_view',qs('[name="report_view"]').value);params.delete('layout');history.replaceState(null,'',`${location.pathname}?${params}`);
 }
 function renderReport(data){
     qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.remove('d-none');
+    qs('#summaryCards').hidden=false;qs('#reportCharts').hidden=false;
     qs('#reportContent').classList.toggle('is-overview',state.category==='overview');
     state.defaultStart=data.system.date_range.start;state.defaultEnd=data.system.date_range.end;const form=qs('#reportFilters');if(!form.elements.start_date.value)form.elements.start_date.value=state.defaultStart;if(!form.elements.end_date.value)form.elements.end_date.value=state.defaultEnd;
     const generated=new Date(data.system.generated_at);qs('#reportGenerated').textContent=`Generated ${generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} · ${data.system.timezone} · ${data.system.generated_by}`;
+    qs('#reportToday').textContent=generated.toLocaleDateString('en-PH',{timeZone:data.system.timezone,weekday:'short',year:'numeric',month:'short',day:'numeric'});
+    qs('#reportDateRange').textContent=`${data.system.date_range.start} – ${data.system.date_range.end}`;
+    qs('#reportPeriodLabel').textContent=state.category==='inventory'&&qs('[name="report_view"]').value!=='Stock Movement'&&qs('[name="report_view"]').value!=='Fast / Slow Moving'?'Live inventory snapshot':state.period==='custom'?'Custom date range':state.period==='month'?'This month':state.period==='today'?'Today':state.period==='yesterday'?'Yesterday':`Last ${state.period} days`;
+    qs('.report-presets').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.period===state.period));
+    renderViewMenu();renderReferenceControls();
     qs('#summaryCards').innerHTML=(data.summary||[]).map(card=>`<article class="summary-card tone-${esc(card.tone||'purple')}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong></article>`).join('');
-    renderCharts(data.charts||[]);renderInsights(data);
+    renderCharts(data.charts||[]);renderRanking(data);renderInsights(data);
     if(state.category==='overview'){const attention=qs('#reportInsights .attention-card');if(attention){qs('#reportCharts').appendChild(attention);qs('#reportCharts').classList.remove('single-chart');}}
-    renderOverview(data.overview_previews);renderTableInsights(data.table_insights||[]);renderTable(data);qs('.report-table-card').hidden=state.category==='overview';renderNotes(data.notes||[]);renderFilterChips();
+    renderOverview(data.overview_previews);renderTableInsights(data.table_insights||[]);renderTable(data);qs('.report-table-card').hidden=state.category==='overview'||form.elements.report_view.value==='Batch Traceability';renderNotes(data.notes||[]);renderFilterChips();
+    if(form.elements.report_view.value==='Batch Traceability')renderBatchTrace(data.trace);
+}
+function renderRanking(data){
+    const target=qs('#reportRanking'),view=qs('[name="report_view"]').value,chart=(data.charts||[]).find(item=>Array.isArray(item.rows)&&item.rows.length);
+    if(!chart||view==='Batch Traceability'||state.category==='overview'){target.hidden=true;target.innerHTML='';return;}
+    const rows=chart.rows.map(row=>({...row,rankValue:Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))})).filter(row=>row.rankValue>0).sort((a,b)=>b.rankValue-a.rankValue).slice(0,5);
+    if(!rows.length){target.hidden=true;target.innerHTML='';return;}
+    const max=rows[0].rankValue,currency=/sales|cost|value|revenue|paid|payable|purchase/i.test(chart.title),metric=currency?value=>money.format(value):value=>number.format(value);
+    target.hidden=false;target.innerHTML=`<div class="ranking-heading"><div><h2>Top ${rows.length} by ${esc(chart.title.toLowerCase())}</h2><p>Within the current filters</p></div></div><div class="ranking-list">${rows.map(row=>`<div class="ranking-item"><div><span>${esc(row.label)}</span><strong>${esc(metric(row.rankValue))}</strong></div><div class="ranking-track"><span style="width:${100*row.rankValue/max}%"></span></div></div>`).join('')}</div>`;
+}
+function renderReferenceControls(){
+    const special=Boolean(state.data?.access?.management)&&['sales','inventory','expiry','purchases','supplier','staff'].includes(state.category),view=qs('[name="report_view"]').value,card=qs('.report-filter-card');
+    const snapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||(state.category==='expiry'&&view!=='Expired / Wastage');
+    card.classList.toggle('reference-filters',special);card.classList.toggle('snapshot-filters',snapshot);
+    let target=qs('#referenceQuickFilters');if(!target){target=document.createElement('div');target.id='referenceQuickFilters';card.appendChild(target);}
+    target.hidden=!special;if(!special){if(qs('#referenceQuickMeta'))qs('#referenceQuickMeta').hidden=true;if(qs('#referenceSnapshotLabel'))qs('#referenceSnapshotLabel').hidden=true;qs('#reportGenerated').hidden=false;return;}
+    let meta=qs('#referenceQuickMeta');if(!meta){meta=document.createElement('div');meta.id='referenceQuickMeta';card.appendChild(meta);}
+    meta.hidden=false;meta.textContent=`${number.format(state.data?.pagination?.total||0)} records`;
+    let snapshotLabel=qs('#referenceSnapshotLabel');if(!snapshotLabel){snapshotLabel=document.createElement('div');snapshotLabel.id='referenceSnapshotLabel';card.appendChild(snapshotLabel);}
+    snapshotLabel.hidden=!snapshot;snapshotLabel.innerHTML=`<i class="fa-solid fa-circle"></i> Live snapshot as of ${esc(qs('#reportToday').textContent)}`;
+    const suppliers=state.options?.suppliers||[],supplier=qs('[name="supplier_id"]').value,
+        supplierOptions=`<option value="">All suppliers</option>`+suppliers.map(x=>`<option value="${esc(x.id)}" ${x.id===supplier?'selected':''}>${esc(x.name)}</option>`).join('');
+    const categoriesOptions=`<option value="">All categories</option>`+(state.options?.categories||[]).map(x=>`<option value="${esc(x.id)}" ${x.id===qs('[name="category_id"]').value?'selected':''}>${esc(x.name)}</option>`).join('');
+    const stockOptions=`<option value="">All stock statuses</option>`+(state.options?.stock_statuses||[]).filter(x=>x!=='negative').map(x=>`<option value="${esc(x)}" ${x===qs('[name="stock_status"]').value?'selected':''}>${esc(x==='healthy'?'In Stock':x==='low'?'Low Stock':'Out of Stock')}</option>`).join('');
+    const cashierOptions=`<option value="">All cashiers</option>`+(state.options?.cashiers||[]).map(x=>`<option value="${esc(x.id)}" ${x.id===qs('[name="cashier_id"]').value?'selected':''}>${esc(x.name)}</option>`).join('');
+    const select=(id,options)=>`<select id="${id}" class="form-select form-select-sm" aria-label="${id.replace('quick','')} filter">${options}</select>`;
+    let controls='';
+    if(state.category==='sales')controls=view==='Product Sales'?select('quickCategory',categoriesOptions):view==='Cashier Sales'?select('quickCashier',cashierOptions):'';
+    if(state.category==='inventory')controls=select('quickCategory',categoriesOptions)+(view==='Current Inventory'||view==='Inventory Valuation'?select('quickSupplier',supplierOptions):'')+(view==='Current Inventory'||view==='Low / Out of Stock'?select('quickStock',stockOptions):'');
+    if(view==='Expiring Products')controls=select('quickExpiry',`<option value="365" ${qs('[name="expiry_days"]').value==='365'?'selected':''}>All windows</option><option value="30" ${qs('[name="expiry_days"]').value==='30'?'selected':''}>Within 30 days</option><option value="90" ${qs('[name="expiry_days"]').value==='90'?'selected':''}>Within 90 days</option><option value="180" ${qs('[name="expiry_days"]').value==='180'?'selected':''}>Within 6 months</option>`);
+    if(view==='Expired / Wastage')controls=select('quickSupplier',supplierOptions);
+    if(view==='Batch Traceability')controls='<button type="button" class="btn btn-purple" id="quickTrace">Trace batch</button>';
+    if(state.category==='purchases'){const invoice=view==='Invoice & Payment',statuses=invoice?['Paid','Unpaid','Partially Paid']:(state.options?.po_statuses||[]),selected=invoice?qs('[name="payment_state"]').value:qs('[name="po_status"]').value;controls=select('quickSupplier',supplierOptions)+select('quickStatus',`<option value="">All statuses</option>`+statuses.map(x=>`<option value="${esc(x.id??x)}" ${String(x.id??x).toLowerCase()===selected.toLowerCase()?'selected':''}>${esc(x.name??x)}</option>`).join(''));}
+    if(state.category==='supplier')controls=select('quickSupplier',supplierOptions);
+    if(state.category==='staff')controls=select('quickCashier',cashierOptions);
+    target.innerHTML=controls;
+    qs('.report-search').hidden=view==='Sales Summary'||view==='Category Sales';
+    qs('#reportGenerated').hidden=special;
+}
+function renderBatchTrace(trace){
+    const target=qs('#reportInsights');qs('#summaryCards').hidden=true;qs('#reportCharts').hidden=true;
+    if(!trace){target.innerHTML='<div class="trace-card empty-trace">Search a batch number or product to view its history.</div>';return;}
+    const b=trace.batch,total=Number(b.received_qty)||0,storage=Number(b.storage_qty)||0,shelf=Number(b.shelf_qty)||0,
+        returned=Number(b.returned_qty)||0,damaged=Number(b.damaged_qty)||0,sold=Math.max(0,total-storage-shelf-returned-damaged),
+        pieces=[['Sold',sold,'#5b4cf0'],['On Shelf',shelf,'#0d9488'],['In Storage',storage,'#1d2333'],['Returned',returned,'#f59e0b'],['Damaged',damaged,'#dc2626']];
+    target.innerHTML=`<article class="trace-card"><div class="trace-heading"><div><small>${esc(b.batch_reference)}</small><h2>${esc(b.product_name)}</h2><span>${esc(b.supplier)}</span></div><div>Expiry ${esc(b.expiry_date||'Not set')}</div></div><div class="trace-flow"><div><span>Supplier</span><strong>${esc(b.supplier)}</strong></div><div><span>Purchase order</span><strong>${esc(b.po_number)}</strong></div><div><span>Receiving</span><strong>${number.format(total)} received</strong><small>${esc(b.received_date)}</small></div><div><span>Storage</span><strong>${number.format(storage)} left</strong></div><div><span>Shelf</span><strong>${number.format(shelf)} left</strong></div><div><span>POS</span><strong>${number.format(sold)} sold*</strong></div></div><h3>Where the ${number.format(total)} units went</h3><div class="trace-bar">${pieces.filter(([,v])=>v>0).map(([,v,c])=>`<span style="width:${Math.max(0,100*v/Math.max(1,total))}%;background:${c}"></span>`).join('')}</div><div class="trace-legend">${pieces.map(([label,value,color])=>`<span><i style="background:${color}"></i>${label} <strong>${number.format(value)}</strong></span>`).join('')}</div><p class="trace-caveat">*Sold is estimated from received units less current stock, returns and damage.</p></article><article class="trace-card trace-history"><h3>History</h3>${trace.history.map(item=>`<div class="trace-event"><time>${esc(reportDate(item.date))}</time><div><strong>${esc(item.event)}</strong><p>${esc(item.detail)}</p></div><b>${number.format(item.quantity)}</b></div>`).join('')}</article>`;
 }
 function destroyCharts(){state.charts.forEach(chart=>chart.destroy());state.charts.clear();}
-function semanticChartColors(rows,tone){if(tone==='status'||tone==='expiry')return rows.map(r=>tones[statusColors[r.label]||(/expired|critical/i.test(r.label)?'red':/soon|days/i.test(r.label)?'amber':'green')]);const base=tones[tone]||tones.blue;return rows.map((_,i)=>i===0?base:`${base}${Math.max(55,210-i*28).toString(16).padStart(2,'0')}`);}
+function semanticChartColors(rows,tone){if(tone==='category')return rows.map((_,i)=>['#5b4cf0','#0d9488','#f59e0b','#0284c7','#94a3b8'][i%5]);if(tone==='status'||tone==='expiry')return rows.map(r=>tones[statusColors[r.label]||(/expired|critical/i.test(r.label)?'red':/soon|days/i.test(r.label)?'amber':'green')]);const base=tones[tone]||tones.blue;return rows.map((_,i)=>i===0?base:`${base}${Math.max(55,210-i*28).toString(16).padStart(2,'0')}`);}
 function reportDate(value,options={month:'short',day:'numeric'}){
     const match=String(value??'').match(/^(\d{4})-(\d{2})-(\d{2})/);if(!match)return String(value??'');
     return new Intl.DateTimeFormat('en-PH',options).format(new Date(Number(match[1]),Number(match[2])-1,Number(match[3])));
@@ -121,10 +236,10 @@ function reportDate(value,options={month:'short',day:'numeric'}){
 function renderCharts(charts){
     // ✅ FIX: guard against undefined/non-array
     charts = Array.isArray(charts) ? charts : [];
-    const useful=charts.filter(chart=>chart && ((chart.rows||[]).some(r=>Number(r.value)>0)||chart.href));
+    const useful=charts.filter(chart=>chart && ((chart.rows||[]).some(r=>Number(r.value)>0||Number(r.paid)>0||Number(r.outstanding)>0)||chart.href));
     const target=qs('#reportCharts');target.classList.toggle('single-chart',useful.length===1);
-    target.innerHTML=useful.map((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0),heading=`<div class="panel-heading"><h2>${esc(chart.title)}</h2>${chart.href?`<a class="report-link" href="${esc(chart.href)}">${esc(chart.link_label||'View Report')} <i class="fa-solid fa-arrow-right"></i></a>`:''}</div>`;if(positive.length===0)return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="compact-empty">No completed sales in the selected period.</div></article>`;if(positive.length===1||chart.type==='doughnut'&&positive.length<2){const row=positive[0],singleSummary=chart.overview_trend?`Net sales were ${money.format(row.value)} on ${reportDate(row.raw_date||row.label,{month:'long',day:'numeric',year:'numeric'})}, from ${number.format(row.secondary)} completed transaction${Number(row.secondary)===1?'':'s'}.`:'Only one meaningful category is available, so a compact summary replaces the chart.';return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="ranked-insight"><span>${esc(row.label)}</span><strong>${esc(format(row.value,/sales|cost|revenue|payable/i.test(chart.title)?'currency':'number'))}</strong></div><p class="chart-summary">${esc(singleSummary)}</p></article>`;}return `<article class="chart-card">${heading}<div class="chart-box"><canvas id="reportChart${index}" role="img" aria-label="${esc(chart.title)}"></canvas></div><p class="chart-summary" id="chartSummary${index}"></p></article>`;}).join('');
-    useful.forEach((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0);if(positive.length<2||!qs(`#reportChart${index}`)||typeof Chart==='undefined')return;const values=positive.map(r=>Number(r.value)),rawLabels=positive.map(r=>r.label),labels=chart.overview_trend?rawLabels.map(label=>reportDate(label)):rawLabels,currency=/sales|cost|revenue|payable|value/i.test(chart.title),horizontal=chart.orientation==='horizontal';
+    target.innerHTML=useful.map((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0),heading=`<div class="panel-heading"><h2>${esc(chart.title)}</h2>${chart.href?`<a class="report-link" href="${esc(chart.href)}">${esc(chart.link_label||'View Report')} <i class="fa-solid fa-arrow-right"></i></a>`:''}</div>`;if(chart.type==='stacked-bar'){const max=Math.max(1,...chart.rows.map(r=>Number(r.paid||0)+Number(r.outstanding||0)));return `<article class="chart-card">${heading}<div class="payment-chart-legend"><span><i></i>Paid</span><span><i></i>Outstanding</span></div><div class="payment-chart">${chart.rows.map(r=>`<div class="payment-chart-row"><span>${esc(r.label)}</span><div class="payment-chart-track"><i style="width:${100*Number(r.paid||0)/max}%"></i><b style="width:${100*Number(r.outstanding||0)/max}%"></b></div></div>`).join('')}</div></article>`;}if(positive.length===0)return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="compact-empty">No records in the selected period.</div></article>`;if(positive.length===1||chart.type==='doughnut'&&positive.length<2){const row=positive[0],singleSummary=chart.overview_trend?`Net sales were ${money.format(row.value)} on ${reportDate(row.raw_date||row.label,{month:'long',day:'numeric',year:'numeric'})}, from ${number.format(row.secondary)} completed transaction${Number(row.secondary)===1?'':'s'}.`:'Only one meaningful category is available, so a compact summary replaces the chart.';return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="ranked-insight"><span>${esc(row.label)}</span><strong>${esc(format(row.value,/sales|cost|revenue|payable/i.test(chart.title)?'currency':'number'))}</strong></div><p class="chart-summary">${esc(singleSummary)}</p></article>`;}return `<article class="chart-card">${heading}<div class="chart-box"><canvas id="reportChart${index}" role="img" aria-label="${esc(chart.title)}"></canvas></div><p class="chart-summary" id="chartSummary${index}"></p></article>`;}).join('');
+    useful.forEach((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0);if(chart.type==='stacked-bar'||positive.length<2||!qs(`#reportChart${index}`)||typeof Chart==='undefined')return;const values=positive.map(r=>Number(r.value)),rawLabels=positive.map(r=>r.label),labels=chart.overview_trend?rawLabels.map(label=>reportDate(label)):rawLabels,currency=/sales|cost|revenue|payable|value/i.test(chart.title),horizontal=chart.orientation==='horizontal';
         const colors=semanticChartColors(positive,chart.tone);const instance=new Chart(qs(`#reportChart${index}`),{type:chart.type,data:{labels,datasets:[{label:chart.title,data:values,backgroundColor:chart.type==='line'?`${tones.blue}22`:colors,borderColor:chart.type==='line'?tones.blue:colors,borderWidth:chart.type==='line'?2:1,tension:.25,fill:chart.type==='line',pointRadius:3,pointHoverRadius:5}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:horizontal?'y':'x',animation:{duration:160},plugins:{legend:{display:chart.type==='doughnut',position:'bottom'},tooltip:{callbacks:{title:items=>chart.overview_trend?reportDate(positive[items[0].dataIndex].raw_date||rawLabels[items[0].dataIndex],{month:'long',day:'numeric',year:'numeric'}):items[0].label,label:ctx=>{const row=positive[ctx.dataIndex],metric=/net sales/i.test(chart.title)?'Net sales':chart.title,lines=[`${metric}: ${currency?money.format(ctx.raw):number.format(ctx.raw)}`];if(row.secondary!==undefined)lines.push(`Completed transactions: ${number.format(row.secondary)}`);return lines;}}}},scales:chart.type==='doughnut'?{}:{x:{beginAtZero:horizontal,grid:{display:!horizontal},ticks:{callback:function(value){if(horizontal)return currency?money.format(value):number.format(value);return this.getLabelForValue(value);}}},y:{beginAtZero:!horizontal,grid:{display:false},ticks:{callback:function(value){if(!horizontal&&currency)return money.format(value);return this.getLabelForValue(value);}}}}}});state.charts.set(chart.id,instance);const max=Math.max(...values),maxIndex=values.indexOf(max),label=rawLabels[maxIndex],summary=chart.overview_trend?`Highest net sales were ${money.format(max)} on ${reportDate(positive[maxIndex].raw_date||label,{month:'long',day:'numeric',year:'numeric'})}.`:`${label} is highest at ${currency?money.format(max):number.format(max)}.`;qs(`#chartSummary${index}`).textContent=summary;});
 }
 function renderInsights(data){
@@ -178,15 +293,25 @@ function renderTableInsights(insights){qs('#tableInsights').innerHTML=insights.m
 function statusClass(value){return statusColors[String(value)]||(/paid|healthy|complete|accept/i.test(value)?'green':/cancel|expired|out of stock|data issue/i.test(value)?'red':/pending|partial|low|damage|slow/i.test(value)?'amber':'gray');}
 function cellHtml(key,value,row){
     const text=value===null||value===''?'—':String(value);if(/status|performance/i.test(key))return `<span class="status-chip ${statusClass(text)}">${esc(text)}</span>`;
-    if(state.data.currency_columns.includes(key))return esc(money.format(Number(value||0)));if(key==='sell_through_rate')return `${esc(text)}%`;if(/date|activity/.test(key))return esc(text.replace(' ',' · '));
+    if(state.data.currency_columns.includes(key))return esc(money.format(Number(value||0)));if(key==='sell_through_rate'||key==='share')return `${esc(text)}%`;if(/date|activity/.test(key))return esc(text.replace(' ',' · '));
     return `<span class="cell-text" title="${esc(text)}">${esc(text)}</span>`;
 }
 function renderTable(data){
     let columns=Object.entries(data.columns||{});if(!data.access.management&&data.access.cashier)columns=columns.filter(([key])=>key!=='sales_clerk');
-    qs('#tableTitle').textContent=`${categories[state.category]} details`;qs('#reportTableHead').innerHTML=`<tr>${columns.map(([key,label])=>`<th class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}"><button class="sort-button" type="button" data-sort="${esc(key)}">${esc(label)}${state.sort===key?` <i class="fa-solid fa-sort-${state.direction==='asc'?'up':'down'}"></i>`:''}</button></th>`).join('')}</tr>`;
-    qs('#reportTableBody').innerHTML=data.rows?.length?data.rows.map(row=>`<tr>${columns.map(([key])=>`<td class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}">${cellHtml(key,row[key],row)}</td>`).join('')}</tr>`).join(''):`<tr class="empty-table"><td colspan="${columns.length}">${esc(data.empty_message||'No records were found for the selected filters.')}</td></tr>`;
+    qs('#tableTitle').textContent='Detailed records';qs('#reportTableHead').innerHTML=`<tr>${columns.map(([key,label])=>`<th class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}"><button class="sort-button" type="button" data-sort="${esc(key)}">${esc(label)}${state.sort===key?` <i class="fa-solid fa-sort-${state.direction==='asc'?'up':'down'}"></i>`:''}</button></th>`).join('')}</tr>`;
+    qs('#reportTableBody').innerHTML=data.rows?.length?data.rows.map((row,index)=>`<tr class="report-detail-row" data-row-index="${index}" tabindex="0" aria-label="Open details for ${esc(String(row[columns[0]?.[0]]??'record'))}">${columns.map(([key])=>`<td class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}">${cellHtml(key,row[key],row)}</td>`).join('')}</tr>`).join(''):`<tr class="empty-table"><td colspan="${columns.length}">${esc(data.empty_message||'No records were found for the selected filters.')}</td></tr>`;
     window.PharmacySearchHighlight?.apply(qs('#reportTableBody'),qs('#reportSearch')?.value||'');
-    const p=data.pagination;qs('#resultCount').textContent=`${number.format(p.total)} result${p.total===1?'':'s'}`;qs('#pageSummary').textContent=`Page ${p.page} of ${p.pages}`;qs('#previousPage').disabled=p.page<=1;qs('#nextPage').disabled=p.page>=p.pages;
+    const p=data.pagination;qs('#resultCount').textContent=`${number.format(p.total)} result${p.total===1?'':'s'}`;qs('#pageSummary').textContent=`Showing ${p.total?number.format((p.page-1)*p.page_size+1):0}–${number.format(Math.min(p.page*p.page_size,p.total))} of ${number.format(p.total)} · Page ${p.page} of ${p.pages}`;qs('#previousPage').disabled=p.page<=1;qs('#nextPage').disabled=p.page>=p.pages;
+}
+function openRecordDetail(index){
+    const data=state.data,rows=data?.rows||[],row=rows[index];if(!row)return;state.detailIndex=index;
+    const columns=Object.entries(data.columns||{}),first=columns[0]?.[0],title=String(row.product_name||row.po_number||row.supplier_name||row.staff_name||row[first]||'Record details');
+    qs('#reportDetailView').textContent=qs('[name="report_view"]').value;
+    qs('#reportDetailTitle').textContent=title;
+    qs('#reportDetailFields').innerHTML=columns.map(([key,label])=>`<div><dt>${esc(label)}</dt><dd>${cellHtml(key,row[key],row)}</dd></div>`).join('');
+    qs('#reportDetailPosition').textContent=`${index+1} of ${rows.length} on this page`;
+    qs('#reportDetailPrevious').disabled=index<=0;qs('#reportDetailNext').disabled=index>=rows.length-1;
+    const dialog=qs('#reportDetail');if(!dialog.open)dialog.showModal();
 }
 function renderNotes(notes){qs('#formulaNotes').innerHTML=notes.length?`<h2><i class="fa-solid fa-circle-info"></i> Calculation notes</h2><ul>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'';}
 function displayValue(key,value){
@@ -197,9 +322,10 @@ function renderFilterChips(){
     syncMirrors();const chips=[];new FormData(qs('#reportFilters')).forEach((value,key)=>{if(!value||key.startsWith('secondary_')||key==='report_view')return;if((key==='start_date'&&value===state.defaultStart)||(key==='end_date'&&value===state.defaultEnd)||(key==='expiry_days'&&value==='30'&&state.category!=='expiry')||(key==='group_by'&&value==='day'))return;chips.push({key,label:`${filterLabels[key]||key}: ${displayValue(key,value)}`});});
     qs('#filterChips').innerHTML=chips.map(x=>`<button type="button" class="filter-chip" data-remove-filter="${esc(x.key)}">${esc(x.label)} <i class="fa-solid fa-xmark"></i></button>`).join('');qs('#activeFilterCount').textContent=chips.length?`${chips.length} active filter${chips.length===1?'':'s'}`:'Default period';
 }
-function resetFilters(){const form=qs('#reportFilters');form.reset();qsa('#reportFilters select').forEach(x=>{x.dataset.initial='';});form.elements.start_date.value=state.defaultStart;form.elements.end_date.value=state.defaultEnd;form.elements.expiry_days.value='30';qs('#reportSearch').value='';state.page=1;state.sort='';state.direction='desc';state.explicitDates=false;populateBaseOptions(state.options);updateVisibleFilters();loadReport();}
+function resetFilters(){const form=qs('#reportFilters');form.reset();qsa('#reportFilters select').forEach(x=>{x.dataset.initial='';});const today=reportToday(state.data?.system?.timezone);form.elements.start_date.value=shiftDate(today,-29);form.elements.end_date.value=today;form.elements.expiry_days.value='30';qs('#reportSearch').value='';state.page=1;state.sort='';state.direction='desc';state.explicitDates=false;state.period='30';populateBaseOptions(state.options);updateVisibleFilters();loadReport();}
+function setFilterExpanded(expanded){const form=qs('#reportFilters'),button=qs('#filterCollapse');form.classList.toggle('is-collapsed',!expanded);button.setAttribute('aria-expanded',String(expanded));button.querySelector('span').textContent=expanded?'Hide filters':'Show filters';button.querySelector('i').className=`fa-solid fa-chevron-${expanded?'up':'down'}`;}
 function clearCategoryFilters(){
-    const form=qs('#reportFilters');['category_id','secondary_category_id','type_id','product_id','brand','supplier_id','secondary_supplier_id','cashier_id','sales_clerk_id','payment_method','po_status','stock_status','payment_state'].forEach(key=>{if(form.elements[key])form.elements[key].value='';});
+    const form=qs('#reportFilters');['category_id','secondary_category_id','type_id','product_id','brand','supplier_id','secondary_supplier_id','cashier_id','sales_clerk_id','payment_method','po_status','stock_status','rx_filter','payment_state'].forEach(key=>{if(form.elements[key])form.elements[key].value='';});
     form.elements.expiry_days.value='30';state.sort='';state.direction='desc';syncDependentOptions(true);
 }
 function csvCell(value){let text=String(value??'');if(/^[=+\-@]/.test(text))text=`'${text}`;return `"${text.replace(/"/g,'""')}"`;}
@@ -211,10 +337,24 @@ async function exportCsv(){
         rows.forEach(row=>lines.push(columns.map(([key])=>row[key]??'')));const blob=new Blob(['\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${state.category}-report-${first.system.date_range.end}.csv`;document.body.appendChild(link);link.click();const url=link.href;link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch(error){alert(error.message);}finally{button.disabled=false;}
 }
+function renderFinder(){
+    const query=qs('#reportFinderInput').value.trim().toLowerCase(),available=state.data?.access?.management?['sales','inventory','expiry','purchases','supplier','staff']:(state.data?.access?.available_categories||['sales','inventory','expiry','purchases','supplier','staff']);
+    const matches=available.flatMap(category=>(reportViews[category]||[]).map(view=>({category,view}))).filter(item=>!query||`${item.view} ${categories[item.category]} ${viewDescriptions[item.view]||''}`.toLowerCase().includes(query));
+    qs('#reportFinderResults').innerHTML=matches.map(item=>`<button type="button" data-find-category="${item.category}" data-find-view="${esc(item.view)}"><i class="fa-solid ${categoryIcons[item.category]||'fa-chart-simple'}"></i><span><strong>${esc(item.view)}</strong><small>${esc(viewDescriptions[item.view]||'Analyze current pharmacy records.')}</small></span><em>${esc(categories[item.category])}</em></button>`).join('')||'<p class="finder-empty">No matching reports</p>';
+}
+function openFinder(){const dialog=qs('#reportFinder');qs('#reportFinderInput').value='';renderFinder();dialog.showModal();qs('#reportFinderInput').focus();}
 
-qs('#reportTabs').addEventListener('click',event=>{const button=event.target.closest('[data-category]');if(!button)return;clearCategoryFilters();state.category=button.dataset.category;state.page=1;renderTabs(state.data?.access?.available_categories);updateVisibleFilters();loadReport();});
-qs('#reportFilters').addEventListener('submit',event=>{event.preventDefault();state.page=1;state.explicitDates=true;loadReport();});
-qs('#clearFilters').addEventListener('click',resetFilters);qs('#reportRefresh').addEventListener('click',loadReport);qs('#reportPrint').addEventListener('click',()=>window.print());qs('#reportExport').addEventListener('click',exportCsv);
+qs('#reportTabs').addEventListener('click',event=>{const button=event.target.closest('[data-category]');if(!button)return;clearCategoryFilters();state.category=button.dataset.category;if(state.category==='expiry')qs('[name="expiry_days"]').value='365';state.page=1;renderTabs(state.data?.access?.available_categories);updateVisibleFilters();loadReport();});
+qs('#reportFinderButton').addEventListener('click',openFinder);qs('#reportFinderClose').addEventListener('click',()=>qs('#reportFinder').close());qs('#reportFinderInput').addEventListener('input',renderFinder);
+qs('#reportFinderResults').addEventListener('click',event=>{const button=event.target.closest('[data-find-view]');if(!button)return;qs('#reportFinder').close();clearCategoryFilters();state.category=button.dataset.findCategory;if(state.category==='expiry')qs('[name="expiry_days"]').value='365';state.page=1;renderTabs(state.data?.access?.available_categories);updateVisibleFilters();qs('[name="report_view"]').value=button.dataset.findView;qs('[name="report_view"]').dispatchEvent(new Event('change'));});
+document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();if(!qs('#reportFinder').open)openFinder();}if(event.key==='Escape'&&qs('#reportDetail').open)qs('#reportDetail').close();});
+qs('#reportTableBody').addEventListener('click',event=>{const row=event.target.closest('[data-row-index]');if(row)openRecordDetail(Number(row.dataset.rowIndex));});
+qs('#reportTableBody').addEventListener('keydown',event=>{if(!['Enter',' '].includes(event.key))return;const row=event.target.closest('[data-row-index]');if(row){event.preventDefault();openRecordDetail(Number(row.dataset.rowIndex));}});
+qs('#reportDetailClose').addEventListener('click',()=>qs('#reportDetail').close());qs('#reportDetailPrevious').addEventListener('click',()=>openRecordDetail(state.detailIndex-1));qs('#reportDetailNext').addEventListener('click',()=>openRecordDetail(state.detailIndex+1));
+qs('#reportFilters').addEventListener('submit',event=>{event.preventDefault();state.page=1;state.explicitDates=true;state.period='custom';loadReport();});
+qs('#clearFilters').addEventListener('click',resetFilters);qs('#reportRefresh').addEventListener('click',loadReport);qs('#reportPrint').addEventListener('click',()=>window.print());qs('#reportPdf').addEventListener('click',()=>window.print());qs('#reportExport').addEventListener('click',exportCsv);
+qs('#reportViewMenu').addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(!button)return;qs('#reportSearch').value='';qs('[name="report_view"]').value=button.dataset.view;setFilterExpanded(['expiry','purchases'].includes(state.category)?false:button.dataset.view!=='Sales Summary');qs('[name="report_view"]').dispatchEvent(new Event('change'));renderViewMenu();});
+qs('.report-presets').addEventListener('click',event=>{const button=event.target.closest('[data-period]');if(!button)return;const period=button.dataset.period;if(period==='custom'){qs('[name="start_date"]').closest('[data-filter]').hidden=false;qs('#reportFilters').classList.remove('is-collapsed');qs('[name="start_date"]').focus();state.period='custom';return;}const today=reportToday(state.data?.system?.timezone),end=period==='yesterday'?shiftDate(today,-1):today,start=period==='month'?`${today.slice(0,7)}-01`:period==='7'?shiftDate(end,-6):period==='30'?shiftDate(end,-29):end;qs('[name="start_date"]').value=start;qs('[name="end_date"]').value=end;state.period=period;state.explicitDates=true;state.page=1;qs('.report-presets').querySelectorAll('button').forEach(item=>item.classList.toggle('active',item===button));loadReport();});
 qs('#previousPage').addEventListener('click',()=>{state.page--;loadReport();});qs('#nextPage').addEventListener('click',()=>{state.page++;loadReport();});
 qs('#reportSearch').addEventListener('input',()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(()=>{state.page=1;loadReport();},350);});
 qs('#reportTableHead').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.direction=state.sort===button.dataset.sort&&state.direction==='asc'?'desc':'asc';state.sort=button.dataset.sort;state.page=1;loadReport();});
@@ -224,8 +364,10 @@ qs('#overviewGrid').addEventListener('click',event=>{const button=event.target.c
 ['category_id','secondary_category_id','type_id','brand'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{if(name.includes('category')){qs('[name=category_id]').value=event.target.value;qs('[name=secondary_category_id]').value=event.target.value;}syncDependentOptions(true);}));
 qs('[name="product_id"]').addEventListener('change',event=>{const product=state.options?.products.find(x=>x.id===event.target.value);if(!product)return;qs('[name=category_id]').value=qs('[name=secondary_category_id]').value=product.category_id;qs('[name=type_id]').value=product.type_id;qs('[name=brand]').value=product.brand;syncDependentOptions(false);qs('[name=product_id]').value=product.id;});
 ['supplier_id','secondary_supplier_id'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{qs('[name=supplier_id]').value=qs('[name=secondary_supplier_id]').value=event.target.value;}));
-qs('[name="report_view"]').addEventListener('change',event=>{const form=qs('#reportFilters'),map={'Product Sales':'product','Staff Sales':'cashier','Payment and Discount':'payment_method'};if(state.category==='sales')form.elements.group_by.value=map[event.target.value]||'day';state.page=1;loadReport();});
-qs('#filterCollapse').addEventListener('click',event=>{const form=qs('#reportFilters');form.classList.toggle('is-collapsed');const expanded=!form.classList.contains('is-collapsed');event.currentTarget.setAttribute('aria-expanded',String(expanded));event.currentTarget.querySelector('span').textContent=expanded?'Hide filters':'Show filters';event.currentTarget.querySelector('i').className=`fa-solid fa-chevron-${expanded?'up':'down'}`;});
+qs('[name="report_view"]').addEventListener('change',event=>{const form=qs('#reportFilters'),map={'Product Sales':'product','Category Sales':'category','Cashier Sales':'cashier','Staff Sales':'cashier','Payment and Discount':'payment_method'};if(state.category==='sales')form.elements.group_by.value=map[event.target.value]||'day';if(event.target.value==='Expiring Products')form.elements.expiry_days.value='365';state.page=1;updateVisibleFilters();renderViewMenu();loadReport();});
+qs('.report-filter-card').addEventListener('change',event=>{const id=event.target.id;if(id==='quickExpiry')qs('[name="expiry_days"]').value=event.target.value;else if(id==='quickSupplier')qs('[name="supplier_id"]').value=qs('[name="secondary_supplier_id"]').value=event.target.value;else if(id==='quickCategory')qs('[name="category_id"]').value=qs('[name="secondary_category_id"]').value=event.target.value;else if(id==='quickStock')qs('[name="stock_status"]').value=event.target.value;else if(id==='quickCashier')qs('[name="cashier_id"]').value=event.target.value;else if(id==='quickStatus')qs(`[name="${qs('[name="report_view"]').value==='Invoice & Payment'?'payment_state':'po_status'}"]`).value=event.target.value;else return;state.page=1;loadReport();});
+qs('.report-filter-card').addEventListener('click',event=>{if(event.target.closest('#quickTrace'))loadReport();});
+qs('#filterCollapse').addEventListener('click',()=>setFilterExpanded(qs('#reportFilters').classList.contains('is-collapsed')));
 
 await verifySession();initialQuery();renderTabs();updateVisibleFilters();if(state.category==='overview')clearCategoryFilters();
 if(matchMedia('(max-width:991.98px)').matches){qs('#reportFilters').classList.add('is-collapsed');qs('#filterCollapse').setAttribute('aria-expanded','false');qs('#filterCollapse span').textContent='Show filters';qs('#filterCollapse i').className='fa-solid fa-chevron-down';}
