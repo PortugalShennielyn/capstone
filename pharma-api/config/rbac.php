@@ -133,6 +133,10 @@ function salesClerkApiRequestAllowed(string $scriptName, string $requestMethod =
         return $method === 'POST';
     }
 
+    if ($relativePath === 'sales/get_sales_clerk_reports.php') {
+        return $method === 'GET';
+    }
+
     return $relativePath === 'reports/get_report.php'
         || in_array($relativePath, [
             'sales/get_sales_clerk_dashboard.php',
