@@ -64,6 +64,24 @@ body.sidebar-open .app-main {
     background: transparent;
 }
 
+#navbar-container .sidebar-header .brand-mark {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: none;
+}
+
+#navbar-container .sidebar-header .brand-mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+}
+
 #navbar-container .sidebar-header .brand-text {
     overflow: hidden;
     color: #fff;
@@ -136,8 +154,8 @@ body.sidebar-open .app-main {
 #navbar-container .app-sidebar.collapsed .brand-mark {
     width: 32px;
     height: 32px;
-    border-radius: 8px;
-    font-size: 13px;
+    flex-basis: 32px;
+    border-radius: 50%;
 }
 
 #navbar-container .app-sidebar.collapsed .sidebar-toggle {
