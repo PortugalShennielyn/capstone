@@ -155,7 +155,7 @@ async function initializeNavbar(container) {
     const revealFailSafe = window.setTimeout(revealShell, 2500);
 
     try {
-        const rbac = await import("./modules/rbac.js?v=7");
+        const rbac = await import("./modules/rbac.js?v=8");
         const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v49";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
@@ -222,6 +222,7 @@ async function initializeNavbar(container) {
             "dashboard.html": "dashboard",
             "supervisor_dashboard.html": "dashboard",
             "cashier_dashboard.html": "dashboard",
+            "sales_clerk_dashboard.html": "dashboard",
             "products.html": "products",
             "inventory.html": "inventory",
             "shelf_inventory.html": "shelf-inventory",
@@ -236,6 +237,7 @@ async function initializeNavbar(container) {
             "return_damage.html": "return-damage",
             "expiry_monitoring.html": "expiry-monitoring",
             "reports.html": "reports",
+            "sales_clerk_reports.html": "reports",
             "audit_logs.html": "audit-logs",
             "admin_settings.html": "settings",
             "pos.html": "pos",
@@ -466,7 +468,7 @@ async function initializeNavbar(container) {
             const currentFilename = window.location.pathname.split("/").pop() || "";
             if (!rbac.isPageAllowed(session, currentFilename)) {
                 const safePage = accessRole === "salesclerk"
-                    ? "sales_clerk_pos.html"
+                    ? "sales_clerk_dashboard.html"
                     : accessRole === "cashier"
                         ? "cashier_pos.html"
                         : accessRole === "supervisor"
@@ -495,6 +497,13 @@ async function initializeNavbar(container) {
                 link.classList.toggle("d-none", !isAllowed);
                 link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
             });
+
+            if (accessRole === "salesclerk") {
+                const dashboardLink = container.querySelector(".sidebar-nav [data-nav-page='dashboard']");
+                if (dashboardLink) dashboardLink.href = "sales_clerk_dashboard.html";
+                const reportsLink = container.querySelector(".sidebar-nav [data-nav-page='reports']");
+                if (reportsLink) reportsLink.href = "sales_clerk_reports.html";
+            }
 
             if (accessRole === "manager") {
                 const userManagementLink = container.querySelector("[data-nav-page='settings']");
@@ -540,7 +549,7 @@ async function initializeNavbar(container) {
             }
 
             if (accessRole === "salesclerk") {
-                container.querySelector(".sidebar-brand")?.setAttribute("href", "sales_clerk_pos.html");
+                container.querySelector(".sidebar-brand")?.setAttribute("href", "sales_clerk_dashboard.html");
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
                     const isUserSettings = link.dataset.navPage === "user-settings";
                     link.classList.toggle("d-none", !isUserSettings);

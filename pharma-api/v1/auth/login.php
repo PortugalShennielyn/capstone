@@ -150,7 +150,7 @@ try {
         'manager' => 'dashboard.html',
         'supervisor' => 'supervisor_dashboard.html',
         'cashier' => 'cashier_dashboard.html',
-        'salesclerk' => 'sales_clerk_pos.html'
+        'salesclerk' => 'sales_clerk_dashboard.html'
     ];
 
     if (!isset($redirects[$role])) {

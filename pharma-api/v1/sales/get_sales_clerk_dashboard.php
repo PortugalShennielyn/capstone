@@ -5,8 +5,7 @@ $allowedRoles = ['super_admin', 'admin', 'manager', 'salesclerk', 'Admin', 'Sale
 require_once '../../config/require_auth.php';
 
 $userId = $_SESSION['user_id'] ?? '';
-$role = strtolower((string) ($_SESSION['role'] ?? ''));
-$isSalesClerk = in_array($role, ['salesclerk', 'sales clerk'], true);
+$isSalesClerk = currentSessionHasRbacRole('salesclerk') || currentSessionHasRbacRole('ro_sales_clerk');
 
 $whereClerk = $isSalesClerk ? ' AND sales_clerk_id = :user_id' : '';
 $params = $isSalesClerk ? [':user_id' => $userId] : [];
@@ -41,6 +40,15 @@ $completedTransactions = dashboardCount(
        {$whereClerk}",
     $params
 );
+$todaySalesStmt = $pdo->prepare(
+    "SELECT COALESCE(SUM(total_amount), 0)
+     FROM sales_orders
+     WHERE status = 'completed'
+       AND DATE(COALESCE(completed_at, updated_at, created_at)) = CURDATE()
+       {$whereClerk}"
+);
+$todaySalesStmt->execute($params);
+$todaySales = (float) $todaySalesStmt->fetchColumn();
 $itemsStmt = $pdo->prepare(
     "SELECT COALESCE(SUM(soi.quantity), 0)
      FROM sales_order_items soi
@@ -58,6 +66,7 @@ echo json_encode([
         'today_forwarded_orders' => $todayForwarded,
         'pending_for_cashier' => $pendingForCashier,
         'completed_transactions' => $completedTransactions,
+        'my_sales_today' => $todaySales,
         'total_items_sold_today' => (int) $itemsStmt->fetchColumn(),
     ],
 ]);

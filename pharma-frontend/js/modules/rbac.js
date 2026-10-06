@@ -54,11 +54,12 @@ const ROLE_PAGE_ACCESS = Object.freeze({
     salesclerk: new Set([
         'profile.html',
         'clerk.html',
+        'sales_clerk_dashboard.html',
         'sales_clerk_pos.html',
         'sales_clerk_orders.html',
+        'sales_clerk_reports.html',
         'inventory.html',
-        'shelf_inventory.html',
-        'reports.html'
+        'shelf_inventory.html'
     ])
 });
 
@@ -100,6 +101,7 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'user-settings'
     ]),
     salesclerk: new Set([
+        'dashboard',
         'sales-clerk-pos',
         'sales-clerk-orders',
         'inventory',
@@ -151,6 +153,9 @@ function roleLabel(session) {
 
 function isPageAllowed(session, filename) {
     const role = primaryAccessRole(session);
+    if (filename === 'sales_clerk_dashboard.html' || filename === 'sales_clerk_reports.html') {
+        return role === 'salesclerk';
+    }
     if (filename === 'purchase_request_print.html' || filename === 'purchase_order_print.html') return Boolean(role);
     if (filename === 'supervisor_approval.html') return role === 'supervisor';
     if (role === 'super_admin' || role === 'admin') return true;

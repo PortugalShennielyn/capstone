@@ -6,7 +6,7 @@ import {
     primaryAccessRole,
     roleLabel,
     sessionRoleSet
-} from './rbac.js?v=7';
+} from './rbac.js?v=8';
 
 const TAB_TOKEN_KEY = 'pharma_tab_token';
 const TAB_CHANNEL = 'pharma_tab_session_channel';
@@ -408,7 +408,7 @@ function redirectUnauthorizedPage() {
         return;
     }
     if (roles.includes('salesclerk') || roles.includes('ro_sales_clerk')) {
-        window.location.replace('sales_clerk_pos.html?access=denied');
+        window.location.replace('sales_clerk_dashboard.html?access=denied');
         return;
     }
     if (roles.includes('cashier') || roles.includes('ro_cashier')) {
