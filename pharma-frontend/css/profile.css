@@ -1,10 +1,10 @@
 :root { --profile-ink:#1d2334; --profile-muted:#81899c; --profile-line:#e8e9f1; --profile-purple:#5048e5; --profile-accent:#6846cf; }
 body { background:#f6f5fa; color:var(--profile-ink); font-family:Inter,system-ui,sans-serif; }
 [hidden] { display:none!important; }
-.profile-topbar { display:flex; min-height:68px; align-items:center; gap:15px; padding:12px clamp(18px,3vw,38px); border-bottom:1px solid #e7e8ef; background:#fff; }
-.profile-topbar strong { display:block; font-size:16px; font-weight:750; }.profile-topbar span { display:block; margin-top:2px; color:var(--profile-muted); font-size:11px; }
-.profile-sidebar-toggle { display:grid; width:36px; height:36px; flex:0 0 36px; place-items:center; border:1px solid #30384a; border-radius:8px; background:#202837; color:#fff; }
-.profile-sidebar-toggle:hover { background:#343e53; }
+.profile-topbar { display:flex; height:var(--app-header-height); min-height:var(--app-header-height); align-items:center; gap:15px; padding:12px clamp(18px,3vw,38px); border-bottom:1px solid rgba(255,255,255,.07); background:var(--sidebar-bg); color:#fff; }
+.profile-topbar strong { display:block; color:#fff; font-size:16px; font-weight:750; }.profile-topbar span { display:block; margin-top:2px; color:rgba(255,255,255,.65); font-size:11px; }
+.profile-sidebar-toggle { display:grid; width:36px; height:36px; flex:0 0 36px; place-items:center; border:1px solid rgba(255,255,255,.1); border-radius:8px; background:rgba(255,255,255,.06); color:#fff; }
+.profile-sidebar-toggle:hover { background:rgba(255,255,255,.13); }
 .profile-sidebar-toggle:focus-visible { outline:3px solid #a78bfa; outline-offset:2px; }
 body.sidebar-open .profile-sidebar-toggle { display:none; }
 .profile-page { max-width:1220px; margin:0 auto; padding:28px clamp(18px,3vw,38px) 55px; }
