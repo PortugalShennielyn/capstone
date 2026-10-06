@@ -193,6 +193,13 @@ async function initializeNavbar(container) {
         container.dataset.navbarSource = "runtime";
         container.classList.remove("navbar-skeleton-ready");
         container.classList.add("navbar-ready");
+        const profileAction = container.querySelector(".sidebar-user-action[data-nav-page='user-settings']");
+        if (profileAction) {
+            profileAction.href = "profile.html";
+            profileAction.removeAttribute("data-profile-action");
+            const label = profileAction.querySelector("span");
+            if (label) label.textContent = "Profile Settings";
+        }
         window.__drpNavbarBootstrap?.applyImmediateState(container);
         window.__drpNavbarBootstrap?.revealPreparedNavbar(container);
 
@@ -243,6 +250,7 @@ async function initializeNavbar(container) {
             "receipt_history.html": "receipt-history",
             "cashier_shift_summary.html": "cashier-shift",
             "cashier_profile.html": "cashier-profile",
+            "profile.html": "user-settings",
             "sales_history.html": "sales-history"
         };
 
@@ -501,8 +509,9 @@ async function initializeNavbar(container) {
             if (accessRole === "supervisor") {
                 window.__drpNavbarBootstrap?.renderSupervisorNavigation(container);
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
-                    link.classList.add("d-none");
-                    link.setAttribute("aria-hidden", "true");
+                    const isUserSettings = link.dataset.navPage === "user-settings";
+                    link.classList.toggle("d-none", !isUserSettings);
+                    link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
                 });
             }
 
@@ -522,7 +531,7 @@ async function initializeNavbar(container) {
                     link.classList.toggle("d-none", !isUserSettings);
                     link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
                     if (isUserSettings) {
-                        link.href = "cashier_profile.html";
+                        link.href = "profile.html";
                         link.querySelector("span").textContent = "Profile Settings";
                         delete link.dataset.profileAction;
                     }
@@ -537,9 +546,9 @@ async function initializeNavbar(container) {
                     link.classList.toggle("d-none", !isUserSettings);
                     link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
                     if (isUserSettings) {
-                        link.href = "#";
-                        link.querySelector("span").textContent = "User Settings";
-                        link.dataset.profileAction = "open";
+                        link.href = "profile.html";
+                        link.querySelector("span").textContent = "Profile Settings";
+                        delete link.dataset.profileAction;
                     }
                 });
             }

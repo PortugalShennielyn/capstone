@@ -2,6 +2,7 @@ const ACCESS_DENIED_MESSAGE = 'Access denied. Your account does not have permiss
 
 const ROLE_PAGE_ACCESS = Object.freeze({
     manager: new Set([
+        'profile.html',
         'dashboard.html',
         'products.html',
         'inventory.html',
@@ -21,6 +22,7 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'cashier_shift_summary.html'
     ]),
     supervisor: new Set([
+        'profile.html',
         'supervisor_dashboard.html',
         'products.html',
         'inventory.html',
@@ -36,6 +38,7 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'supervisor_approval.html'
     ]),
     cashier: new Set([
+        'profile.html',
         'cashier_dashboard.html',
         'cashier.html',
         'cashier_pos.html',
@@ -49,6 +52,7 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'reports.html'
     ]),
     salesclerk: new Set([
+        'profile.html',
         'clerk.html',
         'sales_clerk_pos.html',
         'sales_clerk_orders.html',

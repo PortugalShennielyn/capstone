@@ -486,7 +486,7 @@ async function initializePageSession() {
 
     const accessRole = primaryAccessRole(currentSession);
     document.body.dataset.sessionRole = accessRole;
-    if (accessRole === 'supervisor') {
+    if (accessRole === 'supervisor' && !window.location.pathname.endsWith('/profile.html')) {
         document.body.classList.add('supervisor-read-only');
         document.querySelectorAll('button, a').forEach(control => {
             const copy = `${control.textContent || ''} ${control.getAttribute('title') || ''} ${control.getAttribute('aria-label') || ''}`.toLowerCase();
