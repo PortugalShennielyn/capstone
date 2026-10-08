@@ -339,6 +339,7 @@ try {
             return $available > 0 && !in_array(strtolower((string) ($batch['batch_status'] ?? 'active')), ['returned', 'depleted'], true);
         }));
         $row['has_expiring_batch'] = count(array_filter($availableBatches, static fn (array $batch): bool => ($batch['status'] ?? '') === 'Expiring Soon')) > 0;
+        $row['expiry_tracking_count'] = count(array_filter($availableBatches, static fn (array $batch): bool => in_array(($batch['status'] ?? ''), ['Expired', 'Expiring Soon'], true)));
         $row['expiry_status'] = $availableBatches[0]['status'] ?? inventoryDateStatus($row['nearest_expiry_date'] ?? null);
         $row['history'] = $historyByProduct[$productId] ?? [];
 
