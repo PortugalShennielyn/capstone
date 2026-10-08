@@ -162,30 +162,30 @@ try {
             LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
             LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
             LEFT JOIN (
-                SELECT product_id,
+                SELECT pss.product_id,
                        SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
                                      AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
-                                     AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                     AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
                                 THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS available_stock,
                        SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
                                      AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
-                                     AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                     AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
                                 THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS shelf_stock,
                        SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
                                                                AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
-                                                               AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
                                                           THEN COALESCE(ib.expiry_date, pss.expiration_date) END
                                                           ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
                                                                    COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_expiry_date,
                        SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
                                                                AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
-                                                               AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
                                                           THEN DATEDIFF(COALESCE(ib.expiry_date, pss.expiration_date), CURDATE()) END
                                                           ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
                                                                    COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_days_until_expiry,
                        SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
                                                                AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
-                                                               AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
                                                           THEN pss.batch_number END
                                                           ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
                                                                    COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_batch_number,
