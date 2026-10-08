@@ -74,7 +74,7 @@ try {
     $productName = trim((string) ($payload['product_name'] ?? ''));
     $productStatus = normalizeProductStatus($payload['status'] ?? 'Active');
     $variation = (isset($payload['variations'][0]) && is_array($payload['variations'][0])) ? $payload['variations'][0] : $payload;
-    $typeId = cleanId($variation['type_id'] ?? $typeId);
+    $typeId = cleanId($variation['type_id'] ?? null) ?: $typeId;
     $inventoryUnit = requiredProductInventoryUnit($pdo, $variation['inventory_unit_id'] ?? null);
     $detailSchema = strtolower(trim((string) ($variation['detail_schema'] ?? '')));
     $pricingMethod = normalizePricingMethod($payload['pricing_method'] ?? 'manual');
@@ -174,6 +174,18 @@ try {
     $barcodeCheck->execute([':barcode' => $barcode, ':product_id' => $productId]);
     if ($barcodeCheck->fetchColumn()) {
         throw new InvalidArgumentException('This barcode already belongs to another product variant.');
+    }
+    $unitBarcodeColumn = productSellingOptionBarcodeColumn($pdo);
+    if ($unitBarcodeColumn !== null) {
+        $unitBarcodeCheck = $pdo->prepare(
+            "SELECT product_id FROM product_selling_options
+             WHERE LOWER(TRIM(`{$unitBarcodeColumn}`)) = LOWER(TRIM(:barcode))
+               AND product_id <> :product_id LIMIT 1"
+        );
+        $unitBarcodeCheck->execute([':barcode' => $barcode, ':product_id' => $productId]);
+        if ($unitBarcodeCheck->fetchColumn()) {
+            throw new InvalidArgumentException('This barcode already belongs to a sellable unit of another product.');
+        }
     }
 
     $pdo->beginTransaction();

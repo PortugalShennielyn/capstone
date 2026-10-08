@@ -28,7 +28,8 @@ try {
                 COUNT(DISTINCT pss.selling_stock_id) AS shelf_batch_count,
                 MIN(COALESCE(NULLIF(pi.batch_number,''), NULLIF(pss.batch_number,''), pss.source_batch_id)) AS single_batch_number,
                 COALESCE(MAX(so.pos_enabled),0) AS has_pos_option,
-                COALESCE(MAX(so.default_selling_price),p.price) AS selling_price,
+                MAX(so.minimum_selling_price) AS selling_price,
+                COALESCE(MAX(so.selling_unit_count),0) AS selling_unit_count,
                 md.generic_name,classification_values.medicine_classification,classification_values.medicine_classification_badge,
                 md.strength,md.strength_value,md.strength_unit,
                 md.net_content_value,md.net_content_unit,md.dosage_form,
@@ -69,7 +70,8 @@ try {
          LEFT JOIN (
              SELECT product_id,
                     MAX(CASE WHEN is_active=1 AND pos_enabled=1 THEN 1 ELSE 0 END) pos_enabled,
-                    MAX(CASE WHEN is_active=1 AND pos_enabled=1 AND is_default=1 THEN selling_price END) default_selling_price
+                    MIN(CASE WHEN is_active=1 AND pos_enabled=1 THEN selling_price END) minimum_selling_price,
+                    SUM(CASE WHEN is_active=1 AND pos_enabled=1 THEN 1 ELSE 0 END) selling_unit_count
              FROM product_selling_options GROUP BY product_id
          ) so ON so.product_id=p.product_id
          WHERE pss.quantity_remaining>0
@@ -92,6 +94,7 @@ try {
             : ($row['shelf_batch_count'] . ' Batches');
         $row['has_pos_option'] = (int)$row['has_pos_option'];
         $row['selling_price'] = $row['selling_price'] === null ? null : round((float)$row['selling_price'], 2);
+        $row['selling_unit_count'] = (int)($row['selling_unit_count'] ?? 0);
         $row['expiry_status'] = inventoryExpiryStatus($expiry, $row['days_until_expiry'] ?? null);
         $row['nearest_usable_expiry_status'] = inventoryExpiryStatus($row['nearest_usable_expiry_date'] ?? null, $row['usable_days_until_expiry'] ?? null);
         $row['pos_status'] = $row['product_status'] === 'Active' && $row['has_pos_option'] === 1 && $row['usable_shelf_quantity'] > 0 ? 'Available' : 'Unavailable';

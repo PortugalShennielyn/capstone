@@ -104,7 +104,6 @@ let selectedPricingSubmissionActive = false;
 let addProductSubmissionActive = false;
 let productsLoadPromise = null;
 let productTypeCustomizerTarget = { mode: 'add', variationIndex: 0 };
-
 function formatPrice(value) {
     return `\u20b1${Number(value || 0).toLocaleString('en-PH', {
         minimumFractionDigits: 2,
@@ -1029,10 +1028,10 @@ function renderProductDetails(payload) {
     }
 
     const inventoryUnit = product.inventory_unit_name || product.inventory_unit_symbol || pricing.inventory_unit || 'unit';
-    specificationRows.push(productDetailPair('Selling / Inventory Unit', inventoryUnit));
+    specificationRows.push(productDetailPair('Inventory Base Unit', inventoryUnit));
     const pricingMethodLabel = { category_markup: 'Category markup', custom_markup: 'Custom markup', manual: 'Fixed / Manual price' }[pricing.pricing_method] || 'Fixed / Manual price';
     const pricingRows = [
-        productDetailPair('Active Selling Price', `${formatPrice(pricing.active_selling_price ?? product.price)} per ${inventoryUnit}`),
+        productDetailPair('Default Base Price', `${formatPrice(pricing.active_selling_price ?? product.price)} per ${inventoryUnit}`),
         productDetailPair('Pricing Method', pricingMethodLabel)
     ];
 
@@ -1084,7 +1083,7 @@ function renderProductDetailsPreview(product) {
             ])}
             ${productDetailSection(isMedicine(product) ? 'Medicine Details' : 'Product Specification', [
                 productDetailPair('Specification', formatProductSpecification(product)),
-                productDetailPair('Selling / Inventory Unit', product.inventory_unit_name || product.inventory_unit_symbol)
+                productDetailPair('Inventory Base Unit', product.inventory_unit_name || product.inventory_unit_symbol)
             ])}
             <section class="product-details-section product-details-section-pending" aria-live="polite">
                 <h6>Verified Details</h6>
@@ -1893,7 +1892,7 @@ function inventoryUnitField(variation = {}) {
         unit_symbol: variation.inventory_unit_symbol || '',
         measurement_group: 'Count'
     };
-    return `<div class="col-md-6 permanent-inventory-unit"><label class="form-label">Selling / Inventory Unit <span class="text-danger">*</span></label><select class="form-select edit-var-inventory-unit" required>${dynamicUnitOptions('Count', variation.inventory_unit_id || '', savedUnit)}</select><div class="form-text">Base unit for stock and sales.</div></div>`;
+    return `<div class="col-md-6 permanent-inventory-unit"><label class="form-label">Inventory Base Unit <span class="text-danger">*</span></label><select class="form-select edit-var-inventory-unit" required>${dynamicUnitOptions('Count', variation.inventory_unit_id || '', savedUnit)}</select><div class="form-text">Smallest unit used to track Storage, Shelf, transfers, and POS inventory deductions.</div></div>`;
 }
 
 function specificationChoiceOptionList(selected = '', fallbackOptions = []) {
@@ -2310,7 +2309,7 @@ function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
 }
 
 function sellingPriceField(variation = {}) {
-    return `<div class="col-md-6 sku-selling-price-field"><label class="form-label">Selling Price <span class="text-danger">*</span></label><div class="input-group"><span class="input-group-text">₱</span><input class="form-control edit-var-price" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(variation.price ?? '')}" required></div></div>`;
+    return `<div class="col-md-6 sku-selling-price-field"><label class="form-label">Default Base Price <span class="text-danger">*</span></label><div class="input-group"><span class="input-group-text">₱</span><input class="form-control edit-var-price" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(variation.price ?? '')}" required></div><div class="form-text">Starting price for the base unit. Actual POS prices are managed in Shelf Selling Prices.</div></div>`;
 }
 
 function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName = '', canDelete = true, mode = 'edit') {
@@ -2400,13 +2399,16 @@ function renderAddVariations(product = { variations: [{}] }, categoryName = '') 
 
 function collectVariationEntries(containerSelector) {
     const categorySelectId = containerSelector === '#editVariationList' ? 'editProductCategory' : 'productCategory';
+    const typeSelectId = containerSelector === '#editVariationList' ? 'editProductType' : 'productType';
     const categoryName = document.getElementById(categorySelectId)?.selectedOptions?.[0]?.dataset.categoryName || '';
     const detailSchema = categoryName === 'Medicine'
         ? 'medicine'
         : (categoryName === 'Medical Supplies' || categoryName === 'Medical Supply' ? 'medical_supply' : 'grocery');
     return Array.from(document.querySelectorAll(`${containerSelector} .edit-variation-entry`)).map(entry => ({
         detail_schema: entry.querySelector('.specification-field') ? 'dynamic' : detailSchema,
-        type_id: entry.querySelector('.medicine-sku-type')?.value || '',
+        type_id: categoryName === 'Medicine'
+            ? (entry.querySelector('.medicine-sku-type')?.value || '')
+            : getValue(typeSelectId),
         medicine_classification: entry.querySelector('.medicine-sku-classification')?.value || '',
         variant_name: entry.querySelector('.edit-var-name')?.value.trim() || '',
         strength_value: entry.querySelector('.edit-var-strength-value')?.value.trim() || '',
@@ -3115,6 +3117,7 @@ function initProductCards() {
             return;
         }
 
+
         if (viewButton) {
             event.stopPropagation();
             openProductDetailsModal(viewButton.dataset.productId);
@@ -3181,7 +3184,6 @@ function initProductCards() {
         detailsModal.addEventListener('hidden.bs.modal', () => openEditProduct(productId), { once: true });
         bootstrap.Modal.getOrCreateInstance(detailsModal).hide();
     });
-
     document.getElementById('productDetailsModal')?.addEventListener('shown.bs.modal', () => {
         document.getElementById('productDetailsModalTitle')?.focus({ preventScroll: true });
     });

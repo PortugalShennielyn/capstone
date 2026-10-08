@@ -117,12 +117,13 @@ function setTheme(theme) {
 function statusBadge(status) {
     const label = meaningful(status) || 'Not Recorded';
     const icons = {
+        'Expired – Action Required': 'fa-triangle-exclamation',
         Expired: 'fa-triangle-exclamation',
         'Expiring Soon': 'fa-clock',
         Safe: 'fa-circle-check',
         'Not Recorded': 'fa-circle-minus'
     };
-    const className = label.toLowerCase().replaceAll(' ', '-');
+    const className = label === 'Expired – Action Required' ? 'expired' : label.toLowerCase().replaceAll(' ', '-');
     return `<span class="expiry-status-badge ${escapeHtml(className)}"><i class="fa-solid ${icons[label] || 'fa-circle-minus'}"></i>${escapeHtml(label)}</span>`;
 }
 
@@ -143,7 +144,7 @@ function canEditExpiry(row) {
 }
 
 function expiryLockNotice(row) {
-    return canEditExpiry(row) ? '' : '<div class="expiry-lock-notice"><strong>Expiry date locked</strong><span>Expiry information can only be corrected within 24 hours of receiving the batch before inventory activity occurs.</span></div>';
+    return canEditExpiry(row) ? '' : '<div class="expiry-lock-notice"><strong>Expiry date locked</strong><span>The expiry date can only be corrected within 24 hours of receiving the batch before inventory activity occurs. The alert window can still be changed.</span></div>';
 }
 
 function renderSummaryCards(rows) {
@@ -154,12 +155,12 @@ function renderSummaryCards(rows) {
         acc.total += 1;
         acc[status] = (acc[status] || 0) + 1;
         return acc;
-    }, { total: 0, Safe: 0, 'Expiring Soon': 0, Expired: 0, 'Not Recorded': 0 });
+    }, { total: 0, Safe: 0, 'Expiring Soon': 0, 'Expired – Action Required': 0, Expired: 0, 'Not Recorded': 0 });
     const cards = [
         ['Total Batches', totals.total, '#7c3aed'],
         ['Safe', totals.Safe, '#16a34a'],
         ['Expiring Soon', totals['Expiring Soon'], '#d97706'],
-        ['Expired', totals.Expired, '#dc2626'],
+        ['Expired – Action Required', totals['Expired – Action Required'] + totals.Expired, '#dc2626'],
         ['Not Recorded', totals['Not Recorded'], '#64748b']
     ];
     container.innerHTML = cards.map(([label, value, color]) => `
@@ -245,7 +246,7 @@ function renderExpiryRows(rows, totalFiltered = rows.length) {
             <td class="expiry-action-cell">
                 <div class="expiry-actions">
                     <button class="btn btn-sm btn-outline-secondary view-expiry-btn" type="button" title="View Expiry Details" aria-label="View Expiry Details" data-bs-toggle="tooltip" data-batch-id="${escapeHtml(row.batch_id)}"><i class="fa-regular fa-eye"></i></button>
-                    ${canEditExpiry(row) ? `<button class="btn btn-sm btn-outline-primary edit-expiry-btn" type="button" title="Edit Expiry" aria-label="Edit Expiry" data-bs-toggle="tooltip" data-batch-id="${escapeHtml(row.batch_id)}"><i class="fa-solid fa-pen"></i></button>` : ''}
+                    <button class="btn btn-sm btn-outline-primary edit-expiry-btn" type="button" title="Edit Expiry Settings" aria-label="Edit Expiry Settings" data-bs-toggle="tooltip" data-batch-id="${escapeHtml(row.batch_id)}"><i class="fa-solid fa-pen"></i></button>
                 </div>
             </td>
         </tr>
@@ -294,6 +295,11 @@ async function loadExpiryMonitoring() {
     try {
         const data = await fetchJson(`${API_BASE_URL}/inventory/get_expiry_monitoring.php?t=${Date.now()}`);
         expiryRows = data.data || [];
+        (data.notifications || []).forEach((notification) => {
+            const message = `${notification.product_name} (Batch ${notification.batch_number}) expires in ${notification.days_until_expiry} day${Number(notification.days_until_expiry) === 1 ? '' : 's'}.`;
+            if (typeof toastr !== 'undefined') toastr.warning(message, 'Expiry Alert');
+            else PharmaUtils.toast.error(`Expiry Alert: ${message}`);
+        });
         renderSummaryCards(expiryRows);
         populateCategoryFilter(expiryRows);
         renderFilteredExpiryRows();
@@ -333,6 +339,7 @@ function openExpiryDetails(batchId, show = true) {
             <div class="expiry-info-grid">
                 ${detailField('Batch Number', row.batch_number)}${detailField('PO Number', row.po_number)}${detailField('Received Date', formatDate(row.received_date))}
                 ${detailField('Originally Received', row.received_quantity)}${detailField('Storage Qty', Number(row.storage_qty || 0))}${detailField('Shelf Qty', Number(row.shelf_qty || 0))}
+                ${detailField('Remaining Qty', Number(row.available_quantity || 0))}${detailField('Quarantined for Return', Number(row.expiry_quarantined_quantity || 0))}
                 ${detailField('Supplier', row.supplier_name)}${damagedField}
             </div>
         </section>
@@ -342,21 +349,139 @@ function openExpiryDetails(batchId, show = true) {
                 ${detailField('Expiry Date', row.expiry_date ? formatDate(row.expiry_date) : 'Not Recorded')}
                 ${detailField('Alert Before', alertText(row.expiry_alert_days))}
                 ${detailField('Days Left', daysText(row.days_until_expiry))}
-                <div class="expiry-info-item"><span>Status</span><strong>${statusBadge(row.expiry_status)}</strong></div>
+                <div class="expiry-info-item"><span>Expiry Status</span><strong>${statusBadge(row.expiry_status)}</strong></div>
+                ${detailField('Action Status', row.expiry_action_status || 'Not Reviewed')}
             </div>${expiryLockNotice(row)}
+        </section>
+        <section class="expiry-modal-section">
+            <h3>Review Action</h3>
+            <div class="expiry-settings-grid">
+                <div>
+                    <label class="form-label fw-semibold" for="expiryReviewActionSelect">Review Action</label>
+                    <select class="form-select" id="expiryReviewActionSelect">
+                        <option value="">Select Review Action</option>
+                        <option value="Return for Replacement">Return for Replacement</option>
+                        <option value="Not Eligible for Return">Not Eligible for Return</option>
+                        <option value="For Disposal">For Disposal</option>
+                    </select>
+                </div>
+                <div id="expiryReturnQuantityWrap" class="d-none">
+                    <label class="form-label fw-semibold" for="expiryReturnQuantity">Return Quantity</label>
+                    <input id="expiryReturnQuantity" class="form-control" type="number" min="1" max="${Number(row.available_quantity || 0)}" step="1">
+                </div>
+            </div>
+            <div id="expiryReturnReasonWrap" class="mt-3 d-none">
+                <label class="form-label fw-semibold" for="expiryReturnReason">Return Reason</label>
+                <select id="expiryReturnReason" class="form-select"><option value="Near Expiry">Near Expiry</option></select>
+            </div>
+            <button id="btnSaveExpiryReviewAction" class="btn btn-outline-primary btn-sm mt-3" type="button">Save Review Action</button>
+            <div id="expiryDisposalFields" class="mt-3 d-none">
+                <div class="expiry-settings-grid">
+                    <div><label class="form-label fw-semibold" for="expiryDisposalQuantity">Disposal Quantity</label><input id="expiryDisposalQuantity" class="form-control" type="number" min="1" max="${Number(row.available_quantity || 0)}" step="1" value="${Number(row.available_quantity || 0)}"></div>
+                    <div><label class="form-label fw-semibold" for="expiryDisposalDate">Disposal Date</label><input id="expiryDisposalDate" class="form-control" type="date" max="${localTodayDateString()}" value="${localTodayDateString()}"></div>
+                    <div><label class="form-label fw-semibold" for="expiryDisposalReason">Reason</label><input id="expiryDisposalReason" class="form-control" type="text" maxlength="255"></div>
+                    <div><label class="form-label fw-semibold" for="expiryDisposalRemarks">Remarks</label><textarea id="expiryDisposalRemarks" class="form-control" rows="2" maxlength="1000"></textarea></div>
+                </div>
+                <button id="btnConfirmExpiryDisposal" class="btn btn-danger btn-sm mt-3" type="button">Confirm Disposal</button>
+            </div>
         </section>`;
+    const actionSelect = document.getElementById('expiryReviewActionSelect');
+    if (actionSelect && ['Return for Replacement', 'Not Eligible for Return', 'For Disposal'].includes(row.expiry_action_status)) {
+        actionSelect.value = row.expiry_action_status;
+    }
+    const returnQty = document.getElementById('expiryReturnQuantity');
+    if (returnQty) returnQty.value = String(Number(row.expiry_quarantined_quantity || 0) || '');
+    refreshExpiryActionFields();
     const editButton = document.getElementById('btnEditExpiryFromDetails');
-    if (editButton) editButton.hidden = !canEditExpiry(row);
+    if (editButton) editButton.hidden = false;
     if (show) bootstrap.Modal.getOrCreateInstance(document.getElementById('expiryDetailsModal')).show();
+}
+
+function refreshExpiryActionFields() {
+    const action = document.getElementById('expiryReviewActionSelect')?.value || '';
+    const returnMode = action === 'Return for Replacement';
+    const disposalMode = action === 'For Disposal';
+    document.getElementById('expiryReturnQuantityWrap')?.classList.toggle('d-none', !returnMode);
+    document.getElementById('expiryReturnReasonWrap')?.classList.toggle('d-none', !returnMode);
+    document.getElementById('expiryDisposalFields')?.classList.toggle('d-none', !disposalMode);
+    const saveButton = document.getElementById('btnSaveExpiryReviewAction');
+    if (saveButton) {
+        const sameAction = action && action === activeExpiryRow?.expiry_action_status;
+        saveButton.hidden = !action || (sameAction && action !== 'Return for Replacement');
+    }
+    const disposeButton = document.getElementById('btnConfirmExpiryDisposal');
+    if (disposeButton) disposeButton.disabled = Number(activeExpiryRow?.available_quantity || 0) <= 0;
+}
+
+async function saveExpiryReviewAction() {
+    try {
+        if (!activeExpiryRow) throw new Error('Select an inventory batch first.');
+        const reviewAction = document.getElementById('expiryReviewActionSelect')?.value || '';
+        if (!reviewAction) throw new Error('Select a Review Action.');
+        const returnQuantity = Number(document.getElementById('expiryReturnQuantity')?.value || 0);
+        if (reviewAction === 'Return for Replacement'
+            && (!Number.isInteger(returnQuantity) || returnQuantity <= 0 || returnQuantity > Number(activeExpiryRow.available_quantity || 0))) {
+            throw new Error('Return quantity must be a positive whole number within the remaining batch quantity.');
+        }
+        PharmaUtils.modal.loading('Saving Review Action...');
+        const data = await fetchJson(`${API_BASE_URL}/inventory/update_expiry_action.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                batch_id: activeExpiryRow.batch_id,
+                review_action: reviewAction,
+                return_quantity: returnQuantity,
+                return_reason: document.getElementById('expiryReturnReason')?.value || ''
+            })
+        });
+        PharmaUtils.modal.close();
+        await loadExpiryMonitoring();
+        openExpiryDetails(activeExpiryRow.batch_id, false);
+        PharmaUtils.toast.success(data.message);
+    } catch (error) {
+        PharmaUtils.modal.close();
+        PharmaUtils.modal.error('Failed to save Review Action', error.message);
+    }
+}
+
+async function confirmExpiryDisposal() {
+    try {
+        if (!activeExpiryRow) throw new Error('Select an inventory batch first.');
+        if (activeExpiryRow.expiry_action_status !== 'For Disposal') {
+            throw new Error('Mark the batch For Disposal before confirming disposal.');
+        }
+        const quantity = Number(document.getElementById('expiryDisposalQuantity')?.value || 0);
+        const available = Number(activeExpiryRow.available_quantity || 0);
+        if (!Number.isInteger(quantity) || quantity <= 0 || quantity > available) {
+            throw new Error('Disposal quantity must be a positive whole number within the remaining batch quantity.');
+        }
+        const reason = document.getElementById('expiryDisposalReason')?.value.trim() || '';
+        if (!reason) throw new Error('Disposal reason is required.');
+        PharmaUtils.modal.loading('Recording Disposal...');
+        const data = await fetchJson(`${API_BASE_URL}/inventory/confirm_expiry_disposal.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                batch_id: activeExpiryRow.batch_id,
+                quantity,
+                reason,
+                disposal_date: document.getElementById('expiryDisposalDate')?.value || '',
+                remarks: document.getElementById('expiryDisposalRemarks')?.value || ''
+            })
+        });
+        PharmaUtils.modal.close();
+        await loadExpiryMonitoring();
+        openExpiryDetails(activeExpiryRow.batch_id, false);
+        PharmaUtils.toast.success(data.message);
+    } catch (error) {
+        PharmaUtils.modal.close();
+        PharmaUtils.modal.error('Failed to confirm disposal', error.message);
+    }
 }
 
 function openEditExpiryModal(batchId) {
     const row = expiryRows.find((item) => String(item.batch_id) === String(batchId));
     if (!row) return;
-    if (!canEditExpiry(row)) {
-        PharmaUtils.toast.error('Expiry date locked. Expiry information can only be corrected within 24 hours of receiving the batch before inventory activity occurs.');
-        return;
-    }
     document.getElementById('editExpiryBatchId').value = row.batch_id;
     document.getElementById('editExpiryInventoryId').value = row.inventory_id || '';
     document.getElementById('editExpiryProductName').textContent = meaningful(row.product_name) || 'Unnamed product';
@@ -364,7 +489,10 @@ function openEditExpiryModal(batchId) {
     document.getElementById('editExpiryBatchNumber').textContent = row.batch_number || '—';
     document.getElementById('editExpiryPoNumber').textContent = row.po_number || '—';
     document.getElementById('editExpiryDateInput').min = localTodayDateString();
+    document.getElementById('editExpiryDateInput').disabled = !canEditExpiry(row);
     document.getElementById('editExpiryDateInput').value = row.expiry_date || '';
+    const expiryLock = document.getElementById('editExpiryDateLockNotice');
+    if (expiryLock) expiryLock.hidden = canEditExpiry(row);
     setAlertControls(Number(row.expiry_alert_days || 30));
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editExpiryDateModal')).show();
 }
@@ -379,18 +507,14 @@ function editFromDetails() {
 
 function setAlertControls(days) {
     const select = document.getElementById('editExpiryAlertSelect');
-    const customWrap = document.getElementById('editExpiryCustomWrap');
-    const customInput = document.getElementById('editExpiryCustomDays');
-    const preset = ['7', '15', '30', '60'].includes(String(days)) ? String(days) : 'custom';
+    const preset = ['30', '60'].includes(String(days)) ? String(days) : '30';
     if (select) select.value = preset;
-    if (customWrap) customWrap.classList.toggle('d-none', preset !== 'custom');
-    if (customInput) customInput.value = String(days || 30);
 }
 
 function selectedAlertDays() {
     const selected = document.getElementById('editExpiryAlertSelect')?.value || '30';
-    const days = selected === 'custom' ? Number(document.getElementById('editExpiryCustomDays')?.value || 30) : Number(selected);
-    if (!Number.isFinite(days) || days <= 0 || days > 3650) throw new Error('Alert before expiry must be between 1 and 3650 days.');
+    const days = Number(selected);
+    if (![30, 60].includes(days)) throw new Error('Expiry alerts can be set to 30 or 60 days only.');
     return days;
 }
 
@@ -434,9 +558,10 @@ setTheme(localStorage.getItem('drpTheme') || 'light');
 document.getElementById('themeToggle')?.addEventListener('click', () => setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark'));
 document.getElementById('btnSaveExpiryDate')?.addEventListener('click', saveExpiryDate);
 document.getElementById('btnEditExpiryFromDetails')?.addEventListener('click', editFromDetails);
-document.getElementById('editExpiryAlertSelect')?.addEventListener('change', () => {
-    const selected = document.getElementById('editExpiryAlertSelect')?.value || '30';
-    document.getElementById('editExpiryCustomWrap')?.classList.toggle('d-none', selected !== 'custom');
+document.getElementById('btnSaveExpiryReviewAction')?.addEventListener('click', saveExpiryReviewAction);
+document.getElementById('btnConfirmExpiryDisposal')?.addEventListener('click', confirmExpiryDisposal);
+document.getElementById('expiryDetailsContent')?.addEventListener('change', (event) => {
+    if (event.target?.id === 'expiryReviewActionSelect') refreshExpiryActionFields();
 });
 document.getElementById('table-expiry-monitoring')?.addEventListener('click', (event) => {
     const viewButton = event.target.closest('.view-expiry-btn');

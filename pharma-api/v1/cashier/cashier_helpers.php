@@ -315,12 +315,16 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
         }
 
         $stockStmt = $pdo->prepare(
-            "SELECT selling_stock_id, quantity_remaining
-             FROM product_selling_stock
-             WHERE product_id = :product_id
-               AND quantity_remaining > 0
-               AND (expiration_date IS NULL OR expiration_date >= CURDATE())
-             ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC
+            "SELECT pss.selling_stock_id,
+                    pss.quantity_remaining - pss.expiry_quarantined_qty AS available_qty
+             FROM product_selling_stock pss
+             LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
+             WHERE pss.product_id = :product_id
+               AND pss.quantity_remaining > pss.expiry_quarantined_qty
+               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+             ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                      COALESCE(ib.expiry_date, pss.expiration_date) ASC, pss.created_at ASC, pss.selling_stock_id ASC
              FOR UPDATE"
         );
         $stockStmt->execute([':product_id' => $productId]);
@@ -331,18 +335,27 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
                 break;
             }
 
-            $available = (int) ($batch['quantity_remaining'] ?? 0);
+            $available = (int) ($batch['available_qty'] ?? 0);
             $deduct = min($available, $remaining);
             if ($deduct <= 0) {
                 continue;
             }
 
             $update = $pdo->prepare(
-                'UPDATE product_selling_stock
+                "UPDATE product_selling_stock
                  SET quantity_remaining = quantity_remaining - :deduct
                  WHERE selling_stock_id = :selling_stock_id
-                   AND quantity_remaining >= :deduct_guard
-                   AND (expiration_date IS NULL OR expiration_date >= CURDATE())'
+                   AND quantity_remaining - expiry_quarantined_qty >= :deduct_guard
+                   AND (expiration_date IS NULL OR expiration_date > CURDATE())
+                   AND (
+                       source_batch_id IS NULL
+                       OR EXISTS (
+                           SELECT 1 FROM inventory_batches ib
+                           WHERE ib.batch_id = product_selling_stock.source_batch_id
+                             AND ib.expiry_action_status NOT IN ('For Disposal', 'Disposed')
+                             AND (ib.expiry_date IS NULL OR ib.expiry_date > CURDATE())
+                       )
+                   )"
             );
             $update->execute([
                 ':deduct' => $deduct,

@@ -284,7 +284,10 @@ try {
             continue;
         }
         $sku = normalizeSkuVariation($variation, $categoryName, $fallbackPrice, $productStatus);
-        $skuTypeId = cleanId($variation['type_id'] ?? $typeId);
+        // A non-medicine SKU uses the Product Type selected for the product.
+        // Older clients sent an empty per-SKU type, which must not mask it.
+        $skuTypeId = cleanId($variation['type_id'] ?? null);
+        if ($skuTypeId === '' && $categoryName !== 'Medicine') $skuTypeId = $typeId;
         $skuTypeStatement->execute([':type_id' => $skuTypeId, ':category_id' => $categoryId]);
         $skuTypeName = trim((string) $skuTypeStatement->fetchColumn());
         if ($skuTypeId === '' || $skuTypeName === '') {
@@ -335,6 +338,10 @@ try {
     }
     $submittedBarcodes = [];
     $barcodeCheck = $pdo->prepare('SELECT product_id FROM product WHERE LOWER(TRIM(barcode)) = LOWER(TRIM(:barcode)) LIMIT 1');
+    $unitBarcodeColumn = productSellingOptionBarcodeColumn($pdo);
+    $unitBarcodeCheck = $unitBarcodeColumn
+        ? $pdo->prepare("SELECT product_id FROM product_selling_options WHERE LOWER(TRIM(`{$unitBarcodeColumn}`)) = LOWER(TRIM(:barcode)) LIMIT 1")
+        : null;
     foreach ($skuRows as $sku) {
         $normalizedBarcode = strtolower(trim((string) $sku['barcode']));
         if (isset($submittedBarcodes[$normalizedBarcode])) {
@@ -344,6 +351,12 @@ try {
         $barcodeCheck->execute([':barcode' => $sku['barcode']]);
         if ($barcodeCheck->fetchColumn()) {
             throw new InvalidArgumentException('This barcode already belongs to another product variant.');
+        }
+        if ($unitBarcodeCheck) {
+            $unitBarcodeCheck->execute([':barcode' => $sku['barcode']]);
+            if ($unitBarcodeCheck->fetchColumn()) {
+                throw new InvalidArgumentException('This barcode already belongs to a sellable unit.');
+            }
         }
     }
 

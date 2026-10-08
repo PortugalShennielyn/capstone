@@ -11,7 +11,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=39" rel="stylesheet">
-    <script src="./js/navbar.js?v=89" defer></script>
+    <script src="./js/navbar.js?v=90" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root { --purple:#7c3aed; --purple-dark:#5b21b6; --ink:#101936; --muted:#667085; --line:#e6eaf2; --body:#f6f8fc; --shadow:0 14px 34px rgba(16,25,54,.07); --blue:#2563eb; --green:#16a34a; --red:#dc2626; --orange:#d97706; }
@@ -225,7 +225,7 @@
                 <div class="order-receipt-paper" id="orderSummaryReceipt">
                     <div class="order-receipt-head">
                         <div class="receipt-store">DOC R PHARMACY</div>
-                        <div class="receipt-address">Store Address Here</div>
+                        <div class="receipt-address" id="receiptStoreAddress">Loading store address...</div>
                         <div class="receipt-title">ORDER SUMMARY</div>
                         <div class="receipt-date" id="receiptSummaryDate">Date: -</div>
                     </div>
@@ -323,9 +323,9 @@
             } else {
                 ordersTableBody.innerHTML = state.orders.map(order => {
                     const canCancel = order.status_code === 'waiting_cashier';
-                    const actionButtons = order.status_code === 'completed'
-                        ? `<button class="action-btn btn-receipt" type="button" title="View Order Summary" aria-label="View Order Summary" data-receipt-order="${escapeHtml(order.order_id)}"><i class="fa-solid fa-receipt"></i></button>`
-                        : `<button class="action-btn btn-view" type="button" title="View Order Details" aria-label="View Order Details" data-view-order="${escapeHtml(order.order_id)}"><i class="fa-regular fa-eye"></i></button>`;
+                    const actionButtons = `
+                        <button class="action-btn btn-view" type="button" title="View Order Details" aria-label="View Order Details" data-view-order="${escapeHtml(order.order_id)}"><i class="fa-regular fa-eye"></i></button>
+                        <button class="action-btn btn-receipt" type="button" title="View Order Summary" aria-label="View Order Summary" data-receipt-order="${escapeHtml(order.order_id)}"><i class="fa-solid fa-receipt"></i></button>`;
                     return `
                         <tr>
                             <td>${escapeHtml(order.order_no)}</td>
@@ -425,7 +425,7 @@
                     <div class="receipt-meta-row"><span>Status:</span><strong>${escapeHtml(order.status || 'Waiting for Cashier')}</strong></div>
                 </div>
                 <div class="receipt-separator"></div>
-                <div class="receipt-table-head"><span>Qty</span><span>Description</span><span>U-Price</span><span>Amount</span></div>
+                <div class="receipt-table-head"><span>Qty</span><span>Item</span><span>U-Price</span><span>Amount</span></div>
                 <div class="receipt-items">
                     ${items.length ? items.map(item => `
                         <div class="receipt-item">
@@ -453,6 +453,7 @@
                 <div class="receipt-footer">
                     <strong>This is not a payment receipt.</strong>
                     <span>Please proceed to the cashier for payment.</span>
+                    <span>Thank you.</span>
                 </div>
             `;
         }
@@ -474,6 +475,12 @@
             state.summary = data.summary || {};
             if (changed || !silent) renderOrders();
         }
+        async function loadStoreAddress() {
+            const settings = await apiFetch('settings/get_admin_settings.php');
+            const address = String(settings.profile?.address || '').trim();
+            document.getElementById('receiptStoreAddress').textContent =
+                address || 'Store address not configured';
+        }
         async function openOrder(orderId) {
             renderDrawer({ ...(state.orders.find(order => order.order_id === orderId) || {}), items:[], history:[] });
             openDrawer();
@@ -489,6 +496,10 @@
         function updateClock() { const clock = document.getElementById('currentDateTime')?.firstElementChild; if (clock) clock.textContent = new Date().toLocaleString('en-PH', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
 
         await verifySession();
+        await loadStoreAddress().catch(error => {
+            document.getElementById('receiptStoreAddress').textContent = 'Store address unavailable';
+            console.error('Unable to load the store address for clerk transaction receipts.', error);
+        });
         statusFilter.value = state.activeStatus;
         updateClock();
         setInterval(updateClock, 60000);

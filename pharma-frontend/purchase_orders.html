@@ -6222,6 +6222,54 @@
             #table-purchase-orders[data-po-view="active"] .po-status-stack {
                 align-items: center !important;
             }
+            #table-purchase-orders[data-po-supervisor-view="true"] td,
+            #table-purchase-orders[data-po-supervisor-view="true"] col {
+                position: static !important;
+                left: auto !important;
+                right: auto !important;
+                box-shadow: none !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] thead th {
+                position: sticky !important;
+                top: 0 !important;
+                left: auto !important;
+                right: auto !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] th,
+            #table-purchase-orders[data-po-supervisor-view="true"] td {
+                border-left: 0 !important;
+            }
+            .po-table-scroll.po-supervisor-view {
+                overflow-x: auto !important;
+            }
+            body.supervisor-read-only #table-purchase-orders .col-actions,
+            body.supervisor-read-only #table-purchase-orders .po-actions-cell {
+                display: none !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] .po-status-stack {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                justify-content: center !important;
+                gap: 4px !important;
+                width: max-content !important;
+                max-width: 100% !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] .po-claim-badge {
+                display: inline-flex !important;
+                align-self: flex-start !important;
+                max-width: 100% !important;
+                white-space: normal !important;
+                text-align: left !important;
+            }
+            body.supervisor-read-only #table-purchase-orders .po-status-stack {
+                flex-direction: column !important;
+                align-items: flex-start !important;
+            }
+            body.supervisor-read-only #table-purchase-orders .po-claim-badge {
+                align-self: flex-start !important;
+                white-space: normal !important;
+            }
         </style>
     </head>
     <body data-page="purchase-orders">
@@ -7038,7 +7086,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-        <script type="module" src="./js/modules/purchase_orders.js?v=125"></script>
+        <script type="module" src="./js/modules/purchase_orders.js?v=128"></script>
         <script type="module">
             import verifySession from "./js/modules/auth.js?v=8";
 

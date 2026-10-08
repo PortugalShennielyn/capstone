@@ -991,7 +991,21 @@ function canEditMajorFields(order) {
     return !isOperationallyLocked(order) && ["Pending", "Revision Requested"].includes(approval);
 }
 
+function isSupervisorPoViewer() {
+    const role = String(
+        document.body.dataset.sessionRole ||
+            window.__drpSession?.access_role ||
+            window.__drpSession?.role ||
+            "",
+    )
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
+    return role === "supervisor" || role === "ro_supervisor";
+}
+
 function activeMoreActionsButton(order) {
+    if (isSupervisorPoViewer()) return "";
     const nextStatus = validNextStatuses(order)[0] || "";
     const canRecordInvoice = ["Draft", "Pending", "Arrived", "Delivered"].includes(
         order.status || "",
@@ -1010,6 +1024,7 @@ function activeMoreActionsButton(order) {
 }
 
 function statusActionButton(order) {
+    if (isSupervisorPoViewer()) return "";
     const nextStatuses = validNextStatuses(order);
     if (!nextStatuses.length) return "";
     const nextStatus = nextStatuses[0];
@@ -3011,7 +3026,9 @@ function renderTableHead(view = currentPoView) {
     const table = document.getElementById("table-purchase-orders");
     if (table) {
         table.dataset.poView = view;
+        table.dataset.poSupervisorView = String(isSupervisorPoViewer());
         table.closest(".po-table-scroll")?.classList.toggle("po-active-fit", view === "active");
+        table.closest(".po-table-scroll")?.classList.toggle("po-supervisor-view", isSupervisorPoViewer());
         const minWidth =
             view === "delivered"
                 ? "1810px"
@@ -3031,7 +3048,7 @@ function renderTableHead(view = currentPoView) {
             ["col-delivery", "9%"],
             ["col-money", "8%"],
             ["col-status", "8%"],
-            ["col-actions", "10%"],
+            ...(!isSupervisorPoViewer() ? [["col-actions", "10%"]] : []),
         ];
         const columnLayouts = {
             active: activeColumnWidths.map(([columnClass]) => columnClass),
@@ -3047,7 +3064,7 @@ function renderTableHead(view = currentPoView) {
                 "col-terms",
                 "col-delivery",
                 "col-status",
-                "col-actions",
+                ...(!isSupervisorPoViewer() ? ["col-actions"] : []),
             ],
             delivered: [
                 "col-po-number",
@@ -3063,7 +3080,7 @@ function renderTableHead(view = currentPoView) {
                 "col-money",
                 "col-payment-status",
                 "col-date",
-                "col-actions",
+                ...(!isSupervisorPoViewer() ? ["col-actions"] : []),
             ],
             archived: [
                 "col-po-number",
@@ -3077,7 +3094,7 @@ function renderTableHead(view = currentPoView) {
                 "col-supplier",
                 "col-reason",
                 "col-status",
-                "col-actions",
+                ...(!isSupervisorPoViewer() ? ["col-actions"] : []),
             ],
         };
         const colgroup = document.getElementById("purchase-orders-colgroup");
@@ -3110,7 +3127,7 @@ function renderTableHead(view = currentPoView) {
                 <th class="col-terms">Payment Mode</th>
                 <th class="col-delivery">ETA</th>
                 <th class="col-status">Status</th>
-                <th class="col-actions">Actions</th>
+                ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
             </tr>
         `;
         if (currentRenderedTableHead !== nextHead) {
@@ -3136,7 +3153,7 @@ function renderTableHead(view = currentPoView) {
                 <th class="col-money">Balance</th>
                 <th class="col-payment-status">Payment Status</th>
                 <th class="col-date">Received Date</th>
-                <th class="col-actions">Actions</th>
+                ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
             </tr>
         `;
         if (currentRenderedTableHead !== nextHead) {
@@ -3160,7 +3177,7 @@ function renderTableHead(view = currentPoView) {
                 <th class="col-supplier">Cancelled By</th>
                 <th class="col-reason">Cancel Reason</th>
                 <th class="col-status">Status</th>
-                <th class="col-actions">Actions</th>
+                ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
             </tr>
         `;
         if (currentRenderedTableHead !== nextHead) {
@@ -3180,7 +3197,7 @@ function renderTableHead(view = currentPoView) {
             <th class="col-delivery">ETA</th>
             <th class="col-money">Total</th>
             <th class="col-status">Status</th>
-            <th class="col-actions">Actions</th>
+            ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
         </tr>
     `;
     if (currentRenderedTableHead !== nextHead) {
@@ -3209,7 +3226,7 @@ function commitPurchaseOrderTable(view, bodyHtml) {
 
 function renderActivePurchaseOrders(orders) {
     if (orders.length === 0) {
-        commitPurchaseOrderTable("active", tableEmpty(9, "No visible purchase orders found."));
+        commitPurchaseOrderTable("active", tableEmpty(isSupervisorPoViewer() ? 8 : 9, "No visible purchase orders found."));
         return;
     }
 
@@ -3231,12 +3248,12 @@ function activePurchaseOrderRow(order) {
             <td class="po-delivery-cell">${purchaseOrderEtaDisplay(order.expected_delivery_date, order.status)}</td>
             <td class="po-price-cell">${purchaseOrderTotalDisplay(order)}</td>
             <td class="po-status-cell">${purchaseOrderStatusStack(order)}</td>
-            <td class="po-actions-cell">
+            ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                 <div class="po-actions">
                     ${activePurchaseOrderPrimaryAction(order)}
                     ${activeMoreActionsButton(order)}
                 </div>
-            </td>
+            </td>`}
         </tr>
     `;
 }
@@ -3255,7 +3272,7 @@ function renderArrivedPurchaseOrders(orders) {
     if (orders.length === 0) {
         commitPurchaseOrderTable(
             "arrived",
-            tableEmpty(12, "No arrived purchase orders ready for receiving."),
+            tableEmpty(isSupervisorPoViewer() ? 11 : 12, "No arrived purchase orders ready for receiving."),
         );
         return;
     }
@@ -3279,14 +3296,14 @@ function renderArrivedPurchaseOrders(orders) {
                 <td>${escapeHtml(order.payment_terms || "Not set")}</td>
                 <td class="po-delivery-cell">${formatDate(order.expected_delivery_date)}</td>
                 <td class="po-status-cell">${statusBadge(order.status || "Arrived")}${order.inspection_in_progress ? '<span class="badge bg-info text-dark d-block mt-1">Inspection in Progress</span>' : ""}</td>
-                <td class="po-actions-cell">
+                ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || "")}" title="View PO"><i class="fa-regular fa-eye"></i></button>
                         ${invoiceActionButton(order)}
                         ${paymentActionButton(order)}
                         ${statusActionButton(order)}
                     </div>
-                </td>
+                </td>`}
             </tr>
         `;
         })
@@ -3299,7 +3316,7 @@ function renderDeliveredPurchaseOrders(orders) {
     if (orders.length === 0) {
         commitPurchaseOrderTable(
             "delivered",
-            tableEmpty(14, "No delivered purchase orders found."),
+            tableEmpty(isSupervisorPoViewer() ? 13 : 14, "No delivered purchase orders found."),
         );
         return;
     }
@@ -3353,13 +3370,13 @@ function renderDeliveredPurchaseOrders(orders) {
                 <td class="po-price-cell"><span class="po-money">${peso(order.remaining_balance ?? order.final_payment)}</span></td>
                 <td>${paymentStatusBadge(order.payment_status || "Unpaid")}</td>
                 <td>${formatDate(deliveryDate)}</td>
-                <td class="po-actions-cell">
+                ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || "")}" title="View PO"><i class="fa-regular fa-eye"></i></button>
                         ${invoiceActionButton(order)}
                         ${paymentActionButton(order)}
                     </div>
-                </td>
+                </td>`}
             </tr>
         `;
         })
@@ -3370,10 +3387,13 @@ function renderDeliveredPurchaseOrders(orders) {
 
 async function loadPurchaseOrders(options = {}) {
     const { updateSummary = false } = options;
-    const loadToken = ++purchaseOrdersLoadToken;
-    const viewAtRequest = currentPoView;
+    let loadToken = 0;
+    let viewAtRequest = currentPoView;
 
     try {
+        if (window.__drpSessionReadyPromise) await window.__drpSessionReadyPromise;
+        loadToken = ++purchaseOrdersLoadToken;
+        viewAtRequest = currentPoView;
         const statusFilter = document.getElementById("po-status-filter")?.value || "";
         const paymentStatusFilter =
             document.getElementById("po-payment-status-filter")?.value || "";
@@ -3539,7 +3559,7 @@ function renderArchivedPurchaseOrders(orders) {
     if (orders.length === 0) {
         commitPurchaseOrderTable(
             "archived",
-            tableEmpty(12, "No cancelled or archived purchase orders found."),
+            tableEmpty(isSupervisorPoViewer() ? 11 : 12, "No cancelled or archived purchase orders found."),
         );
         return;
     }
@@ -3570,13 +3590,13 @@ function renderArchivedPurchaseOrders(orders) {
                 <td class="po-supplier-cell">${escapeHtml(archivedBy)}</td>
                 <td class="po-spec-cell">${escapeHtml(reason)}</td>
                 <td class="po-status-cell">${statusBadge(order.status || "Cancelled")}</td>
-                <td class="po-actions-cell">
+                ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || "")}" title="View PO">
                             <i class="fa-regular fa-eye"></i>
                         </button>
                     </div>
-                </td>
+                </td>`}
             </tr>
         `;
         })

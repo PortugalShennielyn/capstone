@@ -1143,6 +1143,10 @@ function openSupplierProductDetails(supplierProductId) {
     const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
     const sellingPrice = Math.max(0, Number(product.price || 0));
     const inventoryUnit = singularInventoryUnit(supplierInventoryUnit(product, 1));
+    const isMedicine = sameText(product.category_name, 'Medicine');
+    const identityName = isMedicine
+        ? cleanText(product.generic_name) || removeBrandPrefix(product.product_name, product.brand_name) || cleanText(product.product_name)
+        : removeBrandPrefix(product.product_name, product.brand_name) || cleanText(product.product_name);
     document.getElementById('supplierProductDetailsTitle').textContent = productDisplayName(product);
     document.getElementById('supplierProductDetailsBody').innerHTML = `
         <div class="supplier-product-detail-grid">
@@ -1151,7 +1155,7 @@ function openSupplierProductDetails(supplierProductId) {
                 <dl class="supplier-detail-list">
                     <dt>Supplier</dt><dd>${esc(displayOrNotSet(product.supplier_name))}</dd>
                     <dt>Brand</dt><dd>${esc(displayOrNotSet(product.brand_name))}</dd>
-                    <dt>Product Name</dt><dd>${esc(displayOrNotSet(removeBrandPrefix(product.product_name, product.brand_name) || product.product_name))}</dd>
+                    <dt>${isMedicine ? 'Generic Name' : 'Product Name'}</dt><dd>${esc(displayOrNotSet(identityName))}${isMedicine ? supplierRxBadge(product) : ''}</dd>
                     <dt>Category</dt><dd>${esc(displayOrNotSet(product.category_name))}</dd>
                     <dt>Product Type</dt><dd>${esc(displayOrNotSet(product.type_name))}</dd>
                     <dt>Specification</dt><dd>${esc(variantStrengthSize(product))}</dd>

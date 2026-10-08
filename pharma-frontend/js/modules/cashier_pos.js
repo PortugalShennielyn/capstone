@@ -15,6 +15,8 @@ const state = {
     receiptOnly: false,
     paymentDrafts: new Map(),
     submittingOrderIds: new Set(),
+    receiptAddress: 'Address not configured',
+    receiptContact: 'Contact not configured',
 };
 
 const nodes = {};
@@ -122,6 +124,12 @@ async function apiFetch(path, options = {}) {
         return data.data;
     }
     return data || {};
+}
+
+async function loadPharmacyReceiptSettings() {
+    const settings = await apiFetch('/settings/get_business_hours.php');
+    state.receiptAddress = cleanText(settings.profile?.address, 'Address not configured');
+    state.receiptContact = cleanText(settings.profile?.contactNumber, 'Contact not configured');
 }
 
 function statusClass(order) {
@@ -262,8 +270,8 @@ function renderReceiptPrintArea(order) {
         <div class="thermal-receipt">
             <div class="receipt-center">
                 <div class="receipt-store-name">DOC R PHARMACY</div>
-                <div class="receipt-store-line">Store Address Here</div>
-                <div class="receipt-store-line">Contact No. Here</div>
+                <div class="receipt-store-line">${escapeHtml(state.receiptAddress)}</div>
+                <div class="receipt-store-line">Contact No. ${escapeHtml(state.receiptContact)}</div>
             </div>
 
             <div class="receipt-title-print">SALES RECEIPT</div>
@@ -798,7 +806,7 @@ function bindEvents() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     if (window.toastr) {
         window.toastr.options = {
             closeButton: true,
@@ -808,6 +816,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
     if (!collectCashierNodes()) return;
+    try {
+        await loadPharmacyReceiptSettings();
+    } catch (error) {
+        state.receiptAddress = 'Address unavailable';
+        state.receiptContact = 'Contact unavailable';
+        console.error('Unable to load pharmacy contact details for the cashier receipt.', error);
+    }
     bindEvents();
     emptyDetail();
     const targetOrderId = new URLSearchParams(window.location.search).get('order_id');

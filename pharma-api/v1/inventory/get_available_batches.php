@@ -29,8 +29,8 @@ try {
             ib.received_date,
             ib.expiry_date,
             ib.expiry_date AS expiration_date,
-            ib.storage_qty AS quantity_remaining,
-            ib.storage_qty,
+            (ib.storage_qty - ib.expiry_quarantined_storage_qty) AS quantity_remaining,
+            ib.storage_qty - ib.expiry_quarantined_storage_qty AS storage_qty,
             COALESCE(selling.shelf_qty, 0) AS shelf_qty,
             ib.damaged_qty,
             ib.batch_status,
@@ -45,8 +45,10 @@ try {
          LEFT JOIN purchase_orders po ON po.po_id = ib.po_id
          LEFT JOIN suppliers s ON s.supplier_id = ib.supplier_id
          WHERE ib.product_id = :product_id
-           AND storage_qty > 0
+           AND ib.storage_qty > ib.expiry_quarantined_storage_qty
            AND batch_status IN ('active', 'expired')
+           AND ib.expiry_action_status NOT IN ('For Disposal', 'Disposed')
+           AND (ib.expiry_date IS NULL OR ib.expiry_date > CURDATE())
          ORDER BY
             CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC,
             expiry_date ASC,

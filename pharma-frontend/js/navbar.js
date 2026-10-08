@@ -236,6 +236,8 @@ async function initializeNavbar(container) {
             "complete_delivery.html": "complete-delivery",
             "return_damage.html": "return-damage",
             "expiry_monitoring.html": "expiry-monitoring",
+            "expiry_monitoring_advanced.html": "expiry-monitoring",
+            "returns_disposals.html": "returns-disposals",
             "reports.html": "reports",
             "sales_clerk_reports.html": "reports",
             "audit_logs.html": "audit-logs",
@@ -786,6 +788,7 @@ async function initializeNavbar(container) {
                 "cancelled-purchase-orders": "Cancelled Purchase Orders",
                 "return-damage": "Return/Damage",
                 "expiry-monitoring": "Expiry Monitoring",
+                "returns-disposals": "Returns & Disposals",
                 "pos": "POS",
                 "clerk": "Salesclerk",
                 "sales-clerk-orders": "My Orders",
@@ -1421,7 +1424,7 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         'X-Requested-With': 'XMLHttpRequest',
         'X-Tab-Token': tabToken()
     };
-    const fetchSharedBusinessHours = () => fetch(`${apiBaseUrl()}/settings/get_admin_settings.php`, { credentials: 'include', headers: settingsHeaders })
+    const fetchSharedBusinessHours = () => fetch(`${apiBaseUrl()}/settings/get_business_hours.php`, { credentials: 'include', headers: settingsHeaders })
         .then(response => response.ok ? response.json() : Promise.reject(new Error(`Business-hours request failed (${response.status})`)))
         .then(data => {
             if (data.status === 'error' || !data.businessSchedule) throw new Error(data.message || 'Business-hours response was incomplete.');
@@ -1470,9 +1473,28 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         const list = document.getElementById('dashboardNotificationList');
         const summary = document.getElementById('dashboardNotificationSummary');
         const headers = { 'X-Requested-With': 'XMLHttpRequest', 'X-Tab-Token': tabToken() };
-        fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?period=today`, { credentials: 'include', headers })
-            .then(response => response.ok ? response.json() : Promise.reject(new Error('Unable to load alerts')))
+        Promise.resolve(typeof loadCurrentSession === 'function' ? loadCurrentSession() : null)
+            .then(session => {
+                const sessionRoles = [
+                    session?.access_role,
+                    session?.role,
+                    ...(Array.isArray(session?.roles) ? session.roles : []),
+                    ...(Array.isArray(session?.role_identifiers) ? session.role_identifiers : [])
+                ].map(role => String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_'));
+                const isLimitedAlertsRole = sessionRoles.some(role =>
+                    ['cashier', 'ro_cashier', 'salesclerk', 'sales_clerk', 'ro_sales_clerk', 'ro_salesclerk'].includes(role)
+                );
+                if (isLimitedAlertsRole) {
+                    if (badge) badge.classList.add('is-hidden');
+                    if (summary) summary.textContent = 'System alerts are not available for this role.';
+                    if (list) list.innerHTML = '<p class="notification-empty">System alerts are not available for this role.</p>';
+                    return null;
+                }
+                return fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?period=today`, { credentials: 'include', headers });
+            })
+            .then(response => response ? (response.ok ? response.json() : Promise.reject(new Error('Unable to load alerts'))) : null)
             .then(data => {
+                if (!data) return;
                 const alerts = [
                     { label: 'Out of Stock', count: Number(data.out_of_stock || 0), href: 'inventory.html?stock_status=out_of_stock', icon: 'fa-box-open' },
                     { label: 'Low Stock', count: Number(data.low_stock || 0), href: 'inventory.html?stock_status=low_stock', icon: 'fa-triangle-exclamation' },

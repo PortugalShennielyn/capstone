@@ -1,9 +1,9 @@
 import PharmaUtils from '../utils.js';
 import {
-    formatProductIdentity,
     formatProductSpecification,
+    isPrescriptionProduct,
     productSearchText
-} from './product_specification.js?v=8';
+} from './product_specification.js?v=12';
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits, measurementUnitsForContext } from './measurement_units.js?v=2';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
@@ -19,6 +19,23 @@ const esc = (value) => String(value ?? '')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 const canManageSupplierCatalog = () => ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
+
+function assignmentProductIdentity(product = {}) {
+    const brand = String(product.brand_name || '').trim();
+    const productName = String(product.product_name || '').trim();
+    const genericName = String(product.generic_name || '').trim();
+    const medicine = String(product.category_name || '').trim().toLowerCase() === 'medicine';
+    const preferredName = medicine ? (genericName || productName) : productName;
+    const name = brand && preferredName.toLowerCase().startsWith(`${brand.toLowerCase()} `)
+        ? preferredName.slice(brand.length).trim() : preferredName;
+    const distinctName = name.toLowerCase() === brand.toLowerCase() ? '' : name;
+    return [brand, distinctName].filter(Boolean).join(' — ') || productName || genericName || 'Unnamed product';
+}
+
+function assignmentRxBadge(product) {
+    return isPrescriptionProduct(product)
+        ? '<span class="supplier-rx-badge" title="Prescription medicine">Rx</span>' : '';
+}
 
 const state = {
     step: 1,
@@ -208,7 +225,8 @@ function renderProducts() {
     const showInactive = document.getElementById('showInactiveAssignmentProducts')?.checked || false;
     const visible = state.products.filter((product) => {
         const active = (product.status || 'Active') === 'Active';
-        return (showInactive || active) && (!query || productSearchText(product).includes(query));
+        return (showInactive || active) && (!query || [productSearchText(product), assignmentProductIdentity(product), product.generic_name]
+            .filter(Boolean).join(' ').toLowerCase().includes(query));
     });
 
     list.innerHTML = visible.length
@@ -227,7 +245,7 @@ function renderProducts() {
                            value="${esc(productId)}" ${state.selectedIds.has(productId) ? 'checked' : ''}
                            ${disabled ? 'disabled' : ''}>
                     <span>
-                        <span class="assignment-product-identity">${esc(formatProductIdentity(product))} ${badges}</span>
+                        <span class="assignment-product-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)} ${badges}</span>
                         <span class="assignment-product-meta">${esc(product.type_name || 'Uncategorized')} · ${esc(formatProductSpecification(product))}</span>
                     </span>
                 </label>`;
@@ -245,11 +263,11 @@ function renderSelectedProducts() {
         ? products.map((product) => `
             <article class="assignment-selected-card">
                 <div>
-                    <div class="assignment-selected-identity">${esc(formatProductIdentity(product))}</div>
+                    <div class="assignment-selected-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
                     <div class="assignment-selected-meta">${esc(formatProductSpecification(product))}</div>
                 </div>
                 <button class="btn btn-sm btn-outline-danger remove-selected-product" type="button"
-                        data-product-id="${esc(product.product_id)}" aria-label="Remove ${esc(formatProductIdentity(product))}">
+                        data-product-id="${esc(product.product_id)}" aria-label="Remove ${esc(assignmentProductIdentity(product))}">
                     <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
             </article>`).join('')
@@ -335,7 +353,7 @@ function renderStep2() {
                     <article class="assignment-term-card" data-product-id="${esc(product.product_id)}">
                         <div class="assignment-term-header">
                             <div>
-                                <div class="assignment-selected-identity">${esc(formatProductIdentity(product))}</div>
+                                <div class="assignment-selected-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
                                 <div class="assignment-selected-meta">${esc(formatProductSpecification(product))}</div>
                             </div>
                             <span class="badge text-bg-light term-status">Missing information</span>
@@ -426,7 +444,7 @@ function validateStep2() {
     let firstInvalid = null;
     document.querySelectorAll('.assignment-term-card').forEach((card) => {
         const product = state.products.find((item) => String(item.product_id) === String(card.dataset.productId));
-        const identity = formatProductIdentity(product || {});
+        const identity = assignmentProductIdentity(product || {});
         const purchaseUnit = card.querySelector('.term-unit');
         const inventoryUnit = card.querySelector('.term-inventory-unit');
         const quantity = card.querySelector('.term-quantity');
@@ -484,7 +502,7 @@ function renderStep3() {
                 const conversion = purchasingConversion({ purchase_unit: saved.purchaseUnit, inventory_unit: unit, units_per_purchase_unit: saved.quantity });
                 return `
                     <article class="assignment-review-card">
-                        <div class="assignment-selected-identity mb-1">${esc(formatProductIdentity(product))}</div>
+                        <div class="assignment-selected-identity mb-1">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
                         <div class="assignment-selected-meta mb-3">${esc(formatProductSpecification(product))}</div>
                         <div class="assignment-review-grid">
                             <div><span>Purchase Unit</span><strong>${esc(saved.purchaseUnit)}</strong></div>
@@ -658,7 +676,7 @@ async function saveAssignments() {
     button.innerHTML = '<i class="fa-solid fa-rotate me-2" aria-hidden="true"></i>Retry Failed Assignments';
     await PharmaUtils.modal.error(
         succeeded.length ? 'Some assignments need attention' : 'Assignments could not be saved',
-        `${succeeded.length} succeeded. ${failed.length} failed: ${failed.map(({ product, message }) => `${formatProductIdentity(product)} — ${message}`).join('; ')}`
+        `${succeeded.length} succeeded. ${failed.length} failed: ${failed.map(({ product, message }) => `${assignmentProductIdentity(product)} — ${message}`).join('; ')}`
     );
     setStep(2);
 }

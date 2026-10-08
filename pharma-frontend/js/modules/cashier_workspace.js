@@ -12,6 +12,8 @@ const state = {
     cashierId: '',
     currentUserRole: '',
     canViewStaffDetails: false,
+    receiptAddress: 'Address not configured',
+    receiptContact: 'Contact not configured',
 };
 const money = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const plainMoney = (value) => Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -45,6 +47,12 @@ async function api(path) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.status === 'error') throw new Error(data.message || 'Request failed.');
     return data.data || data;
+}
+
+async function loadPharmacyReceiptSettings() {
+    const settings = await api('/settings/get_business_hours.php');
+    state.receiptAddress = String(settings.profile?.address || '').trim() || 'Address not configured';
+    state.receiptContact = String(settings.profile?.contactNumber || '').trim() || 'Contact not configured';
 }
 
 function setText(id, value) {
@@ -114,8 +122,8 @@ function receiptHtml(order) {
         <div class="thermal-receipt">
             <div class="receipt-center">
                 <div class="receipt-store-name">DOC R PHARMACY</div>
-                <div class="receipt-store-line">Store Address Here</div>
-                <div class="receipt-store-line">Contact No. Here</div>
+                <div class="receipt-store-line">${esc(state.receiptAddress)}</div>
+                <div class="receipt-store-line">Contact No. ${esc(state.receiptContact)}</div>
             </div>
             <div class="receipt-title-print">SALES RECEIPT</div>
             <div class="receipt-meta-print">
@@ -180,6 +188,13 @@ async function openReceipt(orderId) {
     const { printArea, modal, body } = ensureReceiptShell();
     body.innerHTML = '<div class="empty-state">Loading receipt...</div>';
     modal.classList.add('show');
+    try {
+        await loadPharmacyReceiptSettings();
+    } catch (error) {
+        state.receiptAddress = 'Address unavailable';
+        state.receiptContact = 'Contact unavailable';
+        console.error('Unable to load pharmacy contact details for the cashier transaction receipt.', error);
+    }
     const order = await api(`/cashier/get_cashier_order.php?order_id=${encodeURIComponent(orderId)}`);
     if (order.status_group !== 'completed') throw new Error('Receipt is available after payment is completed.');
     const html = receiptHtml(order);

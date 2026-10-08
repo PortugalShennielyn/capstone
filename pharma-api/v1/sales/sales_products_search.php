@@ -14,16 +14,24 @@ try {
     $typeName = trim((string) ($_GET['type_name'] ?? ''));
     $params = [];
     $whereParts = ["p.status = 'Active'"];
+    $unitBarcodeColumn = productSellingOptionBarcodeColumn($pdo);
 
     if ($search !== '') {
+        $inactiveUnitBarcodeSql = $unitBarcodeColumn
+            ? " OR EXISTS (SELECT 1 FROM product_selling_options inactive_unit
+                          WHERE inactive_unit.product_id = product.product_id
+                            AND inactive_unit.`{$unitBarcodeColumn}` = :inactive_unit_barcode)"
+            : '';
         $inactiveBarcode = $pdo->prepare(
             "SELECT product_name
              FROM product
-             WHERE barcode = :barcode
+             WHERE (barcode = :barcode{$inactiveUnitBarcodeSql})
                AND status = 'Inactive'
              LIMIT 1"
         );
-        $inactiveBarcode->execute([':barcode' => $search]);
+        $inactiveBarcodeParams = [':barcode' => $search];
+        if ($unitBarcodeColumn) $inactiveBarcodeParams[':inactive_unit_barcode'] = $search;
+        $inactiveBarcode->execute($inactiveBarcodeParams);
         if ($inactiveBarcode->fetchColumn() !== false) {
             http_response_code(409);
             echo json_encode([
@@ -32,7 +40,14 @@ try {
             ]);
             exit();
         }
-            $whereParts[] = "CONCAT_WS(' ',
+            $unitBarcodeSearchSql = $unitBarcodeColumn
+                ? " OR EXISTS (SELECT 1 FROM product_selling_options barcode_unit
+                              WHERE barcode_unit.product_id = p.product_id
+                                AND barcode_unit.is_active = 1
+                                AND barcode_unit.pos_enabled = 1
+                                AND barcode_unit.`{$unitBarcodeColumn}` = :unit_barcode_search)"
+                : '';
+            $whereParts[] = "(CONCAT_WS(' ',
                   p.barcode,
                   p.brand_name,
                   p.product_name,
@@ -57,8 +72,9 @@ try {
                   msd.sterile_status,
                   msd.pack_content,
                   msd.package_type
-              ) LIKE :search";
+              ) LIKE :search{$unitBarcodeSearchSql})";
         $params[':search'] = '%' . $search . '%';
+        if ($unitBarcodeColumn) $params[':unit_barcode_search'] = $search;
     }
     if ($type !== '' && strcasecmp($type, 'All Items') !== 0) {
         $whereParts[] = '(pt.type_name = :type OR pc.category_name = :type)';
@@ -147,14 +163,38 @@ try {
             LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
             LEFT JOIN (
                 SELECT product_id,
-                       SUM(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN quantity_remaining ELSE 0 END) AS available_stock,
-                       SUM(CASE WHEN quantity_remaining > 0 THEN quantity_remaining ELSE 0 END) AS shelf_stock,
-                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN expiration_date END ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC), ',', 1) AS first_expiry_date,
-                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN DATEDIFF(expiration_date, CURDATE()) END ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC), ',', 1) AS first_days_until_expiry,
-                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN quantity_remaining > 0 AND (expiration_date IS NULL OR expiration_date >= CURDATE()) THEN batch_number END ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC), ',', 1) AS first_batch_number,
-                       SUM(CASE WHEN quantity_remaining > 0 AND expiration_date IS NOT NULL AND expiration_date < CURDATE() THEN 1 ELSE 0 END) AS expired_batch_count
-                FROM product_selling_stock
-                GROUP BY product_id
+                       SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                     AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                     AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS available_stock,
+                       SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                     AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                     AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS shelf_stock,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                                          THEN COALESCE(ib.expiry_date, pss.expiration_date) END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_expiry_date,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                                          THEN DATEDIFF(COALESCE(ib.expiry_date, pss.expiration_date), CURDATE()) END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_days_until_expiry,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')
+                                                          THEN pss.batch_number END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_batch_number,
+                       SUM(CASE WHEN pss.quantity_remaining > 0 AND COALESCE(ib.expiry_date, pss.expiration_date) IS NOT NULL
+                                     AND COALESCE(ib.expiry_date, pss.expiration_date) <= CURDATE()
+                                THEN 1 ELSE 0 END) AS expired_batch_count
+                FROM product_selling_stock pss
+                LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
+                GROUP BY pss.product_id
             ) stock ON stock.product_id = p.product_id
             {$where}
             HAVING shelf_stock > 0

@@ -47,18 +47,25 @@ try {
     $shelfBeforeStmt->execute([':id'=>$productId]); $shelfBefore = (int) $shelfBeforeStmt->fetchColumn();
 
     if ($direction === 'STORAGE_TO_SHELF') {
-        $stockStmt = $pdo->prepare("SELECT ib.batch_id, ib.legacy_inventory_id inventory_id, ib.storage_qty available_qty,
+        $stockStmt = $pdo->prepare("SELECT ib.batch_id, ib.legacy_inventory_id inventory_id,
+                (ib.storage_qty - ib.expiry_quarantined_storage_qty) available_qty,
                 COALESCE(pi.batch_number, ib.batch_id) batch_number, ib.expiry_date
             FROM inventory_batches ib LEFT JOIN product_inventory pi ON pi.inventory_id=ib.legacy_inventory_id
             WHERE ib.product_id=:product_id AND ib.batch_status='active' AND ib.storage_qty>0
-              AND (ib.expiry_date IS NULL OR ib.expiry_date>=CURDATE())
+              AND ib.expiry_action_status NOT IN ('For Disposal', 'Disposed')
+              AND ib.storage_qty > ib.expiry_quarantined_storage_qty
+              AND (ib.expiry_date IS NULL OR ib.expiry_date>CURDATE())
             ORDER BY ib.expiry_date IS NULL, ib.expiry_date, ib.received_date, ib.batch_id FOR UPDATE");
     } else {
-        $stockStmt = $pdo->prepare("SELECT ib.batch_id, ib.legacy_inventory_id inventory_id, pss.quantity_remaining available_qty,
+        $stockStmt = $pdo->prepare("SELECT ib.batch_id, ib.legacy_inventory_id inventory_id,
+                (pss.quantity_remaining - pss.expiry_quarantined_qty) available_qty,
                 pss.batch_number, pss.expiration_date expiry_date, pss.selling_stock_id
             FROM product_selling_stock pss INNER JOIN inventory_batches ib ON ib.batch_id=pss.source_batch_id
             WHERE pss.product_id=:product_id AND pss.quantity_remaining>0
-              AND (pss.expiration_date IS NULL OR pss.expiration_date>=CURDATE())
+              AND pss.quantity_remaining > pss.expiry_quarantined_qty
+              AND ib.expiry_action_status NOT IN ('For Disposal', 'Disposed')
+              AND (ib.expiry_date IS NULL OR ib.expiry_date>CURDATE())
+              AND (pss.expiration_date IS NULL OR pss.expiration_date>CURDATE())
             ORDER BY pss.expiration_date IS NULL, pss.expiration_date, pss.created_at, pss.selling_stock_id FOR UPDATE");
     }
     $stockStmt->execute([':product_id'=>$productId]);
@@ -81,7 +88,7 @@ try {
         $move = min($remaining, (int) $stock['available_qty']);
         $sellingId = cleanId($stock['selling_stock_id'] ?? null);
         if ($direction === 'STORAGE_TO_SHELF') {
-            $update = $pdo->prepare('UPDATE inventory_batches SET storage_qty=storage_qty-:qty WHERE batch_id=:batch AND storage_qty>=:guard');
+            $update = $pdo->prepare('UPDATE inventory_batches SET storage_qty=storage_qty-:qty WHERE batch_id=:batch AND storage_qty-expiry_quarantined_storage_qty>=:guard AND expiry_action_status NOT IN (\'For Disposal\', \'Disposed\') AND (expiry_date IS NULL OR expiry_date>CURDATE())');
             $update->execute([':qty'=>$move,':batch'=>$stock['batch_id'],':guard'=>$move]);
             if ($update->rowCount() !== 1) throw new RuntimeException('Storage changed during transfer; no stock was moved.');
             if (!empty($stock['inventory_id'])) $pdo->prepare('UPDATE product_inventory SET quantity_remaining=quantity_remaining-:qty WHERE inventory_id=:id AND quantity_remaining>=:guard')->execute([':qty'=>$move,':id'=>$stock['inventory_id'],':guard'=>$move]);
@@ -94,7 +101,7 @@ try {
                 $pdo->prepare('INSERT INTO product_selling_stock (selling_stock_id,product_id,source_inventory_id,source_batch_id,batch_number,quantity_stocked,quantity_remaining,expiration_date) VALUES (:id,:product,:inventory,:batch,:number,:qty,:remaining,:expiry)')->execute([':id'=>$sellingId,':product'=>$productId,':inventory'=>$stock['inventory_id'],':batch'=>$stock['batch_id'],':number'=>$stock['batch_number'],':qty'=>$move,':remaining'=>$move,':expiry'=>$stock['expiry_date']]);
             }
         } else {
-            $update = $pdo->prepare('UPDATE product_selling_stock SET quantity_remaining=quantity_remaining-:qty WHERE selling_stock_id=:id AND quantity_remaining>=:guard AND (expiration_date IS NULL OR expiration_date>=CURDATE())');
+            $update = $pdo->prepare('UPDATE product_selling_stock SET quantity_remaining=quantity_remaining-:qty WHERE selling_stock_id=:id AND quantity_remaining-expiry_quarantined_qty>=:guard AND (expiration_date IS NULL OR expiration_date>CURDATE()) AND EXISTS (SELECT 1 FROM inventory_batches ib WHERE ib.batch_id=product_selling_stock.source_batch_id AND ib.expiry_action_status NOT IN (\'For Disposal\', \'Disposed\') AND (ib.expiry_date IS NULL OR ib.expiry_date>CURDATE()))');
             $update->execute([':qty'=>$move,':id'=>$sellingId,':guard'=>$move]);
             if ($update->rowCount() !== 1) throw new RuntimeException('Shelf stock changed during transfer; no stock was moved.');
             $pdo->prepare("UPDATE inventory_batches SET storage_qty=storage_qty+:qty,batch_status=CASE WHEN expiry_date<CURDATE() THEN 'expired' ELSE 'active' END WHERE batch_id=:batch")->execute([':qty'=>$move,':batch'=>$stock['batch_id']]);
