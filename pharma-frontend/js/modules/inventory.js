@@ -301,7 +301,7 @@ function normalizeStockStatus(value) {
     const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     const aliases = { out: 'out_of_stock', low: 'low_stock', healthy: 'in_stock', expiring: 'expiring_soon', available: 'in_stock' };
     const candidate = aliases[normalized] || normalized;
-    return ['all', 'in_stock', 'low_stock', 'out_of_stock', 'expiring_soon'].includes(candidate) ? candidate : 'all';
+    return ['all', 'in_stock', 'low_stock', 'out_of_stock', 'expiring_soon', 'expired'].includes(candidate) ? candidate : 'all';
 }
 
 function matchesStockStatus(row, stockStatus) {
@@ -309,6 +309,7 @@ function matchesStockStatus(row, stockStatus) {
     if (stockStatus === 'expiring_soon') {
         return row.has_expiring_batch === true || Number(row.has_expiring_batch) === 1 || row.expiry_status === 'Expiring Soon';
     }
+    if (stockStatus === 'expired') return Number(row.has_expired_batch) === 1;
     return normalizeStockStatus(row.stock_status) === stockStatus;
 }
 
@@ -452,7 +453,7 @@ function renderInventorySummary(rows) {
         totals.total += total;
         totals.storage += storage;
         totals.shelf += shelf;
-        totals.expiryTracking += Number(row.expiry_tracking_count || 0);
+        totals.expired += Number(row.has_expired_batch) === 1 ? 1 : 0;
         totals.value += Number(row.inventory_value || 0);
         if (normalizeStockStatus(row.stock_status) === 'low_stock') totals.lowStock += 1;
         if (normalizeStockStatus(row.stock_status) === 'out_of_stock') totals.outOfStock += 1;
@@ -462,7 +463,7 @@ function renderInventorySummary(rows) {
         total: 0,
         storage: 0,
         shelf: 0,
-        expiryTracking: 0,
+        expired: 0,
         lowStock: 0,
         outOfStock: 0,
         expiringSoon: 0,
@@ -473,7 +474,7 @@ function renderInventorySummary(rows) {
         ['Total Inventory', summary.total, '#7c3aed', 'fa-solid fa-boxes-stacked'],
         ['Storage Stock', summary.storage, '#2563eb', 'fa-solid fa-warehouse'],
         ['Selling/Shelf Stock', summary.shelf, '#16a34a', 'fa-solid fa-cart-shopping'],
-        ['Expiry Tracking', summary.expiryTracking, '#dc2626', 'fa-solid fa-hourglass-half'],
+        ['Expired', summary.expired, '#dc2626', 'fa-solid fa-hourglass-half'],
         ['Low Stock', summary.lowStock, '#f59e0b', 'fa-solid fa-arrow-down'],
         ['Out of Stock', summary.outOfStock, '#dc2626', 'fa-solid fa-box-open'],
         ['Expiring Soon', summary.expiringSoon, '#d97706', 'fa-regular fa-clock'],
@@ -481,10 +482,10 @@ function renderInventorySummary(rows) {
     ];
 
     container.innerHTML = cards.map(([label, value, color, icon]) => {
-        const isExpiryCard = label === 'Expiry Tracking';
+        const isExpiryCard = label === 'Expired';
         const tag = isExpiryCard ? 'a' : 'div';
         return `
-        <${tag} class="inventory-summary-card ${label === 'Inventory Value' ? 'is-value-card' : ''} ${isExpiryCard ? 'is-link-card' : ''}" style="--summary-color:${color}" ${isExpiryCard ? 'href="expiry_monitoring.html" aria-label="Open Expiry Monitoring for expired and expiring batches" title="Expired and expiring batches with stock"' : ''}>
+        <${tag} class="inventory-summary-card ${label === 'Inventory Value' ? 'is-value-card' : ''} ${isExpiryCard ? 'is-link-card' : ''}" style="--summary-color:${color}" ${isExpiryCard ? 'href="expiry_monitoring.html" aria-label="Open Expiry Monitoring for expired products" title="Products with expired stock"' : ''}>
             <span class="inventory-summary-icon"><i class="${esc(icon)}"></i></span>
             <span class="inventory-summary-content">
                 <p>${esc(label)}</p>
