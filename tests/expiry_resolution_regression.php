@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../pharma-api/config/db_connection.php';
 require_once __DIR__ . '/../pharma-api/v1/inventory/expiry_case_helpers.php';
+require_once __DIR__ . '/../pharma-api/v1/inventory/inventory_stock_summary.php';
 
 $tables = $pdo->query("SELECT TABLE_NAME FROM information_schema.TABLES
     WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('inventory_resolution_cases','inventory_resolution_case_events')")
@@ -23,10 +24,23 @@ if (!$source) throw new RuntimeException('No unreserved batch with Shelf and Sto
 
 $pdo->beginTransaction();
 try {
+    $stockSql = inventoryStockSummarySql();
+    $stock = $pdo->prepare("SELECT storage_quantity,shelf_quantity FROM ({$stockSql}) summary WHERE product_id=:product_id");
+    $product = $pdo->prepare('SELECT product_id FROM inventory_batches WHERE batch_id=:batch_id');
+    $product->execute([':batch_id'=>$source['batch_id']]);
+    $productId = $product->fetchColumn();
+    $stock->execute([':product_id'=>$productId]);
+    $before = $stock->fetch(PDO::FETCH_ASSOC);
     $pdo->prepare('UPDATE inventory_batches SET expiry_quarantined_storage_qty=1 WHERE batch_id=:id')
         ->execute([':id'=>$source['batch_id']]);
     $pdo->prepare('UPDATE product_selling_stock SET expiry_quarantined_qty=1 WHERE selling_stock_id=:id')
         ->execute([':id'=>$source['selling_stock_id']]);
+    $stock->execute([':product_id'=>$productId]);
+    $reserved = $stock->fetch(PDO::FETCH_ASSOC);
+    if ((int)$reserved['storage_quantity'] !== (int)$before['storage_quantity']-1
+        || (int)$reserved['shelf_quantity'] !== (int)$before['shelf_quantity']-1) {
+        throw new RuntimeException('Pulled-out stock is still counted in Storage Inventory.');
+    }
     expiryCaseConsumeReserved($pdo,
         ['batch_id'=>$source['batch_id'],'storage_qty'=>1,'shelf_qty'=>1],
         ['legacy_inventory_id'=>$source['legacy_inventory_id']]);

@@ -317,6 +317,8 @@ function filteredInventoryRows() {
     const status = document.getElementById('inventoryProductStatusFilter')?.value || 'all';
     const stockStatus = normalizeStockStatus(document.getElementById('inventoryStockStatusFilter')?.value || 'all');
     return inventoryRows.filter((row) => {
+        if (inventoryView === 'storage' && stockStatus === 'all' && Number(row.has_expiry_pullout) === 1
+            && Number(row.storage_quantity || 0) + Number(row.shelf_quantity || 0) === 0) return false;
         const rowStatus = isInactiveProduct(row) ? 'Inactive' : 'Active';
         const isActiveStockAlert = stockStatus === 'low_stock' || stockStatus === 'out_of_stock';
         const haystack = [

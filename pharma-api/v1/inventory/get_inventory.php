@@ -79,6 +79,7 @@ try {
             inv.stock_status,
             inv.nearest_expiry_date,
             COALESCE(inv.active_batch_count, 0) AS active_batch_count,
+            inv.has_expiry_pullout,
             recv.latest_received_date AS last_received_date,
             recv.latest_supplier_name,
             recv.latest_po_number,
@@ -184,7 +185,7 @@ try {
                 inv.received_date,
                 inv.expiry_date,
                 inv.received_qty,
-                inv.storage_qty,
+                GREATEST(inv.storage_qty - inv.expiry_quarantined_storage_qty, 0) AS storage_qty,
                 COALESCE(selling.shelf_qty, 0) AS shelf_qty,
                 inv.damaged_qty,
                 inv.returned_qty,
@@ -202,7 +203,7 @@ try {
              LEFT JOIN product_inventory pi ON pi.inventory_id = inv.legacy_inventory_id
              LEFT JOIN suppliers s ON s.supplier_id = inv.supplier_id
              LEFT JOIN (
-                SELECT source_batch_id, SUM(quantity_remaining) AS shelf_qty
+                SELECT source_batch_id, SUM(GREATEST(quantity_remaining - expiry_quarantined_qty, 0)) AS shelf_qty
                 FROM product_selling_stock
                 WHERE source_batch_id IS NOT NULL
                 GROUP BY source_batch_id
