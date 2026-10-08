@@ -56,6 +56,19 @@
         .btn-view { color:var(--purple); border:1px solid #c4b5fd; }
         .btn-receipt { color:var(--blue); border:1px solid #bfdbfe; }
         .btn-cancel-order { color:var(--red); border:1px solid #fecaca; }
+        .cancel-order-modal .modal-dialog { max-width:460px; }
+        .cancel-order-modal .modal-content { border:0; border-radius:14px; box-shadow:0 24px 70px rgba(15,23,42,.24); overflow:hidden; }
+        .cancel-order-modal .modal-header { align-items:flex-start; padding:22px 24px 12px; border:0; }
+        .cancel-order-modal .modal-title { font-size:20px; font-weight:900; }
+        .cancel-order-modal .modal-body { padding:0 24px 20px; }
+        .cancel-order-modal .modal-footer { padding:14px 24px 22px; border:0; }
+        .cancel-order-modal .modal-footer .btn { min-height:40px; border-radius:8px; font-size:13px; font-weight:850; }
+        .cancel-order-icon { width:44px; height:44px; display:grid; place-items:center; margin-bottom:14px; border-radius:12px; color:#dc2626; background:#fee2e2; font-size:18px; }
+        .cancel-order-summary { padding:13px 14px; margin:16px 0; border:1px solid #e5e9f2; border-radius:9px; background:#f8fafc; }
+        .cancel-order-summary strong { display:block; font-size:14px; }
+        .cancel-order-summary span,.cancel-order-help { color:#667085; font-size:12px; font-weight:650; }
+        .cancel-order-modal label { margin-bottom:6px; color:#34405f; font-size:12px; font-weight:850; }
+        .cancel-order-modal textarea { min-height:78px; resize:vertical; font-size:13px; }
         .order-receipt-modal.show { display:flex !important; align-items:center; justify-content:center; }
         .order-receipt-modal { padding:18px; }
         .order-receipt-modal .modal-dialog { width:min(380px,95vw); max-width:380px; min-height:0; margin:0 auto; display:block; }
@@ -219,6 +232,30 @@
         </div>
     </aside>
 
+    <div class="modal fade cancel-order-modal" id="cancelOrderModal" tabindex="-1" aria-labelledby="cancelOrderTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form class="modal-content" id="cancelOrderForm">
+                <div class="modal-header">
+                    <h2 class="modal-title" id="cancelOrderTitle">Cancel transaction?</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="cancel-order-icon"><i class="fa-regular fa-circle-xmark" aria-hidden="true"></i></div>
+                    <p class="mb-0" id="cancelOrderMessage">This transaction will be removed from the cashier queue.</p>
+                    <div class="cancel-order-summary"><strong id="cancelOrderNumber">-</strong><span id="cancelOrderCustomer">-</span></div>
+                    <label for="cancelOrderReason">Reason <span class="text-muted fw-normal">(optional)</span></label>
+                    <textarea class="form-control" id="cancelOrderReason" maxlength="255" placeholder="Why is this transaction being cancelled?"></textarea>
+                    <p class="cancel-order-help mt-2 mb-0">The cancellation will remain in transaction history.</p>
+                    <div class="alert alert-danger mt-3 mb-0 py-2" id="cancelOrderError" role="alert" hidden></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Keep transaction</button>
+                    <button class="btn btn-danger" type="submit" id="confirmCancelOrderBtn">Cancel transaction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="modal fade order-receipt-modal" id="orderSummaryModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -246,7 +283,7 @@
         import API_BASE_URL from './js/config/config.js';
         import verifySession from './js/modules/auth.js?v=8';
         import { savedTransactionTotals } from './js/modules/sales_financials.js?v=1';
-        import { createLiveSync } from './js/modules/live_data.js?v=1';
+        import { createLiveSync, publishDataUpdate } from './js/modules/live_data.js?v=1';
 
         const peso = new Intl.NumberFormat('en-PH', { style:'currency', currency:'PHP' });
         const numberFormat = new Intl.NumberFormat('en-PH');
@@ -258,6 +295,9 @@
         const statusFilter = document.getElementById('statusFilter');
         const drawer = document.getElementById('orderDetailsDrawer');
         const backdrop = document.getElementById('orderDrawerBackdrop');
+        const cancelModal = document.getElementById('cancelOrderModal');
+        const cancelForm = document.getElementById('cancelOrderForm');
+        let pendingCancelOrderId = null;
 
         function escapeHtml(value) { return String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
         function formatDateTime(value) { if (!value) return '-'; const date = new Date(String(value).replace(' ', 'T')); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
@@ -322,7 +362,7 @@
                 ordersTableBody.innerHTML = '<tr class="empty-row"><td colspan="8"><span class="empty-title">No transactions found</span><span class="empty-subtitle">Submitted transactions will appear here.</span></td></tr>';
             } else {
                 ordersTableBody.innerHTML = state.orders.map(order => {
-                    const canCancel = order.status_code === 'waiting_cashier';
+                    const canCancel = ['waiting_cashier', 'processing'].includes(order.status_code);
                     const actionButtons = `
                         <button class="action-btn btn-view" type="button" title="View Order Details" aria-label="View Order Details" data-view-order="${escapeHtml(order.order_id)}"><i class="fa-regular fa-eye"></i></button>
                         <button class="action-btn btn-receipt" type="button" title="View Order Summary" aria-label="View Order Summary" data-receipt-order="${escapeHtml(order.order_id)}"><i class="fa-solid fa-receipt"></i></button>`;
@@ -487,11 +527,41 @@
             const detail = await apiFetch(`sales/get_my_sales_clerk_order.php?order_id=${encodeURIComponent(orderId)}`);
             renderDrawer(detail);
         }
-        async function cancelOrder(orderId) {
-            if (!window.confirm('Cancel this order?')) return;
-            const data = await apiFetch('sales/cancel_my_sales_clerk_order.php', { method:'POST', body:JSON.stringify({ order_id:orderId }) });
-            toastr.success(data.message || 'Order cancelled.');
-            await loadOrders();
+        function openCancelOrder(orderId) {
+            const order = state.orders.find(item => String(item.order_id) === String(orderId));
+            if (!order || !['waiting_cashier', 'processing'].includes(order.status_code)) return;
+            pendingCancelOrderId = orderId;
+            cancelForm.reset();
+            document.getElementById('cancelOrderError').hidden = true;
+            document.getElementById('cancelOrderNumber').textContent = order.order_no || `Order ${orderId}`;
+            document.getElementById('cancelOrderCustomer').textContent = order.customer_name || 'Walk-in Customer';
+            document.getElementById('cancelOrderMessage').textContent = order.status_code === 'processing'
+                ? 'The cashier is processing this transaction. Cancelling it will remove it from the cashier queue before payment.'
+                : 'Cancelling this transaction will remove it from the cashier waiting queue.';
+            bootstrap.Modal.getOrCreateInstance(cancelModal).show();
+        }
+        async function cancelOrder(event) {
+            event.preventDefault();
+            if (!pendingCancelOrderId) return;
+            const orderId = pendingCancelOrderId;
+            const button = document.getElementById('confirmCancelOrderBtn');
+            const errorBox = document.getElementById('cancelOrderError');
+            button.disabled = true;
+            errorBox.hidden = true;
+            try {
+                const data = await apiFetch('sales/cancel_my_sales_clerk_order.php', {
+                    method:'POST', body:JSON.stringify({ order_id:orderId, reason:document.getElementById('cancelOrderReason').value.trim() })
+                });
+                bootstrap.Modal.getInstance(cancelModal)?.hide();
+                publishDataUpdate('order-cancelled', { orderId:Number(orderId) });
+                toastr.success(data.message || 'Transaction cancelled.');
+                await loadOrders();
+            } catch (error) {
+                errorBox.textContent = error.message;
+                errorBox.hidden = false;
+            } finally {
+                button.disabled = false;
+            }
         }
         function updateClock() { const clock = document.getElementById('currentDateTime')?.firstElementChild; if (clock) clock.textContent = new Date().toLocaleString('en-PH', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
 
@@ -504,7 +574,7 @@
         updateClock();
         setInterval(updateClock, 60000);
         await loadOrders().catch(error => { ordersTableBody.innerHTML = `<tr class="empty-row"><td colspan="8">${escapeHtml(error.message)}</td></tr>`; });
-        createLiveSync({ interval: 2000, events: ['order-created', 'order-accepted', 'payment-completed'], sync: () => loadOrders({ silent: true }) });
+        createLiveSync({ interval: 2000, events: ['order-created', 'order-accepted', 'order-cancelled', 'payment-completed'], sync: () => loadOrders({ silent: true }) });
         const initialOrderId = new URLSearchParams(location.search).get('order_id');
         if (initialOrderId) {
             if (state.activeStatus === 'completed') {
@@ -530,8 +600,10 @@
             const cancel = event.target.closest('[data-cancel-order]');
             if (view) openOrder(view.dataset.viewOrder).catch(error => toastr.error(error.message));
             if (receipt) openOrderReceipt(receipt.dataset.receiptOrder).catch(error => toastr.error(error.message));
-            if (cancel) cancelOrder(cancel.dataset.cancelOrder).catch(error => toastr.error(error.message));
+            if (cancel) openCancelOrder(cancel.dataset.cancelOrder);
         });
+        cancelForm.addEventListener('submit', cancelOrder);
+        cancelModal.addEventListener('hidden.bs.modal', () => { pendingCancelOrderId = null; cancelForm.reset(); });
         document.getElementById('drawerCloseBtn').addEventListener('click', closeDrawer);
         document.getElementById('drawerCloseFooterBtn').addEventListener('click', closeDrawer);
         backdrop.addEventListener('click', closeDrawer);

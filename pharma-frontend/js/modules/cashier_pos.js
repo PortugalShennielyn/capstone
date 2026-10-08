@@ -660,6 +660,12 @@ async function loadOrders(keepSelection = true, { silent = false } = {}) {
         }
 
         const stillVisible = state.orders.some((order) => Number(order.order_id) === Number(state.activeOrderId));
+        if (!stillVisible) {
+            state.activeOrderId = null;
+            state.activeOrder = null;
+            emptyDetail();
+            return;
+        }
         if (stillVisible && !silent) {
             await loadOrderDetail(state.activeOrderId);
         }
@@ -835,4 +841,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-createLiveSync({ interval: 2000, events: ['order-created', 'order-accepted', 'payment-completed'], sync: () => loadOrders(true, { silent: true }) });
+createLiveSync({ interval: 2000, events: ['order-created', 'order-accepted', 'order-cancelled', 'payment-completed'], sync: () => loadOrders(true, { silent: true }) });
