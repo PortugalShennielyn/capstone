@@ -667,6 +667,24 @@ body {
     font-weight: 900;
 }
 
+.cancel-action {
+    flex: 0 0 auto;
+    min-height: 60px;
+    padding: 0 22px;
+    border: 1px solid #f2a9ae;
+    border-radius: 8px;
+    color: #b4232d;
+    background: #fff5f5;
+    font-weight: 800;
+}
+.cancel-action:hover { background: #ffe5e7; }
+.beneficiary-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 10px 0; }
+.beneficiary-fields.is-hidden { display: none; }
+.beneficiary-fields label { font-size: 12px; font-weight: 700; color: #39445f; }
+.beneficiary-fields input { width: 100%; min-height: 40px; margin-top: 5px; padding: 7px 10px; border: 1px solid #dfe5ef; border-radius: 8px; }
+.discount-note { margin: 6px 0 10px; color: #99551a; font-size: 12px; }
+.cashier-cancel-modal { border: 0; border-radius: 14px; }
+
 .primary-action {
     flex: 1 1 auto;
     color: #fff;

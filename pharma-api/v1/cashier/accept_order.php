@@ -13,6 +13,7 @@ try {
 
     ensureActivityLogSchema($pdo);
     ensureSalesOrderCashSchema($pdo);
+    ensureCashierPaymentDiscountSchema($pdo);
 
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);

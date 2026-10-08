@@ -45,6 +45,16 @@ function ensureCashierPaymentDiscountSchema(PDO $pdo): void
     if (!salesColumnExists($pdo, 'sales_payments', 'final_amount')) {
         $pdo->exec('ALTER TABLE sales_payments ADD COLUMN final_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER cashier_discount_amount');
     }
+    foreach (['vat_exempt_sales', 'vat_exemption_amount'] as $column) {
+        if (!salesColumnExists($pdo, 'sales_payments', $column)) {
+            $pdo->exec("ALTER TABLE sales_payments ADD COLUMN {$column} DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER final_amount");
+        }
+    }
+    foreach (['beneficiary_name', 'beneficiary_id'] as $column) {
+        if (!salesColumnExists($pdo, 'sales_payments', $column)) {
+            $pdo->exec("ALTER TABLE sales_payments ADD COLUMN {$column} VARCHAR(150) NULL AFTER final_amount");
+        }
+    }
 }
 
 function cashierDiscountAmount(string $discountType, float $customAmount, float $subtotal): float
@@ -56,10 +66,31 @@ function cashierPaymentTotals(
     float $subtotal,
     string $discountType,
     float $customAmount,
-    float $salesClerkDiscount = 0
+    float $salesClerkDiscount = 0,
+    float $eligibleGross = 0
 ): array
 {
     $discountType = in_array($discountType, ['none', 'senior', 'pwd', 'promo', 'custom'], true) ? $discountType : 'none';
+    if (in_array($discountType, ['senior', 'pwd'], true)) {
+        $eligibleGross = cashierMoney(min(max(0, $eligibleGross), $subtotal));
+        if ($eligibleGross <= 0) throw new RuntimeException('This order has no eligible medicine items.');
+        $vatExemptSales = cashierMoney($eligibleGross / SALES_VAT_DIVISOR);
+        $vatExemption = cashierMoney($eligibleGross - $vatExemptSales);
+        $statutoryDiscount = cashierMoney($vatExemptSales * 0.20);
+        $taxableGross = cashierMoney($subtotal - $eligibleGross);
+        $taxableSales = cashierMoney($taxableGross / SALES_VAT_DIVISOR);
+        return [
+            'discount_type' => $discountType,
+            'discount_amount' => $statutoryDiscount,
+            'sales_clerk_discount' => 0.0,
+            'total_discount' => cashierMoney($statutoryDiscount + $vatExemption),
+            'vat_exempt_sales' => $vatExemptSales,
+            'vat_exemption_amount' => $vatExemption,
+            'vatable_sales' => $taxableSales,
+            'vat' => cashierMoney($taxableGross - $taxableSales),
+            'final_amount' => cashierMoney($taxableGross + $vatExemptSales - $statutoryDiscount),
+        ];
+    }
     $totals = salesVatInclusivePaymentTotals(
         $subtotal,
         $salesClerkDiscount,
@@ -72,6 +103,8 @@ function cashierPaymentTotals(
         'discount_amount' => $totals['cashier_discount_amount'],
         'sales_clerk_discount' => $totals['sales_clerk_discount'],
         'total_discount' => $totals['discount_amount'],
+        'vat_exempt_sales' => 0.0,
+        'vat_exemption_amount' => 0.0,
         'vatable_sales' => $totals['vatable_sales'],
         'vat' => $totals['vat'],
         'final_amount' => $totals['total_amount'],
@@ -122,8 +155,12 @@ function cashierOrderRow(array $row): array
         'sales_clerk_discount' => cashierMoney($row['sales_clerk_discount'] ?? $row['discount'] ?? 0),
         'cashier_discount_type' => cashierDisplay($row['cashier_discount_type'] ?? 'none', 'none'),
         'cashier_discount_amount' => cashierMoney($row['cashier_discount_amount'] ?? 0),
+        'vat_exempt_sales' => cashierMoney($row['vat_exempt_sales'] ?? 0),
+        'vat_exemption_amount' => cashierMoney($row['vat_exemption_amount'] ?? 0),
+        'beneficiary_name' => cashierDisplay($row['beneficiary_name'] ?? ''),
+        'beneficiary_id' => cashierDisplay($row['beneficiary_id'] ?? ''),
         'final_amount' => $finalAmount,
-        'vatable_sales' => cashierMoney(max(0, $finalAmount - $vat)),
+        'vatable_sales' => cashierMoney(max(0, $finalAmount - $vat - cashierMoney($row['vat_exempt_sales'] ?? 0) + (in_array($row['cashier_discount_type'] ?? '', ['senior', 'pwd'], true) ? cashierMoney($row['cashier_discount_amount'] ?? 0) : 0))),
         'vat' => $vat,
         'total_amount' => cashierMoney($row['total_amount'] ?? 0),
         'cash_received' => cashierMoney($row['cash_received'] ?? 0),
@@ -168,6 +205,10 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             p.sales_clerk_discount AS payment_sales_clerk_discount,
             p.cashier_discount_type,
             p.cashier_discount_amount,
+            p.vat_exempt_sales,
+            p.vat_exemption_amount,
+            p.beneficiary_name,
+            p.beneficiary_id,
             p.final_amount,
             p.change_amount AS payment_change_amount,
             p.payment_method,
@@ -198,6 +239,7 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             i.unit_base_quantity,
             i.unit_price,
             i.line_total,
+            pc.category_name,
             p.status AS product_status,
             md.generic_name,
             classification_values.medicine_classification,
@@ -207,6 +249,7 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             TRIM(CONCAT(COALESCE(gd.net_weight, ''), CASE WHEN gd.unit IS NULL OR gd.unit = '' THEN '' ELSE CONCAT(' ', gd.unit) END)) AS grocery_net_weight
          FROM sales_order_items i
          LEFT JOIN product p ON p.product_id = i.product_id
+         LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN medicine_details md ON md.product_id = i.product_id
          LEFT JOIN (
             SELECT psv.product_id,
@@ -239,6 +282,7 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             'unit_base_quantity' => max(1, (int) ($item['unit_base_quantity'] ?? 1)),
             'unit_price' => cashierMoney($item['unit_price'] ?? 0),
             'line_total' => cashierMoney($item['line_total'] ?? 0),
+            'discount_eligible' => strcasecmp(trim((string) ($item['category_name'] ?? '')), 'Medicine') === 0,
             'product_status' => cashierDisplay($item['product_status'] ?? 'Active', 'Active'),
         ];
     }, $itemsStmt->fetchAll(PDO::FETCH_ASSOC));
