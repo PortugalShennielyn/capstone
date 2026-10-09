@@ -343,7 +343,7 @@
         #customizeSpecificationsModal .modal-dialog { width:min(720px,calc(100vw - 24px)); }
         #customizeSpecificationsModal .modal-header,#customizeSpecificationsModal .modal-footer { padding:12px 16px; }
         #customizeSpecificationsModal .form-control,#customizeSpecificationsModal .form-select { min-height:40px; }
-        #customizeSpecificationsModal .customizer-check-list { max-height:none; overflow:visible; }
+        #customizeSpecificationsModal .customizer-check-list { max-height:min(42vh,380px); overflow:auto; }
         .specification-customizer-help { margin-bottom:10px; }
         .customizer-list,.customizer-check-list { max-height:260px; overflow:auto; border:1px solid var(--border-soft,#e5e7eb); border-radius:10px; }
         .measurement-unit-list-tools { display:grid; grid-template-columns:minmax(0,1fr) minmax(190px,220px); gap:8px; margin-bottom:8px; }
@@ -365,11 +365,23 @@
         .specification-assignment-actions .btn { width:30px; height:30px; padding:0; }
         .specification-assignment-actions .delete-specification-option { color:#dc3545; border-color:#f1aeb5; background:transparent; }
         .specification-assignment-actions .delete-specification-option:hover,.specification-assignment-actions .delete-specification-option:focus { color:#b42318; border-color:#f04438; background:#fff1f2; box-shadow:none; }
-        .specification-editor { margin-top:12px; }
-        .specification-editor hr { margin:12px 0; }
-        .specification-editor-title { margin-bottom:10px; color:#344054; font-size:.82rem; font-weight:800; }
+        .specification-list-pane { display:grid; gap:10px; }
+        .specification-list-toolbar { display:flex; align-items:center; gap:8px; }
+        .specification-list-toolbar .customizer-search { margin:0!important; flex:1 1 auto; min-width:0; }
+        .specification-list-toolbar #btnAddSpecification { flex:0 0 auto; margin:0!important; white-space:nowrap; }
+        .specification-editor { margin-top:0; padding:14px 16px; border:1px solid #e6eaf1; border-radius:12px; background:#f8f9fd; }
+        .specification-editor hr { display:none; }
+        .specification-editor-toolbar { display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
+        .specification-editor-back { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; padding:0; border:1px solid #d9deea; border-radius:8px; color:#344054; background:#fff; }
+        .specification-editor-back:hover { color:#5446e8; border-color:#c9ceff; background:#eef0ff; }
+        .specification-editor-title { margin:0; color:#18233a; font-size:.95rem; font-weight:800; line-height:1.2; }
+        .specification-editor-hint { margin:4px 0 0; color:#667085; font-size:.76rem; }
         .specification-editor-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
         .specification-editor-wide { grid-column:1/-1; }
+        #customizeSpecificationsModal .modal-footer .spec-save-label-add,
+        #customizeSpecificationsModal[data-spec-view="add"] .modal-footer .spec-save-label-list { display:none; }
+        #customizeSpecificationsModal[data-spec-view="add"] .modal-footer .spec-save-label-add { display:inline; }
+        #customizeSpecificationsModal[data-spec-view="edit"] #btnSaveSpecifications { display:none; }
         .choice-manager-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
         .specification-choice-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 10px; }
         .specification-choice-row { display:flex; min-width:0; }
@@ -566,6 +578,69 @@
             .product-details-stock-tile strong { font-size:18px; }
         }
         .modal-title { color:#2f3642; }
+        .product-category-tabs { display:flex; align-items:center; gap:20px; padding:0 18px; overflow-x:auto; border-bottom:1px solid #e6eaf1; background:#fff; }
+        .product-category-tab { display:inline-flex; align-items:center; gap:7px; flex:0 0 auto; padding:14px 2px 12px; border:0; border-bottom:2px solid transparent; background:transparent; color:#667085; font-size:13px; font-weight:650; }
+        .product-category-tab.is-active { color:#5446e8; border-bottom-color:#5446e8; }
+        .product-category-tab span { padding:1px 6px; border-radius:999px; background:#f0f1fa; font-size:11px; }
+        .product-toolbar { padding:12px 16px; gap:8px; }
+        .product-toolbar .form-label { display:none; }
+        .product-toolbar .product-search-field { flex:1 1 300px; }
+        .product-toolbar .product-status-filter,.product-toolbar .product-pricing-filter { flex:0 1 150px; }
+        .product-markup-note { padding:8px 16px; color:#5446e8; background:#f0f1ff; font-size:12px; }
+        #table-products.products-table { width:100%; table-layout:fixed; }
+        #table-products.products-table th,#table-products.products-table td { min-width:0!important; width:auto; padding:12px 10px!important; text-align:left!important; vertical-align:middle; white-space:normal!important; overflow-wrap:anywhere; }
+        #table-products.products-table th { font-size:12px; font-weight:800; }
+        #table-products.products-table th:nth-child(2) { width:10%; }
+        #table-products.products-table th:nth-child(3) { width:22%; }
+        #table-products.products-table th:nth-child(4) { width:22%; }
+        #table-products.products-table th:nth-child(5) { width:18%; }
+        #table-products.products-table th:nth-child(8) { width:13%; }
+        #table-products.products-table th:nth-child(9) { width:9%; }
+        #table-products.products-table th:nth-child(10) { width:6%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(1) { width:6%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(2) { width:9%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(3) { width:18%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(4) { width:18%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(5) { width:13%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(6) { width:10%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(7) { width:9%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(8) { width:9%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(9) { width:5%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(10) { width:3%; }
+        #table-products .medicine-product-identity { justify-content:flex-start; }
+        #table-products .product-clamp { display:block; overflow:visible; text-overflow:clip; -webkit-line-clamp:unset; font-weight:500; }
+        #table-products .product-column .product-clamp { color:#18233a; font-weight:800; }
+        #table-products .catalog-specification { text-align:left; justify-items:start; }
+        .product-table-wrapper > #table-products.data-table-enhanced td:nth-child(4),.product-table-wrapper > #table-products.data-table-enhanced td:nth-child(4) .catalog-specification { text-align:left!important; justify-items:start!important; }
+        #table-products .catalog-specification-strength { color:#18233a; font-size:13px; }
+        #table-products .catalog-specification-ratio { color:inherit; font-weight:800; }
+        #table-products .selling-price-stack { align-items:flex-end; width:100%; }
+        #table-products .selling-price-value { color:#18233a; font-weight:800; }
+        #table-products .selling-price-unit { color:#72809a; font-size:11px; font-weight:500; }
+        #table-products .selling-price-cell { text-align:right!important; }
+        #table-products .product-actions { display:flex; justify-content:center; }
+        #table-products .product-actions .edit-product-btn { border:0; background:transparent; color:#8ba0be; }
+        #table-products .product-actions .edit-product-btn:hover { color:#5446e8; background:#f0f1ff; }
+        #table-products .badge.text-bg-success { border-radius:999px; color:#16854a!important; background:#dcfce8!important; font-weight:650; }
+        #table-products .badge.text-bg-secondary { border-radius:999px; font-weight:650; }
+        #customizeSpecificationsModal[data-category-mode="1"] .delete-specification-option { display:none; }
+        #customizeSpecificationsModal .modal-dialog { width:min(980px,calc(100vw - 24px)); max-width:none; }
+        #customizeSpecificationsModal .modal-body { max-height:min(67vh,650px); overflow-y:auto; }
+        #customizeSpecificationsModal[data-category-mode="1"] .modal-body { display:grid; grid-template-columns:190px minmax(0,1fr); gap:10px 18px; align-content:start; }
+        #customizeSpecificationsModal[data-category-mode="1"] .specification-customizer-help { grid-column:1/-1; }
+        #customizeSpecificationsModal[data-category-mode="1"] #specificationCategoryChoices { grid-column:1; grid-row:2/6; align-self:start; }
+        .specification-category-choices { display:grid; gap:3px; padding-right:12px; border-right:1px solid #e6eaf1; }
+        .specification-category-choice { display:flex; align-items:center; gap:8px; width:100%; padding:9px 10px; border:0; border-radius:8px; background:transparent; color:#46536b; font-size:13px; text-align:left; }
+        .specification-category-choice.is-active { background:#eef0ff; color:#5446e8; font-weight:750; }
+        .specification-category-dot { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:#5b4dea; }
+        .specification-category-choice[data-category-name="grocery"] .specification-category-dot { background:#16a34a; }
+        .specification-category-choice[data-category-name="medical supplies"] .specification-category-dot { background:#ea8500; }
+        #customizeSpecificationsModal[data-category-mode="1"] #categorySpecificationControls { grid-column:2; grid-row:2; height:max-content; margin:0!important; }
+        #customizeSpecificationsModal[data-category-mode="1"] #categorySpecificationControls > :first-child { display:none; }
+        #customizeSpecificationsModal[data-category-mode="1"] #categorySpecificationControls > :last-child { width:100%; }
+        #customizeSpecificationsModal[data-category-mode="1"] #specificationListPane,#customizeSpecificationsModal[data-category-mode="1"] .specification-editor,#customizeSpecificationsModal[data-category-mode="1"] #customSpecificationError { grid-column:2; }
+        @media (max-width:650px) { #customizeSpecificationsModal[data-category-mode="1"] .modal-body { display:block; } .specification-list-toolbar { flex-wrap:wrap; } .specification-list-toolbar #btnAddSpecification { width:100%; } }
+        @media (max-width:900px) { #table-products.products-table { table-layout:auto; } #table-products.products-table th,#table-products.products-table td { padding:9px 6px!important; font-size:11px; } .product-category-tabs { gap:12px; } }
     </style>
 </head>
 <body>
@@ -586,20 +661,21 @@
 
         <section class="page-body">
             <div class="products-workspace">
+                <div class="product-category-tabs" id="productCategoryTabs" aria-label="Product categories"></div>
                 <div class="product-toolbar" role="search" aria-label="Product filters">
                         <div class="product-toolbar-field product-search-field">
                             <label class="form-label" for="productSearchInput">Search Products</label>
                             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                            <input class="form-control" id="productSearchInput" type="search" placeholder="Search product, brand, generic, or barcode">
+                            <input class="form-control" id="productSearchInput" type="search" placeholder="Search product, brand, or barcode">
                         </div>
-                        <div class="product-toolbar-field product-type-filter">
+                        <div class="product-toolbar-field product-type-filter d-none">
                             <label class="form-label" for="productCategoryFilter">Category</label>
                             <select class="form-select" id="productCategoryFilter">
                                 <option value="">All Categories</option>
                             </select>
                         </div>
-                        <div class="product-toolbar-field">
-                            <label class="form-label" for="productStatusFilter">Product Status</label>
+                        <div class="product-toolbar-field product-status-filter">
+                            <label class="form-label" for="productStatusFilter">Status</label>
                             <select class="form-select" id="productStatusFilter">
                                 <option value="all" selected>All Products</option>
                                 <option value="Active">Active</option>
@@ -614,38 +690,43 @@
                                 <option value="non-prescription">Non-Prescription</option>
                             </select>
                         </div>
+                        <div class="product-toolbar-field product-pricing-filter d-none" id="productPricingFilterWrap"><label class="form-label" for="productPricingFilter">Pricing</label><select class="form-select" id="productPricingFilter"><option value="all">All pricing</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option><option value="manual">Manual</option><option value="needs_update">Needs update</option><option value="no_cost">No accepted cost</option></select></div>
                         <div class="product-master-actions">
                             <span class="product-refresh-indicator d-none" id="productRefreshIndicator"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Refreshing...</span></span>
-                            <button class="btn btn-outline-primary" id="btnManagePrices" type="button"><i class="fa-solid fa-tags me-2"></i>Manage Prices</button>
+                            <button class="btn btn-outline-secondary" id="btnCategorySpecifications" type="button"><i class="fa-solid fa-sliders me-2"></i>Specifications</button>
+                            <button class="btn btn-outline-primary" id="btnManagePrices" type="button"><i class="fa-regular fa-eye me-2"></i>Show markup prices</button>
                             <div class="pricing-selection-actions d-none" id="pricingSelectionActions">
                                 <span class="pricing-selection-summary"><strong>Manage Product Prices</strong><span class="pricing-selection-count" id="pricingSelectionCount">0 selected · 0 eligible</span></span>
                                 <button class="btn btn-outline-primary" id="btnApplySelectedPricing" type="button" disabled><i class="fa-solid fa-percent me-2"></i>Apply Category Markup</button>
-                                <button class="btn btn-outline-secondary" id="btnExitPricingSelection" type="button">Exit Selection Mode</button>
+                                <button class="btn btn-outline-secondary" id="btnExitPricingSelection" type="button">Hide markup prices</button>
                             </div>
                             <button class="btn btn-purple product-add-button" type="button" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
                         </div>
                 </div>
+                <div class="product-markup-note d-none" id="productMarkupNote">Markup view shows accepted unit cost and the saved pricing method. Select eligible products to apply category markup.</div>
                 <div class="product-master-container">
                     <div class="table-responsive product-table-wrapper">
                         <table id="table-products" class="table table-hover align-middle products-table">
                             <thead>
                                 <tr>
                                     <th class="text-center pricing-selection-column d-none"><input class="form-check-input" id="selectAllProductsForPricing" type="checkbox" aria-label="Select all visible eligible products"></th>
-                                    <th>Brand</th>
+                                    <th><strong>Brand</strong></th>
                                     <th class="product-column">Product</th>
-                                    <th>Specification</th>
-                                    <th>Form</th>
-                                    <th>Default Base Price</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
+                                    <th><strong>Specification</strong></th>
+                                    <th><strong>Form</strong></th>
+                                    <th class="markup-column d-none"><strong>Unit cost</strong></th>
+                                    <th class="markup-column d-none"><strong>Markup</strong></th>
+                                    <th><strong>Price</strong></th>
+                                    <th><strong>Status</strong></th>
+                                    <th><strong>Edit</strong></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="8"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -795,12 +876,53 @@
     <div class="modal fade product-customizer-modal" id="customizeSpecificationsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header"><div><h5 class="modal-title fw-bold">Customize Specifications</h5><small class="text-muted" id="specificationCustomizerContext"></small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
-                <div class="modal-body"><p class="small text-muted specification-customizer-help">Choose optional specifications for this Product Type. Barcode and Default Base Price are always included.</p><input class="form-control customizer-search mb-2" data-target="specificationAssignmentList" placeholder="Search specifications"><div class="customizer-check-list" id="specificationAssignmentList"></div><button class="btn btn-sm btn-outline-secondary mt-3" type="button" id="btnAddSpecification"><i class="fa-solid fa-plus me-1"></i>Add Another Specification</button>
-                    <div class="specification-editor d-none" id="newSpecificationEditor"><hr><div class="specification-editor-title">Add Specification</div><div class="specification-editor-grid"><div><label class="form-label" for="newSpecificationName">Specification Name</label><input class="form-control" id="newSpecificationName" maxlength="80"></div><div><label class="form-label" for="newSpecificationStyle">Field Style</label><select class="form-select" id="newSpecificationStyle"><option>Selection List</option><option>Number with Unit</option><option>Number Only</option></select></div><div class="d-none specification-editor-wide" id="measurementGroupEditor"><label class="form-label" for="newSpecificationGroup">Measurement Group</label><select class="form-select" id="newSpecificationGroup"></select></div><div class="d-none specification-editor-wide" id="selectionChoiceEditor"><div class="choice-manager-heading"><label class="form-label mb-0">Choices</label><button class="btn btn-sm btn-outline-secondary add-specification-choice" data-target="newSpecificationChoiceList" type="button"><i class="fa-solid fa-plus me-1"></i>Add Choice</button></div><div class="specification-choice-list" id="newSpecificationChoiceList"></div></div></div></div>
-                    <div class="specification-editor d-none" id="editSpecificationEditor"><hr><input type="hidden" id="editSpecificationId"><div class="specification-editor-title">Edit Specification</div><div class="small text-muted mb-2" id="editSpecificationScope"></div><div class="specification-editor-grid"><div><label class="form-label" for="editSpecificationDisplayName">Display Name</label><input class="form-control" id="editSpecificationDisplayName" maxlength="80"></div><div><label class="form-label" for="editSpecificationStyle">Field Style</label><select class="form-select" id="editSpecificationStyle"><option>Number with Unit</option><option>Selection List</option><option>Number Only</option></select></div><div class="d-none specification-editor-wide" id="editSpecificationGroupWrap"><label class="form-label" for="editSpecificationGroup">Measurement Group</label><select class="form-select" id="editSpecificationGroup"></select></div><div class="d-none specification-editor-wide" id="editSpecificationChoicesWrap"><div class="choice-manager-heading"><label class="form-label mb-0">Selection Choices</label><button class="btn btn-sm btn-outline-secondary add-specification-choice" data-target="editSpecificationChoiceList" type="button"><i class="fa-solid fa-plus me-1"></i>Add Choice</button></div><div class="specification-choice-list" id="editSpecificationChoiceList"></div></div></div><div class="d-flex justify-content-end mt-2"><button class="btn btn-sm btn-outline-primary" type="button" id="btnApplySpecificationEdit">Apply Edit</button></div></div><div class="product-field-error d-none" id="customSpecificationError"></div>
+                <div class="modal-header"><div><h5 class="modal-title fw-bold">Specification fields</h5><small class="text-muted" id="specificationCustomizerContext"></small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-body">
+                    <p class="small text-muted specification-customizer-help">Choose details captured for each product type. Newly selected and custom fields become defaults for every type in the selected category. Barcode and base price are always included.</p>
+                    <div class="specification-category-choices d-none" id="specificationCategoryChoices"></div>
+                    <div class="row g-2 mb-3 d-none" id="categorySpecificationControls"><div class="col-sm-6"><label class="form-label" for="specificationCategorySelect">Category</label><select class="form-select" id="specificationCategorySelect"></select></div><div class="col-sm-6"><label class="form-label" for="specificationTypeSelect">Product type</label><select class="form-select" id="specificationTypeSelect"></select></div></div>
+                    <div class="specification-list-pane" id="specificationListPane">
+                        <div class="specification-list-toolbar">
+                            <input class="form-control customizer-search" data-target="specificationAssignmentList" placeholder="Search fields">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" id="btnAddSpecification"><i class="fa-solid fa-plus me-1"></i>Add custom field</button>
+                        </div>
+                        <div class="customizer-check-list" id="specificationAssignmentList"></div>
+                    </div>
+                    <div class="specification-editor d-none" id="newSpecificationEditor">
+                        <div class="specification-editor-toolbar">
+                            <button class="specification-editor-back" type="button" data-spec-view="list" aria-label="Back to fields"><i class="fa-solid fa-arrow-left"></i></button>
+                            <div>
+                                <div class="specification-editor-title">Add custom field</div>
+                                <p class="specification-editor-hint">This field will be saved with the selected type. Use Save field when you are done.</p>
+                            </div>
+                        </div>
+                        <div class="specification-editor-grid">
+                            <div><label class="form-label" for="newSpecificationName">Specification Name</label><input class="form-control" id="newSpecificationName" maxlength="80"></div>
+                            <div><label class="form-label" for="newSpecificationStyle">Field Style</label><select class="form-select" id="newSpecificationStyle"><option>Selection List</option><option>Number with Unit</option><option>Number Only</option><option>Text Entry</option></select></div>
+                            <div class="d-none specification-editor-wide" id="measurementGroupEditor"><label class="form-label" for="newSpecificationGroup">Measurement Group</label><select class="form-select" id="newSpecificationGroup"></select></div>
+                            <div class="d-none specification-editor-wide" id="selectionChoiceEditor"><div class="choice-manager-heading"><label class="form-label mb-0">Choices</label><button class="btn btn-sm btn-outline-secondary add-specification-choice" data-target="newSpecificationChoiceList" type="button"><i class="fa-solid fa-plus me-1"></i>Add Choice</button></div><div class="specification-choice-list" id="newSpecificationChoiceList"></div></div>
+                        </div>
+                    </div>
+                    <div class="specification-editor d-none" id="editSpecificationEditor">
+                        <div class="specification-editor-toolbar">
+                            <button class="specification-editor-back" type="button" data-spec-view="list" aria-label="Back to fields"><i class="fa-solid fa-arrow-left"></i></button>
+                            <div>
+                                <div class="specification-editor-title">Edit specification</div>
+                                <p class="small text-muted mb-0" id="editSpecificationScope"></p>
+                            </div>
+                        </div>
+                        <input type="hidden" id="editSpecificationId">
+                        <div class="specification-editor-grid">
+                            <div><label class="form-label" for="editSpecificationDisplayName">Display Name</label><input class="form-control" id="editSpecificationDisplayName" maxlength="80"></div>
+                            <div><label class="form-label" for="editSpecificationStyle">Field Style</label><select class="form-select" id="editSpecificationStyle"><option>Number with Unit</option><option>Selection List</option><option>Number Only</option><option>Text Entry</option></select></div>
+                            <div class="d-none specification-editor-wide" id="editSpecificationGroupWrap"><label class="form-label" for="editSpecificationGroup">Measurement Group</label><select class="form-select" id="editSpecificationGroup"></select></div>
+                            <div class="d-none specification-editor-wide" id="editSpecificationChoicesWrap"><div class="choice-manager-heading"><label class="form-label mb-0">Selection Choices</label><button class="btn btn-sm btn-outline-secondary add-specification-choice" data-target="editSpecificationChoiceList" type="button"><i class="fa-solid fa-plus me-1"></i>Add Choice</button></div><div class="specification-choice-list" id="editSpecificationChoiceList"></div></div>
+                        </div>
+                        <div class="d-flex justify-content-end mt-3"><button class="btn btn-sm btn-purple" type="button" id="btnApplySpecificationEdit">Apply Edit</button></div>
+                    </div>
+                    <div class="product-field-error d-none" id="customSpecificationError"></div>
                 </div>
-                <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="button" id="btnSaveSpecifications">Save Specifications</button></div>
+                <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="button" id="btnSaveSpecifications"><span class="spec-save-label-list">Save fields</span><span class="spec-save-label-add">Save field</span></button></div>
             </div>
         </div>
     </div>
@@ -883,6 +1005,7 @@
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-outline-warning me-auto" id="editProductStatusAction" type="button">Deactivate Product</button>
                         <button class="btn btn-purple" type="submit">
                             <i class="fa-solid fa-floppy-disk me-2"></i>Save Changes
                         </button>
@@ -911,7 +1034,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js?v=8';
-        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=90';
+        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=92';
 
         verifySession().then((user) => {
             if (!user) return;
