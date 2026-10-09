@@ -379,7 +379,7 @@ body {
 
 @page {
     size: A4 portrait;
-    margin: 12mm 15mm;
+    margin: 0;
 }
 
 @media print {
@@ -396,6 +396,8 @@ body {
     #navbar-container,
     .navbar,
     .sidebar,
+    .drp-shared-topbar,
+    .topbar,
     .topbar-right,
     .shift-topbar,
     .interactive-only,
@@ -428,6 +430,7 @@ body {
         width: 100% !important;
         max-width: 180mm;
         margin: 0 auto;
+        padding: 12mm 0;
         color: #000 !important;
         background: #fff !important;
         font-size: 10.5pt;

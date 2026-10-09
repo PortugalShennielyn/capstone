@@ -41,6 +41,12 @@ body.sidebar-open .app-main {
 
 #navbar-container .app-sidebar { z-index: 2000 !important; }
 
+/* Keep shared navigation usable when Bootstrap's CDN stylesheet is unavailable. */
+#navbar-container .d-none { display: none !important; }
+#navbar-container .ms-3 { margin-left: 1rem !important; }
+#navbar-container .sidebar-nav > .collapse:not(.show) { display: none; }
+#navbar-container .sidebar-nav > .collapse.show { display: block; }
+
 #navbar-container .sidebar-header {
     flex: 0 0 var(--app-header-height);
     height: var(--app-header-height);
@@ -193,6 +199,12 @@ body.sidebar-open .drp-shared-topbar .drp-sidebar-open-toggle { display: none !i
    re-parent a shown modal, so these selectors must not require a direct child. */
 body { --drp-dialog-sidebar-width: var(--sidebar-collapsed-width); }
 body.sidebar-open { --drp-dialog-sidebar-width: var(--sidebar-expanded-width); }
+
+/* The profile dialog is injected by navbar.js. Keep its form out of the page
+   flow until Bootstrap opens it; this also covers pages without Bootstrap CSS. */
+#navbarProfileModal:not(.show) {
+    display: none !important;
+}
 
 body .modal,
 body .receiving-ui-backdrop,

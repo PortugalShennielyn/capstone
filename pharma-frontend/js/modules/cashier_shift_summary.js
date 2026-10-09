@@ -433,12 +433,6 @@ function renderPrintReport(data, generated) {
                 <div><span>Refunds</span><strong>-${escapeHtml(currency(sales.refunds))}</strong></div>
                 <div class="total"><span>Net Sales</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
             </div>
-            <h3>CASH</h3>
-            <div class="print-lines">
-                <div><span>Cash Tendered</span><strong>${escapeHtml(currency(summary.cash_tendered))}</strong></div>
-                <div><span>Change Given</span><strong>-${escapeHtml(currency(summary.change_given))}</strong></div>
-                <div class="total"><span>Net Cash Sales</span><strong>${escapeHtml(currency(summary.net_cash_sales))}</strong></div>
-            </div>
             <h3>TENDER</h3>
             <div class="print-lines">
                 ${paymentRows.length ? paymentRows.map((row) => `<div><span>${escapeHtml(methodLabel(row.payment_method))}</span><strong>${escapeHtml(currency(row.amount))}</strong></div>`).join('') : '<div><span>No tenders</span><strong>PHP 0.00</strong></div>'}
@@ -488,7 +482,7 @@ function renderSummaryReport(data, options = {}) {
                 </article>
             </div>
             <hr class="report-divider">
-            <div class="report-grid three">
+            <div class="report-grid two">
                 <article class="report-section">
                     <h2>Sales</h2>
                     <div class="report-lines">
@@ -496,14 +490,6 @@ function renderSummaryReport(data, options = {}) {
                         <div class="negative"><span>Less: Discounts</span><strong>-${escapeHtml(currency(sales.discounts))}</strong></div>
                         <div class="negative"><span>Less: Refunds</span><strong>-${escapeHtml(currency(sales.refunds))}</strong></div>
                         <div class="grand"><span>NET SALES</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
-                    </div>
-                </article>
-                <article class="report-section">
-                    <h2>Cash Reconciliation</h2>
-                    <div class="report-lines">
-                        <div><span>Cash Tendered</span><strong>${escapeHtml(currency(summary.cash_tendered))}</strong></div>
-                        <div class="negative"><span>Less: Change Given</span><strong>-${escapeHtml(currency(summary.change_given))}</strong></div>
-                        <div class="grand"><span>NET CASH SALES</span><strong>${escapeHtml(currency(summary.net_cash_sales))}</strong></div>
                     </div>
                 </article>
                 <article class="report-section">

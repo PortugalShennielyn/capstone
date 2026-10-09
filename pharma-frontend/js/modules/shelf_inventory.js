@@ -5,6 +5,7 @@ import { primaryAccessRole } from './rbac.js?v=6';
 
 const API_BASE_URL = window.location.port ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1' : '../pharma-api/v1';
 const SEP = PharmaUtils.productIdentitySeparator || ' • ';
+const CUSTOM_SELLABLE_UNIT = '__custom_sellable_unit__';
 let shelfRows = [];
 let shelfLoaded = false;
 let sellableCandidates = [];
@@ -156,23 +157,74 @@ function renderSellableUnitPicker(){
     const select=document.getElementById('sellableUnitSelect');
     const chosen=new Set([...document.querySelectorAll('#sellingOptionsRows .selling-option-row')].map(row=>sellableUnitKey(row.dataset.unitName)));
     const current=select.value;
-    select.innerHTML='<option value="">Select unit type...</option>'+sellableCandidates.filter(candidate=>!chosen.has(sellableUnitKey(candidate.unit))).map(candidate=>`<option value="${esc(candidate.unit)}">${esc(unitLabel(candidate.unit))} — ${Number(candidate.base_quantity)} ${esc(unitLabel(document.getElementById('sellingSetupBaseUnit').textContent,Number(candidate.base_quantity)))}</option>`).join('');
+    select.innerHTML='<option value="">Select unit type...</option>'+sellableCandidates.filter(candidate=>!chosen.has(sellableUnitKey(candidate.unit))).map(candidate=>`<option value="${esc(candidate.unit)}">${esc(unitLabel(candidate.unit))} — ${Number(candidate.base_quantity)} ${esc(unitLabel(document.getElementById('sellingSetupBaseUnit').textContent,Number(candidate.base_quantity)))}</option>`).join('')+`<option value="${CUSTOM_SELLABLE_UNIT}">＋ Create custom unit...</option>`;
     select.value=[...select.options].some(option=>option.value===current)?current:'';
     document.getElementById('addSellableUnitButton').disabled=!select.value;
 }
-function addSelectedSellableUnit(){
+async function persistSellableUnitCandidate(candidate){
+    const key=sellableUnitKey(candidate.unit);
+    const existing=savedSellingOptions.get(key);
+    if(existing&&Number(existing.base_quantity)===Number(candidate.base_quantity))return existing;
+    const unitsByName=new Map([...savedSellingOptions.entries()].map(([unitKey,option])=>[unitKey,{
+        unit:option.unit,
+        base_quantity:Number(option.base_quantity),
+        is_active:Number(option.is_active)===1
+    }]));
+    const baseUnit=sellableCandidates.find(item=>Number(item.base_quantity)===1)?.unit||document.getElementById('sellingSetupBaseUnit').textContent;
+    const baseKey=sellableUnitKey(baseUnit);
+    if(!unitsByName.has(baseKey))unitsByName.set(baseKey,{unit:baseUnit,base_quantity:1,is_active:true});
+    else unitsByName.get(baseKey).is_active=true;
+    unitsByName.set(key,{unit:candidate.unit,base_quantity:Number(candidate.base_quantity),is_active:true});
+    const productId=document.getElementById('sellingSetupProductId').value;
+    const saved=await PharmaUtils.safeFetch(`${API_BASE_URL}/products/save_product_selling_units.php`,{
+        method:'POST',
+        credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({product_id:productId,units:[...unitsByName.values()]})
+    });
+    if(Array.isArray(saved.units))savedSellingOptions=new Map(saved.units.map(option=>[sellableUnitKey(option.unit),option]));
+    return savedSellingOptions.get(key)||existing||candidate;
+}
+async function addSelectedSellableUnit(candidateOverride=null){
     const select=document.getElementById('sellableUnitSelect');
-    const candidate=sellableCandidates.find(item=>item.unit===select.value);
+    const candidate=candidateOverride||sellableCandidates.find(item=>item.unit===select.value);
     if(!candidate)return;
-    const saved=savedSellingOptions.get(sellableUnitKey(candidate.unit))||{};
+    const saved=await persistSellableUnitCandidate(candidate);
     const savedPrice=Number(saved.base_quantity)===Number(candidate.base_quantity)?saved.selling_price:0;
     const hasDefault=Boolean(document.querySelector('#sellingOptionsRows .sellable-default-radio:checked'));
     const baseUnit=document.getElementById('sellingSetupBaseUnit').textContent;
     const product=shelfRows.find(item=>String(item.product_id)===document.getElementById('sellingSetupProductId').value);
     addOption({...candidate,...saved,unit:candidate.unit,base_quantity:Number(candidate.base_quantity),base_unit:baseUnit,selling_price:savedPrice??0,is_default:hasDefault?0:1,shelf_base_quantity:Number(product?.usable_shelf_quantity||0),cost_per_base_unit:Number(document.getElementById('sellingOptionsRows').dataset.costPerBase||0)});
+    if(!sellableCandidates.some(item=>sellableUnitKey(item.unit)===sellableUnitKey(candidate.unit)))sellableCandidates.push(candidate);
     renderSellableUnitPicker();
     refreshSellingPriceHints();
     document.querySelector('#sellingOptionsRows .selling-option-row:last-child .selling-option-price')?.focus();
+}
+async function createCustomSellableUnit(){
+    const select=document.getElementById('sellableUnitSelect');
+    select.value='';
+    document.getElementById('addSellableUnitButton').disabled=true;
+    const baseUnit=unitLabel(document.getElementById('sellingSetupBaseUnit').textContent);
+    const result=await Swal.fire({
+        title:'Create custom unit',
+        html:`<label for="customSellableUnitName" class="swal2-input-label">Unit name</label><input id="customSellableUnitName" class="swal2-input" maxlength="50" placeholder="e.g. Case"><label for="customSellableUnitQuantity" class="swal2-input-label">${esc(baseUnit)} in one unit</label><input id="customSellableUnitQuantity" class="swal2-input" type="number" min="2" step="1" placeholder="e.g. 12">`,
+        focusConfirm:false,
+        showCancelButton:true,
+        confirmButtonText:'Add unit',
+        preConfirm:()=>{
+            const unit=String(Swal.getPopup()?.querySelector('#customSellableUnitName')?.value||'').trim();
+            const baseQuantity=Number(Swal.getPopup()?.querySelector('#customSellableUnitQuantity')?.value);
+            if(!unit||unit.length>50){Swal.showValidationMessage('Enter a unit name with 1 to 50 characters.');return false;}
+            if(/[\x00-\x1f\x7f]/.test(unit)){Swal.showValidationMessage('The unit name contains an invalid character.');return false;}
+            if(!Number.isInteger(baseQuantity)||baseQuantity<2){Swal.showValidationMessage(`Enter a whole number of ${baseUnit} greater than 1.`);return false;}
+            if(sellableCandidates.some(candidate=>sellableUnitKey(candidate.unit)===sellableUnitKey(unit))||savedSellingOptions.has(sellableUnitKey(unit))){Swal.showValidationMessage('That unit already exists for this product.');return false;}
+            if([...document.querySelectorAll('#sellingOptionsRows .selling-option-row')].some(row=>sellableUnitKey(row.dataset.unitName)===sellableUnitKey(unit))){Swal.showValidationMessage('That unit is already added to this product.');return false;}
+            return {unit,base_quantity:baseQuantity,custom_unit:true};
+        }
+    });
+    if(!result.isConfirmed||!result.value)return;
+    await addSelectedSellableUnit(result.value);
+    PharmaUtils.toast.success(`${result.value.unit} saved. Add its selling price, then save prices to enable it in POS.`);
 }
 function closeSellingSetup(){const drawer=document.getElementById('sellingSetupModal');drawer.classList.remove('is-open');drawer.setAttribute('aria-hidden','true');document.body.style.overflow='';document.getElementById('sellingSetupChangeNote').textContent='No changes yet';document.getElementById('sellingPriceComparisonWarning').hidden=true;document.getElementById('saveSellingSetupButton').disabled=true;}
 function parseSellingPrice(input){const value=input.value.trim();if(!/^\d+(?:\.\d{1,2})?$/.test(value)){input.setCustomValidity('Enter a price using numbers with no more than two decimal places.');input.setAttribute('aria-invalid','true');return null;}const price=Number(value);if(!Number.isFinite(price)||price<=0){input.setCustomValidity('Enter a selling price above zero before enabling this unit in POS.');input.setAttribute('aria-invalid','true');return null;}input.setCustomValidity('');input.removeAttribute('aria-invalid');return price;}
@@ -342,7 +394,7 @@ shelfTable?.addEventListener('keydown',event=>{
         event.preventDefault();
         openShelfDetails(event.target.dataset.productId);
     }
-});document.getElementById('shelfInventoryTable')?.addEventListener('click',event=>{const selling=event.target.closest('.selling-setup-btn');const returning=event.target.closest('.return-storage-btn');if(selling&&canManageShelfPricing())openSelling(selling.dataset.productId).catch(error=>PharmaUtils.toast.error(error.message));if(returning)returnToStorage(returning.dataset.productId);});document.getElementById('sellingSetupForm')?.addEventListener('submit',saveSelling);document.getElementById('sellableUnitSelect')?.addEventListener('change',event=>{document.getElementById('addSellableUnitButton').disabled=!event.target.value;});document.getElementById('addSellableUnitButton')?.addEventListener('click',addSelectedSellableUnit);document.getElementById('sellingOptionsRows')?.addEventListener('click',event=>{const remove=event.target.closest('[data-remove-sellable-unit]');if(!remove)return;remove.closest('.selling-option-row')?.remove();if(!document.querySelector('#sellingOptionsRows .sellable-default-radio:checked')){const first=document.querySelector('#sellingOptionsRows .sellable-default-radio');if(first)first.checked=true;}renderSellableUnitPicker();refreshSellingPriceHints();});document.getElementById('sellingOptionsRows')?.addEventListener('change',event=>{if(event.target.matches('.sellable-default-radio'))refreshSellingPriceHints();});document.getElementById('sellingOptionsRows')?.addEventListener('input',event=>{if(event.target.matches('.selling-option-price, .selling-option-barcode'))refreshSellingPriceHints();});document.getElementById('sellingOptionsRows')?.addEventListener('blur',event=>{if(!event.target.matches('.selling-option-price'))return;const price=parseSellingPrice(event.target);if(price!==null)event.target.value=price.toFixed(2);refreshSellingPriceHints();},true);document.getElementById('sellingSetupModal')?.addEventListener('click',event=>{if(event.target.closest('[data-close-selling-setup]'))closeSellingSetup();});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.getElementById('sellingSetupModal')?.classList.contains('is-open'))closeSellingSetup();});if(localStorage.getItem('theme')==='dark')document.body.classList.add('dark-mode');enforceShelfNaturalTable();window.addEventListener('navbar:ready',enforceShelfNaturalTable);window.addEventListener('load',enforceShelfNaturalTable);window.addEventListener('pharma:session-ready',loadShelf);setTimeout(()=>{enforceShelfNaturalTable();if(!shelfLoaded)loadShelf();},500);createLiveSync({interval:2000,events:['shelf-updated','storage-updated','payment-completed','product-updated','po-received'],sync:loadShelf});
+});document.getElementById('shelfInventoryTable')?.addEventListener('click',event=>{const selling=event.target.closest('.selling-setup-btn');const returning=event.target.closest('.return-storage-btn');if(selling&&canManageShelfPricing())openSelling(selling.dataset.productId).catch(error=>PharmaUtils.toast.error(error.message));if(returning)returnToStorage(returning.dataset.productId);});document.getElementById('sellingSetupForm')?.addEventListener('submit',saveSelling);document.getElementById('sellableUnitSelect')?.addEventListener('change',event=>{if(event.target.value===CUSTOM_SELLABLE_UNIT){createCustomSellableUnit().catch(error=>PharmaUtils.toast.error(error.message||'Unable to create a custom selling unit.'));return;}document.getElementById('addSellableUnitButton').disabled=!event.target.value;});document.getElementById('addSellableUnitButton')?.addEventListener('click',()=>addSelectedSellableUnit().catch(error=>PharmaUtils.toast.error(error.message||'Unable to save the selling unit.')));document.getElementById('sellingOptionsRows')?.addEventListener('click',event=>{const remove=event.target.closest('[data-remove-sellable-unit]');if(!remove)return;remove.closest('.selling-option-row')?.remove();if(!document.querySelector('#sellingOptionsRows .sellable-default-radio:checked')){const first=document.querySelector('#sellingOptionsRows .sellable-default-radio');if(first)first.checked=true;}renderSellableUnitPicker();refreshSellingPriceHints();});document.getElementById('sellingOptionsRows')?.addEventListener('change',event=>{if(event.target.matches('.sellable-default-radio'))refreshSellingPriceHints();});document.getElementById('sellingOptionsRows')?.addEventListener('input',event=>{if(event.target.matches('.selling-option-price, .selling-option-barcode'))refreshSellingPriceHints();});document.getElementById('sellingOptionsRows')?.addEventListener('blur',event=>{if(!event.target.matches('.selling-option-price'))return;const price=parseSellingPrice(event.target);if(price!==null)event.target.value=price.toFixed(2);refreshSellingPriceHints();},true);document.getElementById('sellingSetupModal')?.addEventListener('click',event=>{if(event.target.closest('[data-close-selling-setup]'))closeSellingSetup();});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.getElementById('sellingSetupModal')?.classList.contains('is-open'))closeSellingSetup();});if(localStorage.getItem('theme')==='dark')document.body.classList.add('dark-mode');enforceShelfNaturalTable();window.addEventListener('navbar:ready',enforceShelfNaturalTable);window.addEventListener('load',enforceShelfNaturalTable);window.addEventListener('pharma:session-ready',loadShelf);setTimeout(()=>{enforceShelfNaturalTable();if(!shelfLoaded)loadShelf();},500);createLiveSync({interval:2000,events:['shelf-updated','storage-updated','payment-completed','product-updated','po-received'],sync:loadShelf});
 document.getElementById('sellingOptionsRows')?.addEventListener('click',event=>{
     const toggle=event.target.closest('[data-toggle-sellable]');
     if(!toggle)return;

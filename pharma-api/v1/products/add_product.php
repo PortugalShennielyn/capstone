@@ -86,23 +86,23 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
         'dosage_form' => cleanSkuField($variation, 'dosage_form') ?? cleanSkuField($variation, 'product_unit') ?? cleanSkuField($variation, 'unit'),
         'net_content_value' => cleanSkuNumber($variation, 'net_content_value') ?? cleanSkuNumber($variation, 'volume_value'),
         'net_content_unit' => cleanSkuField($variation, 'net_content_unit') ?? cleanSkuField($variation, 'volume_unit'),
-        'medicine_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
+        'medicine_package_type' => null,
         'size' => cleanSkuField($variation, 'size_value') ?? cleanSkuField($variation, 'display_size'),
         'net_weight' => cleanSkuNumber($variation, 'net_weight') ?? cleanSkuNumber($variation, 'weight_value') ?? cleanSkuNumber($variation, 'weight_volume_value'),
         'grocery_unit' => cleanSkuField($variation, 'unit') ?? cleanSkuField($variation, 'weight_unit') ?? cleanSkuField($variation, 'weight_volume_unit'),
-        'grocery_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
+        'grocery_package_type' => null,
         'material' => cleanSkuField($variation, 'material'),
         'sterile_status' => cleanSkuField($variation, 'sterile_status'),
-        'medical_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
-        'pack_content' => cleanSkuField($variation, 'pack_content') ?? joinSkuParts(cleanSkuNumber($variation, 'pack_content_qty'), cleanSkuField($variation, 'pack_content_unit')),
+        'medical_package_type' => null,
+        'pack_content' => null,
         'barcode' => $barcode,
         'inventory_unit_id' => cleanId($variation['inventory_unit_id'] ?? null),
         'price' => $price,
         'is_empty_detail' => $categoryName === 'Grocery'
-            ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
+            ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit'))
             : (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)
-                ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuField($variation, 'material') || cleanSkuField($variation, 'sterile_status') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
-            : !(cleanSkuNumber($variation, 'strength_value') || cleanSkuField($variation, 'strength_unit') || cleanSkuField($variation, 'dosage_form') || cleanSkuNumber($variation, 'net_content_value') || cleanSkuNumber($variation, 'volume_value') || cleanSkuField($variation, 'net_content_unit') || cleanSkuField($variation, 'volume_unit') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging'))
+                ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuField($variation, 'material') || cleanSkuField($variation, 'sterile_status'))
+            : !(cleanSkuNumber($variation, 'strength_value') || cleanSkuField($variation, 'strength_unit') || cleanSkuField($variation, 'dosage_form') || cleanSkuNumber($variation, 'net_content_value') || cleanSkuNumber($variation, 'volume_value') || cleanSkuField($variation, 'net_content_unit') || cleanSkuField($variation, 'volume_unit') || cleanSkuField($variation, 'unit'))
             )
     ];
 }

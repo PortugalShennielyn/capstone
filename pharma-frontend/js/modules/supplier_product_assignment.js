@@ -7,6 +7,7 @@ import {
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits, measurementUnitsForContext } from './measurement_units.js?v=2';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
+import { createPackagingEditor } from './packaging_breakdown.js?v=1';
 
 const API = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -45,6 +46,7 @@ const state = {
     units: [],
     selectedIds: new Set(),
     terms: new Map(),
+    packagingEditors: new Map(),
     sharedFormReady: false,
     createdProductIds: new Set()
 };
@@ -320,10 +322,11 @@ async function ensureSharedProductForm() {
 
 function rememberTerms() {
     document.querySelectorAll('.assignment-term-card').forEach((card) => {
+        const editor = state.packagingEditors.get(String(card.dataset.productId));
         state.terms.set(String(card.dataset.productId), {
             purchaseUnit: card.querySelector('.term-unit')?.value || 'Box',
             inventoryUnit: card.querySelector('.term-inventory-unit')?.value || '',
-            quantity: card.querySelector('.term-quantity')?.value || ''
+            hierarchyLevels: editor?.read() || []
         });
     });
 }
@@ -332,12 +335,13 @@ function defaultTerms(product) {
     return state.terms.get(String(product.product_id)) || {
         purchaseUnit: 'Box',
         inventoryUnit: inventoryUnit(product),
-        quantity: ''
+        hierarchyLevels: [{ unit: inventoryUnit(product), quantity: '' }]
     };
 }
 
 function renderStep2() {
     rememberTerms();
+    state.packagingEditors.clear();
     const products = selectedProducts();
     document.getElementById('assignmentStep2').innerHTML = `
         <div class="assignment-step-heading">
@@ -372,48 +376,41 @@ function renderStep2() {
                                 <div class="form-text">Defined in Product Master.</div>
                                 <div class="assignment-field-error"></div>
                             </div>
-                            <div class="term-quantity-field">
-                                <label class="form-label term-quantity-label">Contents per ${esc(saved.purchaseUnit || 'Purchase Unit')} <span class="text-danger">*</span></label>
-                                <div class="input-group">
-                                    <input class="form-control term-quantity" type="number" min="1" step="1"
-                                           inputmode="numeric" value="${esc(saved.quantity)}">
-                                    <span class="input-group-text term-quantity-unit">${esc(unit)}</span>
-                                </div>
-                                <div class="assignment-field-error"></div>
-                            </div>
+                            <div class="term-packaging-host"></div>
                             <div class="assignment-preview term-preview"></div>
                         </div>
                     </article>`;
             }).join('')}
         </div>`;
-    document.querySelectorAll('.assignment-term-card').forEach(updateTermCard);
+    document.querySelectorAll('.assignment-term-card').forEach((card) => {
+        const productId = String(card.dataset.productId);
+        const saved = defaultTerms(state.products.find(item => String(item.product_id) === productId) || {});
+        const editor = createPackagingEditor(card.querySelector('.term-packaging-host'), {
+            units: state.units,
+            purchaseUnit: card.querySelector('.term-unit').value,
+            baseUnit: card.querySelector('.term-inventory-unit').value,
+            levels: saved.hierarchyLevels || [],
+            onChange: () => updateTermCard(card)
+        });
+        state.packagingEditors.set(productId, editor);
+        updateTermCard(card);
+    });
 }
 
 function updateTermCard(card) {
     const purchaseUnit = card.querySelector('.term-unit')?.value || '';
     const inventory = card.querySelector('.term-inventory-unit')?.value || 'unit';
-    const quantityInput = card.querySelector('.term-quantity');
-    const sameUnit = unitKey(purchaseUnit) === unitKey(inventory);
-    if (sameUnit) quantityInput.value = '1';
-    quantityInput.disabled = sameUnit;
-    card.querySelector('.term-quantity-field')?.classList.toggle('d-none', sameUnit);
-    card.querySelector('.term-quantity-label').innerHTML = `Contents per ${esc(purchaseUnit || 'Purchase Unit')} <span class="text-danger">*</span>`;
-    const quantity = Number(quantityInput.value || 0);
-    const conversion = purchasingConversion({
-        purchase_unit: purchaseUnit || 'Purchase Unit',
-        inventory_unit: inventory,
-        units_per_purchase_unit: sameUnit ? 1 : quantity
-    });
-    card.querySelector('.term-quantity-unit').textContent = conversion.baseQtyPerPurchaseUnit === 1
-        ? inventory
-        : (/s$/i.test(inventory) ? inventory : `${inventory}s`);
-    const complete = purchaseUnit !== '' && quantity >= 1 && Number.isInteger(quantity);
+    const editor = state.packagingEditors.get(String(card.dataset.productId));
+    if (!editor) return;
+    const validation = editor.error();
+    const conversion = purchasingConversion({ purchase_unit: purchaseUnit || 'Purchase Unit', inventory_unit: inventory, hierarchy_levels: editor.read() });
+    const complete = purchaseUnit !== '' && !validation;
     const status = card.querySelector('.term-status');
     status.textContent = complete ? 'Complete' : 'Missing information';
     status.className = `badge term-status ${complete ? 'text-bg-success' : 'text-bg-light'}`;
     card.querySelector('.term-preview').innerHTML = complete
         ? `<strong>Preview:</strong> ${esc(conversion.summary)}`
-        : `<strong>Preview:</strong> Enter ${esc(`Contents per ${purchaseUnit || 'Purchase Unit'}`)}.`;
+        : `<strong>Preview:</strong> ${esc(validation || `Configure contents per ${purchaseUnit || 'Purchase Unit'}.`)}`;
 }
 
 function clearTermValidation() {
@@ -447,7 +444,6 @@ function validateStep2() {
         const identity = assignmentProductIdentity(product || {});
         const purchaseUnit = card.querySelector('.term-unit');
         const inventoryUnit = card.querySelector('.term-inventory-unit');
-        const quantity = card.querySelector('.term-quantity');
         const sameUnit = unitKey(purchaseUnit.value) === unitKey(inventoryUnit.value);
 
         if (!['box', 'carton'].includes(unitKey(purchaseUnit.value)) && !sameUnit) {
@@ -460,10 +456,10 @@ function validateStep2() {
             errors.push(`${identity}: Product Base Unit must be configured in Product Master.`);
             firstInvalid ||= inventoryUnit;
         }
-        if (quantity.value === '' || Number(quantity.value) < 1 || !Number.isInteger(Number(quantity.value))) {
-            setFieldError(quantity, `Contents per ${purchaseUnit.value || 'Purchase Unit'} must be a whole number greater than 0.`);
-            errors.push(`${identity}: Contents per ${purchaseUnit.value || 'Purchase Unit'} must be greater than 0.`);
-            firstInvalid ||= quantity;
+        const packagingError = state.packagingEditors.get(String(card.dataset.productId))?.error() || 'Complete the packaging breakdown.';
+        if (packagingError) {
+            errors.push(`${identity}: ${packagingError}`);
+            firstInvalid ||= card.querySelector('.term-packaging-host [data-level-qty]:not(:disabled)') || purchaseUnit;
         }
         updateTermCard(card);
     });
@@ -499,7 +495,7 @@ function renderStep3() {
             ${selectedProducts().map((product) => {
                 const saved = defaultTerms(product);
                 const unit = saved.inventoryUnit || inventoryUnit(product);
-                const conversion = purchasingConversion({ purchase_unit: saved.purchaseUnit, inventory_unit: unit, units_per_purchase_unit: saved.quantity });
+                const conversion = purchasingConversion({ purchase_unit: saved.purchaseUnit, inventory_unit: unit, hierarchy_levels: saved.hierarchyLevels });
                 return `
                     <article class="assignment-review-card">
                         <div class="assignment-selected-identity mb-1">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
@@ -651,7 +647,7 @@ async function saveAssignments() {
                     product_id: product.product_id,
                     purchase_unit: saved.purchaseUnit,
                     inventory_unit: saved.inventoryUnit,
-                    units_per_purchase_unit: saved.quantity
+                    hierarchy_levels: saved.hierarchyLevels
                 })
             });
             succeeded.push(product);
@@ -704,8 +700,11 @@ modal.addEventListener('hidden.bs.modal', () => {
 
 modal.addEventListener('input', (event) => {
     if (event.target.matches('#assignmentProductSearch')) renderProducts();
-    if (event.target.matches('.term-unit,.term-inventory-unit,.term-quantity')) {
-        updateTermCard(event.target.closest('.assignment-term-card'));
+    if (event.target.matches('[data-level-qty],[data-level-unit]')) rememberTerms();
+    if (event.target.matches('.term-unit')) {
+        const card = event.target.closest('.assignment-term-card');
+        state.packagingEditors.get(String(card.dataset.productId))?.setPurchaseUnit(event.target.value);
+        updateTermCard(card);
         rememberTerms();
     }
 });
@@ -723,6 +722,12 @@ modal.addEventListener('change', (event) => {
         renderSelectedProducts();
     }
     if (event.target.matches('#showInactiveAssignmentProducts')) renderProducts();
+    if (event.target.matches('.term-unit')) {
+        const card = event.target.closest('.assignment-term-card');
+        state.packagingEditors.get(String(card.dataset.productId))?.setPurchaseUnit(event.target.value);
+        updateTermCard(card);
+        rememberTerms();
+    }
     if (event.target.matches('.assignment-product-check')) {
         const productId = String(event.target.value);
         event.target.checked ? state.selectedIds.add(productId) : state.selectedIds.delete(productId);

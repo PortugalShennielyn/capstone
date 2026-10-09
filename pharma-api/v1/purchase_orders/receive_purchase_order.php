@@ -331,8 +331,7 @@ try {
             $quantity = receiveIntQuantity($batch['quantity'] ?? 0, 'Batch quantity');
             if ($quantity <= 0) throw new InvalidArgumentException('Batch quantity must be greater than zero.');
             $noExpiry = !empty($batch['no_expiry']);
-            if ((int) $poItems[$poItemId]['requires_expiry'] === 1 && $noExpiry) throw new InvalidArgumentException('Medicines require an expiry date.');
-            $expiry = receiveDate($batch['expiry_date'] ?? '', 'Batch expiry date', (int) $poItems[$poItemId]['requires_expiry'] === 1 && !$noExpiry);
+            $expiry = receiveDate($batch['expiry_date'] ?? '', 'Batch expiry date');
             $validatedBatches[] = [
                 'batch_number' => receiveBatchNumber($order['po_number'], $poItemId, $batchIndex, (string) ($batch['batch_identifier'] ?? '')),
                 'quantity' => $quantity,

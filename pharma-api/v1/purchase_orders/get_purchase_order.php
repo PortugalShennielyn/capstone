@@ -204,6 +204,40 @@ try {
 
     $items = $itemsStatement->fetchAll(PDO::FETCH_ASSOC);
 
+    // Purchase-order snapshots contain the legacy medicine/grocery fields,
+    // while configurable product specifications are stored separately.
+    // Load those saved values for the PO detail and invoice views as well.
+    $productIds = array_values(array_unique(array_filter(array_column($items, 'product_id'))));
+    $specificationsByProduct = [];
+    if ($productIds) {
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        $specificationStatement = $pdo->prepare(
+            "SELECT psv.product_id, psv.value_text, psv.value_number,
+                    COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name, '') AS unit_symbol
+             FROM product_specification_values psv
+             INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+             LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = psv.measurement_unit_id
+             WHERE psv.product_id IN ({$placeholders})
+             ORDER BY psv.product_id, ps.specification_name"
+        );
+        $specificationStatement->execute($productIds);
+        foreach ($specificationStatement->fetchAll(PDO::FETCH_ASSOC) as $specification) {
+            $value = trim((string) ($specification['value_text'] ?? ''));
+            if ($value === '' && $specification['value_number'] !== null && $specification['value_number'] !== '') {
+                $number = (string) $specification['value_number'];
+                if (str_contains($number, '.')) $number = rtrim(rtrim($number, '0'), '.');
+                $value = trim($number . ' ' . (string) ($specification['unit_symbol'] ?? ''));
+            }
+            if ($value !== '') $specificationsByProduct[cleanId($specification['product_id'])][] = $value;
+        }
+    }
+    foreach ($items as &$item) {
+        $item['specification'] = implode(' • ', array_values(array_unique(
+            $specificationsByProduct[cleanId($item['product_id'])] ?? []
+        )));
+    }
+    unset($item);
+
     $conversionStatement = $pdo->prepare(
         'SELECT poi.po_item_id,c.conversion_id,c.unit_name,c.base_quantity,c.level_order
          FROM purchase_order_items poi

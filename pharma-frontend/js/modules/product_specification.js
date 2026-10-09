@@ -197,6 +197,23 @@ export function formatProductContainer(product = {}, empty = '—') {
     return SELLABLE_CONTAINER_UNITS.has(normalizedKey(sellingUnit)) ? presentationText(sellingUnit) : empty;
 }
 
+/** Product Master Form column: use a medicine's dosage form or the product type. */
+export function formatProductForm(product = {}, empty = '—') {
+    const specifications = Array.isArray(product.specifications) ? product.specifications : [];
+    const formSpecification = specifications.find(specification => {
+        const name = normalizedKey(specification.specification_name || specification.display_name);
+        return ['dosage form', 'form', 'product form'].includes(name);
+    });
+    const form = specificationValue(formSpecification) || product.dosage_form || product.type_name;
+    return presentationText(form) || empty;
+}
+
+// Back-compat alias for older product UI modules that still reference the
+// previous `formatProductFor` symbol name.
+export function formatProductFor(product = {}, empty = '—') {
+    return formatProductForm(product, empty);
+}
+
 /** Separates medicine form, strength, and pack details for the catalog cell. */
 export function medicineCatalogSpecificationParts(product = {}) {
     if (normalizedKey(product.category_name) !== 'medicine') return null;
@@ -214,7 +231,7 @@ export function medicineCatalogSpecificationParts(product = {}) {
         || formatMeasurement(product.medicine_strength_value ?? product.strength_value, product.strength_unit);
     const strength = (numerator && denominator ? `${numerator} / ${denominator}` : (numerator || fallbackStrength))
         .replace(/\s*\/\s*/g, ' / ');
-    const contentSpecification = firstNamed('volume', 'net content', 'pack content', 'tablet count');
+    const contentSpecification = firstNamed('volume', 'net content');
     const rawContent = specificationValue(contentSpecification);
     const contentName = specificationName(contentSpecification);
     const netContent = (contentName === 'pack content' || contentName === 'tablet count'
@@ -295,12 +312,15 @@ export function formatMedicineSpecificationLines(product = {}, empty = '-') {
 /** Product Catalog specification output excludes packaging, which has its own column. */
 export function formatProductCatalogSpecificationLines(product = {}, empty = '—') {
     if (normalizedKey(product.category_name) === 'medicine') {
-        return formatMedicineSpecificationLines(product, empty);
+        const parts = medicineCatalogSpecificationParts(product);
+        if (!parts) return empty ? [empty] : [];
+        const lines = [parts.strength, parts.details].filter(Boolean);
+        return lines.length ? lines : (empty ? [empty] : []);
     }
     const specifications = Array.isArray(product.specifications)
         ? product.specifications.filter(specification => !CONTAINER_SPECIFICATION_NAMES.has(
             normalizedKey(specification.specification_name || specification.display_name)
-        ))
+        ) && !['pack content', 'tablet count'].includes(normalizedKey(specification.specification_name || specification.display_name)))
         : product.specifications;
     const specification = formatProductSpecification({
         ...product,
@@ -310,7 +330,10 @@ export function formatProductCatalogSpecificationLines(product = {}, empty = '�
         grocery_package_type: '',
         medical_package_type: '',
         container: '',
-        packaging: ''
+        packaging: '',
+        pack_content: '',
+        medical_pack_content: '',
+        packaging_size: ''
     }, empty);
     return specification ? [specification] : [];
 }

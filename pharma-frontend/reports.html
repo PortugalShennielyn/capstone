@@ -61,7 +61,7 @@
                             <label class="filter-group" data-filter="primary-category"><span class="filter-label">Category</span><select class="form-select form-select-sm" name="category_id"><option value="">All categories</option></select></label>
                             <label class="filter-group" data-filter="primary-supplier"><span class="filter-label">Supplier</span><select class="form-select form-select-sm" name="supplier_id"><option value="">All suppliers</option></select></label>
                             <label class="filter-group" data-filter="primary-stock"><span class="filter-label">Stock status</span><select class="form-select form-select-sm" name="stock_status"><option value="">All stock</option></select></label>
-                            <label class="filter-group" data-filter="primary-expiry"><span class="filter-label">Expiry range</span><select class="form-select form-select-sm" name="expiry_days"><option value="0">Expired / today</option><option value="7">Within 7 days</option><option value="15">Within 15 days</option><option value="30" selected>Within 30 days</option><option value="60">Within 60 days</option><option value="90">Within 90 days</option></select></label>
+                            <label class="filter-group" data-filter="primary-expiry"><span class="filter-label">Expiry range</span><select class="form-select form-select-sm" name="expiry_days"><option value="365">All windows</option><option value="0">Expired / today</option><option value="7">Within 7 days</option><option value="15">Within 15 days</option><option value="30" selected>Within 30 days</option><option value="60">Within 60 days</option><option value="90">Within 90 days</option><option value="180">Within 6 months</option></select></label>
                             <div class="filter-actions"><button class="btn btn-sm btn-purple" type="submit">Apply Filters</button><button class="btn btn-sm btn-light" type="button" id="clearFilters">Reset</button></div>
                         </div>
                         <button class="more-filters-toggle" id="moreFiltersToggle" type="button" aria-expanded="false"><i class="fa-solid fa-sliders"></i> More Filters <i class="fa-solid fa-chevron-down"></i></button>
@@ -109,6 +109,6 @@
     <dialog id="reportDetail" class="report-detail-dialog" aria-labelledby="reportDetailTitle"><div class="report-detail-header"><div><small id="reportDetailView"></small><h2 id="reportDetailTitle"></h2></div><button id="reportDetailClose" type="button" aria-label="Close details"><i class="fa-solid fa-xmark"></i></button></div><div id="reportDetailFields" class="report-detail-fields"></div><div class="report-detail-footer"><span id="reportDetailPosition"></span><div><button id="reportDetailPrevious" type="button">Previous record</button><button id="reportDetailNext" type="button">Next record</button></div></div></dialog>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script type="module" src="./js/modules/reports.js?v=24"></script>
+    <script type="module" src="./js/modules/reports.js?v=25"></script>
 </body>
 </html>

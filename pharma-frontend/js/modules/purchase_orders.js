@@ -762,6 +762,7 @@ function productSpecification(item) {
         category === "medicine"
             ? [generic, strength, volume, form || packaging]
             : [variant, netWeight, packaging];
+    parts.push(...cleanText(item.specification).split(/\s*[•·]\s*/));
     const seen = new Set();
 
     return parts
@@ -3909,13 +3910,8 @@ function renderPoOrderSummary(order) {
         .map((item) => {
             const brand = productTableBrand(item);
             const product = cleanText(item.generic_name) || productTableProductName(item);
-            const title = brand || product || "Product";
-            const specification = [
-                product && !sameText(product, title) ? product : "",
-                productSpecification(item),
-            ]
-                .filter(Boolean)
-                .join(" · ");
+            const title = product || brand || "Product";
+            const specification = productSpecification(item);
             const unitsPerPurchaseUnit = Math.max(
                 1,
                 Number(item.units_per_purchase_unit || item.units_per_purchase_unit_snapshot || 1),
@@ -3928,7 +3924,8 @@ function renderPoOrderSummary(order) {
                     ? Number(item.line_total) / orderedQuantity
                     : Number(item.price || 0) * unitsPerPurchaseUnit;
             return `<tr data-po-item-id="${escapeHtml(item.po_item_id || "")}">
-                <td><strong>${escapeHtml(title)}</strong><small>${escapeHtml(specification || "No specification recorded")}</small></td>
+                <td><strong>${escapeHtml(title)}</strong>${brand && !sameText(brand, title) ? `<small>${escapeHtml(brand)}</small>` : ""}</td>
+                <td>${escapeHtml(specification || "—")}</td>
                 <td class="po-view-number">${escapeHtml(purchaseUnitQuantityLabel(item))}</td>
                 <td class="po-view-number" data-po-invoiced-qty>—</td>
                 <td class="po-view-number">${receivedBaseQuantity > 0 ? `${escapeHtml(formatPoViewNumber(receivedPurchaseQuantity))} ${escapeHtml(item.purchase_unit || "pcs")}` : "—"}</td>
@@ -3945,8 +3942,8 @@ function renderPoOrderSummary(order) {
                 <header class="po-view-panel-heading"><h3 id="poViewItemsTitle">Items</h3><span>${items.length} ${items.length === 1 ? "product" : "products"} · ${items.reduce((sum, item) => sum + Number(item.purchase_qty || item.quantity || 0), 0)} units</span></header>
                 <div class="po-view-record-table-wrap">
                     <table class="po-view-record-table po-view-items-table" id="poViewItemsTable">
-                        <thead><tr><th>Product</th><th>Ordered</th><th>Invoiced</th><th>Received</th><th>Unit cost</th><th>Line total</th></tr></thead>
-                        <tbody>${rows || '<tr><td colspan="6" class="po-view-empty-cell">No original purchase-order items are available.</td></tr>'}</tbody>
+                        <thead><tr><th>Product</th><th>Specification</th><th>Ordered</th><th>Invoiced</th><th>Received</th><th>Unit cost</th><th>Line total</th></tr></thead>
+                        <tbody>${rows || '<tr><td colspan="7" class="po-view-empty-cell">No original purchase-order items are available.</td></tr>'}</tbody>
                     </table>
                 </div>
                 <details class="po-view-disclosure"><summary>Supplier invoice details</summary><div id="poViewInvoiceDetails" class="po-view-disclosure-content"></div></details>
@@ -4440,10 +4437,8 @@ async function openSupplierInvoice(poId, options = {}) {
                 const unitCost = saved.unit_cost ?? "";
                 return `
                 <tr data-po-item-id="${escapeHtml(item.po_item_id)}" data-order-qty="${qty}">
-                    <td>
-                        <div class="supplier-invoice-product">${escapeHtml(item.generic_name || item.product_name || "Product")}</div>
-                        <span class="supplier-invoice-spec">${escapeHtml(productSpecification({ ...item, generic_name: "" }) || "")}</span>
-                    </td>
+                    <td><div class="supplier-invoice-product">${escapeHtml(item.generic_name || item.product_name || "Product")}</div></td>
+                    <td class="supplier-invoice-spec">${escapeHtml(productSpecification({ ...item, generic_name: "" }) || "—")}</td>
                     <td class="supplier-invoice-brand">${escapeHtml(item.brand_name || "No brand")}</td>
                     <td class="supplier-invoice-unit">${escapeHtml(unit)}</td>
                     <td class="supplier-invoice-ordered">${escapeHtml(supplierInvoiceQuantityLabel({ order_qty: qty, purchase_unit: unit }))}</td>
@@ -4480,7 +4475,7 @@ async function openSupplierInvoice(poId, options = {}) {
                     <h3 class="supplier-invoice-section-title">Invoice Line Breakdown</h3>
                     <div class="supplier-invoice-lines-wrap">
                         <table class="supplier-invoice-lines">
-                            <thead><tr><th>Product / Specification</th><th>Brand</th><th>Purchase Unit</th><th>Ordered Qty</th><th>Invoice Qty</th><th>Cost / Purchase Unit</th><th class="text-end">Line Total</th></tr></thead>
+                            <thead><tr><th>Product</th><th>Specification</th><th>Brand</th><th>Purchase Unit</th><th>Ordered Qty</th><th>Invoice Qty</th><th>Cost / Purchase Unit</th><th class="text-end">Line Total</th></tr></thead>
                             <tbody id="supplierInvoiceLines">${rows}</tbody>
                         </table>
                     </div>
@@ -4727,14 +4722,14 @@ async function openSupplierInvoice(poId, options = {}) {
 }
 
 function receiveBatchRow(batch = {}, requiresExpiry = false, autoAllocate = false) {
-    const noExpiry = !requiresExpiry && batch.no_expiry === true;
+    const noExpiry = batch.no_expiry === true;
     return `
         <div class="receive-batch-row" data-auto-allocation="${autoAllocate ? "1" : "0"}">
             <div class="receive-field"><label>Batch Identifier <span class="text-muted">(optional)</span></label><input class="form-control form-control-sm receive-batch-id" maxlength="50" value="${escapeHtml(batch.batch_identifier || "")}" placeholder="Supplier batch or auto-generated"></div>
             <div class="receive-field"><label>Batch Quantity</label><input class="form-control form-control-sm receive-batch-qty" type="number" min="1" step="1" value="${escapeHtml(batch.quantity ?? "")}"></div>
-            <div class="receive-field receive-expiry-field"><label>Expiry Date${requiresExpiry || !noExpiry ? " *" : ""}</label><input class="form-control form-control-sm receive-batch-expiry" type="date" min="${localTodayDateString()}" value="${escapeHtml(batch.expiry_date || "")}" ${noExpiry ? "disabled" : ""}><span class="receive-no-expiry-display" ${noExpiry ? "" : "hidden"}>N/A — No Expiry</span></div>
+            <div class="receive-field receive-expiry-field"><label>Expiry Date <span class="text-muted">(optional)</span></label><input class="form-control form-control-sm receive-batch-expiry" type="date" min="${localTodayDateString()}" value="${escapeHtml(batch.expiry_date || "")}" ${noExpiry ? "disabled" : ""}><span class="receive-no-expiry-display" ${noExpiry ? "" : "hidden"}>N/A — No Expiry</span></div>
             <div>
-                ${requiresExpiry ? "" : `<label class="receive-no-expiry"><input class="form-check-input receive-batch-no-expiry" type="checkbox" ${noExpiry ? "checked" : ""}> No Expiry Date</label>`}
+                <label class="receive-no-expiry"><input class="form-check-input receive-batch-no-expiry" type="checkbox" ${noExpiry ? "checked" : ""}> No Expiry Date</label>
                 <button class="btn btn-sm btn-outline-danger receive-remove-batch" type="button" title="Remove batch" aria-label="Remove batch"><i class="fa-solid fa-trash"></i></button>
             </div>
         </div>`;
@@ -5573,10 +5568,6 @@ function receiveFormState(strict = true) {
                 const expiryDate = row.querySelector(".receive-batch-expiry")?.value || "";
                 if (strict && (!Number.isInteger(quantity) || quantity <= 0))
                     itemErrors.push("Every batch needs a positive whole quantity.");
-                if (strict && accepted > 0 && !noExpiry && !expiryDate)
-                    itemErrors.push(
-                        `Batch ${batchRows.indexOf(row) + 1}: Expiry date is required.`,
-                    );
                 if (strict && !noExpiry && isPastLocalDate(expiryDate))
                     itemErrors.push(
                         `Batch ${batchRows.indexOf(row) + 1}: Expiry date cannot be earlier than today.`,
@@ -5596,12 +5587,7 @@ function receiveFormState(strict = true) {
             );
             const batchesComplete =
                 batchRowsValid && allocated === accepted && (accepted === 0 || batches.length > 0);
-            const expiryComplete =
-                accepted === 0 ||
-                (batches.length > 0 &&
-                    batches.every(
-                        (batch) => batch.no_expiry === true || Boolean(batch.expiry_date),
-                    ));
+            const expiryComplete = accepted === 0 || batches.length > 0;
             batchRows.forEach((row) => {
                 const quantityControl = row.querySelector(".receive-batch-qty");
                 const quantity = Number(quantityControl?.value || 0);
@@ -5624,10 +5610,9 @@ function receiveFormState(strict = true) {
                         productValidationAttempted &&
                         accepted > 0 &&
                         !noExpirySelected &&
-                        (!expiryControl?.value || isPastLocalDate(expiryControl.value)),
-                    !expiryControl?.value
-                        ? "Expiry date is required."
-                        : "Expiry date cannot be earlier than today.",
+                        Boolean(expiryControl?.value) &&
+                        isPastLocalDate(expiryControl.value),
+                    "Expiry date cannot be earlier than today.",
                 );
                 const noExpiryDisplay = row.querySelector(".receive-no-expiry-display");
                 if (noExpiryDisplay) noExpiryDisplay.hidden = !noExpirySelected;
@@ -9128,10 +9113,7 @@ function inspectionQueueSnapshot(order) {
             batches.every(
                 (batch) => Number.isInteger(Number(batch.quantity)) && Number(batch.quantity) > 0,
             );
-        const expiryComplete =
-            quantity.accepted === 0 ||
-            !isMedicineItem(orderItem) ||
-            (batches.length > 0 && batches.every((batch) => Boolean(batch.expiry_date)));
+        const expiryComplete = quantity.accepted === 0 || batches.length > 0;
         const physicalAction = ["return_to_supplier", "hold_quarantine", "dispose"].includes(
             quantity.disposition,
         );

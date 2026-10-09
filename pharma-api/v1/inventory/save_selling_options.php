@@ -26,9 +26,16 @@ try {
     }
     $baseUnit = productSellingBaseUnit($pdo, $productId);
     $barcodeColumn = productSellingOptionBarcodeColumn($pdo);
+    $normalizeUnitKey = static function (string $value): string {
+        $key = mb_strtolower(rtrim(trim($value), '.'));
+        if (in_array($key, ['pc', 'pcs', 'pieces', 'each'], true)) return 'piece';
+        if ($key === 'boxes') return 'box';
+        if (in_array($key, ['tablets', 'capsules', 'bottles', 'packs', 'packets'], true)) return rtrim($key, 's');
+        return $key;
+    };
     $candidateUnits = [];
     foreach (productSellableUnitCandidates($pdo, $productId) as $candidate) {
-        $candidateUnits[mb_strtolower((string) $candidate['unit'])] = (int) $candidate['base_quantity'];
+        $candidateUnits[$normalizeUnitKey((string) $candidate['unit'])] = (int) $candidate['base_quantity'];
     }
     $normalized = [];
     $seenUnits = [];
@@ -38,12 +45,19 @@ try {
         if (!is_array($option)) throw new InvalidArgumentException('Invalid Selling Option.');
         $unit = trim((string) ($option['unit'] ?? ''));
         if ($unit === '' || mb_strlen($unit) > 50) throw new InvalidArgumentException('Selling Unit is required and must be 50 characters or fewer.');
-        $unitKey = mb_strtolower($unit);
+        $unitKey = $normalizeUnitKey($unit);
         if (isset($seenUnits[$unitKey])) throw new InvalidArgumentException("Duplicate Selling Unit: {$unit}");
         $seenUnits[$unitKey] = true;
         $baseQuantity = sellingOptionWholeNumber($option['base_quantity'] ?? null, 'Base Quantity');
-        if (!isset($candidateUnits[$unitKey]) || $candidateUnits[$unitKey] !== $baseQuantity) {
+        if (preg_match('/[\x00-\x1F\x7F]/', $unit)) {
+            throw new InvalidArgumentException('Selling Unit cannot contain control characters.');
+        }
+        $knownQuantity = $candidateUnits[$unitKey] ?? null;
+        if ($knownQuantity !== null && $knownQuantity !== $baseQuantity) {
             throw new InvalidArgumentException("{$unit} is not a configured selling unit for this product.");
+        }
+        if ($knownQuantity === null && $baseQuantity <= 1) {
+            throw new InvalidArgumentException("Custom Selling Unit {$unit} must contain more than one base unit.");
         }
         $price = $option['selling_price'] ?? null;
         if (is_string($price) && !preg_match('/^\d+(?:\.\d{1,2})?$/D', trim($price))) {

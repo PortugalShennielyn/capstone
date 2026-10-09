@@ -4770,7 +4770,7 @@
             }
             .supplier-invoice-lines {
                 width: 100%;
-                min-width: 900px;
+                min-width: 1050px;
                 table-layout: fixed;
                 margin: 0;
                 border-collapse: collapse;
@@ -4790,21 +4790,24 @@
                 vertical-align: middle;
             }
             .supplier-invoice-lines th:nth-child(1) {
-                width: 23%;
+                width: 17%;
             }
             .supplier-invoice-lines th:nth-child(2) {
-                width: 12%;
+                width: 15%;
             }
             .supplier-invoice-lines th:nth-child(3) {
-                width: 11%;
+                width: 10%;
             }
             .supplier-invoice-lines th:nth-child(4) {
-                width: 14%;
+                width: 10%;
             }
             .supplier-invoice-lines th:nth-child(5) {
-                width: 20%;
+                width: 10%;
             }
             .supplier-invoice-lines th:nth-child(6) {
+                width: 20%;
+            }
+            .supplier-invoice-lines th:nth-child(7) {
                 width: 18%;
             }
             .supplier-invoice-product {
@@ -4815,9 +4818,7 @@
                 overflow-wrap: anywhere;
             }
             .supplier-invoice-spec {
-                display: block;
-                margin-top: 3px;
-                font-size: 11.5px;
+                font-size: 12px;
                 line-height: 1.35;
                 color: #64748b;
                 overflow-wrap: anywhere;
@@ -5884,7 +5885,7 @@
                 background: transparent;
             }
             .po-view-items-table {
-                min-width: 680px;
+                min-width: 780px;
                 table-layout: fixed;
             }
             .po-view-items-table th,
@@ -5903,16 +5904,17 @@
                 letter-spacing: 0;
             }
             .po-view-items-table th:first-child {
-                width: 38%;
+                width: 24%;
             }
-            .po-view-items-table th:nth-child(2),
+            .po-view-items-table th:nth-child(2) {
+                width: 20%;
+            }
             .po-view-items-table th:nth-child(3),
-            .po-view-items-table th:nth-child(4) {
-                width: 12%;
-            }
-            .po-view-items-table th:nth-child(5),
-            .po-view-items-table th:nth-child(6) {
-                width: 13%;
+            .po-view-items-table th:nth-child(4),
+            .po-view-items-table th:nth-child(5) { width: 11%; }
+            .po-view-items-table th:nth-child(6),
+            .po-view-items-table th:nth-child(7) {
+                width: 11%;
             }
             .po-view-items-table td:first-child strong {
                 color: #273244;

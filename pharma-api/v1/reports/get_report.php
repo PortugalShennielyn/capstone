@@ -61,7 +61,7 @@ function salesReport(PDO $pdo, array $f, array $role): array
         $groupRows = reportRows($pdo, "SELECT {$labelSql} label,MIN(DATE(o.completed_at)) raw_date,ROUND(SUM(pay.final_amount),2) value,COUNT(DISTINCT o.order_id) secondary
             FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id WHERE {$where}
             GROUP BY {$groupSql},{$labelSql} ORDER BY {$groupSql}", $params);
-        $groupChart = ['id'=>'sales-trend','title'=>'Net sales over time','type'=>'line','tone'=>'sales','rows'=>$groupRows];
+        $groupChart = ['id'=>'sales-trend','title'=>'Net sales over time','type'=>'bar','tone'=>'sales','rows'=>$groupRows];
     } elseif (in_array($group, ['cashier','sales_clerk','payment_method'], true)) {
         $groupSql = match ($group) {
             'cashier' => "COALESCE(NULLIF(u.full_name,''),u.username,'Unassigned')",

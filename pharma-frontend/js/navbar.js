@@ -267,9 +267,7 @@ async function initializeNavbar(container) {
         }
 
         function apiBaseUrl() {
-            return window.location.port
-                ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
-                : "../pharma-api/v1";
+            return "../pharma-api/v1";
         }
 
         async function loadCurrentSession() {
@@ -1028,6 +1026,30 @@ async function initializeNavbar(container) {
             window.__drpNavigationRuntime.navigate(targetUrl);
         }
 
+        function handleNavbarCollapseClick(event) {
+            const trigger = event.target.closest("a.nav-link-item[data-bs-toggle='collapse']");
+            if (!trigger || !container.contains(trigger) || sidebar?.classList.contains("collapsed")) return;
+            if (window.bootstrap?.Collapse) return;
+
+            const targetId = (trigger.getAttribute("href") || "").slice(1);
+            const collapse = targetId ? document.getElementById(targetId) : null;
+            if (!collapse || !container.contains(collapse)) return;
+
+            event.preventDefault();
+            const isExpanded = !collapse.classList.contains("show");
+            const beforeEvent = new Event(isExpanded ? "show.bs.collapse" : "hide.bs.collapse", {
+                bubbles: true,
+                cancelable: true
+            });
+            if (!collapse.dispatchEvent(beforeEvent)) return;
+
+            collapse.classList.toggle("show", isExpanded);
+            setCollapseArrow(collapse);
+            persistExpandedGroup(collapse.id, isExpanded);
+            collapse.dispatchEvent(new Event(isExpanded ? "shown.bs.collapse" : "hidden.bs.collapse", { bubbles: true }));
+            scheduleNavbarScrollRestore(false);
+        }
+
         function prefetchNavigationTarget(event) {
             const link = event.target.closest("a.nav-link-item[href], a.sidebar-brand[href]");
             if (!link || !container.contains(link)) return;
@@ -1083,6 +1105,7 @@ async function initializeNavbar(container) {
         getNavbarScrollContainer()?.addEventListener("scroll", () => saveNavbarScrollPosition(), { passive: true });
         container.addEventListener("click", handleSlimCollapseClick, true);
         container.addEventListener("click", handleSidebarNavigation);
+        container.addEventListener("click", handleNavbarCollapseClick);
         container.addEventListener("pointerover", prefetchNavigationTarget);
         container.addEventListener("focusin", prefetchNavigationTarget);
         container.addEventListener("click", handleUserPopoverClick);

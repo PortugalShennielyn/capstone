@@ -15,10 +15,21 @@ function auditDateRangeSql(array &$params): string
     $from = auditParam('date_from');
     $to = auditParam('date_to');
     if ($from !== '') {
+        $parsedFrom = DateTimeImmutable::createFromFormat('!Y-m-d', $from);
+        if (!$parsedFrom || $parsedFrom->format('Y-m-d') !== $from) {
+            throw new InvalidArgumentException('Enter a valid start date.');
+        }
         $sql .= ' AND DATE(al.created_at) >= :date_from';
         $params[':date_from'] = $from;
     }
     if ($to !== '') {
+        $parsedTo = DateTimeImmutable::createFromFormat('!Y-m-d', $to);
+        if (!$parsedTo || $parsedTo->format('Y-m-d') !== $to) {
+            throw new InvalidArgumentException('Enter a valid end date.');
+        }
+        if ($from !== '' && $from > $to) {
+            throw new InvalidArgumentException('Date From must be on or before Date To.');
+        }
         $sql .= ' AND DATE(al.created_at) <= :date_to';
         $params[':date_to'] = $to;
     }
@@ -66,7 +77,7 @@ try {
 
     $search = auditParam('search');
     if ($search !== '') {
-        $where .= ' AND (al.description LIKE :search OR al.details LIKE :search OR al.target_id LIKE :search OR al.user_name LIKE :search OR u.full_name LIKE :search OR u.username LIKE :search)';
+        $where .= ' AND (al.description LIKE :search OR al.details LIKE :search OR al.target_id LIKE :search OR al.target_type LIKE :search OR al.action LIKE :search OR al.module LIKE :search OR al.ip_address LIKE :search OR al.user_name LIKE :search OR u.full_name LIKE :search OR u.username LIKE :search)';
         $params[':search'] = '%' . $search . '%';
     }
 
@@ -91,6 +102,12 @@ try {
             $where .= ' AND al.action = :action';
             $params[':action'] = $action;
         }
+    }
+
+    $eventStatus = auditParam('event_status');
+    if (in_array($eventStatus, ['Success', 'Failure'], true)) {
+        $where .= ' AND al.event_status = :event_status';
+        $params[':event_status'] = $eventStatus;
     }
 
     $countStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs al LEFT JOIN users u ON u.user_id = al.user_id{$where}");
@@ -161,6 +178,9 @@ try {
             'total_pages' => $totalPages,
         ],
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+} catch (InvalidArgumentException $error) {
+    http_response_code(422);
+    echo json_encode(['status' => 'error', 'message' => $error->getMessage()]);
 } catch (Throwable $error) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to load audit logs.']);

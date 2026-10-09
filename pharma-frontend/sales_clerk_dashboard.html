@@ -14,11 +14,10 @@
     <title>Dr. R Pharmacy | Sales Clerk Dashboard</title>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=39" rel="stylesheet">
+    <link href="./css/navbar.css?v=41" rel="stylesheet">
 
-    <script src="./js/navbar.js?v=90" defer></script>
+    <script src="./js/navbar.js?v=91" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=28"></script>
 
     <style>
@@ -80,6 +79,50 @@
             color: var(--muted);
             font-size: 14px;
             font-weight: 600;
+        }
+
+        .dashboard-date-filter {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 0 0 18px;
+            color: #64748b;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .dashboard-date-filter label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dashboard-date-filter input {
+            min-height: 42px;
+            padding: 8px 12px;
+            border: 1px solid #dbe3ef;
+            border-radius: 10px;
+            background: #fff;
+            color: #172554;
+            font: inherit;
+        }
+
+        .dashboard-date-apply {
+            min-height: 42px;
+            padding: 8px 16px;
+            border: 0;
+            border-radius: 10px;
+            background: var(--purple);
+            color: #fff;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .dashboard-date-apply:hover {
+            background: var(--purple-dark);
         }
 
         .dashboard-grid {
@@ -268,13 +311,23 @@
                 <p>Quick overview of your sales clerk activities and transactions.</p>
             </div>
 
+            <div class="dashboard-date-filter">
+                <label for="dashboardStartDate">Start date
+                    <input id="dashboardStartDate" type="date" required aria-label="Dashboard start date">
+                </label>
+                <label for="dashboardEndDate">End date
+                    <input id="dashboardEndDate" type="date" required aria-label="Dashboard end date">
+                </label>
+                <button id="applyDashboardDates" class="dashboard-date-apply" type="button">Apply</button>
+            </div>
+
             <div class="dashboard-grid">
 
                 <div class="stat-card">
                     <div class="stat-icon">
                         <i class="fa-solid fa-peso-sign"></i>
                     </div>
-                    <div class="stat-label">My Sales Today</div>
+                    <div class="stat-label">My Sales</div>
                     <div class="stat-value" id="mySalesToday">₱0.00</div>
                 </div>
 
@@ -352,7 +405,7 @@
 
                 <div class="dashboard-card">
                     <div class="card-header-custom">
-                        <h2>Today's Activity</h2>
+                        <h2 id="activityHeading">Activity</h2>
                     </div>
 
                     <div class="card-body-custom">
@@ -379,9 +432,17 @@
             });
         }
 
-        async function loadSalesClerkDashboard() {
+        function localDateValue(date = new Date()) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        async function loadSalesClerkDashboard(startDate, endDate) {
+            const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
             const response = await fetch(
-                API_BASE + 'sales/get_sales_clerk_dashboard.php',
+                API_BASE + 'sales/get_sales_clerk_dashboard.php?' + params.toString(),
                 {
                     credentials: 'include',
                     cache: 'no-store'
@@ -399,12 +460,19 @@
             }
 
             const data = result.data || result;
+            const formatDate = value => new Date(`${value}T00:00:00`).toLocaleDateString('en-PH', {
+                year: 'numeric', month: 'short', day: 'numeric'
+            });
+            const formattedRange = startDate === endDate
+                ? formatDate(startDate)
+                : `${formatDate(startDate)} – ${formatDate(endDate)}`;
+            document.getElementById('activityHeading').textContent = `Activity for ${formattedRange}`;
 
             document.getElementById('mySalesToday').textContent =
-    peso(data.my_sales_today ?? 0);
+    peso(data.my_sales ?? data.my_sales_today ?? 0);
 
             document.getElementById('itemsSold').textContent =
-    data.total_items_sold_today ?? 0;
+    data.total_items_sold ?? data.total_items_sold_today ?? 0;
 
             document.getElementById('myTransactions').textContent =
                 data.completed_transactions ??
@@ -419,13 +487,37 @@
             document.getElementById('activityState').classList.remove('loading');
 
             document.getElementById('activityState').textContent =
-                'Your Sales Clerk dashboard is up to date.';
+                `Your Sales Clerk activity for ${formattedRange} is up to date.`;
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 if (!await (window.__drpSessionReadyPromise || ensurePageTabSession())) return;
-                await loadSalesClerkDashboard();
+                const startInput = document.getElementById('dashboardStartDate');
+                const endInput = document.getElementById('dashboardEndDate');
+                const applyDates = async () => {
+                    if (!startInput.value || !endInput.value) return;
+                    if (endInput.value < startInput.value) {
+                        endInput.setCustomValidity('End date must be on or after the start date.');
+                        endInput.reportValidity();
+                        return;
+                    }
+                    endInput.setCustomValidity('');
+                    document.getElementById('activityState').classList.add('loading');
+                    document.getElementById('activityState').textContent = 'Loading your activity...';
+                    try {
+                        await loadSalesClerkDashboard(startInput.value, endInput.value);
+                    } catch (error) {
+                        console.error('[SALES CLERK DASHBOARD]', error);
+                        document.getElementById('activityState').classList.remove('loading');
+                        document.getElementById('activityState').textContent = 'Unable to load dashboard data.';
+                    }
+                };
+                const today = localDateValue();
+                startInput.value = today;
+                endInput.value = today;
+                document.getElementById('applyDashboardDates').addEventListener('click', applyDates);
+                await applyDates();
             } catch (error) {
                 console.error('[SALES CLERK DASHBOARD]', error);
 

@@ -23,6 +23,17 @@ function actionClass(action) {
     return 'badge-gray';
 }
 
+function actionLabel(action) {
+    const value = String(action || '').trim().toUpperCase();
+    if (/^[A-Z](?:_[A-Z])*_+$/.test(value)) return 'Legacy action';
+    const labels = {
+        LOGIN_SUCCESS: 'Login successful', LOGIN_FAILED: 'Login failed', LOGOUT: 'Logout',
+        SESSION_TIMEOUT: 'Session timeout', SESSION_EXPIRED: 'Session expired',
+        SESSION_REVOKED: 'Session revoked', STATUS_CHANGE: 'Status changed',
+    };
+    return labels[value] || value.toLowerCase().replace(/_/g, ' ').replace(/\b[a-z]/g, letter => letter.toUpperCase());
+}
+
 function formatDate(value) {
     const date = new Date(String(value || '').replace(' ', 'T'));
     if (Number.isNaN(date.getTime())) return '-';
@@ -67,14 +78,16 @@ function renderRows(rows) {
     }
     rowsEl.innerHTML = rows.map(row => {
         const target = [row.target_type, row.target_id].filter(Boolean).join(' #') || row.target_id || '-';
+        const outcome = String(row.event_status || 'Unknown');
+        const outcomeClass = outcome.toLowerCase() === 'success' ? 'event-success' : outcome.toLowerCase() === 'failure' ? 'event-failure' : 'badge-gray';
         return `<tr>
             <td>${escapeHtml(formatDate(row.created_at))}</td>
-            <td class="user-cell"><strong>${escapeHtml(row.display_name || 'System / Unknown')}</strong><small>${escapeHtml(row.employee_id || row.user_id || 'No ID recorded')}</small></td>
-            <td><span class="badge-action ${actionClass(row.action)}">${escapeHtml(row.action || '-')}</span></td>
+            <td class="user-cell"><strong>${escapeHtml(row.display_name || 'System / Unknown')}</strong><small>${escapeHtml([row.role, row.employee_id || row.user_id].filter(Boolean).join(' · ') || 'No user details recorded')}</small></td>
+            <td><span class="badge-action ${actionClass(row.action)}">${escapeHtml(actionLabel(row.action))}</span><span class="event-status ${outcomeClass}">${escapeHtml(outcome)}</span></td>
             <td>${escapeHtml(row.module || '-')}</td>
             <td class="description-cell">${escapeHtml(row.description || '-')}</td>
             <td>${escapeHtml(target)}</td>
-            <td>${escapeHtml(row.ip_address || '-')}</td>
+            <td class="source-cell">${escapeHtml(row.ip_address || 'IP not recorded')}<small>${escapeHtml(row.device || 'Device not recorded')}</small></td>
         </tr>`;
     }).join('');
 }

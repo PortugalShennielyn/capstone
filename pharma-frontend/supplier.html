@@ -2214,7 +2214,7 @@
                                         <section
                                             class="supplier-product-edit-section supplier-compact-section"
                                         >
-                                            <h6>Contents Per Purchase Unit</h6>
+                                            <h6>Pack Content per Purchase Unit</h6>
                                             <table
                                                 class="supplier-compact-table supplier-hierarchy-table"
                                                 aria-label="Final purchase-unit conversion"
@@ -2222,7 +2222,7 @@
                                                 <thead>
                                                     <tr>
                                                         <th>Purchase Unit</th>
-                                                        <th>Contents</th>
+                                                        <th>Pack Content</th>
                                                         <th>Product Base Unit</th>
                                                     </tr>
                                                 </thead>
@@ -2251,6 +2251,7 @@
                                                                 step="1"
                                                                 required
                                                             />
+                                                            <small class="form-text text-muted d-block mt-1">How many product base units are in one package? Example: 1 pack = 5 pcs.</small>
                                                             <div class="invalid-feedback">
                                                                 Enter a positive whole number.
                                                             </div>
@@ -2409,7 +2410,7 @@
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
         <script type="module" src="./js/modules/suppliers.js?v=52"></script>
-        <script type="module" src="./js/modules/supplier_product_assignment.js?v=12"></script>
+        <script type="module" src="./js/modules/supplier_product_assignment.js?v=13"></script>
         <script type="module">
             import verifySession from "./js/modules/auth.js?v=8";
             await verifySession();

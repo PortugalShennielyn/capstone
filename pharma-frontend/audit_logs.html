@@ -32,7 +32,7 @@
         .page-header h1{margin:0;font-size:1.8rem;font-weight:900;letter-spacing:0}
         .page-header p{margin:7px 0 0;color:#6b7280;font-size:14px;font-weight:600}
         .audit-panel{margin-top:18px;border:1px solid var(--border-soft);border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.05)}
-        .audit-filter-grid{display:grid;grid-template-columns:minmax(220px,1.6fr) repeat(5,minmax(145px,1fr)) auto auto;gap:12px;align-items:end;padding:18px}
+        .audit-filter-grid{display:grid;grid-template-columns:minmax(220px,1.6fr) repeat(6,minmax(130px,1fr)) auto auto;gap:12px;align-items:end;padding:18px}
         .audit-filter-grid .form-label{margin-bottom:6px;color:#596274;font-size:12px;font-weight:800}
         .audit-filter-grid .form-control,.audit-filter-grid .form-select{height:38px;font-size:13px}
         .audit-filter-grid .btn{height:38px;white-space:nowrap;font-weight:800}
@@ -47,6 +47,8 @@
         .description-cell{max-width:360px;overflow-wrap:anywhere}
         .badge-action{display:inline-flex;align-items:center;justify-content:center;min-width:fit-content;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:900;line-height:1}
         .badge-green{color:#047857;background:#d1fae5}.badge-red{color:#b42318;background:#fee2e2}.badge-gray{color:#4b5563;background:#edf0f2}.badge-blue{color:#1d4ed8;background:#dbeafe}.badge-yellow{color:#92400e;background:#fef3c7}
+        .event-status{display:block;width:max-content;margin-top:5px;padding:3px 7px;border-radius:999px;font-size:10px;font-weight:850;text-transform:uppercase}.event-success{color:#047857;background:#d1fae5}.event-failure{color:#b42318;background:#fee2e2}
+        .source-cell small{display:block;margin-top:3px;color:#7b8494;font-size:10px;font-weight:700}
         .audit-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-top:1px solid var(--border-soft)}
         .audit-footer span{color:#64748b;font-size:12px;font-weight:800}
         .empty-row{text-align:center;color:#64748b;font-weight:800}
@@ -67,13 +69,13 @@
         <main class="page-body">
             <section class="page-header">
                 <h1>Audit Logs</h1>
-                <p>Track user activities and important changes across the pharmacy system.</p>
+                <p>Review who did what, when, the result, the affected record, and the source device.</p>
             </section>
             <section class="audit-panel" aria-label="Audit log filters and results">
                 <form class="audit-filter-grid" id="auditFilters">
                     <div>
                         <label class="form-label" for="auditSearch">Search</label>
-                        <input class="form-control" id="auditSearch" name="search" placeholder="Search description, target, or user">
+                        <input class="form-control" id="auditSearch" name="search" placeholder="Search event, target, user, or IP">
                     </div>
                     <div>
                         <label class="form-label" for="auditUser">User</label>
@@ -88,6 +90,10 @@
                         <select class="form-select" id="auditModule" name="module"><option value="">All Modules</option></select>
                     </div>
                     <div>
+                        <label class="form-label" for="auditOutcome">Outcome</label>
+                        <select class="form-select" id="auditOutcome" name="event_status"><option value="">All Outcomes</option><option value="Success">Success</option><option value="Failure">Failure</option></select>
+                    </div>
+                    <div>
                         <label class="form-label" for="auditDateFrom">Date From</label>
                         <input class="form-control" id="auditDateFrom" name="date_from" type="date">
                     </div>
@@ -100,7 +106,7 @@
                 </form>
                 <div class="audit-table-wrap">
                     <table class="audit-table">
-                        <thead><tr><th>Date &amp; Time</th><th>User</th><th>Action</th><th>Module</th><th>Description</th><th>Target / Reference</th><th>IP Address</th></tr></thead>
+                        <thead><tr><th>Date &amp; Time</th><th>User / Role</th><th>Action / Outcome</th><th>Module</th><th>Event Description</th><th>Affected Record</th><th>Source</th></tr></thead>
                         <tbody id="auditRows"><tr><td class="empty-row" colspan="7">Loading audit logs...</td></tr></tbody>
                     </table>
                 </div>
@@ -116,6 +122,6 @@
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/audit_logs.js?v=1"></script>
+    <script type="module" src="./js/modules/audit_logs.js?v=2"></script>
 </body>
 </html>

@@ -59,7 +59,7 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
             reportCard('Avg. Transaction', $transactions > 0 ? $total('net_sales') / $transactions : 0, 'currency', 'fa-chart-simple', 'blue'),
         ];
         $base['charts'] = [[
-            'id'=>'daily-net-sales', 'title'=>'Net sales per day', 'type'=>'line', 'tone'=>'sales',
+            'id'=>'daily-net-sales', 'title'=>'Net sales per day', 'type'=>'bar', 'tone'=>'sales',
             'rows'=>array_reverse(array_map(static fn($row): array => ['label'=>$row['report_date'], 'raw_date'=>$row['report_date'], 'value'=>(float)$row['net_sales']], $rows))
         ]];
         [$base['rows'], $base['pagination']] = referenceReportPage($rows, $filters);
@@ -521,7 +521,7 @@ function referenceStaffReport(PDO $pdo, array $filters): array
                 reportCard('Completed', count($rows), 'number', 'fa-receipt', 'green'),
                 reportCard('Items sold', array_sum(array_column($rows, 'items')), 'number', 'fa-box', 'blue'),
                 reportCard('Average sale', $rows ? array_sum(array_column($rows, 'total')) / count($rows) : 0, 'currency', 'fa-chart-line', 'blue')],
-            'charts' => [['id' => 'transaction-daily', 'title' => 'Net sales by day', 'type' => 'line', 'tone' => 'sales',
+            'charts' => [['id' => 'transaction-daily', 'title' => 'Net sales by day', 'type' => 'bar', 'tone' => 'sales',
                 'rows' => array_map(static fn($label, $value) => compact('label', 'value'), array_keys($daily), array_values($daily))]],
             'columns' => ['completed_at' => 'Date & time', 'receipt' => 'Receipt', 'cashier' => 'Cashier', 'items' => 'Items', 'total' => 'Total', 'payment_method' => 'Payment', 'status' => 'Status'],
             'numeric_columns' => ['items'], 'currency_columns' => ['total'], 'rows' => $page, 'pagination' => $pagination,

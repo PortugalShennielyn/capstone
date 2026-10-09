@@ -92,7 +92,7 @@ function auditActionName(string $action): string
     if (str_contains($normalized, 'moved') || str_contains($normalized, 'transfer') || str_contains($normalized, 'returned to storage')) return 'TRANSFER';
     if (str_contains($normalized, 'inspection') || str_contains($normalized, 'received') || str_contains($normalized, 'claim')) return 'INSPECT';
     if (str_contains($normalized, 'status') || in_array($normalized, ['active', 'inactive', 'activated', 'partially received', 'received', 'closed'], true)) return 'STATUS_CHANGE';
-    return strtoupper(preg_replace('/[^A-Z0-9_]+/', '_', trim($action)));
+    return preg_replace('/[^A-Z0-9_]+/', '_', strtoupper(trim($action)));
 }
 
 function auditModuleName(string $module): string
