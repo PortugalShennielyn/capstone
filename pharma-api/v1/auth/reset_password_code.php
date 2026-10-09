@@ -15,7 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit();
 }
 
-$payload  = json_decode(file_get_contents('php://input'), true) ?: [];
+$payload  = $GLOBALS['passwordResetPayload'] ?? json_decode(file_get_contents('php://input'), true);
+$payload  = is_array($payload) ? $payload : [];
 $email    = trim((string) ($payload['email'] ?? ''));
 $code     = trim((string) ($payload['code'] ?? ''));
 $newPass  = (string) ($payload['new_password'] ?? '');
@@ -31,9 +32,9 @@ if (!preg_match('/^\d{6}$/', $code)) {
     echo json_encode(['success' => false, 'message' => 'Invalid code format.']);
     exit();
 }
-if (strlen($newPass) < 8) {
+if (strlen($newPass) < 8 || strlen($newPass) > 72) {
     http_response_code(422);
-    echo json_encode(['success' => false, 'message' => 'Password must be at least 8 characters.']);
+    echo json_encode(['success' => false, 'message' => 'Password must be between 8 and 72 characters.']);
     exit();
 }
 if ($newPass !== $confirm) {
@@ -43,8 +44,11 @@ if ($newPass !== $confirm) {
 }
 
 try {
+    ensurePasswordResetTable($pdo);
+    $pdo->beginTransaction();
     $reset = verifyPasswordReset($pdo, $email, $code);
     if (!$reset) {
+        $pdo->commit();
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Invalid or expired code.']);
         exit();
@@ -57,7 +61,9 @@ try {
          SET password = :password,
              password_hash = :password_hash,
              updated_at = NOW()
-         WHERE user_id = :user_id'
+         WHERE user_id = :user_id
+           AND status = "Active"
+           AND COALESCE(is_deleted, 0) = 0'
     );
     $stmt->execute([
         ':password'      => $hash,
@@ -65,21 +71,30 @@ try {
         ':user_id'       => $reset['user_id'],
     ]);
 
-    consumePasswordReset($pdo, (string) $reset['reset_id']);
+    if ($stmt->rowCount() !== 1) {
+        throw new RuntimeException('The password reset account is no longer active.');
+    }
 
-    $pdo->prepare(
-        'UPDATE auth_sessions
-         SET is_revoked = 1, revoked_at = NOW(), revoked_reason = "password_reset",
-             is_active = 0, updated_at = NOW()
-         WHERE user_id = :user_id AND is_revoked = 0'
-    )->execute([':user_id' => $reset['user_id']]);
+    consumePasswordReset($pdo, (string) $reset['reset_id']);
+    if (passwordResetTableExists($pdo, 'auth_sessions')) {
+        $pdo->prepare(
+            'UPDATE auth_sessions
+             SET is_revoked = 1, revoked_at = NOW(), revoked_reason = "password_reset",
+                 is_active = 0, updated_at = NOW()
+             WHERE user_id = :user_id AND is_revoked = 0'
+        )->execute([':user_id' => $reset['user_id']]);
+    }
+    $pdo->commit();
 
     echo json_encode([
         'success' => true,
         'message' => 'Password reset successfully. Please log in with your new password.',
     ]);
-} catch (PDOException $e) {
-    error_log('[PASSWORD_RESET] DB error: ' . $e->getMessage());
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log('[PASSWORD_RESET] Code-based password reset failed: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error.']);
 }

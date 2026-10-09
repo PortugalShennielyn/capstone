@@ -25,6 +25,7 @@ if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
 }
 
 try {
+    ensurePasswordResetTable($pdo);
     $stmt = $pdo->prepare(
         'SELECT user_id, full_name, username
          FROM users
@@ -45,26 +46,21 @@ try {
     }
 
     $code = generateVerificationCode();
-    createPasswordReset($pdo, (string) $user['user_id'], $email, $code);
+    $resetId = createPasswordReset($pdo, (string) $user['user_id'], $email, $code);
 
     $displayName = $user['full_name'] ?: $user['username'] ?: 'User';
     $sent = sendVerificationEmail($email, $code, $displayName);
 
-    error_log(sprintf(
-        '[PASSWORD_RESET] code issued user=%s email=%s sent=%s',
-        substr(hash('sha256', $user['user_id']), 0, 12),
-        preg_replace('/^(.{2}).*(@.*)$/', '$1***$2', $email),
-        $sent ? 'yes' : 'no'
-    ));
+    if (!$sent) {
+        consumePasswordReset($pdo, $resetId);
+        http_response_code(503);
+        echo json_encode(['success' => false, 'message' => 'We could not send the verification email right now. Please try again later.']);
+        exit();
+    }
 
-    echo json_encode([
-        'success' => true,
-        'message' => $sent
-            ? 'Verification code sent to your email.'
-            : 'Code generated but email delivery failed. Contact administrator.',
-    ]);
-} catch (PDOException $e) {
-    error_log('[PASSWORD_RESET] DB error: ' . $e->getMessage());
+    echo json_encode(['success' => true, 'message' => 'If the email is registered, a verification code has been sent.']);
+} catch (Throwable $e) {
+    error_log('[PASSWORD_RESET] Verification code request failed: ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Server error. Try again later.']);
 }

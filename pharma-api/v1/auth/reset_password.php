@@ -15,6 +15,7 @@ function resetPasswordResponse(string $message, bool $success = true, int $statu
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') resetPasswordResponse('Only POST requests are allowed.', false, 405);
 $payload = json_decode(file_get_contents('php://input'), true);
 if (is_array($payload) && !isset($payload['token']) && isset($payload['email'], $payload['code'])) {
+    $GLOBALS['passwordResetPayload'] = $payload;
     require __DIR__ . '/reset_password_code.php';
     exit;
 }

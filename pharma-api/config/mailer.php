@@ -1,33 +1,61 @@
 <?php
 // pharma-api/config/mailer.php
 
+function loadMailEnvironment(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+
+    $envFile = __DIR__ . '/../.env';
+    if (!is_readable($envFile)) {
+        return;
+    }
+
+    foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) {
+            continue;
+        }
+
+        [$key, $value] = explode('=', $line, 2);
+        $key = trim($key);
+        $value = trim(trim($value), "\"'");
+        if ($key !== '' && getenv($key) === false) {
+            putenv($key . '=' . $value);
+            $_ENV[$key] = $value;
+        }
+    }
+}
+
 function sendVerificationEmail(string $toEmail, string $code, string $displayName = 'User'): bool
 {
+    loadMailEnvironment();
     $subject  = 'Dr. R Pharmacy – Password Reset Code';
     $bodyHtml = buildVerificationEmailBody($code, $displayName);
 
-    // A: Composer autoload
     $composerAutoload = __DIR__ . '/../vendor/autoload.php';
     if (file_exists($composerAutoload)) {
         require_once $composerAutoload;
-        if (class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
-            return sendViaPhpMailer($toEmail, $subject, $bodyHtml);
+    }
+
+    if (!class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
+        $manual = __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
+        if (file_exists($manual)) {
+            require_once __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
+            require_once __DIR__ . '/../lib/PHPMailer/src/SMTP.php';
+            require_once __DIR__ . '/../lib/PHPMailer/src/Exception.php';
         }
     }
 
-    // B: Manual drop-in
-    $manual = __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
-    if (file_exists($manual)) {
-        require_once __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
-        require_once __DIR__ . '/../lib/PHPMailer/src/SMTP.php';
-        require_once __DIR__ . '/../lib/PHPMailer/src/Exception.php';
-        if (class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
-            return sendViaPhpMailer($toEmail, $subject, $bodyHtml);
-        }
+    if (!class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
+        error_log('[MAILER] PHPMailer is unavailable; verification email was not sent.');
+        return false;
     }
 
-    // C: native mail()
-    return sendViaNativeMail($toEmail, $subject, $bodyHtml);
+    return sendViaPhpMailer($toEmail, $subject, $bodyHtml);
 }
 
 function buildVerificationEmailBody(string $code, string $displayName): string
@@ -65,35 +93,47 @@ HTML;
 
 function sendViaPhpMailer(string $toEmail, string $subject, string $html): bool
 {
-    $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+    $host = trim((string) getenv('MAIL_HOST'));
+    $username = trim((string) getenv('MAIL_USERNAME'));
+    $password = (string) getenv('MAIL_PASSWORD');
+    $from = trim((string) (getenv('PHARMA_MAIL_FROM') ?: $username));
+    $fromName = trim((string) (getenv('PHARMA_MAIL_FROM_NAME') ?: 'Dr. R Pharmacy'));
+    $encryption = strtolower(trim((string) (getenv('MAIL_ENCRYPTION') ?: 'tls')));
+    $port = (int) (getenv('MAIL_PORT') ?: 587);
+
+    if ($host === '' || $username === '' || $password === '' || !filter_var($from, FILTER_VALIDATE_EMAIL)) {
+        error_log('[MAILER] SMTP is not configured; verification email was not sent.');
+        return false;
+    }
+    if (!in_array($encryption, ['tls', 'ssl'], true) || $port < 1 || $port > 65535) {
+        error_log('[MAILER] SMTP encryption or port configuration is invalid.');
+        return false;
+    }
+
     try {
+        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
         $mail->isSMTP();
-        $mail->Host       = getenv('MAIL_HOST')     ?: 'smtp.gmail.com';
+        $mail->Host       = $host;
         $mail->SMTPAuth   = true;
-        $mail->Username   = getenv('MAIL_USERNAME') ?: 'docRpharmacy@gmail.com';
-        $mail->Password   = getenv('MAIL_PASSWORD') ?: 'PUT-GMAIL-APP-PASSWORD-HERE';
-        $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = (int) (getenv('MAIL_PORT') ?: 587);
+        $mail->Username   = $username;
+        $mail->Password   = $password;
+        $mail->SMTPSecure = $encryption === 'ssl'
+            ? \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+            : \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = $port;
+        $mail->Timeout    = 15;
         $mail->CharSet    = 'UTF-8';
 
-        $mail->setFrom(getenv('MAIL_USERNAME') ?: 'docRpharmacy@gmail.com', 'Dr. R Pharmacy');
+        $mail->setFrom($from, $fromName);
         $mail->addAddress($toEmail);
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body    = $html;
-        $mail->AltBody = 'Your verification code is in the HTML version of this email.';
+        $mail->AltBody = trim(strip_tags(str_replace(['</p>', '</div>', '<br>'], "\n", $html)));
         $mail->send();
         return true;
-    } catch (\Throwable $e) {
+    } catch (\PHPMailer\PHPMailer\Exception $e) {
         error_log('[MAILER] PHPMailer error: ' . $e->getMessage());
         return false;
     }
-}
-
-function sendViaNativeMail(string $toEmail, string $subject, string $html): bool
-{
-    $headers  = "MIME-Version: 1.0\r\n";
-    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-    $headers .= "From: Dr. R Pharmacy <docRpharmacy@gmail.com>\r\n";
-    return @mail($toEmail, $subject, $html, $headers);
 }

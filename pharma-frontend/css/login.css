@@ -63,6 +63,9 @@ button, input { font: inherit; }
 .forgot-dialog p { margin: 12px 0 22px; color: var(--login-muted); font-size: 13px; line-height: 1.5; }
 .forgot-dialog .form-control { min-height: 46px; border-color: var(--login-border); border-radius: 9px; font-size: 14px; }
 .forgot-dialog .btn-login { margin-top: 15px; }
+.forgot-dialog [hidden] { display: none !important; }
+.forgot-dialog-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.forgot-dialog-actions .text-action { margin: 0; }
 .reset-message { min-height: 0; color: var(--login-muted); font-size: 12px; }
 .reset-message:not(:empty) { margin-top: 11px; }
 .reset-message.is-error { color: #a32626; }
