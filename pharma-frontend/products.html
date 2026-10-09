@@ -77,8 +77,8 @@
         .product-detail-row { display:grid; gap:1px; min-width:0; }
         .product-detail-row span, .product-variant-label { color:#7b8494; font-size:10px; font-weight:900; letter-spacing:.02em; text-transform:uppercase; }
         .medicine-product-identity { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; }
-        .medicine-rx-badge { display:inline; margin-left:3px; color:#111!important; background:none; border:0; font-size:inherit; font-weight:800; line-height:inherit; vertical-align:baseline; }
-        body.dark-mode .medicine-rx-badge { color:#f8fafc!important; }
+        .medicine-rx-badge { display:inline-flex; flex:0 0 auto; align-items:center; width:max-content; padding:2px 7px; border:1px solid #fca5a5; border-radius:999px; color:#b42318; background:#fef3f2; font-size:10px; font-weight:900; line-height:1.35; letter-spacing:.03em; vertical-align:middle; }
+        body.dark-mode .medicine-rx-badge { color:#fecaca; border-color:#991b1b; background:rgba(127,29,29,.35); }
         .product-detail-row strong { min-width:0; color:#374151; font-size:12px; font-weight:850; overflow-wrap:anywhere; }
         .product-variant-tabs { display:grid; gap:8px; margin:0 0 10px; }
         .product-variant-group { min-width:0; }
@@ -115,7 +115,7 @@
         body.dark-mode .product-card-actions { border-color:#334155; }
         .table-responsive { overflow-x:auto; }
         .product-master-container .product-table-wrapper.table-responsive,
-        .product-master-container .product-table-wrapper.data-table-wrapper { height:auto!important; max-height:none!important; overflow-x:hidden!important; overflow-y:auto!important; }
+        .product-master-container .product-table-wrapper.data-table-wrapper { height:auto!important; max-height:none!important; overflow-x:auto!important; overflow-y:auto!important; }
         .products-table { width:100%; min-width:0; margin:0; table-layout:auto; font-size:13px; font-weight:750; }
         .products-table th { color:#596274; background:#f8f9fc; font-size:12px; font-weight:800; vertical-align:middle; }
         .products-table td { vertical-align:middle; white-space:normal; word-break:normal; overflow-wrap:break-word; }
@@ -133,7 +133,7 @@
         .products-table th:nth-child(6), .products-table td:nth-child(6) { width:120px; white-space:nowrap; text-align:center; }
         .products-table th:nth-child(7), .products-table td:nth-child(7) { width:90px; text-align:center; }
         .products-table th:nth-child(8), .products-table td:nth-child(8) { width:112px; min-width:112px; white-space:nowrap; text-align:center; }
-        .product-clamp { display:block; max-width:100%; min-width:0; line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
+        .product-clamp { display:-webkit-box; max-width:100%; min-width:0; line-height:1.35; white-space:normal; word-break:normal; overflow-wrap:break-word; overflow:hidden; text-overflow:ellipsis; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
         .product-actions { display:inline-flex; align-items:center; justify-content:center; gap:6px; flex-wrap:nowrap; white-space:nowrap; }
         .product-actions .btn-icon, .product-actions .product-barcode-toggle { width:32px; height:32px; min-width:32px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
         .catalog-specification { display:grid; gap:1px; font-size:12px; font-weight:750; line-height:1.3; white-space:normal; overflow-wrap:break-word; }
@@ -566,33 +566,6 @@
             .product-details-stock-tile strong { font-size:18px; }
         }
         .modal-title { color:#2f3642; }
-        #table-products.products-table { table-layout:fixed; }
-        #table-products.products-table th,#table-products.products-table td { min-width:0!important; width:auto!important; padding:9px 8px!important; text-align:left!important; white-space:normal!important; overflow-wrap:anywhere; }
-        #table-products.products-table th:first-child,#table-products.products-table td:first-child { width:48px!important; text-align:center!important; }
-        #table-products.products-table th:nth-child(2) { width:21%!important; }
-        #table-products.products-table th:nth-child(3) { width:10%!important; }
-        #table-products.products-table th:nth-child(4) { width:16%!important; }
-        #table-products.products-table th:nth-child(5) { width:11%!important; }
-        #table-products.products-table th:nth-child(6) { width:10%!important; }
-        #table-products.products-table th:nth-child(7) { width:14%!important; }
-        #table-products.products-table th:nth-child(8) { width:7%!important; }
-        #table-products.products-table th:nth-child(9) { width:11%!important; }
-        #table-products.products-table .catalog-specification { justify-items:start!important; text-align:left!important; }
-        .product-master-identity { display:grid; gap:2px; min-width:0; line-height:1.32; }
-        .product-master-identity strong { font-size:13px; font-weight:800; }
-        .product-master-generic { display:block; color:#667085; font-size:12px; font-weight:500; }
-        #table-products .selling-price-stack { align-items:flex-start; white-space:normal; }
-        #table-products .selling-price-value { white-space:normal; }
-        #table-products .selling-price-value small { font-size:11px; font-weight:500; }
-        .sku-subsection { margin-top:14px; padding-top:12px; border-top:1px solid #e6eaf1; }
-        .sku-subsection h6 { margin-bottom:10px; color:#2f3642; font-size:13px; font-weight:800; }
-        .sku-subsection .dynamic-specification-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-        #addProductModal .modal-dialog { width:min(1100px,94vw); max-width:none; }
-        #addProductModal .is-medicine-variation .sku-subsection .permanent-inventory-unit,#editProductModal .is-medicine-variation .sku-subsection .permanent-inventory-unit,#addProductModal .is-medicine-variation .sku-subsection .sku-selling-price-field,#editProductModal .is-medicine-variation .sku-subsection .sku-selling-price-field { max-width:none; }
-        #addProductModal .is-medicine-variation .sku-subsection .dynamic-specification-grid,#editProductModal .is-medicine-variation .sku-subsection .dynamic-specification-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-        #addProductForm .is-invalid,#editProductForm .is-invalid { border-color:#dc3545!important; box-shadow:0 0 0 2px rgba(220,53,69,.12); }
-        @media (max-width:1100px) { #table-products.products-table { table-layout:auto; } #table-products.products-table th,#table-products.products-table td { font-size:11px; padding:8px 5px!important; } #table-products .product-actions { gap:2px; } #table-products .product-actions .btn-icon { width:28px; min-width:28px; height:28px; } }
-        @media (max-width:760px) { #table-products.products-table thead { display:none; } #table-products.products-table,#table-products.products-table tbody,#table-products.products-table tr,#table-products.products-table td { display:block; width:100%!important; } #table-products.products-table tr { padding:10px; border-bottom:1px solid #e6eaf1; } #table-products.products-table td { display:flex; justify-content:space-between; gap:10px; border:0; } #table-products.products-table td:nth-child(2)::before { content:'Product'; } #table-products.products-table td:nth-child(3)::before { content:'Category'; } #table-products.products-table td:nth-child(4)::before { content:'Specification'; } #table-products.products-table td:nth-child(5)::before { content:'Form / Type'; } #table-products.products-table td:nth-child(6)::before { content:'Base Unit'; } #table-products.products-table td:nth-child(7)::before { content:'Default Base Price'; } #table-products.products-table td:nth-child(8)::before { content:'Status'; } #table-products.products-table td:nth-child(9)::before { content:'Actions'; } #table-products.products-table td::before { color:#667085; font-weight:700; flex:0 0 110px; } #table-products.products-table .pricing-selection-column.d-none { display:none!important; } .sku-subsection .dynamic-specification-grid,#addProductModal .is-medicine-variation .sku-subsection .dynamic-specification-grid,#editProductModal .is-medicine-variation .sku-subsection .dynamic-specification-grid { grid-template-columns:1fr; } }
     </style>
 </head>
 <body>
@@ -658,11 +631,10 @@
                             <thead>
                                 <tr>
                                     <th class="text-center pricing-selection-column d-none"><input class="form-check-input" id="selectAllProductsForPricing" type="checkbox" aria-label="Select all visible eligible products"></th>
+                                    <th>Brand</th>
                                     <th class="product-column">Product</th>
-                                    <th>Category</th>
                                     <th>Specification</th>
-                                    <th>Form / Type</th>
-                                    <th>Base Unit</th>
+                                    <th>Form</th>
                                     <th>Default Base Price</th>
                                     <th>Status</th>
                                     <th>Actions</th>
@@ -700,6 +672,12 @@
                                         <option value="" disabled selected>Select category...</option>
                                     </select>
                                 </div>
+                                <div class="add-product-field" id="productTypeField">
+                                    <label class="form-label" for="productType"><span id="productTypeLabel">Product Type</span> <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="productType" required disabled>
+                                        <option value="" disabled selected>Select category first...</option>
+                                    </select>
+                                </div>
                                 <div class="add-product-field medicine-basic-field medicine-classification-basic-field d-none">
                                     <label class="form-label" for="productMedicineClassification">Medicine Classification <span class="text-danger">*</span></label>
                                     <select class="form-select" id="productMedicineClassification" disabled><option value="">Select classification...</option></select>
@@ -716,19 +694,18 @@
                                     <label class="form-label" for="productName">Product Name</label>
                                     <input class="form-control" id="productName" required>
                                 </div>
-                                <div class="add-product-field"><label class="form-label">Status</label><input class="form-control" value="Active" readonly><div class="form-text">Use the table action to deactivate a saved product.</div></div>
+                                <div class="add-product-field"><label class="form-label" for="productPricingMethod">Pricing Method</label><select class="form-select" id="productPricingMethod"><option value="manual">Fixed / Manual price</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option></select></div>
+                                <div class="add-product-field d-none" id="productCustomMarkupWrap"><label class="form-label" for="productCustomMarkup">Custom Markup Percentage</label><input class="form-control" id="productCustomMarkup" type="number" min="0" step=".01" placeholder="Only for Custom markup"></div>
                             </div>
                         </section>
                         <section class="add-product-section" aria-labelledby="addProductDetailsHeading">
-                            <h6 class="add-product-section-title" id="addProductDetailsHeading">Product Details &amp; Variants</h6>
-                            <div class="add-product-field mb-3" id="productTypeField"><label class="form-label" for="productType"><span id="productTypeLabel">Product Type</span> <span class="text-danger">*</span></label><select class="form-select" id="productType" required disabled><option value="" disabled selected>Select category first...</option></select></div>
+                            <h6 class="add-product-section-title" id="addProductDetailsHeading">Product Details &amp; Sellable SKU</h6>
                             <div class="product-variants-toolbar">
                                 <div><strong>Variants</strong><small>Create additional sellable SKUs without repeating basic information.</small></div>
                                 <button class="btn btn-sm btn-outline-secondary" type="button" id="btnCreateAnotherAddVariant"><i class="fa-solid fa-copy me-1"></i>Create Another Variant</button>
                             </div>
                             <div id="addVariationList"></div>
                         </section>
-                        <section class="add-product-section" aria-labelledby="addPricingHeading"><h6 class="add-product-section-title" id="addPricingHeading">Pricing</h6><div class="add-product-basic-grid"><div class="add-product-field"><label class="form-label" for="productPricingMethod">Pricing Method</label><select class="form-select" id="productPricingMethod"><option value="manual">Fixed / Manual price</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option></select></div><div class="add-product-field d-none" id="productCustomMarkupWrap"><label class="form-label" for="productCustomMarkup">Custom Markup Percentage</label><input class="form-control" id="productCustomMarkup" type="number" min="0" step=".01"></div></div><p class="form-text mb-0">Default base prices are set per variant above. Active Shelf Selling Prices are managed separately.</p></section>
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
