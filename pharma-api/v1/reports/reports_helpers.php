@@ -187,6 +187,41 @@ function reportSalesWhere(array $filters, array $role, string $alias = 'o'): arr
     return [implode(' AND ', $where), $params];
 }
 
+function reportHasItemFilters(array $filters): bool
+{
+    return ($filters['category_id'] ?? '') !== ''
+        || ($filters['type_id'] ?? '') !== ''
+        || ($filters['product_id'] ?? '') !== ''
+        || ($filters['brand'] ?? '') !== '';
+}
+
+function reportSalesItemScopeSubquery(array $filters, array &$params, string $scope): string
+{
+    $scope = preg_replace('/[^a-z0-9_]/i', '', $scope) ?: 'scope';
+    $conditions = [];
+    foreach (['category_id', 'type_id', 'product_id'] as $key) {
+        if (($filters[$key] ?? '') !== '') {
+            $placeholder = ':' . $scope . '_' . $key;
+            $conditions[] = "scope_product.{$key} = {$placeholder}";
+            $params[$placeholder] = $filters[$key];
+        }
+    }
+    if (($filters['brand'] ?? '') !== '') {
+        $placeholder = ':' . $scope . '_brand';
+        $conditions[] = "scope_product.brand_name = {$placeholder}";
+        $params[$placeholder] = $filters['brand'];
+    }
+    if (!$conditions) {
+        throw new InvalidArgumentException('A product filter is required for scoped sales totals.');
+    }
+    return "SELECT scope_item.order_id, SUM(scope_item.quantity) item_count, SUM(scope_item.line_total) line_subtotal,
+            GROUP_CONCAT(CONCAT(scope_item.product_name,' (x',scope_item.quantity,')') ORDER BY scope_item.order_item_id SEPARATOR ', ') item_summary
+        FROM sales_order_items scope_item
+        INNER JOIN product scope_product ON scope_product.product_id = scope_item.product_id
+        WHERE " . implode(' AND ', $conditions) . '
+        GROUP BY scope_item.order_id';
+}
+
 function reportProductFilterSql(array $filters, array &$params, string $productAlias = 'p'): string
 {
     $parts = [];
