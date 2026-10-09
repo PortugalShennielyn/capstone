@@ -49,6 +49,26 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
             WHERE {$where} GROUP BY DATE(o.completed_at) ORDER BY report_date DESC", $params);
         $total = static fn(string $key): float => array_sum(array_map(static fn($row): float => (float)$row[$key], $rows));
         $transactions = $total('transactions');
+        $periodStart = new DateTimeImmutable($filters['start_date']);
+        $periodEnd = new DateTimeImmutable($filters['end_date']);
+        $periodDays = $periodStart->diff($periodEnd)->days + 1;
+        $previousStart = $periodStart->modify("-{$periodDays} days");
+        $previousEnd = $periodStart->modify('-1 day');
+        $previousFilters = $filters;
+        $previousFilters['start_date'] = $previousStart->format('Y-m-d');
+        $previousFilters['end_date'] = $previousEnd->format('Y-m-d');
+        $previousFilters['date_end_exclusive'] = $periodStart->format('Y-m-d');
+        [$previousWhere, $previousParams] = reportSalesWhere($previousFilters, $role);
+        $previous = reportRow($pdo, "SELECT
+            COALESCE(SUM(pay.final_amount),0) net_sales,
+            COALESCE(SUM(o.subtotal),0) gross_sales,
+            COALESCE(SUM(COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0)),0) discounts,
+            COALESCE(SUM(pay.refund_amount),0) returns_cancelled,
+            COUNT(DISTINCT o.order_id) transactions,
+            COALESCE(SUM(items.item_count),0) items_sold
+            FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+            LEFT JOIN (SELECT order_id,SUM(quantity) item_count FROM sales_order_items GROUP BY order_id) items ON items.order_id=o.order_id
+            WHERE {$previousWhere}", $previousParams);
         $base['summary'] = [
             reportCard('Net Sales', $total('net_sales'), 'currency', 'fa-peso-sign', 'purple'),
             reportCard('Gross Sales', $total('gross_sales'), 'currency', 'fa-chart-line', 'blue'),
@@ -57,6 +77,23 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
             reportCard('Transactions', $transactions, 'number', 'fa-receipt', 'teal'),
             reportCard('Items Sold', $total('items_sold'), 'number', 'fa-box', 'teal'),
             reportCard('Avg. Transaction', $transactions > 0 ? $total('net_sales') / $transactions : 0, 'currency', 'fa-chart-simple', 'blue'),
+        ];
+        $previousTransactions = (float) ($previous['transactions'] ?? 0);
+        $comparisonKeys = ['net_sales', 'gross_sales', 'discounts', 'returns_cancelled', 'transactions', 'items_sold', 'average_transaction'];
+        foreach ($base['summary'] as $index => &$card) {
+            $key = $comparisonKeys[$index];
+            $previousValue = $key === 'average_transaction'
+                ? ($previousTransactions > 0 ? (float) $previous['net_sales'] / $previousTransactions : 0)
+                : (float) ($previous[$key] ?? 0);
+            $card['comparison'] = $previousValue > 0
+                ? ['percent' => round(100 * ((float) $card['value'] - $previousValue) / $previousValue, 1), 'previous_value' => $previousValue]
+                : null;
+        }
+        unset($card);
+        $base['comparison_period'] = [
+            'start' => $previousStart->format('Y-m-d'),
+            'end' => $previousEnd->format('Y-m-d'),
+            'days' => $periodDays,
         ];
         $base['charts'] = [[
             'id'=>'daily-net-sales', 'title'=>'Net sales per day', 'type'=>'bar', 'tone'=>'sales',
@@ -333,6 +370,13 @@ function referencePurchasingReport(PDO $pdo, array $filters): array
         $rows=array_values(array_filter($rows,static fn($r)=>$r['invoice_number']!==null));
         if ($filters['payment_state'] !== '') $rows=array_values(array_filter($rows,static fn($r)=>strcasecmp((string)$r['payment_status'],$filters['payment_state'])===0));
     }
+    if ($view === 'PR / PO Summary' && $filters['payment_state'] !== '') {
+        $paymentState=strtolower($filters['payment_state']);
+        $rows=array_values(array_filter($rows,static function($row)use($paymentState): bool {
+            $status=strtolower(trim((string)$row['payment_status']));
+            return $paymentState==='partial' ? str_starts_with($status,'partial') : $status===$paymentState;
+        }));
+    }
     $total = array_sum(array_column($rows,'total'));
     $paid = array_sum(array_column($rows,'paid'));
     $outstanding = array_sum(array_column($rows,'outstanding'));
@@ -363,8 +407,21 @@ function referencePurchasingReport(PDO $pdo, array $filters): array
             'notes'=>['Outstanding equals the supplier invoice total less recorded payments, floored at zero.']];
     }
     $statuses=[];foreach($rows as $row){$status=$row['delivery_status'];$statuses[$status]=($statuses[$status]??0)+1;}
+    $dailyTotals=[];
+    foreach($rows as $row){$day=$row['order_date'];$dailyTotals[$day]=($dailyTotals[$day]??0)+(float)$row['total'];}
+    ksort($dailyTotals);
+    $topOrders=[];
+    foreach($rows as $row){
+        $key=$row['po_number'];
+        if(!isset($topOrders[$key]) || (float)$row['total']>(float)$topOrders[$key]['total'])$topOrders[$key]=$row;
+    }
+    $topOrders=array_values($topOrders);
+    usort($topOrders,static fn($a,$b)=>(float)$b['total']<=>(float)$a['total']);
     [$page,$pagination]=referenceReportPage($rows,$filters);
     return ['summary'=>[reportCard('Total purchased',$total,'currency','fa-peso-sign','purple'),reportCard('Paid',$paid,'currency','fa-circle-check','green'),reportCard('Unpaid / partial',$outstanding,'currency','fa-wallet','amber'),reportCard('Open POs',count(array_filter($rows,static fn($r)=>in_array($r['delivery_status'],['Draft','Pending','Arrived'],true))),'number','fa-file','gray')],
+        'purchase_order_count'=>count($rows),
+        'purchase_trend'=>array_map(static fn($day,$value)=>['label'=>$day,'value'=>$value],array_keys($dailyTotals),array_values($dailyTotals)),
+        'top_purchase_orders'=>array_map(static fn($row)=>['label'=>$row['po_number'],'value'=>(float)$row['total']],array_slice($topOrders,0,5)),
         'charts'=>[['id'=>'po-status-reference','title'=>'POs by status','type'=>'doughnut','tone'=>'status','rows'=>array_map(static fn($label,$value)=>compact('label','value'),array_keys($statuses),array_values($statuses))]],
         'columns'=>['po_number'=>'PO','pr_number'=>'PR','supplier_name'=>'Supplier','order_date'=>'Ordered','expected_delivery_date'=>'ETA','item_count'=>'Items','total'=>'Total','payment_status'=>'Payment','delivery_status'=>'Status'],
         'numeric_columns'=>['item_count'],'currency_columns'=>['total'],'rows'=>$page,'pagination'=>$pagination,

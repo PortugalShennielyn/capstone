@@ -409,6 +409,21 @@
     font-weight: 700;
 }
 
+.term-packaging-error {
+    grid-column: 1 / -1;
+    min-height: 0;
+    margin-top: -10px;
+}
+
+.term-packaging-error:empty { display: none; }
+
+#assignmentStep2Errors:not(.d-none) {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: 0 8px 18px rgba(159, 18, 57, .08);
+}
+
 .assignment-error-summary {
     margin-bottom: 13px;
     padding: 11px 13px;

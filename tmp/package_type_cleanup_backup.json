@@ -1,0 +1,435 @@
+{
+    "created_at": "2026-10-08T10:12:54+02:00",
+    "dynamic": [
+        {
+            "product_id": "fd527c1f-ace1-11f1-aba6-0a002700000b",
+            "product_name": "Allerta",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "5f8af43a-b0ba-11f1-8f00-0a002700000b",
+            "product_name": "Amlife",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "05b8b52b-ace5-11f1-aba6-0a002700000b",
+            "product_name": "Betadine",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "62b2babe-a6f3-11f1-b4bd-706871ff20d7",
+            "product_name": "Biogesic",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "6ea95fdc-ace0-11f1-aba6-0a002700000b",
+            "product_name": "Biogesic",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "6ffad6d1-c168-11f1-b0e8-706871ff20d7",
+            "product_name": "Buldak",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Pack",
+            "value_number": null,
+            "measurement_unit_id": "5db01427-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "b2d8eec1-ace3-11f1-aba6-0a002700000b",
+            "product_name": "Ceelin",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "886cc540-a6f5-11f1-b4bd-706871ff20d7",
+            "product_name": "Cetzy-10",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "b9bd0e07-a6fb-11f1-b4bd-706871ff20d7",
+            "product_name": "Cetzy-10",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Box",
+            "value_number": null,
+            "measurement_unit_id": "5dad47f6-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "3facfbad-c2cc-11f1-8cd8-706871ff20d7",
+            "product_name": "chuckie",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Carton",
+            "value_number": null,
+            "measurement_unit_id": "5daebc8c-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "67add9ab-c2e2-11f1-8cd8-706871ff20d7",
+            "product_name": "Coca-cola",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "c0f06240-c2e1-11f1-8cd8-706871ff20d7",
+            "product_name": "Coca-cola",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "be93a53d-ace6-11f1-aba6-0a002700000b",
+            "product_name": "Cozaar",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "5cb1a5ca-ace2-11f1-aba6-0a002700000b",
+            "product_name": "Diatabs",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "395e1c38-ace4-11f1-aba6-0a002700000b",
+            "product_name": "Enervon",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "064921e0-c2e0-11f1-8cd8-706871ff20d7",
+            "product_name": "EQ Baby Diaper",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Pack",
+            "value_number": null,
+            "measurement_unit_id": "5db01427-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "cf475291-c2df-11f1-8cd8-706871ff20d7",
+            "product_name": "EQ Baby Diaper",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Pack",
+            "value_number": null,
+            "measurement_unit_id": "5db01427-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "52445e19-c2e0-11f1-8cd8-706871ff20d7",
+            "product_name": "EQ Diaper",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Pack",
+            "value_number": null,
+            "measurement_unit_id": "5db01427-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "974e7459-c2e0-11f1-8cd8-706871ff20d7",
+            "product_name": "EQ Diaper",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Pack",
+            "value_number": null,
+            "measurement_unit_id": "5db01427-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "f4290582-c2e0-11f1-8cd8-706871ff20d7",
+            "product_name": "EQ Diaper",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bag",
+            "value_number": null,
+            "measurement_unit_id": "6af38454-965d-11f1-a34f-706871ff20d7"
+        },
+        {
+            "product_id": "27f5e39d-c169-11f1-b0e8-706871ff20d7",
+            "product_name": "Face mask",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Box",
+            "value_number": null,
+            "measurement_unit_id": "5dad47f6-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "198b1182-ace8-11f1-aba6-0a002700000b",
+            "product_name": "Flagyl",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "26dcff2c-ace6-11f1-aba6-0a002700000b",
+            "product_name": "Glucophage",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "d73e788e-ace7-11f1-aba6-0a002700000b",
+            "product_name": "Keflex",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "4d7cccc8-ace3-11f1-aba6-0a002700000b",
+            "product_name": "Kremil-S",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "0a2b75c9-ace7-11f1-aba6-0a002700000b",
+            "product_name": "Lipitor",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "428bce89-ace7-11f1-aba6-0a002700000b",
+            "product_name": "Losec",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "e6d43886-a6dd-11f1-b4bd-706871ff20d7",
+            "product_name": "Moxylor",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "4a0c9be4-a6e8-11f1-b4bd-706871ff20d7",
+            "product_name": "Norvasc",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "81741b50-ace6-11f1-aba6-0a002700000b",
+            "product_name": "Norvasc",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        },
+        {
+            "product_id": "055dd08d-c2e2-11f1-8cd8-706871ff20d7",
+            "product_name": "Purified Drinking Water",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "4b7fc8c4-c2e1-11f1-8cd8-706871ff20d7",
+            "product_name": "Purified Drinking Water",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "a0b3737e-c2e1-11f1-8cd8-706871ff20d7",
+            "product_name": "Purified Drinking Water",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "ce3077e9-c2e1-11f1-8cd8-706871ff20d7",
+            "product_name": "Purified Drinking Water",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "ad873d15-ace4-11f1-aba6-0a002700000b",
+            "product_name": "Robitussin",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "97e16956-ace7-11f1-aba6-0a002700000b",
+            "product_name": "Ventolin",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "8271ad16-acea-11f1-aba6-0a002700000b",
+            "product_name": "Watsons",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Bottle",
+            "value_number": null,
+            "measurement_unit_id": "5dac5a48-93e8-11f1-977a-706871ff20d7"
+        },
+        {
+            "product_id": "595e9b97-ace5-11f1-aba6-0a002700000b",
+            "product_name": "Zithromax",
+            "specification_id": "0c167ee5-a6b3-11f1-b4bd-706871ff20d7",
+            "value_text": "Blister pack",
+            "value_number": null,
+            "measurement_unit_id": "b3b28956-9728-11f1-9fb5-706871ff20d7"
+        }
+    ],
+    "legacy": {
+        "medicine_details": [
+            {
+                "product_id": "05b8b52b-ace5-11f1-aba6-0a002700000b",
+                "product_name": "Betadine",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "0a2b75c9-ace7-11f1-aba6-0a002700000b",
+                "product_name": "Lipitor",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "198b1182-ace8-11f1-aba6-0a002700000b",
+                "product_name": "Flagyl",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "26dcff2c-ace6-11f1-aba6-0a002700000b",
+                "product_name": "Glucophage",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "395e1c38-ace4-11f1-aba6-0a002700000b",
+                "product_name": "Enervon",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "428bce89-ace7-11f1-aba6-0a002700000b",
+                "product_name": "Losec",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "4a0c9be4-a6e8-11f1-b4bd-706871ff20d7",
+                "product_name": "Norvasc",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "4d7cccc8-ace3-11f1-aba6-0a002700000b",
+                "product_name": "Kremil-S",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "595e9b97-ace5-11f1-aba6-0a002700000b",
+                "product_name": "Zithromax",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "5cb1a5ca-ace2-11f1-aba6-0a002700000b",
+                "product_name": "Diatabs",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "5f8af43a-b0ba-11f1-8f00-0a002700000b",
+                "product_name": "Amlife",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "62b2babe-a6f3-11f1-b4bd-706871ff20d7",
+                "product_name": "Biogesic",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "6ea95fdc-ace0-11f1-aba6-0a002700000b",
+                "product_name": "Biogesic",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "81741b50-ace6-11f1-aba6-0a002700000b",
+                "product_name": "Norvasc",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "8271ad16-acea-11f1-aba6-0a002700000b",
+                "product_name": "Watsons",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "886cc540-a6f5-11f1-b4bd-706871ff20d7",
+                "product_name": "Cetzy-10",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "97e16956-ace7-11f1-aba6-0a002700000b",
+                "product_name": "Ventolin",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "ad873d15-ace4-11f1-aba6-0a002700000b",
+                "product_name": "Robitussin",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "b2d8eec1-ace3-11f1-aba6-0a002700000b",
+                "product_name": "Ceelin",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "b9bd0e07-a6fb-11f1-b4bd-706871ff20d7",
+                "product_name": "Cetzy-10",
+                "package_type": "Box"
+            },
+            {
+                "product_id": "be93a53d-ace6-11f1-aba6-0a002700000b",
+                "product_name": "Cozaar",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "d73e788e-ace7-11f1-aba6-0a002700000b",
+                "product_name": "Keflex",
+                "package_type": "Blister pack"
+            },
+            {
+                "product_id": "e6d43886-a6dd-11f1-b4bd-706871ff20d7",
+                "product_name": "Moxylor",
+                "package_type": "Bottle"
+            },
+            {
+                "product_id": "fd527c1f-ace1-11f1-aba6-0a002700000b",
+                "product_name": "Allerta",
+                "package_type": "Blister pack"
+            }
+        ],
+        "grocery_details": [],
+        "medical_supply_details": []
+    }
+}

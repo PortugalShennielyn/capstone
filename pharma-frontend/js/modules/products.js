@@ -805,7 +805,7 @@ function renderProductCards() {
     document.getElementById('table-products')?.classList.toggle('pricing-selection-mode', productState.pricingSelectionMode);
 
     if (!products.length) {
-        tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No products found.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No products found.</td></tr>';
         syncSelectedPricingControls();
         return;
     }
@@ -819,11 +819,12 @@ function renderProductCards() {
         return `
             <tr class="product-row" data-product-id="${escapeHtml(product.product_id)}">
                 <td class="text-center pricing-selection-column ${productState.pricingSelectionMode ? '' : 'd-none'}"><div class="pricing-selection-cell">${selectionStatus.eligible ? `<input class="form-check-input product-pricing-select" type="checkbox" value="${escapeHtml(product.product_id)}" aria-label="Select ${escapeHtml(product.product_name)} for category pricing" ${productState.selectedPricingProductIds.has(String(product.product_id)) ? 'checked' : ''}>` : `<input class="form-check-input" type="checkbox" aria-label="${escapeHtml(selectionStatus.label)}" disabled>`}<span class="pricing-selection-status ${selectionStatus.className}">${escapeHtml(selectionStatus.label)}</span></div></td>
-                <td><span class="product-clamp">${escapeHtml(dash(product.brand_name))}</span></td>
-                <td class="product-column"><div class="medicine-product-identity"><span class="product-clamp">${escapeHtml(productCatalogName(product))}</span>${medicineRxBadge(product)}</div></td>
+                <td class="product-column"><div class="product-master-identity"><strong>${escapeHtml(dash(product.brand_name || product.product_name))}</strong>${isMedicine(product) ? `<span class="product-master-generic">${escapeHtml(dash(product.generic_name))}${medicineRxBadge(product)}</span>` : (product.brand_name && product.product_name && product.brand_name !== product.product_name ? `<span class="product-master-generic">${escapeHtml(product.product_name)}</span>` : '')}</div></td>
+                <td>${escapeHtml(dash(product.category_name))}</td>
                 <td>${productCatalogSpecification(product)}</td>
                 <td class="product-container-cell">${escapeHtml(formatProductForm(product, '—'))}</td>
-                <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(product.price)}</span><span class="pricing-method-badge ${priceBadge.className}" title="${escapeHtml(priceBadge.title)}" aria-label="${escapeHtml(priceBadge.title)}">${priceBadge.code}</span></div></td>
+                <td>${escapeHtml(product.inventory_unit_name || product.inventory_unit_symbol || '—')}</td>
+                <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(product.price)} <small>/ ${escapeHtml(product.inventory_unit_name || product.inventory_unit_symbol || 'unit')}</small></span><span class="pricing-method-badge ${priceBadge.className}" title="${escapeHtml(priceBadge.title)}" aria-label="${escapeHtml(priceBadge.title)}">${priceBadge.code}</span></div></td>
                 <td><span class="badge ${isActive ? 'text-bg-success' : 'text-bg-secondary'}">${escapeHtml(status)}</span></td>
                 <td>
                     <div class="product-actions" role="group" aria-label="Product actions">
@@ -1307,9 +1308,8 @@ function setMedicineFields(mode, categoryName, { clear = true } = {}) {
     const productNameField = document.getElementById(mode === 'edit' ? 'editProductNameField' : 'productNameField');
     const brandLabel = document.getElementById(mode === 'edit' ? 'editProductBrandLabel' : 'productBrandLabel');
     [classification, generic].filter(Boolean).forEach(field => {
-        const skuOwnedClassification = field === classification && medicine;
-        field.disabled = !medicine || skuOwnedClassification;
-        field.required = medicine && !skuOwnedClassification;
+        field.disabled = !medicine;
+        field.required = medicine;
         if (!medicine && clear) field.value = '';
     });
     productNameField?.classList.toggle('d-none', medicine);
@@ -1737,7 +1737,7 @@ async function loadProductsTable(options = {}) {
             } else {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="text-center text-danger py-4">
+                        <td colspan="9" class="text-center text-danger py-4">
                             <div>${escapeHtml(err.message)}</div>
                             <button class="btn btn-sm btn-outline-primary mt-2 retry-products-btn" type="button">Retry</button>
                         </td>
@@ -2324,11 +2324,9 @@ function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
     const fields = visibleSpecifications.map(specification => dynamicSpecificationField(specification, variation, rowId, mode, configuration)).join('');
     const empty = '';
     const barcodeField = `<div class="col-md-6 sku-barcode-field"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" inputmode="text" value="${escapeHtml(variation.barcode || '')}"></div>`;
-    const skuTail = medicine
-        ? `${inventoryUnitField(variation)}${sellingPriceField(variation)}${barcodeField}`
-        : `${inventoryUnitField(variation)}${barcodeField}${sellingPriceField(variation)}`;
-    const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div><div class="sku-classification-field"><label class="form-label">Medicine Classification <span class="text-danger">*</span></label><select class="form-select medicine-sku-classification" required>${medicineSkuClassificationOptions(variation.medicine_classification || getValue(mode === 'edit' ? 'editProductMedicineClassification' : 'productMedicineClassification'))}</select></div></div>` : '';
-    return `<div class="edit-variation-entry${medicine ? ' is-medicine-variation' : ''}" data-show-all-specifications="${variation.show_all_specifications ? '1' : '0'}"><div class="d-flex align-items-center justify-content-end gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div>${empty}<div class="dynamic-specification-grid">${skuIdentity}${fields}${skuTail}</div></div>`;
+    const skuTail = `<section class="sku-subsection"><h6>Inventory &amp; Units</h6><div class="dynamic-specification-grid">${inventoryUnitField(variation)}</div></section><section class="sku-subsection"><h6>Pricing</h6><div class="dynamic-specification-grid">${sellingPriceField(variation)}</div></section>`;
+    const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div></div>` : '';
+    return `<div class="edit-variation-entry${medicine ? ' is-medicine-variation' : ''}" data-show-all-specifications="${variation.show_all_specifications ? '1' : '0'}"><div class="d-flex align-items-center justify-content-end gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div>${empty}<div class="dynamic-specification-grid">${skuIdentity}${fields}${barcodeField}</div>${skuTail}</div>`;
 }
 
 function sellingPriceField(variation = {}) {
@@ -2428,7 +2426,7 @@ function collectVariationEntries(containerSelector) {
         type_id: categoryName === 'Medicine'
             ? (entry.querySelector('.medicine-sku-type')?.value || '')
             : getValue(typeSelectId),
-        medicine_classification: entry.querySelector('.medicine-sku-classification')?.value || '',
+        medicine_classification: getValue(containerSelector === '#editVariationList' ? 'editProductMedicineClassification' : 'productMedicineClassification'),
         variant_name: entry.querySelector('.edit-var-name')?.value.trim() || '',
         strength_value: entry.querySelector('.edit-var-strength-value')?.value.trim() || '',
         strength_unit: entry.querySelector('.edit-var-strength-unit')?.value || '',

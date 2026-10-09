@@ -84,7 +84,7 @@ function renderViewMenu(){
     qs('#reportViewTitle').textContent=selected;qs('#reportViewDescription').textContent=viewDescriptions[selected]||description;
     qs('#reportViewIcon').innerHTML=`<i class="fa-solid ${categoryIcons[state.category]||'fa-chart-simple'}"></i>`;
     qs('.report-search').hidden=!['Product Sales','Cashier Sales','Current Inventory','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation','Expiring Products','Expired / Wastage','Batch Traceability','PR / PO Summary','Purchase History','Invoice & Payment'].includes(selected);
-    qs('#reportSearch').placeholder=selected==='Batch Traceability'?'Search batch number or product':state.category==='purchases'?'Search PO, PR or supplier':'Search product or batch';
+    qs('#reportSearch').placeholder=selected==='Batch Traceability'?'Search batch number or product':selected==='PR / PO Summary'?'Search PO or PR number':state.category==='purchases'?'Search PO, PR or supplier':'Search product or batch';
 }
 function setSelect(select,items,placeholder){
     const previous=select.dataset.initial??select.value;delete select.dataset.initial;
@@ -165,6 +165,38 @@ function syncUrl(){
     if(params.get('expiry_days')==='30'&&state.category!=='expiry')params.delete('expiry_days');if(params.get('group_by')==='day')params.delete('group_by');params.delete('report_view');params.delete('page_size');if(params.get('page')==='1')params.delete('page');
     params.set('category',state.category);if(qs('[name="report_view"]').value!==reportViews[state.category]?.[0])params.set('report_view',qs('[name="report_view"]').value);params.delete('layout');history.replaceState(null,'',`${location.pathname}?${params}`);
 }
+function salesComparisonBadge(card){
+    const comparison=card.comparison;
+    if(!comparison)return `<small class="summary-change is-neutral">${Number(card.value)>0?'New this period':'No prior data'}</small>`;
+    const change=Number(comparison.percent),direction=change>0?'up':change<0?'down':'flat';
+    const arrow=change>0?'↗':change<0?'↘':'→';
+    return `<small class="summary-change is-${direction}" aria-label="${Math.abs(change).toFixed(1)} percent ${direction} from the previous period">${arrow} ${Math.abs(change).toFixed(1)}%</small>`;
+}
+function metricSparkline(rows,label='Daily net sales trend'){
+    const values=(rows||[]).map(row=>Number(row.value)||0);
+    if(!values.length)return '';
+    const max=Math.max(1,...values),width=220,height=68;
+    const points=values.map((value,index)=>[values.length===1?width/2:index*width/(values.length-1),height-6-(value/max)*(height-16)]);
+    const line=points.map(([x,y],index)=>`${index?'L':'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+    const area=`${line} L${points.at(-1)[0].toFixed(1)} ${height} L${points[0][0].toFixed(1)} ${height} Z`;
+    return `<svg class="summary-sparkline" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}"><path class="sparkline-fill" d="${area}"></path><path class="sparkline-line" d="${line}"></path></svg>`;
+}
+function renderSummaryCards(data){
+    const target=qs('#summaryCards'),view=qs('[name="report_view"]').value,
+        salesSummary=state.category==='sales'&&view==='Sales Summary'&&data.comparison_period,
+        purchaseSummary=state.category==='purchases'&&view==='PR / PO Summary'&&data.purchase_order_count!==undefined;
+    target.classList.toggle('sales-summary',Boolean(salesSummary));
+    target.classList.toggle('purchase-summary',Boolean(purchaseSummary));
+    if(purchaseSummary){
+        const sparkline=metricSparkline(data.purchase_trend,'Purchase order totals by day');
+        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong>${index===0?`<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>${sparkline}`:''}</article>`).join('');
+        return;
+    }
+    if(!salesSummary){target.innerHTML=(data.summary||[]).map(card=>`<article class="summary-card tone-${esc(card.tone||'purple')}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong></article>`).join('');return;}
+    const period=data.comparison_period,previousRange=`${reportDate(period.start,{month:'short',day:'numeric'})} – ${reportDate(period.end,{month:'short',day:'numeric',year:'numeric'})}`;
+    const sparkline=metricSparkline(data.charts?.find(chart=>chart.id==='daily-net-sales')?.rows);
+    target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${index===0?`<span>vs ${esc(previousRange)}</span>`:''}</div>${index===0?`<p class="summary-explanation">Completed sales after discounts and refunds over ${period.days} day${period.days===1?'':'s'}</p>${sparkline}`:''}</article>`).join('');
+}
 function renderReport(data){
     qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.remove('d-none');
     qs('#summaryCards').hidden=false;qs('#reportCharts').hidden=false;
@@ -172,18 +204,28 @@ function renderReport(data){
     state.defaultStart=data.system.date_range.start;state.defaultEnd=data.system.date_range.end;const form=qs('#reportFilters');if(!form.elements.start_date.value)form.elements.start_date.value=state.defaultStart;if(!form.elements.end_date.value)form.elements.end_date.value=state.defaultEnd;
     const generated=new Date(data.system.generated_at);qs('#reportGenerated').textContent=`Generated ${generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} · ${data.system.timezone} · ${data.system.generated_by}`;
     qs('#reportToday').textContent=generated.toLocaleDateString('en-PH',{timeZone:data.system.timezone,weekday:'short',year:'numeric',month:'short',day:'numeric'});
-    qs('#reportDateRange').textContent=`${data.system.date_range.start} – ${data.system.date_range.end}`;
+    const rangeStart=data.system.date_range.start,rangeEnd=data.system.date_range.end;
+    qs('#reportDateRange').textContent=`${reportDate(rangeStart,{month:'short',day:'numeric',...(rangeStart.slice(0,4)===rangeEnd.slice(0,4)?{}:{year:'numeric'})})} – ${reportDate(rangeEnd,{month:'short',day:'numeric',year:'numeric'})}`;
     qs('#reportPeriodLabel').textContent=state.category==='inventory'&&qs('[name="report_view"]').value!=='Stock Movement'&&qs('[name="report_view"]').value!=='Fast / Slow Moving'?'Live inventory snapshot':state.period==='custom'?'Custom date range':state.period==='month'?'This month':state.period==='today'?'Today':state.period==='yesterday'?'Yesterday':`Last ${state.period} days`;
     qs('.report-presets').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.period===state.period));
     renderViewMenu();renderReferenceControls();
-    qs('#summaryCards').innerHTML=(data.summary||[]).map(card=>`<article class="summary-card tone-${esc(card.tone||'purple')}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong></article>`).join('');
+    renderSummaryCards(data);
     renderCharts(data.charts||[]);renderRanking(data);renderInsights(data);
+    if(state.category==='purchases'&&form.elements.report_view.value==='PR / PO Summary'){
+        qs('#reportCharts .chart-card h2')?.insertAdjacentHTML('afterend',`<small class="chart-date-caption">${esc(qs('#reportDateRange').textContent)}</small>`);
+    }
     if(state.category==='overview'){const attention=qs('#reportInsights .attention-card');if(attention){qs('#reportCharts').appendChild(attention);qs('#reportCharts').classList.remove('single-chart');}}
     renderOverview(data.overview_previews);renderTableInsights(data.table_insights||[]);renderTable(data);qs('.report-table-card').hidden=state.category==='overview'||form.elements.report_view.value==='Batch Traceability';renderNotes(data.notes||[]);renderFilterChips();
     if(form.elements.report_view.value==='Batch Traceability')renderBatchTrace(data.trace);
 }
 function renderRanking(data){
     const target=qs('#reportRanking'),view=qs('[name="report_view"]').value,chart=(data.charts||[]).find(item=>Array.isArray(item.rows)&&item.rows.length);
+    if(state.category==='purchases'&&view==='PR / PO Summary'){
+        const orders=data.top_purchase_orders||[],max=Math.max(1,...orders.map(order=>Number(order.value)||0));
+        target.hidden=false;
+        target.innerHTML=`<div class="ranking-heading"><h2>Top 5 by total</h2><p>Within the current filters</p></div><div class="ranking-list">${orders.length?orders.map(order=>`<div class="ranking-item"><div><span>${esc(order.label)}</span><strong>${esc(money.format(Number(order.value)||0))}</strong></div><div class="ranking-track"><span style="width:${100*(Number(order.value)||0)/max}%"></span></div></div>`).join(''):'<p class="ranking-empty">No purchase orders in this period.</p>'}</div>`;
+        return;
+    }
     if(!chart||view==='Batch Traceability'||state.category==='overview'){target.hidden=true;target.innerHTML='';return;}
     const rows=chart.rows.map(row=>({...row,rankValue:Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))})).filter(row=>row.rankValue>0).sort((a,b)=>b.rankValue-a.rankValue).slice(0,5);
     if(!rows.length){target.hidden=true;target.innerHTML='';return;}
@@ -198,6 +240,7 @@ function renderReferenceControls(){
     const special=Boolean(state.data?.access?.management)&&['sales','inventory','expiry','purchases','supplier','staff'].includes(state.category),view=qs('[name="report_view"]').value,card=qs('.report-filter-card');
     const snapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||(state.category==='expiry'&&view!=='Expired / Wastage');
     card.classList.toggle('reference-filters',special);card.classList.toggle('snapshot-filters',snapshot);
+    card.classList.toggle('purchase-filters',special&&state.category==='purchases'&&view==='PR / PO Summary');
     let target=qs('#referenceQuickFilters');if(!target){target=document.createElement('div');target.id='referenceQuickFilters';card.appendChild(target);}
     target.hidden=!special;if(!special){if(qs('#referenceQuickMeta'))qs('#referenceQuickMeta').hidden=true;if(qs('#referenceSnapshotLabel'))qs('#referenceSnapshotLabel').hidden=true;qs('#reportGenerated').hidden=false;return;}
     let meta=qs('#referenceQuickMeta');if(!meta){meta=document.createElement('div');meta.id='referenceQuickMeta';card.appendChild(meta);}
@@ -216,7 +259,14 @@ function renderReferenceControls(){
     if(view==='Expiring Products')controls=select('quickExpiry',`<option value="365" ${qs('[name="expiry_days"]').value==='365'?'selected':''}>All windows</option><option value="30" ${qs('[name="expiry_days"]').value==='30'?'selected':''}>Within 30 days</option><option value="90" ${qs('[name="expiry_days"]').value==='90'?'selected':''}>Within 90 days</option><option value="180" ${qs('[name="expiry_days"]').value==='180'?'selected':''}>Within 6 months</option>`);
     if(view==='Expired / Wastage')controls=select('quickSupplier',supplierOptions);
     if(view==='Batch Traceability')controls='<button type="button" class="btn btn-purple" id="quickTrace">Trace batch</button>';
-    if(state.category==='purchases'){const invoice=view==='Invoice & Payment',statuses=invoice?['Paid','Unpaid','Partially Paid']:(state.options?.po_statuses||[]),selected=invoice?qs('[name="payment_state"]').value:qs('[name="po_status"]').value;controls=select('quickSupplier',supplierOptions)+select('quickStatus',`<option value="">All statuses</option>`+statuses.map(x=>`<option value="${esc(x.id??x)}" ${String(x.id??x).toLowerCase()===selected.toLowerCase()?'selected':''}>${esc(x.name??x)}</option>`).join(''));}
+    if(state.category==='purchases'){
+        const invoice=view==='Invoice & Payment',summary=view==='PR / PO Summary';
+        const selectedStatus=qs('[name="po_status"]').value,selectedPayment=qs('[name="payment_state"]').value;
+        const statuses=`<option value="">All status</option>`+(state.options?.po_statuses||[]).map(x=>`<option value="${esc(x.id??x)}" ${String(x.id??x).toLowerCase()===selectedStatus.toLowerCase()?'selected':''}>${esc(x.name??x)}</option>`).join('');
+        const payments=invoice?[['Paid','Paid'],['Unpaid','Unpaid'],['Partially Paid','Partially paid']]:[['paid','Paid'],['unpaid','Unpaid'],['partial','Partial']];
+        const paymentOptions=`<option value="">All payment</option>`+payments.map(([value,label])=>`<option value="${value}" ${value.toLowerCase()===selectedPayment.toLowerCase()?'selected':''}>${label}</option>`).join('');
+        controls=(invoice?'':select('quickStatus',statuses))+(invoice||summary?select('quickPayment',paymentOptions):'')+select('quickSupplier',supplierOptions);
+    }
     if(state.category==='supplier')controls=select('quickSupplier',supplierOptions);
     if(state.category==='staff')controls=select('quickCashier',cashierOptions);
     target.innerHTML=controls;
@@ -368,8 +418,8 @@ qs('#overviewGrid').addEventListener('click',event=>{const button=event.target.c
 ['category_id','secondary_category_id','type_id','brand'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{if(name.includes('category')){qs('[name=category_id]').value=event.target.value;qs('[name=secondary_category_id]').value=event.target.value;}syncDependentOptions(true);}));
 qs('[name="product_id"]').addEventListener('change',event=>{const product=state.options?.products.find(x=>x.id===event.target.value);if(!product)return;qs('[name=category_id]').value=qs('[name=secondary_category_id]').value=product.category_id;qs('[name=type_id]').value=product.type_id;qs('[name=brand]').value=product.brand;syncDependentOptions(false);qs('[name=product_id]').value=product.id;});
 ['supplier_id','secondary_supplier_id'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{qs('[name=supplier_id]').value=qs('[name=secondary_supplier_id]').value=event.target.value;}));
-qs('[name="report_view"]').addEventListener('change',event=>{const form=qs('#reportFilters'),map={'Product Sales':'product','Category Sales':'category','Cashier Sales':'cashier','Staff Sales':'cashier','Payment and Discount':'payment_method'};if(state.category==='sales')form.elements.group_by.value=map[event.target.value]||'day';if(event.target.value==='Expiring Products')form.elements.expiry_days.value='365';state.page=1;updateVisibleFilters();renderViewMenu();loadReport();});
-qs('.report-filter-card').addEventListener('change',event=>{const id=event.target.id;if(id==='quickExpiry')qs('[name="expiry_days"]').value=event.target.value;else if(id==='quickSupplier')qs('[name="supplier_id"]').value=qs('[name="secondary_supplier_id"]').value=event.target.value;else if(id==='quickCategory')qs('[name="category_id"]').value=qs('[name="secondary_category_id"]').value=event.target.value;else if(id==='quickStock')qs('[name="stock_status"]').value=event.target.value;else if(id==='quickCashier')qs('[name="cashier_id"]').value=event.target.value;else if(id==='quickStatus')qs(`[name="${qs('[name="report_view"]').value==='Invoice & Payment'?'payment_state':'po_status'}"]`).value=event.target.value;else return;state.page=1;loadReport();});
+qs('[name="report_view"]').addEventListener('change',event=>{const form=qs('#reportFilters'),map={'Product Sales':'product','Category Sales':'category','Cashier Sales':'cashier','Staff Sales':'cashier','Payment and Discount':'payment_method'};if(state.category==='sales')form.elements.group_by.value=map[event.target.value]||'day';if(event.target.value==='Expiring Products')form.elements.expiry_days.value='365';if(state.category==='purchases'){if(event.target.value==='PR / PO Summary'&&form.elements.payment_state.value==='Partially Paid')form.elements.payment_state.value='partial';else if(event.target.value==='Invoice & Payment'&&form.elements.payment_state.value==='partial')form.elements.payment_state.value='Partially Paid';if(event.target.value==='Invoice & Payment')form.elements.po_status.value='';if(event.target.value==='Purchase History')form.elements.payment_state.value='';}state.page=1;updateVisibleFilters();renderViewMenu();loadReport();});
+qs('.report-filter-card').addEventListener('change',event=>{const id=event.target.id;if(id==='quickExpiry')qs('[name="expiry_days"]').value=event.target.value;else if(id==='quickSupplier')qs('[name="supplier_id"]').value=qs('[name="secondary_supplier_id"]').value=event.target.value;else if(id==='quickCategory')qs('[name="category_id"]').value=qs('[name="secondary_category_id"]').value=event.target.value;else if(id==='quickStock')qs('[name="stock_status"]').value=event.target.value;else if(id==='quickCashier')qs('[name="cashier_id"]').value=event.target.value;else if(id==='quickStatus')qs('[name="po_status"]').value=event.target.value;else if(id==='quickPayment')qs('[name="payment_state"]').value=event.target.value;else return;state.page=1;loadReport();});
 qs('.report-filter-card').addEventListener('click',event=>{if(event.target.closest('#quickTrace'))loadReport();});
 qs('#filterCollapse').addEventListener('click',()=>setFilterExpanded(qs('#reportFilters').classList.contains('is-collapsed')));
 

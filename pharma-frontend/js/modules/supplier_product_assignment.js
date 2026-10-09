@@ -377,6 +377,7 @@ function renderStep2() {
                                 <div class="assignment-field-error"></div>
                             </div>
                             <div class="term-packaging-host"></div>
+                            <div class="assignment-field-error term-packaging-error" role="status"></div>
                             <div class="assignment-preview term-preview"></div>
                         </div>
                     </article>`;
@@ -399,15 +400,30 @@ function renderStep2() {
 
 function updateTermCard(card) {
     const purchaseUnit = card.querySelector('.term-unit')?.value || '';
-    const inventory = card.querySelector('.term-inventory-unit')?.value || 'unit';
+    const inventory = card.querySelector('.term-inventory-unit')?.value || '';
     const editor = state.packagingEditors.get(String(card.dataset.productId));
     if (!editor) return;
-    const validation = editor.error();
+    const allowedPurchaseUnit = ['box', 'carton'].includes(unitKey(purchaseUnit)) || unitKey(purchaseUnit) === unitKey(inventory);
+    const validation = !inventory ? 'Configure the Product Base Unit in Product Master first.'
+        : !allowedPurchaseUnit ? 'Purchase Unit must be Box, Carton, or the Product Base Unit.' : editor.error();
     const conversion = purchasingConversion({ purchase_unit: purchaseUnit || 'Purchase Unit', inventory_unit: inventory, hierarchy_levels: editor.read() });
     const complete = purchaseUnit !== '' && !validation;
     const status = card.querySelector('.term-status');
     status.textContent = complete ? 'Complete' : 'Missing information';
     status.className = `badge term-status ${complete ? 'text-bg-success' : 'text-bg-light'}`;
+    status.title = complete ? 'Purchasing setup is complete.' : (validation || 'Select a Purchase Unit.');
+    const packagingError = card.querySelector('.term-packaging-error');
+    if (packagingError?.textContent) packagingError.textContent = validation;
+    if (complete && card.classList.contains('is-invalid')) {
+        card.classList.remove('is-invalid');
+        card.querySelectorAll('.is-invalid').forEach(field => { field.classList.remove('is-invalid'); field.removeAttribute('aria-invalid'); });
+        card.querySelectorAll('.assignment-field-error').forEach(error => { error.textContent = ''; });
+        const summary = document.getElementById('assignmentStep2Errors');
+        if (summary && [...document.querySelectorAll('.assignment-term-card')].every(item => item.querySelector('.term-status')?.textContent === 'Complete')) {
+            summary.classList.add('d-none');
+            summary.textContent = '';
+        }
+    }
     card.querySelector('.term-preview').innerHTML = complete
         ? `<strong>Preview:</strong> ${esc(conversion.summary)}`
         : `<strong>Preview:</strong> ${esc(validation || `Configure contents per ${purchaseUnit || 'Purchase Unit'}.`)}`;
@@ -456,18 +472,25 @@ function validateStep2() {
             errors.push(`${identity}: Product Base Unit must be configured in Product Master.`);
             firstInvalid ||= inventoryUnit;
         }
-        const packagingError = state.packagingEditors.get(String(card.dataset.productId))?.error() || 'Complete the packaging breakdown.';
+        const packagingError = state.packagingEditors.get(String(card.dataset.productId))?.error() ?? 'Complete the packaging breakdown.';
         if (packagingError) {
             errors.push(`${identity}: ${packagingError}`);
-            firstInvalid ||= card.querySelector('.term-packaging-host [data-level-qty]:not(:disabled)') || purchaseUnit;
+            card.classList.add('is-invalid');
+            card.querySelector('.term-packaging-error').textContent = packagingError;
+            const quantityField = card.querySelector('.term-packaging-host [data-level-qty]:not(:disabled)');
+            if (quantityField) {
+                quantityField.classList.add('is-invalid');
+                quantityField.setAttribute('aria-invalid', 'true');
+            }
+            firstInvalid ||= quantityField || purchaseUnit;
         }
         updateTermCard(card);
     });
 
     const summary = document.getElementById('assignmentStep2Errors');
-    if (errors.length > 1) {
+    if (errors.length) {
         summary.classList.remove('d-none');
-        summary.innerHTML = `<strong>Please correct ${errors.length} fields:</strong><ul class="mb-0 mt-1">${errors.map((error) => `<li>${esc(error)}</li>`).join('')}</ul>`;
+        summary.innerHTML = `<strong>Complete the highlighted purchasing setup to continue:</strong><ul class="mb-0 mt-1">${errors.map((error) => `<li>${esc(error)}</li>`).join('')}</ul>`;
     } else {
         summary.classList.add('d-none');
         summary.textContent = '';
