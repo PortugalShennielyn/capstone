@@ -15,9 +15,11 @@
     <link href="./css/reports.css?v=13" rel="stylesheet">
     <script src="./js/navbar.js?v=89" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body class="role-loading">
     <div id="navbar-container"></div>
+
     <main class="main-wrapper" id="mainWrapper">
         <header class="topbar">
             <div class="topbar-left">
@@ -103,7 +105,48 @@
                     </div>
                 </div>
             </div>
-        </section>
+        </div>
+
+        <div class="page-wrap">
+            <h1 class="page-title">Reports</h1>
+
+            <div class="filter-strip" id="filtersBar">
+                <div class="field"><label>From</label><input type="date" id="fStartDate" name="start_date"></div>
+                <div class="field"><label>To</label><input type="date" id="fEndDate" name="end_date"></div>
+                <div class="field"><label>Category</label><select id="fCategory" name="category_id"><option value="">Select category</option></select></div>
+                <div class="field"><label>Supplier</label><select id="fSupplier" name="supplier_id"><option value="">Select supplier</option></select></div>
+                <div class="field"><label>Stock</label>
+                    <select id="fStock" name="stock_status">
+                        <option value="">All stock</option>
+                        <option value="healthy">Healthy</option>
+                        <option value="low">Low Stock</option>
+                        <option value="out">Out of Stock</option>
+                    </select>
+                </div>
+                <div class="field"><label>Expiry</label>
+                    <select id="fExpiry" name="expiry_days">
+                        <option value="0">Expired / today</option>
+                        <option value="7">Within 7 days</option>
+                        <option value="15">Within 15 days</option>
+                        <option value="30" selected>Within 30 days</option>
+                        <option value="60">Within 60 days</option>
+                        <option value="90">Within 90 days</option>
+                    </select>
+                </div>
+                <div class="filter-buttons">
+                    <button class="btn btn-purple btn-sm" id="applyFilters"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+                    <button class="btn btn-soft-purple btn-sm" id="resetFilters"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+                </div>
+            </div>
+
+            <div class="state-box" id="reportLoading">
+                <div class="spinner-border text-primary mb-3" style="width:1.6rem;height:1.6rem;"></div>
+                <div>Loading reports…</div>
+            </div>
+            <div class="err-box d-none" id="reportError"></div>
+
+            <div id="reportStack"></div>
+        </div>
     </main>
     <dialog id="reportFinder" class="report-finder-dialog" aria-label="Find a report"><div class="report-finder-box"><div class="report-finder-search"><i class="fa-solid fa-magnifying-glass"></i><input id="reportFinderInput" type="search" placeholder="Search reports…" autocomplete="off"><button id="reportFinderClose" type="button" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div><div id="reportFinderResults" class="report-finder-results"></div></div></dialog>
     <dialog id="reportDetail" class="report-detail-dialog" aria-labelledby="reportDetailTitle"><div class="report-detail-header"><div><small id="reportDetailView"></small><h2 id="reportDetailTitle"></h2></div><button id="reportDetailClose" type="button" aria-label="Close details"><i class="fa-solid fa-xmark"></i></button></div><div id="reportDetailFields" class="report-detail-fields"></div><div class="report-detail-footer"><span id="reportDetailPosition"></span><div><button id="reportDetailPrevious" type="button">Previous record</button><button id="reportDetailNext" type="button">Next record</button></div></div></dialog>

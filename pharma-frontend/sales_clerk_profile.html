@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script src="./js/navbar_profile.js?v=1"></script>
+  <script src="./js/navbar_bootstrap.js?v=11"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dr. R Pharmacy | Sales Clerk Profile</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="./css/navbar.css?v=36" rel="stylesheet">
+  <link href="./css/sales_clerk_profile.css?v=1" rel="stylesheet">
+  <script src="./js/navbar.js?v=84" defer></script>
+  <script type="module" src="./js/modules/auth_guard.js?v=28"></script>
+</head>
+<body>
+<div id="navbar-container"></div>
+<main id="mainWrapper" class="main-wrapper profile-main">
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
+      <div class="page-title"><strong>Sales Clerk Profile</strong></div>
+    </div>
+    <div class="topbar-right">
+      <div class="text-end"><div id="currentDate" class="top-date"></div><div id="currentTime" class="top-time"></div></div>
+    </div>
+  </header>
+
+  <section class="profile-page">
+    <div class="profile-cover-wrap">
+      <div class="profile-cover theme-blue" id="profileCover"></div>
+      <div class="profile-hero-card">
+        <div class="profile-avatar-shell">
+          <div class="profile-avatar" id="profileAvatar"><span id="profileInitials">SC</span></div>
+          <button class="avatar-camera-btn" id="changePhotoBtn" type="button" aria-label="Change Profile Photo"><i class="fa-solid fa-camera"></i></button>
+          <input id="photoInput" type="file" accept="image/*" hidden>
+        </div>
+        <div class="profile-heading">
+          <h1 id="profileName">Sales Clerk</h1>
+          <div class="profile-meta">
+            <span id="profileUsername">@salesclerk</span><span class="meta-divider">|</span><span id="profileRoleText">Sales Clerk</span>
+            <span class="role-badge"><i class="fa-solid fa-user-tie"></i> Sales Clerk</span>
+          </div>
+          <p>Manage your account information, password, profile photo, and personal theme.</p>
+        </div>
+        <div class="profile-header-actions">
+          <button class="btn-light-action" id="changePhotoHeaderBtn" type="button"><i class="fa-solid fa-camera"></i> Change Profile Photo</button>
+          <button class="btn-primary-action" id="saveAllTopBtn" type="button"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="profile-tabs" role="tablist">
+      <button class="profile-tab active" type="button" data-tab="account" aria-selected="true"><i class="fa-solid fa-user"></i> Account</button>
+      <button class="profile-tab" type="button" data-tab="security" aria-selected="false"><i class="fa-solid fa-lock"></i> Password &amp; Security</button>
+    </div>
+
+    <div class="profile-content-grid">
+      <section class="profile-card" id="accountTab">
+        <div class="card-heading">
+          <div class="card-heading-icon"><i class="fa-solid fa-user"></i></div>
+          <div><h2>Account Information</h2><p>Keep your account information up to date.</p></div>
+        </div>
+        <form id="accountForm">
+          <div class="form-grid">
+            <div class="field full"><label for="fullName">Full Name</label><input id="fullName" type="text" autocomplete="name"></div>
+            <div class="field"><label for="username">Username</label><input id="username" type="text" readonly><small>Username cannot be changed.</small></div>
+            <div class="field"><label for="role">Role</label><input id="role" type="text" readonly><small>Role is assigned by the administrator.</small></div>
+            <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email"></div>
+            <div class="field"><label for="contactNumber">Contact Number</label><input id="contactNumber" type="tel" autocomplete="tel"></div>
+          </div>
+          <div class="info-box"><i class="fa-solid fa-shield-halved"></i><div><strong>Role protected</strong><span>Your Sales Clerk access is controlled by the administrator.</span></div></div>
+        </form>
+      </section>
+
+      <aside class="profile-card settings-card">
+        <div class="card-heading">
+          <div class="card-heading-icon"><i class="fa-solid fa-palette"></i></div>
+          <div><h2>Profile Settings</h2><p>Personalize how your profile looks.</p></div>
+        </div>
+        <div class="setting-block">
+          <div class="setting-label"><strong>Profile Photo</strong><span>Upload a JPG, PNG, or WEBP image.</span></div>
+          <button class="btn-outline-action" id="changePhotoSideBtn" type="button"><i class="fa-solid fa-image"></i> Choose Photo</button>
+        </div>
+        <div class="setting-divider"></div>
+        <div class="setting-block column">
+          <div class="setting-label"><strong>Profile Background</strong><span>Choose your preferred profile header color.</span></div>
+          <div class="theme-grid">
+            <button type="button" class="theme-swatch active" data-theme="blue" title="Blue"></button>
+            <button type="button" class="theme-swatch" data-theme="purple" title="Purple"></button>
+            <button type="button" class="theme-swatch" data-theme="green" title="Green"></button>
+            <button type="button" class="theme-swatch" data-theme="orange" title="Orange"></button>
+            <button type="button" class="theme-swatch" data-theme="red" title="Red"></button>
+            <button type="button" class="theme-swatch" data-theme="dark" title="Dark"></button>
+          </div>
+        </div>
+        <div class="setting-divider"></div>
+        <div class="security-notes">
+          <div class="security-note"><i class="fa-solid fa-user-shield"></i><span><strong>Secure account</strong><small>Your account remains protected by the pharmacy access rules.</small></span></div>
+          <div class="security-note"><i class="fa-solid fa-lock"></i><span><strong>Password reset</strong><small>You can reset your password using the OTP recovery flow.</small></span></div>
+        </div>
+      </aside>
+
+      <section class="profile-card security-panel d-none" id="securityTab">
+        <div class="card-heading">
+          <div class="card-heading-icon"><i class="fa-solid fa-lock"></i></div>
+          <div><h2>Password &amp; Security</h2><p>Keep your Sales Clerk account secure.</p></div>
+        </div>
+        <form id="passwordForm">
+          <div class="password-layout">
+            <div class="field"><label for="currentPassword">Current Password</label><input id="currentPassword" type="password" autocomplete="current-password"></div>
+            <div class="field"><label for="newPassword">New Password</label><input id="newPassword" type="password" autocomplete="new-password"><small>Use at least 8 characters.</small></div>
+            <div class="field"><label for="confirmPassword">Confirm New Password</label><input id="confirmPassword" type="password" autocomplete="new-password"></div>
+          </div>
+          <div class="security-actions"><a href="forgot_password.html" class="forgot-link">Forgot password? Reset with OTP</a><button class="btn-primary-action" id="updatePasswordBtn" type="submit"><i class="fa-solid fa-key"></i> Update Password</button></div>
+        </form>
+      </section>
+    </div>
+
+    <div class="mobile-save-bar">
+      <button class="btn-secondary-action" id="cancelBtn" type="button">Cancel</button>
+      <button class="btn-primary-action" id="saveBottomBtn" type="button"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+    </div>
+  </section>
+</main>
+<div id="profileToast" class="profile-toast"></div>
+<script src="./js/sales_clerk_profile.js?v=1"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

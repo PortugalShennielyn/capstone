@@ -1,4 +1,5 @@
 <?php
+$allowedRoles = ['super_admin', 'admin'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'product_customization_schema.php';
@@ -30,7 +31,6 @@ try {
                 measurement_group, is_active, is_system
          FROM product_measurement_units
          WHERE measurement_unit_id IN ({$idPlaceholders})
-           AND measurement_group <> 'Packaging'
            AND is_active = 1"
     );
     $statement->execute($unitIds);

@@ -20,7 +20,7 @@ function sendVerificationEmail(string $toEmail, string $code, string $displayNam
     if (file_exists($manual)) {
         require_once __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
         require_once __DIR__ . '/../lib/PHPMailer/src/SMTP.php';
-        require_once __DIR__ . '/../lib/PHPMailer/src/Exception.php';
+        require_once __DIR__ . '/../lib/PHPMailer/Exception.php';
         if (class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
             return sendViaPhpMailer($toEmail, $subject, $bodyHtml);
         }
@@ -67,16 +67,23 @@ function sendViaPhpMailer(string $toEmail, string $subject, string $html): bool
 {
     $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
     try {
+        $config = require __DIR__ . '/mail_credentials.php';
+        $username = getenv('MAIL_USERNAME') ?: (string) ($config['username'] ?? '');
+        $password = getenv('MAIL_PASSWORD') ?: (string) ($config['password'] ?? '');
+        if ($username === '' || $password === '') {
+            throw new RuntimeException('SMTP credentials are not configured.');
+        }
+
         $mail->isSMTP();
         $mail->Host       = getenv('MAIL_HOST')     ?: 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = getenv('MAIL_USERNAME') ?: 'docRpharmacy@gmail.com';
-        $mail->Password   = getenv('MAIL_PASSWORD') ?: 'PUT-GMAIL-APP-PASSWORD-HERE';
+        $mail->Username   = $username;
+        $mail->Password   = str_replace(' ', '', trim($password));
         $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = (int) (getenv('MAIL_PORT') ?: 587);
         $mail->CharSet    = 'UTF-8';
 
-        $mail->setFrom(getenv('MAIL_USERNAME') ?: 'docRpharmacy@gmail.com', 'Dr. R Pharmacy');
+        $mail->setFrom(getenv('PHARMA_MAIL_FROM') ?: $username, getenv('PHARMA_MAIL_FROM_NAME') ?: 'Dr. R Pharmacy');
         $mail->addAddress($toEmail);
         $mail->isHTML(true);
         $mail->Subject = $subject;

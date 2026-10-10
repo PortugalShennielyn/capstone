@@ -1,6 +1,17 @@
 <?php
 require_once '../../config/db_connection.php';
-$allowedRoles = ['super_admin', 'admin', 'manager', 'supervisor', 'ro-admin', 'ro-super-admin', 'ro-manager', 'ro-supervisor'];
+$allowedRoles = [
+    'super_admin',
+    'admin',
+    'manager',
+    'supervisor',
+    'salesclerk',
+    'ro-admin',
+    'ro-super-admin',
+    'ro-manager',
+    'ro-supervisor',
+    'ro-salesclerk'
+];
 require_once '../../config/require_auth.php';
 require_once '../activity_log_helpers.php';
 require_once '../purchase_orders/purchase_order_helpers.php';

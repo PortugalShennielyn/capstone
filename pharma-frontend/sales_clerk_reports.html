@@ -661,11 +661,25 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
     <header class="topbar">
         <div class="topbar-left">
+            <button
+                class="icon-btn"
+                id="sidebarToggle"
+                type="button"
+                aria-label="Toggle sidebar"
+            >
+                <i class="fa-solid fa-bars"></i>
+            </button>
+
             <div class="page-title">
                 <strong>Sales Clerk Reports</strong>
             </div>
         </div>
-        <div class="topbar-right"></div>
+        <div class="topbar-right">
+            <div class="text-end">
+                <div id="currentDate" style="font-size:11px;font-weight:800;"></div>
+                <div id="currentTime" style="font-size:14px;font-weight:900;"></div>
+            </div>
+        </div>
     </header>
 
     <div class="reports-page">

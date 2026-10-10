@@ -25,7 +25,7 @@
             rel="stylesheet"
         />
         <link href="./css/navbar.css?v=39" rel="stylesheet" />
-        <link href="./css/supervisor_approval.css?v=14" rel="stylesheet" />
+        <link href="./css/supervisor_approval.css?v=27" rel="stylesheet" />
         <script src="./js/navbar.js?v=89" defer></script>
         <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
         <style>
@@ -657,15 +657,38 @@
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                gap: 2px;
+                gap: 3px;
+                min-width: 92px;
             }
             .requested-unit-label {
                 display: block;
-                color: #334155;
-                font-size: 11px;
+                color: #64748b;
+                font-size: 10px;
+                font-weight: 600;
+                line-height: 1.2;
+                text-align: center;
+            }
+            .suggested-request-qty {
+                display: block;
+                min-width: max-content;
+                color: #15803d;
+                font-size: 10px;
                 font-weight: 650;
                 line-height: 1.2;
                 text-align: center;
+                white-space: nowrap;
+            }
+            .request-unit-select {
+                width: auto;
+                max-width: 100%;
+                min-height: 25px;
+                padding: 2px 22px 2px 6px;
+                border-color: #d7dce5;
+                color: #475569;
+                background-position: right 5px center;
+                background-size: 10px 8px;
+                font-size: 10px;
+                line-height: 1.2;
             }
             .package-contents-cell {
                 color: #334155;
@@ -683,9 +706,28 @@
                 flex: 0 0 68px;
                 height: 30px;
                 min-height: 30px;
-                padding: 3px 6px;
+                padding: 0;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+                box-shadow: none;
                 font-size: 10px;
+                font-weight: 700;
                 text-align: center;
+            }
+            .catalog-qty:disabled {
+                color: #475569;
+                background: transparent;
+                opacity: 1;
+            }
+            .catalog-qty:focus,
+            .finalize-qty:focus {
+                border: 0;
+                border-bottom: 1px solid var(--purple);
+                border-radius: 0;
+                background: transparent;
+                box-shadow: none;
+                outline: none;
             }
             [data-package-help] {
                 display: block;
@@ -864,6 +906,12 @@
                 width: 82px;
                 min-height: 34px;
                 margin: auto;
+                padding: 0;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+                box-shadow: none;
+                font-weight: 700;
                 text-align: center;
             }
             .total-equivalent-cell {
@@ -881,6 +929,14 @@
                 font-weight: 850;
                 text-transform: uppercase;
                 white-space: nowrap;
+            }
+            .request-stock-status.is-na {
+                color: #166534;
+                background: #dcfce7;
+            }
+            span.request-stock-status.is-na {
+                color: #166534 !important;
+                background: #dcfce7 !important;
             }
             .request-stock-status.is-low {
                 color: #92400e;
@@ -1901,12 +1957,13 @@
                                     <thead>
                                         <tr>
                                             <th>Product</th>
-                                            <th>Approved Requirement</th>
                                             <th>Supplier</th>
-                                            <th>Purchase Unit</th>
+                                            <th>Supplier Price</th>
                                             <th>Contents</th>
                                             <th>PO Qty</th>
+                                            <th>Purchase Unit</th>
                                             <th>Base Qty / Excess</th>
+                                            <th>Estimated Line Total</th>
                                         </tr>
                                     </thead>
                                     <tbody id="managerProcurementAssignments"></tbody>
@@ -1936,7 +1993,7 @@
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-        <script type="module" src="./js/modules/purchase_requests.js?v=44"></script>
+        <script type="module" src="./js/modules/purchase_requests.js?v=72"></script>
         <script type="module">
             import verifySession from "./js/modules/auth.js?v=8";
             await verifySession();

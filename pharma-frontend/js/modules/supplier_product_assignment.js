@@ -19,6 +19,13 @@ const esc = (value) => String(value ?? '')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+
+function compactPrice(value) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '0';
+    return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 const canManageSupplierCatalog = () => ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
 
 function assignmentProductIdentity(product = {}) {
@@ -326,7 +333,8 @@ function rememberTerms() {
         state.terms.set(String(card.dataset.productId), {
             purchaseUnit: card.querySelector('.term-unit')?.value || 'Box',
             inventoryUnit: card.querySelector('.term-inventory-unit')?.value || '',
-            hierarchyLevels: editor?.read() || []
+            hierarchyLevels: editor?.read() || [],
+            supplierCost: card.querySelector('.term-supplier-cost')?.value || ''
         });
     });
 }
@@ -335,7 +343,8 @@ function defaultTerms(product) {
     return state.terms.get(String(product.product_id)) || {
         purchaseUnit: 'Box',
         inventoryUnit: inventoryUnit(product),
-        hierarchyLevels: [{ unit: inventoryUnit(product), quantity: '' }]
+        hierarchyLevels: [{ unit: inventoryUnit(product), quantity: '' }],
+        supplierCost: ''
     };
 }
 
@@ -375,6 +384,11 @@ function renderStep2() {
                                 <input class="form-control term-inventory-unit" value="${esc(unit)}" readonly>
                                 <div class="form-text">Defined in Product Master.</div>
                                 <div class="assignment-field-error"></div>
+                            </div>
+                            <div>
+                                <label class="form-label">Supplier Price per Purchase Unit</label>
+                                <div class="input-group"><span class="input-group-text">₱</span><input class="form-control term-supplier-cost" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(saved.supplierCost || '')}" placeholder="Optional"></div>
+                                <div class="form-text">Supplier's cost for one ${esc(saved.purchaseUnit || 'purchase unit')}. Does not change retail price.</div>
                             </div>
                             <div class="term-packaging-host"></div>
                             <div class="assignment-field-error term-packaging-error" role="status"></div>
@@ -527,6 +541,7 @@ function renderStep3() {
                             <div><span>Purchase Unit</span><strong>${esc(saved.purchaseUnit)}</strong></div>
                             <div><span>Product Base Unit</span><strong>${esc(unit)}</strong></div>
                             <div><span>Contents</span><strong>${esc(conversion.summary)}</strong></div>
+                            <div><span>Supplier Price</span><strong>${saved.supplierCost === '' ? 'Not set' : `₱${esc(compactPrice(saved.supplierCost))}`}</strong></div>
                         </div>
                     </article>`;
             }).join('')}
@@ -670,7 +685,8 @@ async function saveAssignments() {
                     product_id: product.product_id,
                     purchase_unit: saved.purchaseUnit,
                     inventory_unit: saved.inventoryUnit,
-                    hierarchy_levels: saved.hierarchyLevels
+                    hierarchy_levels: saved.hierarchyLevels,
+                    supplier_cost_input: saved.supplierCost === '' ? null : saved.supplierCost
                 })
             });
             succeeded.push(product);

@@ -60,6 +60,7 @@ try {
         $requestedUnit = trim((string)($item['unit'] ?? $item['requested_unit'] ?? '')) ?: $requestUnit;
         $requestUnit = validatePurchaseRequestPackage($packageOptions[$productId] ?? [], $item['requested_qty'] ?? null, $requestedUnit);
         $qty = positivePurchaseRequestQuantity($item['requested_qty'] ?? null, $requestUnit);
+        assertPurchaseRequestQuantityLimit($qty, $pdo);
         assertNoActivePurchaseRequestConflict($pdo, $productId, (string) $product['product_name'], $prId);
         $stockStmt->execute([':product_id' => $productId]);
         $validated[] = [

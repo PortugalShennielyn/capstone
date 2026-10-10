@@ -11,7 +11,7 @@
     </div>
 
     <nav class="sidebar-nav" aria-label="Main navigation">
-        <a href="dashboard.html" class="nav-link-item" data-nav-page="dashboard" data-dashboard-view="dashboard" title="Dashboard">
+        <a href="sales_clerk_dashboard.html" class="nav-link-item" data-nav-page="sales-clerk-dashboard" data-dashboard-view="sales-clerk-dashboard" title="Dashboard">
             <i class="fa-solid fa-gauge-high"></i>
             <span class="nav-label">Dashboard</span>
         </a>
@@ -138,20 +138,41 @@
     </nav>
 
     <div class="sidebar-profile-footer" role="group" aria-label="User profile">
-        <button class="sidebar-user-trigger" type="button" id="sidebarUserMenuButton" aria-expanded="false" aria-controls="sidebarUserPopover" title="User actions">
+
+    <button
+        class="sidebar-user-trigger"
+        type="button"
+        id="sidebarUserMenuButton"
+        aria-expanded="false"
+        aria-controls="sidebarUserPopover"
+        title="User actions"
+    >
+        <div class="avatar-initials" data-navbar-initials></div>
+        <span class="profile-name" data-navbar-display-name></span>
+    </button>
+
+    <button
+        class="signout-btn sidebar-user-menu-toggle"
+        type="button"
+        aria-label="Open user actions"
+        title="User actions"
+    >
+        <i class="fa-solid fa-ellipsis-vertical"></i>
+    </button>
+
+    <div
+        class="sidebar-user-popover"
+        id="sidebarUserPopover"
+        role="menu"
+        aria-labelledby="sidebarUserMenuButton"
+    >
+
+        <div class="sidebar-user-summary">
             <div class="avatar-initials" data-navbar-initials></div>
-            <span class="profile-name" data-navbar-display-name></span>
-        </button>
-        <button class="signout-btn sidebar-user-menu-toggle" type="button" aria-label="Open user actions" title="User actions">
-            <i class="fa-solid fa-ellipsis-vertical"></i>
-        </button>
-        <div class="sidebar-user-popover" id="sidebarUserPopover" role="menu" aria-labelledby="sidebarUserMenuButton">
-            <div class="sidebar-user-summary">
-                <div class="avatar-initials" data-navbar-initials></div>
-                <div>
-                    <strong data-navbar-display-name></strong>
-                    <span data-navbar-role-label></span>
-                </div>
+
+            <div>
+                <strong data-navbar-display-name></strong>
+                <span data-navbar-role-label></span>
             </div>
             <a href="profile.html" class="sidebar-user-action" data-nav-page="user-settings" role="menuitem">
                 <i class="fa-solid fa-user-gear"></i>
@@ -166,8 +187,52 @@
                 <span>Sign out</span>
             </a>
         </div>
-        <a class="signout-btn sidebar-signout-direct" href="login.html" data-auth-action="logout" title="Sign out" aria-label="Sign out">
-            <i class="fa-solid fa-right-from-bracket"></i>
+
+        <!-- USER SETTINGS -->
+        <a
+            href="sales_clerk_profile.html"
+            class="sidebar-user-action"
+            data-nav-page="user-settings"
+            role="menuitem"
+        >
+            <i class="fa-solid fa-user-gear"></i>
+            <span>User Settings</span>
         </a>
+
+        <!-- BILLING -->
+        <a
+            href="dashboard.html#dashboard/billing"
+            class="sidebar-user-action"
+            data-nav-page="billing"
+            data-dashboard-view="dashboard/billing"
+            role="menuitem"
+        >
+            <i class="fa-solid fa-credit-card"></i>
+            <span>Billing</span>
+        </a>
+
+        <!-- SIGN OUT -->
+        <a
+            href="login.html"
+            class="sidebar-user-action sidebar-user-action-danger"
+            data-auth-action="logout"
+            role="menuitem"
+        >
+            <i class="fa-solid fa-right-from-bracket"></i>
+            <span>Sign out</span>
+        </a>
+
     </div>
+
+    <a
+        class="signout-btn sidebar-signout-direct"
+        href="login.html"
+        data-auth-action="logout"
+        title="Sign out"
+        aria-label="Sign out"
+    >
+        <i class="fa-solid fa-right-from-bracket"></i>
+    </a>
+
+</div>
 </aside>

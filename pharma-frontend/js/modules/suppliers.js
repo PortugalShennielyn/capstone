@@ -49,6 +49,16 @@ const esc = (value) => String(value ?? '')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 
+function compactPrice(value) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '0';
+    return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function pesoPrice(value) {
+    return `₱${compactPrice(value)}`;
+}
+
 function combineValueUnit(value, unit) {
     const cleanValue = String(value || '').trim();
     const cleanUnit = String(unit || '').trim();
@@ -541,6 +551,7 @@ function renderSupplierProducts(rows) {
                 </td>
                 <td class="col-specification">${supplierCatalogSpecification(product)}</td>
                 <td class="col-purchase-unit"><div class="supplier-purchase-unit-display"><strong>${esc(displayOrNotSet(product.purchase_unit))}</strong><small>${esc(supplierContainsLabel(product))}</small></div></td>
+                <td class="col-supplier-price">${product.supplier_cost_input === null || product.supplier_cost_input === undefined || product.supplier_cost_input === '' ? '<span class="text-muted">Not set</span>' : esc(pesoPrice(product.supplier_cost_input))}</td>
                 <td class="col-actions actions-column">
                     ${supplierCatalogCanModify() ? `<div class="supplier-product-actions">
                         <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" title="Edit supplier product" aria-label="Edit supplier product">
@@ -553,7 +564,7 @@ function renderSupplierProducts(rows) {
                 </td>
             </tr>
         `;}).join('')
-        : '<tr><td colspan="5" class="text-center text-muted py-4">No supplier products found.</td></tr>';
+        : '<tr><td colspan="6" class="text-center text-muted py-4">No supplier products found.</td></tr>';
     window.PharmacySearchHighlight?.apply(body, document.getElementById('supplierProductSearch')?.value || '');
 }
 
@@ -1168,6 +1179,7 @@ function openSupplierProductDetails(supplierProductId) {
                     <dt>Packaging</dt><dd>${esc(supplierProductPackaging(product))}</dd>
                     <dt>Purchase Unit</dt><dd>${esc(displayOrNotSet(product.purchase_unit))}</dd>
                     <dt>Units per Purchase Unit</dt><dd>${esc(supplierContainsLabel(product))}</dd>
+                    <dt>Product Master Base Price</dt><dd>${esc(pesoPrice(sellingPrice))}</dd>
                 </dl>
             </section>
             <section class="supplier-detail-section">
@@ -1599,6 +1611,10 @@ async function openEditSupplierProduct(supplierProductId) {
     document.getElementById('editSupplierProductLinkId').value = product.supplier_product_id || '';
     document.getElementById('editSupplierProductId').value = product.product_id || '';
     document.getElementById('editSupplierProductSupplierId').value = product.supplier_id || '';
+    const retailPriceInput = document.getElementById('editSupplierProductRetailPrice');
+    if (retailPriceInput) retailPriceInput.value = compactPrice(product.price || product.selling_price || 0);
+    const supplierCostInput = document.getElementById('editSupplierProductCost');
+    if (supplierCostInput) supplierCostInput.value = product.supplier_cost_input === null || product.supplier_cost_input === undefined ? '' : compactPrice(product.supplier_cost_input);
     setSupplierEditText('editSupplierProductSupplierNameText', product.supplier_name);
     document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = Math.max(1, Number(product.units_per_purchase_unit || product.purchase_unit_contains || 1));
     renderSupplierProductMasterDetails(product, [], product.specifications || []);
@@ -1660,10 +1676,19 @@ async function submitEditSupplierProduct(event) {
         purchase_unit: document.getElementById('editSupplierProductPurchaseUnit').value,
         inventory_unit: document.getElementById('editSupplierProductInventoryUnitPreview').value.trim(),
         purchase_unit_contains: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value,
-        units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value
+        units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value,
+        supplier_cost_input: document.getElementById('editSupplierProductCost')?.value || null,
+        product_price: document.getElementById('editSupplierProductRetailPrice')?.value || ''
     };
 
     const unitsPerPurchaseUnit = Number(payload.purchase_unit_contains);
+    const productPrice = Number(payload.product_price);
+    if (!Number.isFinite(productPrice) || productPrice <= 0 || !/^\d+(?:\.\d{1,2})?$/.test(payload.product_price)) {
+        document.getElementById('editSupplierProductRetailPrice')?.classList.add('is-invalid');
+        PharmaUtils.toast.error('Enter a valid Product Master Base Price greater than zero, with up to 2 decimal places.');
+        return;
+    }
+    document.getElementById('editSupplierProductRetailPrice')?.classList.remove('is-invalid');
     if (!['box', 'carton'].includes(normalizedSupplierUnit(payload.purchase_unit))) {
         document.getElementById('editSupplierProductPurchaseUnit')?.classList.add('is-invalid');
         PharmaUtils.toast.error('Purchase Unit must be Box or Carton.');
