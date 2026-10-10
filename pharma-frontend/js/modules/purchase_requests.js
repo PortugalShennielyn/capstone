@@ -3,11 +3,9 @@ import { ensurePageTabSession, tabToken } from "./auth_guard.js?v=27";
 import { primaryAccessRole } from "./rbac.js";
 import { formatProductSpecification as productSpecification } from "./product_specification.js?v=8";
 import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=1";
-import { loadMeasurementUnits } from "./measurement_units.js?v=2";
 
 let products = [];
 let requests = [];
-let quantityUnits = [];
 let inventoryRows = [];
 let actorRole = "";
 let sessionUser = null;
@@ -219,37 +217,12 @@ function baseUnitAllowsDecimal(product) {
 }
 
 function requestUnit(item, product) {
-    return item?.unit || product?.purchase_unit || "";
+    return item?.unit || product?.purchase_unit || product?.packaging_units?.[0]?.unit || baseInventoryUnit(product) || "";
 }
 
-function requestUnitOptions(product, item = null) {
-    const levels = product?.packaging_units || [];
-    const catalogTokens = new Set();
-    quantityUnits
-        .filter((unit) => Number(unit.is_active ?? 1) === 1)
-        .forEach((unit) => {
-            [unit.unit_name, unit.unit_symbol].forEach((label) => {
-                const token = String(label || "").trim().toLowerCase();
-                if (token) catalogTokens.add(token);
-            });
-        });
-    let options = levels.filter((level) => catalogTokens.has(String(level.unit || "").trim().toLowerCase()));
-    if (!options.length) options = levels;
-    const selectedUnit = requestUnit(item, product);
-    if (selectedUnit && !options.some((level) => String(level.unit).toLowerCase() === selectedUnit.toLowerCase())) {
-        const selectedLevel = levels.find((level) => String(level.unit).toLowerCase() === selectedUnit.toLowerCase());
-        if (selectedLevel) options = [...options, selectedLevel];
-    }
-    return options;
-}
-
-function requestUnitSelector(product, item = null, disabled = false) {
-    const options = requestUnitOptions(product, item);
-    if (!options.length) return "";
-    const selectedUnit = requestUnit(item, product);
-    return `<select class="form-select request-unit-select" data-request-unit="${esc(product.product_id)}" aria-label="Requested unit for ${esc(product.product_name || "product")}" ${disabled ? "disabled" : ""}>${options
-        .map((level) => `<option value="${esc(level.unit)}" ${String(level.unit).toLowerCase() === String(selectedUnit).toLowerCase() ? "selected" : ""}>${esc(level.unit)}</option>`)
-        .join("")}</select>`;
+function requestedUnitLabel(product, item = null) {
+    const unit = requestUnit(item, product);
+    return unit ? `<span class="requested-unit-label">${esc(unit)}</span>` : "";
 }
 
 function packageUnits(product) {
@@ -557,7 +530,7 @@ function renderProductCatalog() {
                     : `<input class="catalog-checkbox" type="checkbox" data-product-select="${esc(productId)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} aria-label="Select ${esc(product.product_name || "product")}" title="${esc(disabledReason || "Select product")}">`;
             const quantityInput = `<input class="form-control catalog-qty" type="number" min="0" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="decimal" value="${selected ? esc(selected.requested_qty) : "0"}" data-selected-qty="${esc(productId)}" ${disabled ? "disabled" : ""} aria-label="Requested quantity for ${esc(product.product_name || "product")}">`;
             const unitItem = selected || { unit: requestUnit(null, product) };
-            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${selectControl}</td><td class="catalog-product"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span></td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control">${quantityInput}${requestUnitSelector(product, unitItem, disabled)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, unitItem))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
+            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${selectControl}</td><td class="catalog-product"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span></td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control">${quantityInput}${requestedUnitLabel(product, unitItem)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, unitItem))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
         })
         .join("");
     syncVisibleSelectionCheckbox();
@@ -615,7 +588,7 @@ function renderFinalizeItems() {
             const context = inventoryContext(item.product_id);
             const unit = baseInventoryUnit(product);
             const step = "1";
-            return `<tr data-finalize-product-id="${esc(item.product_id)}"><td>${index + 1}</td><td class="finalize-product-description"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span><small>${esc(productSpecification(product))}</small></td><td>${esc(unit || "Unit not configured")}</td><td>${esc(context.shelf)}</td><td>${esc(context.storage)}</td><td><strong>${esc(context.onHand)} ${esc(unit)}</strong></td><td><div class="requested-qty-control"><input class="form-control finalize-qty" type="number" min="0" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="decimal" value="${esc(item.requested_qty)}" data-finalize-qty="${esc(item.product_id)}" aria-label="Requested quantity for ${esc(product.product_name || "product")}">${requestUnitSelector(product, item)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, item))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(item.product_id)}">${esc(totalEquivalent(product, item))}</td><td><button class="btn btn-sm btn-outline-danger remove-finalize-product" type="button" data-product-id="${esc(item.product_id)}" aria-label="Remove ${esc(product.product_name || "product")}"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
+            return `<tr data-finalize-product-id="${esc(item.product_id)}"><td>${index + 1}</td><td class="finalize-product-description"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span><small>${esc(productSpecification(product))}</small></td><td>${esc(unit || "Unit not configured")}</td><td>${esc(context.shelf)}</td><td>${esc(context.storage)}</td><td><strong>${esc(context.onHand)} ${esc(unit)}</strong></td><td><div class="requested-qty-control"><input class="form-control finalize-qty" type="number" min="0" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="decimal" value="${esc(item.requested_qty)}" data-finalize-qty="${esc(item.product_id)}" aria-label="Requested quantity for ${esc(product.product_name || "product")}">${requestedUnitLabel(product, item)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, item))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(item.product_id)}">${esc(totalEquivalent(product, item))}</td><td><button class="btn btn-sm btn-outline-danger remove-finalize-product" type="button" data-product-id="${esc(item.product_id)}" aria-label="Remove ${esc(product.product_name || "product")}"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
         })
         .join("");
 }
@@ -1189,7 +1162,9 @@ function openPoGeneration(request) {
     document.getElementById("generatePoNumber").textContent = request.pr_number;
     renderManagerPurchasingSetup(request);
     setPoGenerationStep(1);
-    bootstrap.Modal.getOrCreateInstance(document.getElementById("generatePoModal")).show();
+    const poModalElement = document.getElementById("generatePoModal");
+    if (poModalElement.parentElement !== document.body) document.body.append(poModalElement);
+    bootstrap.Modal.getOrCreateInstance(poModalElement).show();
 }
 
 async function generatePurchaseOrders() {
@@ -1601,17 +1576,15 @@ function maybeOpenInventoryShortcut() {
 
 async function load() {
     try {
-        const [prData, candidateData, measurementUnitData, settingsData] = await Promise.all([
+        const [prData, candidateData, settingsData] = await Promise.all([
             json(`${API_BASE_URL}/purchase_requests/get_purchase_requests.php?t=${Date.now()}`),
             json(`${API_BASE_URL}/purchase_requests/get_pr_candidates.php?t=${Date.now()}`),
-            loadMeasurementUnits({ forceRefresh: true }),
             json(`${API_BASE_URL}/settings/get_admin_settings.php?t=${Date.now()}`).catch(() => ({ prQuantityLimit: 50 })),
         ]);
         const configuredLimit = Number(settingsData?.prQuantityLimit);
         MAX_PURCHASE_REQUEST_QTY = Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 50;
         products = candidateData.data || [];
         requests = prData.data?.requests || [];
-        quantityUnits = measurementUnitData.units || [];
         inventoryRows = products;
         productById.clear();
         inventoryByProduct.clear();
@@ -1670,7 +1643,7 @@ document.getElementById("productSelectorRows")?.addEventListener("input", (event
     }
     const product = productById.get(productId);
     const total = document.querySelector(`[data-total-equivalent="${productId}"]`);
-    const unit = input.closest("tr")?.querySelector("[data-request-unit]")?.value || product?.purchase_unit || "";
+    const unit = requestUnit(null, product);
     if (product && total)
         total.textContent = totalEquivalent(product, {
             requested_qty: Number(input.value),
@@ -1678,17 +1651,6 @@ document.getElementById("productSelectorRows")?.addEventListener("input", (event
         });
 });
 document.getElementById("productSelectorRows")?.addEventListener("change", (event) => {
-    const unitSelect = event.target.closest("[data-request-unit]");
-    if (unitSelect) {
-        const productId = String(unitSelect.dataset.requestUnit);
-        if (!selectedItems.has(productId)) selectProduct(productId, 0);
-        const item = selectedItems.get(productId);
-        if (item) {
-            item.unit = unitSelect.value;
-            renderSelectionState();
-        }
-        return;
-    }
     const input = event.target.closest("[data-selected-qty]");
     if (!input || selectedItems.has(String(input.dataset.selectedQty))) return;
     const quantity = Number(input.value);
@@ -1730,14 +1692,6 @@ document.getElementById("finalizeRequestItems")?.addEventListener("click", (even
 document.getElementById("finalizeRequestItems")?.addEventListener("input", (event) => {
     if (event.target.matches("[data-finalize-qty]"))
         setRequestedQuantity(event.target.dataset.finalizeQty, event.target.value);
-});
-document.getElementById("finalizeRequestItems")?.addEventListener("change", (event) => {
-    const unitSelect = event.target.closest("[data-request-unit]");
-    if (!unitSelect) return;
-    const item = selectedItems.get(String(unitSelect.dataset.requestUnit));
-    if (!item) return;
-    item.unit = unitSelect.value;
-    renderSelectionState();
 });
 document
     .getElementById("saveDraftButton")
