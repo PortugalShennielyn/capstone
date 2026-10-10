@@ -32,8 +32,19 @@ try {
         exit();
     }
 
+    $isAdmin = currentSessionHasAnyRole(['super_admin', 'admin', 'Admin', 'ro-super-admin', 'ro-admin']);
+    if (!$isAdmin) {
+        throw new InvalidArgumentException('Only an Admin can confirm and apply selected category prices.');
+    }
+
     $pdo->beginTransaction();
-    $result = applyCategoryMarkupToSelectedProducts($pdo, $productIds);
+    $result = applyCategoryMarkupToSelectedProducts(
+        $pdo,
+        $productIds,
+        !empty($payload['confirm_flagged']),
+        is_array($payload['preview_tokens'] ?? null) ? $payload['preview_tokens'] : [],
+        $isAdmin
+    );
     $pdo->commit();
     echo json_encode([
         'status' => 'success',

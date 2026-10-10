@@ -346,7 +346,8 @@ try {
 
     echo json_encode([
         'status' => 'success',
-        'message' => 'Product SKU updated successfully.'
+        'message' => 'Product SKU updated successfully.',
+        'price' => $price
     ]);
 } catch (InvalidArgumentException $e) {
     if ($pdo->inTransaction()) {

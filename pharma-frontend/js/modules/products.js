@@ -18,7 +18,7 @@ import {
     formatProductSpecification,
     medicineCatalogSpecificationParts,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=16';
+} from './product_specification.js?v=17';
 import {
     loadMeasurementUnits,
     measurementUnitsForContext
@@ -1210,18 +1210,7 @@ async function populateProductCardFilters() {
 }
 
 async function populateMedicineClassificationSelects() {
-    const rows = await cachedMedicineClassifications();
-    const targets = [
-        ['productMedicineClassification', 'Select classification...'],
-        ['editProductMedicineClassification', 'Select classification...']
-    ];
-    targets.forEach(([id, placeholder]) => {
-        const select = document.getElementById(id);
-        if (!select) return;
-        const selected = select.value;
-        select.innerHTML = `<option value="">${placeholder}</option>${rows.map(row => `<option value="${escapeHtml(row.value)}">${escapeHtml(row.value)}</option>`).join('')}`;
-        if (rows.some(row => row.value === selected)) select.value = selected;
-    });
+    await cachedMedicineClassifications();
 }
 
 function updateMedicineClassificationFilter() {
@@ -1305,20 +1294,17 @@ function setMedicineFields(mode, categoryName, { clear = true } = {}) {
     document.getElementById(mode === 'edit' ? 'editProductModal' : 'addProductModal')?.classList.toggle('medicine-product-mode', medicine);
     const selector = mode === 'edit' ? '.edit-medicine-basic-field' : '.medicine-basic-field';
     document.querySelectorAll(selector).forEach(field => field.classList.toggle('d-none', !medicine));
-    document.querySelectorAll(`${selector}.medicine-classification-basic-field`).forEach(field => field.classList.toggle('d-none', !medicine));
     document.getElementById(mode === 'edit' ? 'editProductTypeField' : 'productTypeField')?.classList.toggle('d-none', medicine);
-    const classification = document.getElementById(`${prefix}MedicineClassification`);
     const generic = document.getElementById(`${prefix}GenericName`);
     const brand = document.getElementById(mode === 'edit' ? 'editProductBrand' : 'productBrandName');
     const productName = document.getElementById(mode === 'edit' ? 'editProductName' : 'productName');
     const productNameField = document.getElementById(mode === 'edit' ? 'editProductNameField' : 'productNameField');
     const brandLabel = document.getElementById(mode === 'edit' ? 'editProductBrandLabel' : 'productBrandLabel');
-    [classification, generic].filter(Boolean).forEach(field => {
-        const skuOwnedClassification = field === classification && medicine;
-        field.disabled = !medicine || skuOwnedClassification;
-        field.required = medicine && !skuOwnedClassification;
-        if (!medicine && clear) field.value = '';
-    });
+    if (generic) {
+        generic.disabled = !medicine;
+        generic.required = medicine;
+        if (!medicine && clear) generic.value = '';
+    }
     productNameField?.classList.toggle('d-none', medicine);
     if (productName) {
         productName.disabled = medicine;
@@ -1384,7 +1370,7 @@ function buildProductPayload() {
         price: firstVariation.price || '0',
         barcode: firstVariation.barcode || '',
         generic_name: genericName,
-        medicine_classification: firstVariation.medicine_classification || getValue('productMedicineClassification'),
+        medicine_classification: firstVariation.medicine_classification || '',
         status: 'Active',
         pricing_method: pricingMethod,
         variations
@@ -2334,7 +2320,7 @@ function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
     const skuTail = medicine
         ? `${inventoryUnitField(variation)}${sellingPriceField(variation)}${barcodeField}`
         : `${inventoryUnitField(variation)}${barcodeField}${sellingPriceField(variation)}`;
-    const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div><div class="sku-classification-field"><label class="form-label">Medicine Classification <span class="text-danger">*</span></label><select class="form-select medicine-sku-classification" required>${medicineSkuClassificationOptions(variation.medicine_classification || getValue(mode === 'edit' ? 'editProductMedicineClassification' : 'productMedicineClassification'))}</select></div></div>` : '';
+    const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div><div class="sku-classification-field"><label class="form-label">Medicine Classification <span class="text-danger">*</span></label><select class="form-select medicine-sku-classification" required>${medicineSkuClassificationOptions(variation.medicine_classification || '')}</select></div></div>` : '';
     return `<div class="edit-variation-entry${medicine ? ' is-medicine-variation' : ''}" data-show-all-specifications="${variation.show_all_specifications ? '1' : '0'}"><div class="d-flex align-items-center justify-content-end gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div>${empty}<div class="dynamic-specification-grid">${skuIdentity}${fields}${skuTail}</div></div>`;
 }
 
@@ -2604,7 +2590,6 @@ async function openCreateAnotherVariant(product) {
     document.getElementById('productBrandName').value = product.brand_name || '';
     document.getElementById('productName').value = product.product_name || '';
     document.getElementById('productGenericName').value = product.generic_name || '';
-    setSelectValue('productMedicineClassification', product.medicine_classification || '');
     const categorySelect = document.getElementById('productCategory');
     const typeSelect = document.getElementById('productType');
     if (categorySelect) categorySelect.innerHTML = `<option value="${escapeHtml(product.category_id || '')}" data-category-name="${escapeHtml(product.category_name || '')}" selected>${escapeHtml(product.category_name || 'Current category')}</option>`;
@@ -2759,6 +2744,8 @@ function updateEditPricingView({ preserveApply = false } = {}) {
     const note = document.getElementById('editPricingActionNote');
     if (note) note.textContent = method === 'manual'
         ? 'Category and supplier-cost changes will not overwrite this manual price.'
+        : context.cost === null
+            ? 'An accepted delivery with a unit cost is needed to calculate a markup price. You can save the markup method now.'
         : editPricingApplyRequested
             ? `The calculated price ${calculatedLabel} will become active when you save.`
             : 'Saving the pricing method preserves the active price unless you explicitly apply the calculation.';
@@ -2774,7 +2761,6 @@ async function openEditProduct(productId) {
     document.getElementById('editProductBrand').value = product.brand_name || '';
     document.getElementById('editProductName').value = product.product_name || '';
     document.getElementById('editProductGenericName').value = product.generic_name || '';
-    setSelectValue('editProductMedicineClassification', product.medicine_classification || '');
     document.getElementById('editProductStatus').value = product.status || 'Active';
     const statusAction = document.getElementById('editProductStatusAction');
     if (statusAction) {
@@ -2837,7 +2823,6 @@ async function openEditProduct(productId) {
         if (detailResult.status === 'fulfilled') productDetailsCache.set(String(product.product_id), details);
         const hydratedProduct = { ...product, ...(details.product || {}) };
         document.getElementById('editProductGenericName').value = hydratedProduct.generic_name || '';
-        setSelectValue('editProductMedicineClassification', hydratedProduct.medicine_classification || '');
         const rawSavedSpecifications = Array.isArray(details.specifications) && details.specifications.length
             ? details.specifications
             : (Array.isArray(product.specifications) && product.specifications.length ? product.specifications : legacySpecificationsForProduct(hydratedProduct));
@@ -2872,7 +2857,7 @@ async function submitEditProduct(event) {
         category_id: getValue('editProductCategory'),
         type_id: collectEditVariations().find(variation => !variation.delete)?.type_id || getValue('editProductType'),
         generic_name: genericName,
-        medicine_classification: collectEditVariations().find(variation => !variation.delete)?.medicine_classification || getValue('editProductMedicineClassification'),
+        medicine_classification: collectEditVariations().find(variation => !variation.delete)?.medicine_classification || '',
         status: getValue('editProductStatus') || 'Active',
         pricing_method: pricingMethod,
         variations: collectEditVariations()
@@ -2912,7 +2897,7 @@ async function submitEditProduct(event) {
 
         const currentProduct = getProductById(payload.product_id) || {};
         const primaryVariation = payload.variations.find(variation => !variation.delete) || {};
-        const savedPrice = primaryVariation.price || payload.manual_selling_price || currentProduct.price || 0;
+        const savedPrice = data.price ?? primaryVariation.price ?? payload.manual_selling_price ?? currentProduct.price ?? 0;
         const savedSpecifications = normalizeProductSpecificationValues(
             productState.specifications,
             primaryVariation.specifications || currentProduct.specifications || [],
@@ -3016,11 +3001,13 @@ function updateSelectedPricingPreviewSummary() {
     const selectedCount = selectedPricingEligibleProductIds.size;
     const eligibleCount = selectedPricingPreviewRows.filter(row => row.eligible_for_apply).length;
     const blockedCount = selectedPricingPreviewRows.length - eligibleCount;
+    const warningCount = selectedPricingPreviewRows.filter(row => row.warning && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
     setPricingText('selectedPricingSelectedCount', String(selectedCount));
     setPricingText('selectedPricingEligibleCount', String(eligibleCount));
     setPricingText('selectedPricingBlockedCount', String(blockedCount));
+    setPricingText('selectedPricingWarningCount', String(warningCount));
     const summary = document.getElementById('selectedPricingPreviewSummary');
-    if (summary) summary.textContent = `${selectedCount} eligible product${selectedCount === 1 ? '' : 's'} selected for application. ${blockedCount ? `${blockedCount} product${blockedCount === 1 ? '' : 's'} cannot be applied because pricing is current, cost is missing, or the product is inactive.` : 'All previewed products are eligible.'}`;
+    if (summary) summary.textContent = `${selectedCount} product${selectedCount === 1 ? '' : 's'} selected. ${warningCount ? `${warningCount} price change${warningCount === 1 ? '' : 's'} of 30% or more require Admin confirmation. ` : ''}${blockedCount ? `${blockedCount} blocked; review the Eligibility messages.` : ''}`;
     const confirm = document.getElementById('btnConfirmSelectedPricing');
     if (confirm) confirm.disabled = selectedCount === 0 || selectedPricingSubmissionActive;
 }
@@ -3034,7 +3021,7 @@ function renderSelectedPricingPreview() {
     body.innerHTML = rows.map(row => {
         const eligible = Boolean(row.eligible_for_apply);
         const checked = eligible && selectedPricingEligibleProductIds.has(String(row.product_id));
-        return `<tr class="${eligible ? '' : 'is-ineligible'}">
+        return `<tr class="${eligible ? (row.warning ? 'has-price-warning' : '') : 'is-ineligible'}">
             <td class="center-column"><input class="form-check-input bulk-pricing-select" type="checkbox" value="${escapeHtml(row.product_id)}" aria-label="Select ${escapeHtml(row.product_name)}" ${checked ? 'checked' : ''} ${eligible ? '' : 'disabled'}></td>
             <td class="text-column"><span class="identity-value" title="${escapeHtml(row.barcode)}">${escapeHtml(row.barcode)}</span></td>
             <td class="text-column"><span class="identity-value">${escapeHtml(row.brand_name)}</span></td>
@@ -3045,9 +3032,9 @@ function renderSelectedPricingPreview() {
             <td class="numeric-column">${row.current_cost_basis === null ? '<span class="text-danger">No accepted cost</span>' : `${formatPrice(row.current_cost_basis)}<small class="d-block text-muted">per ${escapeHtml(row.inventory_unit)}</small>`}</td>
             <td class="numeric-column">${Number(row.applied_markup_percentage).toFixed(2)}%<small class="d-block text-muted">${escapeHtml(row.markup_source)}</small></td>
             <td class="numeric-column">${formatPrice(row.current_selling_price)}</td>
-            <td class="numeric-column">${row.calculated_selling_price === null ? '—' : formatPrice(row.calculated_selling_price)}</td>
-            <td class="numeric-column">${row.difference === null ? '—' : signedPrice(row.difference)}</td>
-            <td class="center-column"><span class="bulk-pricing-status ${eligible ? 'is-ready' : 'is-blocked'}">${escapeHtml(row.eligibility_status || (eligible ? 'Ready' : 'Cannot apply'))}</span></td>
+            <td class="numeric-column ${row.warning ? 'bulk-pricing-warning-value' : ''}">${row.calculated_selling_price === null ? '—' : formatPrice(row.calculated_selling_price)}</td>
+            <td class="numeric-column ${row.warning ? 'bulk-pricing-warning-value' : ''}">${row.difference === null ? '—' : `${signedPrice(row.difference)}${row.price_change_percent === null ? '' : `<small class="d-block">${row.price_change_percent > 0 ? '+' : ''}${row.price_change_percent}%</small>`}`}</td>
+            <td class="center-column"><span class="bulk-pricing-status ${eligible ? (row.warning ? 'is-warning' : 'is-ready') : 'is-blocked'}">${escapeHtml(row.eligibility_status || (eligible ? 'Ready' : 'Cannot apply'))}</span></td>
         </tr>`;
     }).join('') || '<tr><td colspan="13" class="text-center text-muted py-4">No preview products match this search.</td></tr>';
     updateSelectedPricingPreviewSummary();
@@ -3078,6 +3065,24 @@ async function previewSelectedCategoryPricing() {
 async function applySelectedCategoryPricing() {
     const productIds = Array.from(selectedPricingEligibleProductIds);
     if (!productIds.length || selectedPricingSubmissionActive) return;
+    const selectedRows = selectedPricingPreviewRows.filter(row => productIds.includes(String(row.product_id)));
+    const flagged = selectedRows.filter(row => row.warning);
+    const warningList = flagged.length
+        ? `<ul class="text-start small mt-2 mb-0">${flagged.map(row => `<li>${escapeHtml(row.product)}: ${escapeHtml(row.warning)}</li>`).join('')}</ul>`
+        : '';
+    const approval = await Swal.fire({
+        icon: flagged.length ? 'warning' : 'question',
+        title: 'Confirm Category Markup',
+        html: `<p>${productIds.length} selected product${productIds.length === 1 ? '' : 's'} will change price and pricing method. Their base selling-unit prices in POS will update.</p>${warningList}`,
+        showCancelButton: true,
+        confirmButtonText: `Apply to ${productIds.length} Product${productIds.length === 1 ? '' : 's'}`,
+        ...(flagged.length ? {
+            input: 'checkbox',
+            inputPlaceholder: 'I am an Admin and I approve the flagged price changes.',
+            inputValidator: value => value ? undefined : 'Admin approval is required for flagged price changes.'
+        } : {})
+    });
+    if (!approval.isConfirmed) return;
     const confirm = document.getElementById('btnConfirmSelectedPricing');
     try {
         selectedPricingSubmissionActive = true;
@@ -3088,7 +3093,11 @@ async function applySelectedCategoryPricing() {
         PharmaUtils.modal.loading('Applying Category Markup...');
         const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/apply_selected_category_pricing.php`, {
             method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'apply', product_ids: productIds })
+            body: JSON.stringify({
+                action: 'apply', product_ids: productIds,
+                confirm_flagged: flagged.length > 0 && Boolean(approval.value),
+                preview_tokens: Object.fromEntries(selectedRows.map(row => [row.product_id, row.preview_token]))
+            })
         });
         PharmaUtils.modal.close();
         bootstrap.Modal.getInstance(document.getElementById('selectedPricingModal'))?.hide();

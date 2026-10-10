@@ -226,7 +226,10 @@ export function medicineCatalogSpecificationParts(product = {}) {
         || clean(product.dosage_form)
         || clean(product.type_name);
     const numerator = specificationValue(firstNamed('strength'));
-    const denominator = specificationValue(firstNamed('strength denominator', 'concentration denominator'));
+    const denominatorSpecification = specifications.find(specification =>
+        /^(strength|concentration) denominator(?: |$)/.test(specificationName(specification))
+    );
+    const denominator = specificationValue(denominatorSpecification);
     const fallbackStrength = clean(product.strength)
         || formatMeasurement(product.medicine_strength_value ?? product.strength_value, product.strength_unit);
     const strength = (numerator && denominator ? `${numerator} / ${denominator}` : (numerator || fallbackStrength))
@@ -247,7 +250,7 @@ export function medicineCatalogSpecificationParts(product = {}) {
     addUnique(detailParts, netContent);
     specifications.forEach(specification => {
         const name = specificationName(specification);
-        if (!name || standardNames.has(name)) return;
+        if (!name || standardNames.has(name) || /^(strength|concentration) denominator(?: |$)/.test(name)) return;
         addUnique(detailParts, presentationText(specificationValue(specification)));
     });
 

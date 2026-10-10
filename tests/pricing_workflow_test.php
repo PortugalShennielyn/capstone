@@ -108,10 +108,15 @@ try {
     pricingAssert($testedImpact && !$testedImpact['eligible_for_apply'], 'Manual pricing is excluded from category price application');
 
     $selectedPreview = selectedCategoryPricingPreview($pdo, [$candidate['product_id']]);
-    pricingAssert(count($selectedPreview) === 1 && $selectedPreview[0]['existing_pricing_method'] === 'manual' && $selectedPreview[0]['eligible_for_apply'], 'Controlled selected-product preview includes manual product without changing it');
-    $selectedResult = applyCategoryMarkupToSelectedProducts($pdo, [$candidate['product_id']]);
+    pricingAssert(count($selectedPreview) === 1 && $selectedPreview[0]['existing_pricing_method'] === 'manual' && !$selectedPreview[0]['eligible_for_apply'], 'Selected-product preview blocks a batch without accepted PO unit conversion');
+    try {
+        applyCategoryMarkupToSelectedProducts($pdo, [$candidate['product_id']]);
+        throw new RuntimeException('Unverified batch cost was applied.');
+    } catch (InvalidArgumentException $expected) {
+        pricingAssert(true, 'Unverified batch cost is rejected before applying category markup');
+    }
     $selectedProduct = $pdo->query("SELECT price, pricing_method FROM product WHERE product_id = " . $pdo->quote($candidate['product_id']))->fetch(PDO::FETCH_ASSOC);
-    pricingAssert($selectedResult['applied_products'] === 1 && $selectedProduct['pricing_method'] === 'category_markup' && (float) $selectedProduct['price'] === 66.0, 'Explicit selected-product action converts and applies 20% to the 55.00 unit cost');
+    pricingAssert($selectedProduct['pricing_method'] === 'manual' && (float) $selectedProduct['price'] === 80.0, 'Unverified batch leaves the manual price unchanged');
 } finally {
     $pdo->rollBack();
 }

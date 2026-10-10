@@ -106,6 +106,7 @@ try {
     $response = productUpdatePost($payload, $phpSessionId, $tabToken);
     productUpdateAssert($response['status'] === 200, 'Product update failed: ' . json_encode($response, JSON_UNESCAPED_SLASHES));
     productUpdateAssert(($response['body']['status'] ?? '') === 'success', 'Product update did not report success.');
+    productUpdateAssert(abs((float) ($response['body']['price'] ?? 0) - (float) $product['price']) < 0.005, 'Product update did not return its saved selling price.');
 
     foreach ($before as $table => $expected) {
         $count = $pdo->prepare("SELECT COUNT(*) FROM {$table} WHERE product_id = :product_id");
