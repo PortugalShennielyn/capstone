@@ -12,6 +12,7 @@ try {
     }
 
     ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     ensureSalesOrderCashSchema($pdo);
     ensureCashierPaymentDiscountSchema($pdo);
 

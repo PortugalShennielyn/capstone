@@ -138,6 +138,12 @@ function sessionRoleSet(session) {
 }
 
 function primaryAccessRole(session) {
+    // session.role is hydrated from users.role, assigned by Admin. Do not let
+    // stale linked-role metadata override that canonical assignment.
+    const assignedRole = normalizeRole(session?.role);
+    if (['super_admin', 'admin', 'manager', 'supervisor', 'cashier', 'salesclerk'].includes(assignedRole)) {
+        return assignedRole;
+    }
     const roles = sessionRoleSet(session);
     if (roles.has('super_admin') || roles.has('ro_super_admin')) return 'super_admin';
     if (roles.has('admin') || roles.has('ro_admin')) return 'admin';
@@ -146,6 +152,17 @@ function primaryAccessRole(session) {
     if (roles.has('cashier') || roles.has('ro_cashier')) return 'cashier';
     if (roles.has('salesclerk') || roles.has('ro_sales_clerk')) return 'salesclerk';
     return '';
+}
+
+function dashboardPathForRole(session) {
+    return {
+        super_admin: 'dashboard.html',
+        admin: 'dashboard.html',
+        manager: 'dashboard.html',
+        supervisor: 'supervisor_dashboard.html',
+        cashier: 'cashier_dashboard.html',
+        salesclerk: 'sales_clerk_dashboard.html'
+    }[primaryAccessRole(session)] || '';
 }
 
 function roleLabel(session) {
@@ -178,6 +195,7 @@ function allowedNavigationPages(session) {
 
 export {
     ACCESS_DENIED_MESSAGE,
+    dashboardPathForRole,
     ROLE_NAV_ACCESS,
     ROLE_PAGE_ACCESS,
     allowedNavigationPages,

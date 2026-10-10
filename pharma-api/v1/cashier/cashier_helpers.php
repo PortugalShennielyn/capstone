@@ -344,10 +344,11 @@ function cashierAssertOrderProductsActive(PDO $pdo, int $orderId): void
 function cashierDeductShelfStock(PDO $pdo, int $orderId): void
 {
     $itemsStmt = $pdo->prepare(
-        'SELECT product_id, product_name, quantity
+        'SELECT product_id, product_name, SUM(quantity) AS quantity
          FROM sales_order_items
          WHERE order_id = :order_id
-         ORDER BY order_item_id ASC'
+         GROUP BY product_id, product_name
+         ORDER BY MIN(order_item_id) ASC'
     );
     $itemsStmt->execute([':order_id' => $orderId]);
 
@@ -357,6 +358,10 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
         if ($productId === '' || $remaining <= 0) {
             continue;
         }
+
+        $beforeStmt = $pdo->prepare('SELECT COALESCE((SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id=:storage_id),0) + COALESCE((SELECT SUM(quantity_remaining) FROM product_selling_stock WHERE product_id=:shelf_id),0)');
+        $beforeStmt->execute([':storage_id' => $productId, ':shelf_id' => $productId]);
+        $stockBefore = (int) $beforeStmt->fetchColumn();
 
         $stockStmt = $pdo->prepare(
             "SELECT pss.selling_stock_id,
@@ -416,6 +421,13 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
         if ($remaining > 0) {
             throw new RuntimeException('Insufficient shelf stock for ' . cashierDisplay($item['product_name'] ?? '', 'selected item') . '.');
         }
+        $productName = cashierDisplay($item['product_name'] ?? '', 'Product');
+        $stockAfter = $stockBefore - (int) $item['quantity'];
+        recordInventoryAudit($pdo, 'STOCK_ADJUSTED', "{$productName}: stock changed from {$stockBefore} to {$stockAfter}. Difference: -" . (int) $item['quantity'] . '. POS checkout.', $productId, [
+            'product_id' => $productId, 'product_name' => $productName,
+            'previous_stock' => $stockBefore, 'new_stock' => $stockAfter,
+            'difference' => -(int) $item['quantity'], 'reason' => 'POS checkout', 'order_id' => $orderId,
+        ]);
     }
 }
 

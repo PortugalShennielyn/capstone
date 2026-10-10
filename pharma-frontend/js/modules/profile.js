@@ -1,7 +1,7 @@
 import API_BASE_URL from '../config/config.js';
 import PharmaUtils from '../utils.js';
 import { cacheAuthenticatedProfile, ensurePageTabSession } from './auth_guard.js?v=27';
-import { roleLabel } from './rbac.js?v=7';
+import { roleLabel } from './rbac.js?v=9';
 
 const byId = (id) => document.getElementById(id);
 const themes = { navy:'#1b356d', purple:'#6846cf', teal:'#116653', orange:'#b75a29', berry:'#a22853', slate:'#252c3a' };

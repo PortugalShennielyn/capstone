@@ -40,6 +40,10 @@ if ($email !== '') {
     }
 }
 
+$previousRole = normalizeUserRole((string) ($target['role'] ?? ''));
+$previousUsername = (string) ($target['username'] ?? '');
+$pdo->beginTransaction();
+try {
 $stmt = $pdo->prepare(
     'UPDATE users
      SET full_name = :full_name,
@@ -62,7 +66,32 @@ $stmt->execute([
     ':user_id' => $userId,
 ]);
 
-recordActivityLog($pdo, 'User Management', 'Updated', userManagementActorLabel() . ' updated user ' . $fullName, $userId);
+$trackableAuditChange = $previousRole !== $role || $previousUsername !== $username;
+recordActivityLog($pdo, 'User Management', 'Updated', userManagementActorLabel() . ' updated user ' . $fullName, $userId, null, null, !$trackableAuditChange);
+$changedFields = [];
+if ($previousRole !== $role) $changedFields['role'] = ['previous' => $previousRole, 'new' => $role];
+if ($previousUsername !== $username) $changedFields['username'] = ['previous' => $previousUsername, 'new' => $username];
+if ($previousRole !== $role) {
+    recordManagementAudit($pdo, 'ROLE_CHANGED', userManagementActorLabel() . ' changed ' . $previousUsername . "'s role from " . roleLabel($previousRole) . ' to ' . roleLabel($role) . '.', 'User Account', $userId, [
+        'affected_user_id' => $userId,
+        'affected_username' => $username,
+        'previous_role' => $previousRole,
+        'new_role' => $role,
+        'changed_fields' => $changedFields,
+    ]);
+} elseif ($changedFields !== []) {
+    recordManagementAudit($pdo, 'USER_UPDATED', userManagementActorLabel() . ' updated account ' . $username . '.', 'User Account', $userId, [
+        'affected_user_id' => $userId,
+        'affected_username' => $username,
+        'changed_fields' => $changedFields,
+    ]);
+}
+$pdo->commit();
+} catch (Throwable $error) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('User update transaction failed: ' . $error->getMessage());
+    sendUserJson(false, 'Unable to update the user account.', null, 500);
+}
 
 sendUserJson(true, 'User updated successfully.');
 ?>

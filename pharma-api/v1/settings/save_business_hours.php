@@ -2,6 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/auth_context.php';
 require_once __DIR__ . '/settings_helpers.php';
+require_once __DIR__ . '/../activity_log_helpers.php';
 
 requireValidSession($pdo);
 
@@ -26,6 +27,7 @@ if (!is_array($payload)) {
 
 try {
     $pdo->beginTransaction();
+    $previousSchedule = fetchBusinessHours($pdo);
 
     if (isset($payload['day'])) {
         updateBusinessHour($pdo, (string) $payload['day'], $payload);
@@ -40,6 +42,20 @@ try {
         throw new InvalidArgumentException('Missing business hours data.');
     }
 
+    $nextSchedule = fetchBusinessHours($pdo);
+    $previousValues = [];
+    $nextValues = [];
+    $labels = [];
+    foreach (SETTINGS_WEEK_DAYS as $day) {
+        $format = static function (array $entry): string {
+            return !empty($entry['open']) ? ((string) ($entry['openTime'] ?? '') . '–' . (string) ($entry['closeTime'] ?? '')) : 'Closed';
+        };
+        $key = 'business_hours_' . strtolower($day);
+        $previousValues[$key] = $format($previousSchedule[$day] ?? []);
+        $nextValues[$key] = $format($nextSchedule[$day] ?? []);
+        $labels[$key] = 'Business Hours · ' . $day;
+    }
+    recordSettingsDiffAudit($pdo, $previousValues, $nextValues, $labels);
     $pdo->commit();
 
     echo json_encode([

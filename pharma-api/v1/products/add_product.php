@@ -3,6 +3,7 @@ $allowedRoles = ['super_admin', 'admin', 'manager', 'supervisor', 'Admin', 'ro-s
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../activity_log_helpers.php';
+require_once '../../config/audit_log.php';
 require_once 'product_category_schema.php';
 require_once 'product_customization_schema.php';
 require_once 'product_status_schema.php';
@@ -360,6 +361,8 @@ try {
         }
     }
 
+    ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     $pdo->beginTransaction();
 
     $productInsert = $pdo->prepare(
@@ -468,14 +471,15 @@ try {
         }
         saveProductSpecificationValues($pdo, $productId, $sku['specifications']);
         syncProductDefaultSellingPrice($pdo, $productId, (float) $sku['price']);
+        recordInventoryAudit($pdo, 'PRODUCT_ADDED', "{$productName}: product added. Initial stock: 0.", $productId, [
+            'product_id' => $productId, 'product_name' => $productName,
+            'category' => $categoryName, 'initial_stock' => 0, 'expiry_date' => null,
+        ]);
+        recordActivityLog($pdo, 'Products', 'Added', 'Product added: ' . $productName, $productId, null, null, false);
         $createdProductIds[] = $productId;
     }
 
     $pdo->commit();
-
-    foreach ($createdProductIds as $createdProductId) {
-        recordActivityLog($pdo, 'Products', 'Added', 'Product added: ' . $productName, $createdProductId);
-    }
 
     http_response_code(201);
     echo json_encode([
@@ -488,12 +492,14 @@ try {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
+    recordInventoryAuditFailure($pdo, 'PRODUCT_ADD_FAILED', 'Product creation failed validation.', null, ['product_name' => trim((string) ($payload['product_name'] ?? $payload['brand_name'] ?? ''))]);
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
+    recordInventoryAuditFailure($pdo, 'PRODUCT_ADD_FAILED', 'Product creation failed before commit.', null, ['product_name' => trim((string) ($payload['product_name'] ?? $payload['brand_name'] ?? ''))]);
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => 'Unable to add product SKU.', 'error' => $e->getMessage()]);
 }

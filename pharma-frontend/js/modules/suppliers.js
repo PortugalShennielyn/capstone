@@ -15,7 +15,7 @@ import {
     normalizeProductSpecificationValues
 } from './product_specification.js?v=12';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
-import { primaryAccessRole } from './rbac.js?v=6';
+import { primaryAccessRole } from './rbac.js?v=9';
 import { loadMeasurementUnits as loadSharedMeasurementUnits, measurementUnitsForContext, upsertMeasurementUnitCache } from './measurement_units.js?v=2';
 
 const API_BASE_URL = window.location.port

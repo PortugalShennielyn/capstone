@@ -20,6 +20,7 @@ function ensureAuditLogSchema(PDO $pdo): void
             ip_address VARCHAR(80) NULL,
             user_agent TEXT NULL,
             session_reference VARCHAR(80) NULL,
+            request_id VARCHAR(80) NULL,
             details TEXT NULL,
             idempotency_key VARCHAR(191) NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -28,7 +29,8 @@ function ensureAuditLogSchema(PDO $pdo): void
             KEY idx_audit_logs_module_action (module, action),
             KEY idx_audit_logs_user (user_id),
             KEY idx_audit_logs_target (target_type, target_id),
-            KEY idx_audit_logs_session (session_reference)
+            KEY idx_audit_logs_session (session_reference),
+            KEY idx_audit_logs_request (request_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
@@ -43,7 +45,9 @@ function ensureAuditLogSchema(PDO $pdo): void
     $addColumn('description', 'TEXT NULL AFTER event_status');
     $addColumn('target_type', 'VARCHAR(80) NULL AFTER description');
     $addColumn('target_id', 'VARCHAR(120) NULL AFTER target_type');
+    $addColumn('request_id', 'VARCHAR(80) NULL AFTER session_reference');
     auditEnsureIndex($pdo, 'idx_audit_logs_target', 'ALTER TABLE audit_logs ADD KEY idx_audit_logs_target (target_type, target_id)');
+    auditEnsureIndex($pdo, 'idx_audit_logs_request', 'ALTER TABLE audit_logs ADD KEY idx_audit_logs_request (request_id)');
 }
 
 function auditLogColumns(PDO $pdo): array
@@ -92,6 +96,18 @@ function auditSessionReference(?string $sessionId): ?string
         return null;
     }
     return substr(hash('sha256', $sessionId), -12);
+}
+
+function auditRequestId(): string
+{
+    static $requestId = null;
+    if ($requestId === null) {
+        $requestId = bin2hex(random_bytes(16));
+        if (!headers_sent()) {
+            header('X-Request-ID: ' . $requestId);
+        }
+    }
+    return $requestId;
 }
 
 function auditCurrentUserName(): ?string
@@ -143,9 +159,16 @@ function recordAuditLog(PDO $pdo, array $event): bool
         }
 
         $module = trim((string) ($event['module'] ?? 'Authentication')) ?: 'Authentication';
-        $sessionId = trim((string) ($event['session_id'] ?? $event['auth_session_id'] ?? ($_SESSION['auth_session_id'] ?? '')));
-        $sessionReference = $event['session_reference'] ?? auditSessionReference($sessionId);
-        $status = !empty($event['success']) || strcasecmp((string) ($event['event_status'] ?? ''), 'Success') === 0 ? 'Success' : 'Failure';
+        $actorAuthenticated = !array_key_exists('actor_authenticated', $event) || (bool) $event['actor_authenticated'];
+        $sessionId = $actorAuthenticated
+            ? trim((string) ($event['session_id'] ?? $event['auth_session_id'] ?? ($_SESSION['auth_session_id'] ?? '')))
+            : '';
+        $sessionReference = $actorAuthenticated ? ($event['session_reference'] ?? auditSessionReference($sessionId)) : null;
+        $requestedStatus = ucfirst(strtolower(trim((string) ($event['event_status'] ?? ''))));
+        $status = in_array($requestedStatus, ['Success', 'Failure', 'Denied'], true)
+            ? $requestedStatus
+            : (!empty($event['success']) ? 'Success' : 'Failure');
+        $requestId = auditRequestId();
         $idempotencyKey = trim((string) ($event['idempotency_key'] ?? ''));
         if ($idempotencyKey === '' && $sessionId !== '' && !in_array($action, ['LOGIN_FAILED'], true)) {
             $idempotencyKey = $sessionId . ':' . $action;
@@ -153,18 +176,18 @@ function recordAuditLog(PDO $pdo, array $event): bool
 
         $stmt = $pdo->prepare(
             'INSERT INTO audit_logs
-                (audit_id, user_id, employee_id, user_name, role, action, module, event_status, description, target_type, target_id, ip_address, user_agent, session_reference, details, idempotency_key)
+                (audit_id, user_id, employee_id, user_name, role, action, module, event_status, description, target_type, target_id, ip_address, user_agent, session_reference, request_id, details, idempotency_key)
              VALUES
-                (:audit_id, :user_id, :employee_id, :user_name, :role, :action, :module, :event_status, :description, :target_type, :target_id, :ip_address, :user_agent, :session_reference, :details, :idempotency_key)
+                (:audit_id, :user_id, :employee_id, :user_name, :role, :action, :module, :event_status, :description, :target_type, :target_id, :ip_address, :user_agent, :session_reference, :request_id, :details, :idempotency_key)
              ON DUPLICATE KEY UPDATE audit_id = audit_id'
         );
         $description = auditSanitizeText($event['description'] ?? $event['details'] ?? null);
         $stmt->execute([
             ':audit_id' => newUuid($pdo),
-            ':user_id' => $event['user_id'] ?? ($_SESSION['user_id'] ?? null),
-            ':employee_id' => $event['employee_id'] ?? auditCurrentEmployeeId(),
-            ':user_name' => $event['user_name'] ?? auditCurrentUserName(),
-            ':role' => $event['role'] ?? ($_SESSION['role'] ?? null),
+            ':user_id' => $actorAuthenticated ? ($event['user_id'] ?? ($_SESSION['user_id'] ?? null)) : null,
+            ':employee_id' => $actorAuthenticated ? ($event['employee_id'] ?? auditCurrentEmployeeId()) : null,
+            ':user_name' => $actorAuthenticated ? ($event['user_name'] ?? auditCurrentUserName()) : ($event['user_name'] ?? 'Unauthenticated'),
+            ':role' => $actorAuthenticated ? ($event['role'] ?? ($_SESSION['role'] ?? null)) : null,
             ':action' => $action,
             ':module' => $module,
             ':event_status' => $status,
@@ -174,6 +197,7 @@ function recordAuditLog(PDO $pdo, array $event): bool
             ':ip_address' => $event['ip_address'] ?? auditClientIpAddress(),
             ':user_agent' => $event['user_agent'] ?? auditClientUserAgent(),
             ':session_reference' => $sessionReference,
+            ':request_id' => $requestId,
             ':details' => auditSanitizeText($event['details'] ?? $description),
             ':idempotency_key' => $idempotencyKey !== '' ? $idempotencyKey : null,
         ]);
