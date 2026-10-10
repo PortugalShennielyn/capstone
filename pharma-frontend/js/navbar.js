@@ -156,7 +156,7 @@ async function initializeNavbar(container) {
 
     try {
         const rbac = await import("./modules/rbac.js?v=8");
-        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v48";
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v49";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -193,6 +193,13 @@ async function initializeNavbar(container) {
         container.dataset.navbarSource = "runtime";
         container.classList.remove("navbar-skeleton-ready");
         container.classList.add("navbar-ready");
+        const profileAction = container.querySelector(".sidebar-user-action[data-nav-page='user-settings']");
+        if (profileAction) {
+            profileAction.href = "profile.html";
+            profileAction.removeAttribute("data-profile-action");
+            const label = profileAction.querySelector("span");
+            if (label) label.textContent = "Profile Settings";
+        }
         window.__drpNavbarBootstrap?.applyImmediateState(container);
         window.__drpNavbarBootstrap?.revealPreparedNavbar(container);
 
@@ -206,17 +213,7 @@ async function initializeNavbar(container) {
         try {
             localStorage.removeItem("drpSidebarCollapsed");
         } catch (error) {}
-        let sidebarBackdrop = document.getElementById("sidebarBackdrop");
-        if (!sidebarBackdrop) {
-            sidebarBackdrop = document.createElement("div");
-            sidebarBackdrop.id = "sidebarBackdrop";
-            sidebarBackdrop.className = "sidebar-backdrop";
-            sidebarBackdrop.setAttribute("aria-hidden", "true");
-            document.body.appendChild(sidebarBackdrop);
-        }
-        document.querySelectorAll(".sidebar-backdrop").forEach(backdrop => {
-            if (backdrop !== sidebarBackdrop) backdrop.remove();
-        });
+        document.querySelectorAll(".sidebar-backdrop").forEach(backdrop => backdrop.remove());
         const filename = window.location.pathname.split("/").pop() || "dashboard.html";
         let isRestoringNavbarScroll = false;
         let navbarScrollRestoreFrame = 0;
@@ -225,6 +222,7 @@ async function initializeNavbar(container) {
             "dashboard.html": "dashboard",
             "supervisor_dashboard.html": "dashboard",
             "cashier_dashboard.html": "dashboard",
+            "sales_clerk_dashboard.html": "dashboard",
             "products.html": "products",
             "inventory.html": "inventory",
             "shelf_inventory.html": "shelf-inventory",
@@ -238,7 +236,11 @@ async function initializeNavbar(container) {
             "complete_delivery.html": "complete-delivery",
             "return_damage.html": "return-damage",
             "expiry_monitoring.html": "expiry-monitoring",
+            "expiry_monitoring_advanced.html": "expiry-monitoring",
+            "returns_disposals.html": "returns-disposals",
             "reports.html": "reports",
+            "sales_clerk_reports.html": "reports",
+            "audit_logs.html": "audit-logs",
             "admin_settings.html": "settings",
             "pos.html": "pos",
             "clerk.html": "clerk",
@@ -252,6 +254,7 @@ async function initializeNavbar(container) {
             "receipt_history.html": "receipt-history",
             "cashier_shift_summary.html": "cashier-shift",
             "cashier_profile.html": "cashier-profile",
+            "profile.html": "user-settings",
             "sales_history.html": "sales-history"
         };
 
@@ -264,9 +267,21 @@ async function initializeNavbar(container) {
         }
 
         function apiBaseUrl() {
-            return window.location.port
-                ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
-                : "../pharma-api/v1";
+            const localHost = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+            const developmentPort = localHost && !['', '80', '443'].includes(window.location.port);
+            // Resolve the API beside the actual app folder. A hard-coded project
+            // name breaks when this checkout is served under a different folder.
+            const frontendMarker = '/pharma-frontend/';
+            const pagePath = window.location.pathname;
+            const frontendIndex = pagePath.toLowerCase().indexOf(frontendMarker);
+            const appPath = frontendIndex >= 0 ? pagePath.slice(0, frontendIndex) : '';
+            const apiOrigin = developmentPort
+                ? `${window.location.protocol}//${window.location.hostname}`
+                : window.location.origin;
+            if (frontendIndex >= 0) {
+                return `${apiOrigin}${appPath}/pharma-api/v1`;
+            }
+            return new URL('../pharma-api/v1', window.location.href).href.replace(/\/$/, '');
         }
 
         async function loadCurrentSession() {
@@ -467,7 +482,7 @@ async function initializeNavbar(container) {
             const currentFilename = window.location.pathname.split("/").pop() || "";
             if (!rbac.isPageAllowed(session, currentFilename)) {
                 const safePage = accessRole === "salesclerk"
-                    ? "sales_clerk_pos.html"
+                    ? "sales_clerk_dashboard.html"
                     : accessRole === "cashier"
                         ? "cashier_pos.html"
                         : accessRole === "supervisor"
@@ -497,6 +512,13 @@ async function initializeNavbar(container) {
                 link.setAttribute("aria-hidden", isAllowed ? "false" : "true");
             });
 
+            if (accessRole === "salesclerk") {
+                const dashboardLink = container.querySelector(".sidebar-nav [data-nav-page='dashboard']");
+                if (dashboardLink) dashboardLink.href = "sales_clerk_dashboard.html";
+                const reportsLink = container.querySelector(".sidebar-nav [data-nav-page='reports']");
+                if (reportsLink) reportsLink.href = "sales_clerk_reports.html";
+            }
+
             if (accessRole === "manager") {
                 const userManagementLink = container.querySelector("[data-nav-page='settings']");
                 if (userManagementLink) {
@@ -510,8 +532,9 @@ async function initializeNavbar(container) {
             if (accessRole === "supervisor") {
                 window.__drpNavbarBootstrap?.renderSupervisorNavigation(container);
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
-                    link.classList.add("d-none");
-                    link.setAttribute("aria-hidden", "true");
+                    const isUserSettings = link.dataset.navPage === "user-settings";
+                    link.classList.toggle("d-none", !isUserSettings);
+                    link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
                 });
             }
 
@@ -525,20 +548,13 @@ async function initializeNavbar(container) {
             });
 
             if (accessRole === "cashier") {
-                const dashboardLink = container.querySelector(".sidebar-nav [data-nav-page='dashboard']");
-                if (dashboardLink) {
-                    dashboardLink.href = "cashier_dashboard.html";
-                    dashboardLink.title = "Cashier Dashboard";
-                    const label = dashboardLink.querySelector(".nav-label");
-                    if (label) label.textContent = "Cashier Dashboard";
-                }
                 container.querySelector(".sidebar-brand")?.setAttribute("href", "cashier_pos.html");
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
                     const isUserSettings = link.dataset.navPage === "user-settings";
                     link.classList.toggle("d-none", !isUserSettings);
                     link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
                     if (isUserSettings) {
-                        link.href = "cashier_profile.html";
+                        link.href = "profile.html";
                         link.querySelector("span").textContent = "Profile Settings";
                         delete link.dataset.profileAction;
                     }
@@ -547,15 +563,15 @@ async function initializeNavbar(container) {
             }
 
             if (accessRole === "salesclerk") {
-                container.querySelector(".sidebar-brand")?.setAttribute("href", "sales_clerk_pos.html");
+                container.querySelector(".sidebar-brand")?.setAttribute("href", "sales_clerk_dashboard.html");
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
                     const isUserSettings = link.dataset.navPage === "user-settings";
                     link.classList.toggle("d-none", !isUserSettings);
                     link.setAttribute("aria-hidden", isUserSettings ? "false" : "true");
                     if (isUserSettings) {
-                        link.href = "#";
-                        link.querySelector("span").textContent = "User Settings";
-                        link.dataset.profileAction = "open";
+                        link.href = "profile.html";
+                        link.querySelector("span").textContent = "Profile Settings";
+                        delete link.dataset.profileAction;
                     }
                 });
             }
@@ -784,6 +800,7 @@ async function initializeNavbar(container) {
                 "cancelled-purchase-orders": "Cancelled Purchase Orders",
                 "return-damage": "Return/Damage",
                 "expiry-monitoring": "Expiry Monitoring",
+                "returns-disposals": "Returns & Disposals",
                 "pos": "POS",
                 "clerk": "Salesclerk",
                 "sales-clerk-orders": "My Orders",
@@ -813,12 +830,11 @@ async function initializeNavbar(container) {
         function openSidebar() {
             sidebar?.classList.remove("collapsed");
             sidebar?.classList.add("is-expanded");
-            mainWrapper?.classList.add("collapsed");
+            mainWrapper?.classList.remove("collapsed");
             document.body.classList.remove("navbar-sidebar-collapsed");
             document.body.classList.add("sidebar-open");
             document.documentElement.classList.remove("sidebar-collapsed");
             document.documentElement.classList.add("sidebar-expanded");
-            sidebarBackdrop?.setAttribute("aria-hidden", "false");
             updateSidebarToggleState(true);
             closeSlimFlyout();
         }
@@ -831,7 +847,6 @@ async function initializeNavbar(container) {
             document.body.classList.remove("sidebar-open");
             document.documentElement.classList.add("sidebar-collapsed");
             document.documentElement.classList.remove("sidebar-expanded");
-            sidebarBackdrop?.setAttribute("aria-hidden", "true");
             updateSidebarToggleState(false);
         }
 
@@ -917,17 +932,6 @@ async function initializeNavbar(container) {
                     restoreNavbarScrollPosition(ensureActive);
                 });
             });
-        }
-
-        function closeSidebarFromOutside(event) {
-            if (!sidebar || sidebar.classList.contains("collapsed")) return;
-            if (sidebar.contains(event.target)) return;
-            if (event.target.closest("#sidebarToggle, #sidebarOpenToggle")) return;
-            if (event.target.closest(".modal, .modal-backdrop, .swal2-container, .toast, .toast-container")) return;
-
-            saveNavbarScrollPosition(true);
-            setSidebarState(true);
-            scheduleNavbarScrollRestore(false);
         }
 
         function setCollapseArrow(collapse) {
@@ -1036,6 +1040,41 @@ async function initializeNavbar(container) {
             window.__drpNavigationRuntime.navigate(targetUrl);
         }
 
+        function closeSidebarFromOutside(event) {
+            if (!sidebar || sidebar.classList.contains("collapsed")) return;
+            if (sidebar.contains(event.target)) return;
+            if (event.target.closest("#sidebarToggle, #sidebarOpenToggle")) return;
+            if (event.target.closest(".modal, .modal-backdrop, .swal2-container, .toast, .toast-container")) return;
+
+            saveNavbarScrollPosition(true);
+            setSidebarState(true);
+            scheduleNavbarScrollRestore(false);
+        }
+
+        function handleNavbarCollapseClick(event) {
+            const trigger = event.target.closest("a.nav-link-item[data-bs-toggle='collapse']");
+            if (!trigger || !container.contains(trigger) || sidebar?.classList.contains("collapsed")) return;
+            if (window.bootstrap?.Collapse) return;
+
+            const targetId = (trigger.getAttribute("href") || "").slice(1);
+            const collapse = targetId ? document.getElementById(targetId) : null;
+            if (!collapse || !container.contains(collapse)) return;
+
+            event.preventDefault();
+            const isExpanded = !collapse.classList.contains("show");
+            const beforeEvent = new Event(isExpanded ? "show.bs.collapse" : "hide.bs.collapse", {
+                bubbles: true,
+                cancelable: true
+            });
+            if (!collapse.dispatchEvent(beforeEvent)) return;
+
+            collapse.classList.toggle("show", isExpanded);
+            setCollapseArrow(collapse);
+            persistExpandedGroup(collapse.id, isExpanded);
+            collapse.dispatchEvent(new Event(isExpanded ? "shown.bs.collapse" : "hidden.bs.collapse", { bubbles: true }));
+            scheduleNavbarScrollRestore(false);
+        }
+
         function prefetchNavigationTarget(event) {
             const link = event.target.closest("a.nav-link-item[href], a.sidebar-brand[href]");
             if (!link || !container.contains(link)) return;
@@ -1083,21 +1122,21 @@ async function initializeNavbar(container) {
         };
         sidebarToggle?.addEventListener("click", handleSidebarToggle);
         headerSidebarToggle?.addEventListener("click", handleSidebarToggle);
-        sidebarBackdrop.addEventListener("click", () => {
-            if (!document.body.classList.contains("sidebar-open")) return;
-            saveNavbarScrollPosition(true);
-            setSidebarState(true);
-            scheduleNavbarScrollRestore(false);
+        sidebar?.addEventListener("transitionend", event => {
+            if (event.target === sidebar && event.propertyName === "width") {
+                window.dispatchEvent(new Event("resize"));
+            }
         });
         getNavbarScrollContainer()?.addEventListener("scroll", () => saveNavbarScrollPosition(), { passive: true });
         container.addEventListener("click", handleSlimCollapseClick, true);
         container.addEventListener("click", handleSidebarNavigation);
+        container.addEventListener("click", handleNavbarCollapseClick);
         container.addEventListener("pointerover", prefetchNavigationTarget);
         container.addEventListener("focusin", prefetchNavigationTarget);
         container.addEventListener("click", handleUserPopoverClick);
-        document.addEventListener("pointerdown", closeSidebarFromOutside);
         document.addEventListener("pointerdown", closeUserPopoverFromOutside);
         document.addEventListener("pointerdown", closeSlimFlyoutFromOutside);
+        document.addEventListener("pointerdown", closeSidebarFromOutside);
         document.addEventListener("keydown", handleNavbarKeydown);
         window.addEventListener("resize", closeSlimFlyout);
         window.addEventListener("scroll", closeSlimFlyout, true);
@@ -1337,7 +1376,7 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         controls.insertBefore(status, controls.firstChild);
         const notifications = document.createElement('div');
         notifications.className = 'dashboard-notifications';
-        notifications.innerHTML = `<button class="icon-btn notification-btn" type="button" id="dashboardNotificationButton" aria-label="Notifications" aria-expanded="false" aria-controls="dashboardNotificationMenu"><i class="fa-regular fa-bell"></i><span class="notification-badge is-hidden" id="dashboardNotificationBadge">0</span></button><div class="notification-menu" id="dashboardNotificationMenu" role="menu"><div class="notification-menu-header"><strong>System Alerts</strong><span id="dashboardNotificationSummary">Loading...</span></div><div class="notification-menu-list" id="dashboardNotificationList"><p class="notification-empty">Loading alerts...</p></div></div>`;
+        notifications.innerHTML = `<button class="icon-btn notification-btn" type="button" id="dashboardNotificationButton" aria-label="Notifications" aria-expanded="false" aria-controls="dashboardNotificationMenu"><i class="fa-regular fa-bell"></i><span class="notification-badge is-hidden" id="dashboardNotificationBadge">0</span></button><div class="notification-menu drp-alert-menu" id="dashboardNotificationMenu" role="menu"><div class="notification-menu-header"><span class="notification-heading-icon"><i class="fa-solid fa-bell"></i></span><div class="notification-heading-copy"><strong>System alerts</strong><span id="dashboardNotificationSummary">Loading...</span></div><span class="notification-total" id="dashboardNotificationTotal">—</span></div><div class="notification-menu-list" id="dashboardNotificationList"><p class="notification-empty">Loading alerts...</p></div><div class="notification-menu-footer"><i class="fa-solid fa-circle-info"></i><span>Select an alert to review the related records.</span></div></div>`;
         controls.appendChild(notifications);
         const clock = document.createElement('div');
         clock.className = 'topbar-clock';
@@ -1434,7 +1473,7 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         'X-Requested-With': 'XMLHttpRequest',
         'X-Tab-Token': tabToken()
     };
-    const fetchSharedBusinessHours = () => fetch(`${apiBaseUrl()}/settings/get_admin_settings.php`, { credentials: 'include', headers: settingsHeaders })
+    const fetchSharedBusinessHours = () => fetch(`${apiBaseUrl()}/settings/get_business_hours.php`, { credentials: 'include', headers: settingsHeaders })
         .then(response => response.ok ? response.json() : Promise.reject(new Error(`Business-hours request failed (${response.status})`)))
         .then(data => {
             if (data.status === 'error' || !data.businessSchedule) throw new Error(data.message || 'Business-hours response was incomplete.');
@@ -1482,26 +1521,90 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         const badge = document.getElementById('dashboardNotificationBadge');
         const list = document.getElementById('dashboardNotificationList');
         const summary = document.getElementById('dashboardNotificationSummary');
+        const totalLabel = document.getElementById('dashboardNotificationTotal');
         const headers = { 'X-Requested-With': 'XMLHttpRequest', 'X-Tab-Token': tabToken() };
-        fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?period=today`, { credentials: 'include', headers })
-            .then(response => response.ok ? response.json() : Promise.reject(new Error('Unable to load alerts')))
-            .then(data => {
-                const alerts = [
-                    { label: 'Out of Stock', count: Number(data.out_of_stock || 0), href: 'inventory.html?stock_status=out_of_stock', icon: 'fa-box-open' },
-                    { label: 'Low Stock', count: Number(data.low_stock || 0), href: 'inventory.html?stock_status=low_stock', icon: 'fa-triangle-exclamation' },
-                    { label: 'Expiring Soon', count: Number(data.expiring_soon || 0), href: 'inventory.html?stock_status=expiring_soon', icon: 'fa-calendar-xmark' },
-                    { label: 'Pending POs', count: Number(data.pending_po || 0), href: 'purchase_orders.html?status=Pending', icon: 'fa-file-circle-exclamation' }
-                ].filter(alert => alert.count > 0);
-                const total = alerts.reduce((sum, alert) => sum + alert.count, 0);
-                if (badge) { badge.textContent = total > 99 ? '99+' : String(total); badge.classList.toggle('is-hidden', total === 0); }
-                if (summary) summary.textContent = total ? `${total} items need attention` : 'All clear';
-                if (list) list.innerHTML = alerts.length
-                    ? alerts.map(alert => `<a class="notification-menu-item" role="menuitem" href="${alert.href}"><i class="fa-solid ${alert.icon}"></i><span>${escapeHtml(alert.label)}</span><strong>${alert.count}</strong></a>`).join('')
-                    : '<p class="notification-empty">No urgent system alerts.</p>';
+        let activeAlerts = [];
+        let seenAlerts = {};
+        let refreshUnreadCount = () => {};
+        Promise.resolve(typeof loadCurrentSession === 'function' ? loadCurrentSession() : null)
+            .then(session => {
+                const sessionRoles = [
+                    session?.access_role,
+                    session?.role,
+                    ...(Array.isArray(session?.roles) ? session.roles : []),
+                    ...(Array.isArray(session?.role_identifiers) ? session.role_identifiers : [])
+                ].map(role => String(role || '').trim().toLowerCase().replace(/[\s-]+/g, '_'));
+                const isLimitedAlertsRole = sessionRoles.some(role =>
+                    ['cashier', 'ro_cashier', 'salesclerk', 'sales_clerk', 'ro_sales_clerk', 'ro_salesclerk'].includes(role)
+                );
+                if (isLimitedAlertsRole) {
+                    if (badge) badge.classList.add('is-hidden');
+                    if (summary) summary.textContent = 'Not available for this role';
+                    if (totalLabel) totalLabel.textContent = '—';
+                    if (list) list.innerHTML = '<p class="notification-empty">System alerts are not available for this role.</p>';
+                    return null;
+                }
+                const alertScope = encodeURIComponent(`${session?.account_id || session?.tenant_id || 'account'}:${session?.user_id || session?.username || session?.email || 'user'}`);
+                const alertSeenKey = `drpReviewedAlerts:v1:${alertScope}`;
+                try { seenAlerts = JSON.parse(localStorage.getItem(alertSeenKey) || '{}') || {}; } catch (error) {}
+                refreshUnreadCount = () => {
+                    const unread = activeAlerts.filter(alert => Number(seenAlerts[alert.label]) !== alert.count);
+                    const unreadTotal = unread.reduce((sum, alert) => sum + alert.count, 0);
+                    const openTotal = activeAlerts.reduce((sum, alert) => sum + alert.count, 0);
+                    if (badge) { badge.textContent = unreadTotal > 99 ? '99+' : String(unreadTotal); badge.classList.toggle('is-hidden', unreadTotal === 0); }
+                    if (summary) summary.textContent = unread.length ? `${unread.length} alert type${unread.length === 1 ? '' : 's'} not reviewed` : openTotal ? 'All current alerts reviewed' : 'No urgent items need attention';
+                };
+                if (list && list.dataset.readStateReady !== 'true') {
+                    list.dataset.readStateReady = 'true';
+                    list.addEventListener('click', event => {
+                        const row = event.target.closest('a[data-alert-key]');
+                        if (!row) return;
+                        seenAlerts[row.dataset.alertKey] = Number(row.dataset.alertCount) || 0;
+                        try { localStorage.setItem(alertSeenKey, JSON.stringify(seenAlerts)); } catch (error) {}
+                        refreshUnreadCount();
+                    });
+                }
+                return fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?scope=alerts`, { credentials: 'include', headers });
             })
-            .catch(() => {
-                if (summary) summary.textContent = 'Alerts unavailable';
-                if (list) list.innerHTML = '<p class="notification-empty">Unable to load alerts right now.</p>';
+            .then(async response => {
+                if (!response) return null;
+                if (response.status === 401 || response.status === 403) throw new Error('auth');
+                if (!response.ok) throw new Error(response.status >= 500 ? 'server' : `http-${response.status}`);
+                let data;
+                try { data = await response.json(); } catch (error) { throw new Error('invalid-response'); }
+                if (data?.status === 'error') throw new Error('server');
+                return data;
+            })
+            .then(data => {
+                if (!data) return;
+                const alerts = [
+                    { label: 'Out of Stock', description: 'Products with no sellable units available', count: Number(data.out_of_stock || 0), href: 'inventory.html?stock_status=out_of_stock', icon: 'fa-box-open', tone: 'critical' },
+                    { label: 'Low Stock', description: 'Products at or below their reorder level', count: Number(data.low_stock || 0), href: 'inventory.html?stock_status=low_stock', icon: 'fa-triangle-exclamation', tone: 'warning' },
+                    { label: 'Expiring Soon', description: 'Active batches nearing their expiry date', count: Number(data.expiring_soon || 0), href: 'inventory.html?stock_status=expiring_soon', icon: 'fa-calendar-xmark', tone: 'warning' },
+                    { label: 'Pending POs', description: 'Purchase orders awaiting the next step', count: Number(data.pending_po || 0), href: 'purchase_orders.html?status=Pending', icon: 'fa-file-circle-exclamation', tone: 'procurement' }
+                ].filter(alert => alert.count > 0);
+                activeAlerts = alerts;
+                const total = alerts.reduce((sum, alert) => sum + alert.count, 0);
+                refreshUnreadCount();
+                if (totalLabel) totalLabel.textContent = total > 99 ? '99+ open' : `${total} open`;
+                if (list) list.innerHTML = alerts.length
+                    ? alerts.map(alert => `<a class="notification-menu-item tone-${alert.tone}" role="menuitem" data-alert-key="${escapeHtml(alert.label)}" data-alert-count="${alert.count}" href="${alert.href}"><span class="notification-item-icon"><i class="fa-solid ${alert.icon}"></i></span><span class="notification-item-copy"><strong>${escapeHtml(alert.label)}</strong><small>${escapeHtml(alert.description)}</small></span><span class="notification-item-count">${alert.count}</span><i class="fa-solid fa-chevron-right notification-item-arrow" aria-hidden="true"></i></a>`).join('')
+                    : '<div class="notification-empty-state"><span><i class="fa-solid fa-check"></i></span><strong>You’re all caught up</strong><p>No urgent system alerts right now.</p></div>';
+            })
+            .catch(error => {
+                const message = error?.message === 'auth'
+                    ? ['Session or access issue', 'Sign in again to load system alerts.']
+                    : error?.message === 'server'
+                        ? ['Alert service error', 'The server could not load alerts. Please try again shortly.']
+                        : error?.message === 'invalid-response'
+                            ? ['Unexpected alert response', 'Refresh this page. If it continues, contact your administrator.']
+                            : error?.message?.startsWith('http-')
+                                ? ['Alert service unavailable', `The request failed (${error.message.slice(5)}). Refresh this page and try again.`]
+                                : ['Cannot reach alert service', 'Check your connection or reload the page to retry.'];
+                console.warn('System alerts could not be loaded:', error);
+                if (summary) summary.textContent = message[0];
+                if (totalLabel) totalLabel.textContent = '—';
+                if (list) list.innerHTML = `<div class="notification-empty-state"><span><i class="fa-solid fa-triangle-exclamation"></i></span><strong>${escapeHtml(message[0])}</strong><p>${escapeHtml(message[1])}</p></div>`;
             });
     }
 }
@@ -1512,6 +1615,8 @@ function initModalWorkspaceBounds() {
     const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
     const sidebarWidth = () => {
+        const sidebar = document.querySelector('#navbar-container .app-sidebar');
+        if (sidebar) return Math.max(0, sidebar.getBoundingClientRect().width);
         const value = window.getComputedStyle(document.documentElement)
             .getPropertyValue('--sidebar-collapsed-width');
         const parsed = Number.parseFloat(value);
@@ -1905,13 +2010,13 @@ function ensureNavbarRuntimeStyles() {
             margin-left: var(--sidebar-collapsed-width) !important;
             width: calc(100% - var(--sidebar-collapsed-width)) !important;
             animation: drpPageEnter .16s ease-out both;
-            transition: none !important;
+            transition: margin-left .24s var(--navbar-ease), width .24s var(--navbar-ease) !important;
         }
 
         .app-main {
             margin-left: var(--sidebar-collapsed-width) !important;
             width: calc(100% - var(--sidebar-collapsed-width)) !important;
-            transition: none !important;
+            transition: margin-left .24s var(--navbar-ease), width .24s var(--navbar-ease) !important;
         }
 
         body.navbar-sidebar-collapsed #mainWrapper,

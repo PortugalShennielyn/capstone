@@ -5,6 +5,7 @@ require_once '../../config/require_auth.php';
 require_once 'cashier_helpers.php';
 
 try {
+    ensureCashierPaymentDiscountSchema($pdo);
     $orderId = (int) ($_GET['order_id'] ?? 0);
     if ($orderId <= 0) {
         http_response_code(400);

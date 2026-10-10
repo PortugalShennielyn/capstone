@@ -1,12 +1,13 @@
 import PharmaUtils from '../utils.js';
 import {
-    formatProductIdentity,
     formatProductSpecification,
+    isPrescriptionProduct,
     productSearchText
-} from './product_specification.js?v=8';
+} from './product_specification.js?v=12';
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits, measurementUnitsForContext } from './measurement_units.js?v=2';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
+import { createPackagingEditor } from './packaging_breakdown.js?v=1';
 
 const API = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -20,6 +21,23 @@ const esc = (value) => String(value ?? '')
     .replaceAll("'", '&#039;');
 const canManageSupplierCatalog = () => ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
 
+function assignmentProductIdentity(product = {}) {
+    const brand = String(product.brand_name || '').trim();
+    const productName = String(product.product_name || '').trim();
+    const genericName = String(product.generic_name || '').trim();
+    const medicine = String(product.category_name || '').trim().toLowerCase() === 'medicine';
+    const preferredName = medicine ? (genericName || productName) : productName;
+    const name = brand && preferredName.toLowerCase().startsWith(`${brand.toLowerCase()} `)
+        ? preferredName.slice(brand.length).trim() : preferredName;
+    const distinctName = name.toLowerCase() === brand.toLowerCase() ? '' : name;
+    return [brand, distinctName].filter(Boolean).join(' — ') || productName || genericName || 'Unnamed product';
+}
+
+function assignmentRxBadge(product) {
+    return isPrescriptionProduct(product)
+        ? '<span class="supplier-rx-badge" title="Prescription medicine">Rx</span>' : '';
+}
+
 const state = {
     step: 1,
     mode: 'existing',
@@ -28,6 +46,7 @@ const state = {
     units: [],
     selectedIds: new Set(),
     terms: new Map(),
+    packagingEditors: new Map(),
     sharedFormReady: false,
     createdProductIds: new Set()
 };
@@ -208,7 +227,8 @@ function renderProducts() {
     const showInactive = document.getElementById('showInactiveAssignmentProducts')?.checked || false;
     const visible = state.products.filter((product) => {
         const active = (product.status || 'Active') === 'Active';
-        return (showInactive || active) && (!query || productSearchText(product).includes(query));
+        return (showInactive || active) && (!query || [productSearchText(product), assignmentProductIdentity(product), product.generic_name]
+            .filter(Boolean).join(' ').toLowerCase().includes(query));
     });
 
     list.innerHTML = visible.length
@@ -227,7 +247,7 @@ function renderProducts() {
                            value="${esc(productId)}" ${state.selectedIds.has(productId) ? 'checked' : ''}
                            ${disabled ? 'disabled' : ''}>
                     <span>
-                        <span class="assignment-product-identity">${esc(formatProductIdentity(product))} ${badges}</span>
+                        <span class="assignment-product-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)} ${badges}</span>
                         <span class="assignment-product-meta">${esc(product.type_name || 'Uncategorized')} · ${esc(formatProductSpecification(product))}</span>
                     </span>
                 </label>`;
@@ -245,11 +265,11 @@ function renderSelectedProducts() {
         ? products.map((product) => `
             <article class="assignment-selected-card">
                 <div>
-                    <div class="assignment-selected-identity">${esc(formatProductIdentity(product))}</div>
+                    <div class="assignment-selected-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
                     <div class="assignment-selected-meta">${esc(formatProductSpecification(product))}</div>
                 </div>
                 <button class="btn btn-sm btn-outline-danger remove-selected-product" type="button"
-                        data-product-id="${esc(product.product_id)}" aria-label="Remove ${esc(formatProductIdentity(product))}">
+                        data-product-id="${esc(product.product_id)}" aria-label="Remove ${esc(assignmentProductIdentity(product))}">
                     <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
             </article>`).join('')
@@ -302,10 +322,11 @@ async function ensureSharedProductForm() {
 
 function rememberTerms() {
     document.querySelectorAll('.assignment-term-card').forEach((card) => {
+        const editor = state.packagingEditors.get(String(card.dataset.productId));
         state.terms.set(String(card.dataset.productId), {
             purchaseUnit: card.querySelector('.term-unit')?.value || 'Box',
             inventoryUnit: card.querySelector('.term-inventory-unit')?.value || '',
-            quantity: card.querySelector('.term-quantity')?.value || ''
+            hierarchyLevels: editor?.read() || []
         });
     });
 }
@@ -314,12 +335,13 @@ function defaultTerms(product) {
     return state.terms.get(String(product.product_id)) || {
         purchaseUnit: 'Box',
         inventoryUnit: inventoryUnit(product),
-        quantity: ''
+        hierarchyLevels: [{ unit: inventoryUnit(product), quantity: '' }]
     };
 }
 
 function renderStep2() {
     rememberTerms();
+    state.packagingEditors.clear();
     const products = selectedProducts();
     document.getElementById('assignmentStep2').innerHTML = `
         <div class="assignment-step-heading">
@@ -335,7 +357,7 @@ function renderStep2() {
                     <article class="assignment-term-card" data-product-id="${esc(product.product_id)}">
                         <div class="assignment-term-header">
                             <div>
-                                <div class="assignment-selected-identity">${esc(formatProductIdentity(product))}</div>
+                                <div class="assignment-selected-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
                                 <div class="assignment-selected-meta">${esc(formatProductSpecification(product))}</div>
                             </div>
                             <span class="badge text-bg-light term-status">Missing information</span>
@@ -354,48 +376,57 @@ function renderStep2() {
                                 <div class="form-text">Defined in Product Master.</div>
                                 <div class="assignment-field-error"></div>
                             </div>
-                            <div class="term-quantity-field">
-                                <label class="form-label term-quantity-label">Contents per ${esc(saved.purchaseUnit || 'Purchase Unit')} <span class="text-danger">*</span></label>
-                                <div class="input-group">
-                                    <input class="form-control term-quantity" type="number" min="1" step="1"
-                                           inputmode="numeric" value="${esc(saved.quantity)}">
-                                    <span class="input-group-text term-quantity-unit">${esc(unit)}</span>
-                                </div>
-                                <div class="assignment-field-error"></div>
-                            </div>
+                            <div class="term-packaging-host"></div>
+                            <div class="assignment-field-error term-packaging-error" role="status"></div>
                             <div class="assignment-preview term-preview"></div>
                         </div>
                     </article>`;
             }).join('')}
         </div>`;
-    document.querySelectorAll('.assignment-term-card').forEach(updateTermCard);
+    document.querySelectorAll('.assignment-term-card').forEach((card) => {
+        const productId = String(card.dataset.productId);
+        const saved = defaultTerms(state.products.find(item => String(item.product_id) === productId) || {});
+        const editor = createPackagingEditor(card.querySelector('.term-packaging-host'), {
+            units: state.units,
+            purchaseUnit: card.querySelector('.term-unit').value,
+            baseUnit: card.querySelector('.term-inventory-unit').value,
+            levels: saved.hierarchyLevels || [],
+            onChange: () => updateTermCard(card)
+        });
+        state.packagingEditors.set(productId, editor);
+        updateTermCard(card);
+    });
 }
 
 function updateTermCard(card) {
     const purchaseUnit = card.querySelector('.term-unit')?.value || '';
-    const inventory = card.querySelector('.term-inventory-unit')?.value || 'unit';
-    const quantityInput = card.querySelector('.term-quantity');
-    const sameUnit = unitKey(purchaseUnit) === unitKey(inventory);
-    if (sameUnit) quantityInput.value = '1';
-    quantityInput.disabled = sameUnit;
-    card.querySelector('.term-quantity-field')?.classList.toggle('d-none', sameUnit);
-    card.querySelector('.term-quantity-label').innerHTML = `Contents per ${esc(purchaseUnit || 'Purchase Unit')} <span class="text-danger">*</span>`;
-    const quantity = Number(quantityInput.value || 0);
-    const conversion = purchasingConversion({
-        purchase_unit: purchaseUnit || 'Purchase Unit',
-        inventory_unit: inventory,
-        units_per_purchase_unit: sameUnit ? 1 : quantity
-    });
-    card.querySelector('.term-quantity-unit').textContent = conversion.baseQtyPerPurchaseUnit === 1
-        ? inventory
-        : (/s$/i.test(inventory) ? inventory : `${inventory}s`);
-    const complete = purchaseUnit !== '' && quantity >= 1 && Number.isInteger(quantity);
+    const inventory = card.querySelector('.term-inventory-unit')?.value || '';
+    const editor = state.packagingEditors.get(String(card.dataset.productId));
+    if (!editor) return;
+    const allowedPurchaseUnit = ['box', 'carton'].includes(unitKey(purchaseUnit)) || unitKey(purchaseUnit) === unitKey(inventory);
+    const validation = !inventory ? 'Configure the Product Base Unit in Product Master first.'
+        : !allowedPurchaseUnit ? 'Purchase Unit must be Box, Carton, or the Product Base Unit.' : editor.error();
+    const conversion = purchasingConversion({ purchase_unit: purchaseUnit || 'Purchase Unit', inventory_unit: inventory, hierarchy_levels: editor.read() });
+    const complete = purchaseUnit !== '' && !validation;
     const status = card.querySelector('.term-status');
     status.textContent = complete ? 'Complete' : 'Missing information';
     status.className = `badge term-status ${complete ? 'text-bg-success' : 'text-bg-light'}`;
+    status.title = complete ? 'Purchasing setup is complete.' : (validation || 'Select a Purchase Unit.');
+    const packagingError = card.querySelector('.term-packaging-error');
+    if (packagingError?.textContent) packagingError.textContent = validation;
+    if (complete && card.classList.contains('is-invalid')) {
+        card.classList.remove('is-invalid');
+        card.querySelectorAll('.is-invalid').forEach(field => { field.classList.remove('is-invalid'); field.removeAttribute('aria-invalid'); });
+        card.querySelectorAll('.assignment-field-error').forEach(error => { error.textContent = ''; });
+        const summary = document.getElementById('assignmentStep2Errors');
+        if (summary && [...document.querySelectorAll('.assignment-term-card')].every(item => item.querySelector('.term-status')?.textContent === 'Complete')) {
+            summary.classList.add('d-none');
+            summary.textContent = '';
+        }
+    }
     card.querySelector('.term-preview').innerHTML = complete
         ? `<strong>Preview:</strong> ${esc(conversion.summary)}`
-        : `<strong>Preview:</strong> Enter ${esc(`Contents per ${purchaseUnit || 'Purchase Unit'}`)}.`;
+        : `<strong>Preview:</strong> ${esc(validation || `Configure contents per ${purchaseUnit || 'Purchase Unit'}.`)}`;
 }
 
 function clearTermValidation() {
@@ -426,10 +457,9 @@ function validateStep2() {
     let firstInvalid = null;
     document.querySelectorAll('.assignment-term-card').forEach((card) => {
         const product = state.products.find((item) => String(item.product_id) === String(card.dataset.productId));
-        const identity = formatProductIdentity(product || {});
+        const identity = assignmentProductIdentity(product || {});
         const purchaseUnit = card.querySelector('.term-unit');
         const inventoryUnit = card.querySelector('.term-inventory-unit');
-        const quantity = card.querySelector('.term-quantity');
         const sameUnit = unitKey(purchaseUnit.value) === unitKey(inventoryUnit.value);
 
         if (!['box', 'carton'].includes(unitKey(purchaseUnit.value)) && !sameUnit) {
@@ -442,18 +472,25 @@ function validateStep2() {
             errors.push(`${identity}: Product Base Unit must be configured in Product Master.`);
             firstInvalid ||= inventoryUnit;
         }
-        if (quantity.value === '' || Number(quantity.value) < 1 || !Number.isInteger(Number(quantity.value))) {
-            setFieldError(quantity, `Contents per ${purchaseUnit.value || 'Purchase Unit'} must be a whole number greater than 0.`);
-            errors.push(`${identity}: Contents per ${purchaseUnit.value || 'Purchase Unit'} must be greater than 0.`);
-            firstInvalid ||= quantity;
+        const packagingError = state.packagingEditors.get(String(card.dataset.productId))?.error() ?? 'Complete the packaging breakdown.';
+        if (packagingError) {
+            errors.push(`${identity}: ${packagingError}`);
+            card.classList.add('is-invalid');
+            card.querySelector('.term-packaging-error').textContent = packagingError;
+            const quantityField = card.querySelector('.term-packaging-host [data-level-qty]:not(:disabled)');
+            if (quantityField) {
+                quantityField.classList.add('is-invalid');
+                quantityField.setAttribute('aria-invalid', 'true');
+            }
+            firstInvalid ||= quantityField || purchaseUnit;
         }
         updateTermCard(card);
     });
 
     const summary = document.getElementById('assignmentStep2Errors');
-    if (errors.length > 1) {
+    if (errors.length) {
         summary.classList.remove('d-none');
-        summary.innerHTML = `<strong>Please correct ${errors.length} fields:</strong><ul class="mb-0 mt-1">${errors.map((error) => `<li>${esc(error)}</li>`).join('')}</ul>`;
+        summary.innerHTML = `<strong>Complete the highlighted purchasing setup to continue:</strong><ul class="mb-0 mt-1">${errors.map((error) => `<li>${esc(error)}</li>`).join('')}</ul>`;
     } else {
         summary.classList.add('d-none');
         summary.textContent = '';
@@ -481,10 +518,10 @@ function renderStep3() {
             ${selectedProducts().map((product) => {
                 const saved = defaultTerms(product);
                 const unit = saved.inventoryUnit || inventoryUnit(product);
-                const conversion = purchasingConversion({ purchase_unit: saved.purchaseUnit, inventory_unit: unit, units_per_purchase_unit: saved.quantity });
+                const conversion = purchasingConversion({ purchase_unit: saved.purchaseUnit, inventory_unit: unit, hierarchy_levels: saved.hierarchyLevels });
                 return `
                     <article class="assignment-review-card">
-                        <div class="assignment-selected-identity mb-1">${esc(formatProductIdentity(product))}</div>
+                        <div class="assignment-selected-identity mb-1">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
                         <div class="assignment-selected-meta mb-3">${esc(formatProductSpecification(product))}</div>
                         <div class="assignment-review-grid">
                             <div><span>Purchase Unit</span><strong>${esc(saved.purchaseUnit)}</strong></div>
@@ -633,7 +670,7 @@ async function saveAssignments() {
                     product_id: product.product_id,
                     purchase_unit: saved.purchaseUnit,
                     inventory_unit: saved.inventoryUnit,
-                    units_per_purchase_unit: saved.quantity
+                    hierarchy_levels: saved.hierarchyLevels
                 })
             });
             succeeded.push(product);
@@ -658,7 +695,7 @@ async function saveAssignments() {
     button.innerHTML = '<i class="fa-solid fa-rotate me-2" aria-hidden="true"></i>Retry Failed Assignments';
     await PharmaUtils.modal.error(
         succeeded.length ? 'Some assignments need attention' : 'Assignments could not be saved',
-        `${succeeded.length} succeeded. ${failed.length} failed: ${failed.map(({ product, message }) => `${formatProductIdentity(product)} — ${message}`).join('; ')}`
+        `${succeeded.length} succeeded. ${failed.length} failed: ${failed.map(({ product, message }) => `${assignmentProductIdentity(product)} — ${message}`).join('; ')}`
     );
     setStep(2);
 }
@@ -686,8 +723,11 @@ modal.addEventListener('hidden.bs.modal', () => {
 
 modal.addEventListener('input', (event) => {
     if (event.target.matches('#assignmentProductSearch')) renderProducts();
-    if (event.target.matches('.term-unit,.term-inventory-unit,.term-quantity')) {
-        updateTermCard(event.target.closest('.assignment-term-card'));
+    if (event.target.matches('[data-level-qty],[data-level-unit]')) rememberTerms();
+    if (event.target.matches('.term-unit')) {
+        const card = event.target.closest('.assignment-term-card');
+        state.packagingEditors.get(String(card.dataset.productId))?.setPurchaseUnit(event.target.value);
+        updateTermCard(card);
         rememberTerms();
     }
 });
@@ -705,6 +745,12 @@ modal.addEventListener('change', (event) => {
         renderSelectedProducts();
     }
     if (event.target.matches('#showInactiveAssignmentProducts')) renderProducts();
+    if (event.target.matches('.term-unit')) {
+        const card = event.target.closest('.assignment-term-card');
+        state.packagingEditors.get(String(card.dataset.productId))?.setPurchaseUnit(event.target.value);
+        updateTermCard(card);
+        rememberTerms();
+    }
     if (event.target.matches('.assignment-product-check')) {
         const productId = String(event.target.value);
         event.target.checked ? state.selectedIds.add(productId) : state.selectedIds.delete(productId);

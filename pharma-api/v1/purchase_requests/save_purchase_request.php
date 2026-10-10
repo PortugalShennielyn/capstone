@@ -16,7 +16,7 @@ $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
 $submit = ($payload['submit'] ?? false) === true;
 
 if ($prId === '') sendPurchaseRequestJson(false, 'Purchase request id is required.', null, 422);
-if (!$items) sendPurchaseRequestJson(false, 'At least one requested item is required.', null, 422);
+if (!$items) sendPurchaseRequestJson(false, 'Purchase Request must contain at least one product.', null, 422);
 
 try {
     ensurePurchaseRequestSchema($pdo);
@@ -57,7 +57,8 @@ try {
         if ($requestUnit === null) {
             throw new InvalidArgumentException($product['product_name'] . ' does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
         }
-        $requestUnit = validatePurchaseRequestPackage($packageOptions[$productId] ?? [], $item['requested_qty'] ?? null, $requestUnit);
+        $requestedUnit = trim((string)($item['unit'] ?? $item['requested_unit'] ?? '')) ?: $requestUnit;
+        $requestUnit = validatePurchaseRequestPackage($packageOptions[$productId] ?? [], $item['requested_qty'] ?? null, $requestedUnit);
         $qty = positivePurchaseRequestQuantity($item['requested_qty'] ?? null, $requestUnit);
         assertNoActivePurchaseRequestConflict($pdo, $productId, (string) $product['product_name'], $prId);
         $stockStmt->execute([':product_id' => $productId]);
@@ -84,7 +85,7 @@ try {
         'UPDATE purchase_requests
          SET status = :status,
              submitted_at = IF(:is_submitted = 1, NOW(), NULL),
-             supervisor_user_id = NULL, decided_at = NULL, updated_at = NOW()
+             supervisor_user_id = NULL, decided_at = NULL, decision_reason = NULL, updated_at = NOW()
          WHERE pr_id = :pr_id'
     );
     $update->execute([
@@ -92,6 +93,7 @@ try {
         ':is_submitted' => $submit ? 1 : 0,
         ':pr_id' => $prId,
     ]);
+    assertPurchaseRequestHasValidItems($pdo, $prId, 'Purchase Request must contain at least one product.');
     $pdo->commit();
     recordActivityLog($pdo, 'Purchase Request', $status, ($request['pr_number'] ?? 'PR') . ($submit ? ' resubmitted for Supervisor approval' : ' saved as draft'), $prId);
     sendPurchaseRequestJson(true, $submit ? 'Purchase Request submitted for Supervisor approval.' : 'Purchase Request saved as Draft.', ['pr_id' => $prId, 'status' => $status]);
@@ -100,6 +102,7 @@ try {
     sendPurchaseRequestJson(false, $e->getMessage(), null, 409);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    sendPurchaseRequestJson(false, 'Unable to save the purchase request.', null, 500);
+    error_log('Purchase Request save failed: ' . $e->getMessage());
+    sendPurchaseRequestJson(false, 'Unable to save the purchase request: ' . $e->getMessage(), null, 500);
 }
 ?>

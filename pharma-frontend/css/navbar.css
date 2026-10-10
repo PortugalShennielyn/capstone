@@ -13,8 +13,7 @@
     --drp-page-background: #f6f8fc;
 }
 
-/* The collapsed rail owns the page offset. Expanding is a fixed drawer overlay,
-   so every module keeps exactly the same usable width and chart/table geometry. */
+/* Keep the page beside the sidebar in both its collapsed and expanded states. */
 #mainWrapper,
 .main-wrapper,
 .navbar-page-content,
@@ -25,30 +24,28 @@ html.sidebar-collapsed .navbar-page-content,
 html.sidebar-collapsed .app-main {
     width: calc(100% - var(--sidebar-collapsed-width)) !important;
     margin-left: var(--sidebar-collapsed-width) !important;
-    transition: none !important;
+    transition: margin-left .24s ease, width .24s ease !important;
 }
 
-.sidebar-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 1998;
-    visibility: hidden;
-    opacity: 0;
-    pointer-events: none;
-    background: rgba(15, 23, 42, .25);
-    -webkit-backdrop-filter: blur(3px);
-    backdrop-filter: blur(3px);
-    transition: opacity 220ms ease, visibility 0s linear 220ms;
+body.sidebar-open #mainWrapper,
+body.sidebar-open .main-wrapper,
+body.sidebar-open .navbar-page-content,
+body.sidebar-open .app-main {
+    width: calc(100% - var(--sidebar-expanded-width)) !important;
+    margin-left: var(--sidebar-expanded-width) !important;
 }
 
-body.sidebar-open .sidebar-backdrop {
-    visibility: visible;
-    opacity: 1;
-    pointer-events: auto;
-    transition: opacity 220ms ease;
+@media (max-width: 600px) {
+    :root { --sidebar-expanded-width: min(240px, 68vw) !important; }
 }
 
 #navbar-container .app-sidebar { z-index: 2000 !important; }
+
+/* Keep shared navigation usable when Bootstrap's CDN stylesheet is unavailable. */
+#navbar-container .d-none { display: none !important; }
+#navbar-container .ms-3 { margin-left: 1rem !important; }
+#navbar-container .sidebar-nav > .collapse:not(.show) { display: none; }
+#navbar-container .sidebar-nav > .collapse.show { display: block; }
 
 #navbar-container .sidebar-header {
     flex: 0 0 var(--app-header-height);
@@ -71,6 +68,24 @@ body.sidebar-open .sidebar-backdrop {
     gap: 12px;
     padding: 0;
     background: transparent;
+}
+
+#navbar-container .sidebar-header .brand-mark {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: none;
+}
+
+#navbar-container .sidebar-header .brand-mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
 }
 
 #navbar-container .sidebar-header .brand-text {
@@ -145,8 +160,8 @@ body.sidebar-open .sidebar-backdrop {
 #navbar-container .app-sidebar.collapsed .brand-mark {
     width: 32px;
     height: 32px;
-    border-radius: 8px;
-    font-size: 13px;
+    flex-basis: 32px;
+    border-radius: 50%;
 }
 
 #navbar-container .app-sidebar.collapsed .sidebar-toggle {
@@ -180,16 +195,24 @@ body.sidebar-open .drp-shared-topbar .drp-sidebar-open-toggle { display: none !i
 .drp-shared-topbar .drp-sidebar-open-toggle:hover .sidebar-tooltip,
 .drp-shared-topbar .drp-sidebar-open-toggle:focus-visible .sidebar-tooltip { transform: translateY(0); }
 
-/* Application dialogs and full-screen viewers share the permanent rail boundary.
-   Bootstrap can re-parent a shown modal, so this must not rely on a direct-child
-   selector. The named overlays are the app's non-Bootstrap full-screen dialogs. */
+/* Keep dialogs in the space beside the current sidebar width. Bootstrap can
+   re-parent a shown modal, so these selectors must not require a direct child. */
+body { --drp-dialog-sidebar-width: var(--sidebar-collapsed-width); }
+body.sidebar-open { --drp-dialog-sidebar-width: var(--sidebar-expanded-width); }
+
+/* The profile dialog is injected by navbar.js. Keep its form out of the page
+   flow until Bootstrap opens it; this also covers pages without Bootstrap CSS. */
+#navbarProfileModal:not(.show) {
+    display: none !important;
+}
+
 body .modal,
 body .receiving-ui-backdrop,
 body .grn-modal,
 body .supplier-payment-dialog,
 body .shift-modal,
 body .receipt-modal {
-    left: var(--sidebar-collapsed-width) !important;
+    left: var(--drp-dialog-sidebar-width) !important;
     right: 0 !important;
     width: auto !important;
 }
@@ -198,7 +221,18 @@ body .receipt-modal {
    those dialogs to the modal's rail-adjusted containing block so neither edge
    can be clipped. Smaller dialogs retain their module-defined width. */
 body .modal > .modal-dialog {
-    max-width: calc(100vw - var(--sidebar-collapsed-width) - 24px) !important;
+    max-width: calc(100vw - var(--drp-dialog-sidebar-width) - 24px) !important;
+}
+
+@media (max-width: 700px) {
+    /* A phone cannot fit a readable dialog beside an expanded sidebar. */
+    body.sidebar-open .modal {
+        left: 0 !important;
+        z-index: 2010 !important;
+    }
+    body.sidebar-open .modal > .modal-dialog {
+        max-width: calc(100vw - 24px) !important;
+    }
 }
 
 #navbar-container .app-sidebar.collapsed .sidebar-tooltip {
@@ -213,9 +247,12 @@ body .modal > .modal-dialog {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .sidebar-backdrop,
     .sidebar-toggle,
     .sidebar-tooltip { transition: none !important; }
+    body.sidebar-open #mainWrapper,
+    body.sidebar-open .main-wrapper,
+    body.sidebar-open .navbar-page-content,
+    body.sidebar-open .app-main { transition: none !important; }
 }
 
 /* Shared application header. The dashboard and every module reuse the sidebar's
@@ -323,6 +360,36 @@ body .main-wrapper > .shift-topbar.drp-shared-topbar {
 .drp-shared-topbar .notification-menu-item:hover { background: #f6f2ff; color: #5b21b6; }
 .drp-shared-topbar .notification-menu-item strong { color: #7c3aed !important; }
 .drp-shared-topbar .notification-empty { margin: 0; padding: 20px 13px; color: #6b7280; font-size: 11px; text-align: center; }
+.drp-alert-menu.notification-menu { width: min(390px, calc(100vw - 28px)); border: 1px solid #e6eaf1; border-radius: 16px; box-shadow: 0 22px 60px rgba(15,23,42,.22); }
+.drp-alert-menu .notification-menu-header { display: grid; grid-template-columns: 40px minmax(0,1fr) auto; justify-content: initial; gap: 11px; padding: 16px; background: linear-gradient(135deg,#fff 0%,#f7f6ff 100%); }
+.drp-alert-menu .notification-menu-header .notification-heading-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 12px; background: #ede9fe; color: #5b4cf0 !important; font-size: 16px; }
+.drp-alert-menu .notification-heading-copy { display: grid; align-content: center; gap: 4px; min-width: 0; }
+.drp-alert-menu .notification-heading-copy strong { color: #1e293b !important; font-size: 13px !important; font-weight: 850; }
+.drp-alert-menu .notification-heading-copy span { color: #718096 !important; font-size: 10px !important; line-height: 1.35; }
+.drp-alert-menu .notification-menu-header .notification-total { align-self: center; padding: 5px 9px; border: 1px solid #ddd6fe; border-radius: 999px; background: #f5f3ff; color: #5b4cf0 !important; font-size: 10px; font-weight: 850; white-space: nowrap; }
+.drp-alert-menu .notification-menu-list { max-height: min(390px, calc(100vh - 190px)); padding: 5px 8px; }
+.drp-alert-menu .notification-menu-item { grid-template-columns: 36px minmax(0,1fr) auto 10px; gap: 10px; min-height: 66px; padding: 10px 8px; border: 0; border-radius: 10px; }
+.drp-alert-menu .notification-menu-item:hover { background: #f8fafc; color: #1f2937; }
+.drp-alert-menu .notification-item-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: #f1f5f9; color: #475569; font-size: 13px; }
+.drp-alert-menu .notification-item-icon i { display: inline; width: auto; height: auto; border-radius: 0; background: transparent; color: inherit; }
+.drp-alert-menu .notification-menu-item.tone-critical .notification-item-icon { background: #fef2f2; color: #dc2626; }
+.drp-alert-menu .notification-menu-item.tone-warning .notification-item-icon { background: #fff7ed; color: #d97706; }
+.drp-alert-menu .notification-menu-item.tone-procurement .notification-item-icon { background: #eef2ff; color: #4f46e5; }
+.drp-alert-menu .notification-item-copy { display: grid; gap: 4px; min-width: 0; }
+.drp-alert-menu .notification-item-copy strong { overflow: hidden; color: #1e293b !important; font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.drp-alert-menu .notification-item-copy small { overflow: hidden; color: #718096; font-size: 9px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.drp-alert-menu .notification-item-count { display: grid; min-width: 26px; height: 26px; place-items: center; padding: 0 7px; border-radius: 8px; background: #f1f5f9; color: #334155 !important; font-size: 11px; font-weight: 850; }
+.drp-alert-menu .tone-critical .notification-item-count { background: #fef2f2; color: #dc2626 !important; }
+.drp-alert-menu .tone-warning .notification-item-count { background: #fff7ed; color: #c2410c !important; }
+.drp-alert-menu .tone-procurement .notification-item-count { background: #eef2ff; color: #4f46e5 !important; }
+.drp-alert-menu .notification-item-arrow { color: #a0aec0; font-size: 9px; }
+.drp-alert-menu .notification-menu-footer { display: flex; align-items: center; gap: 7px; padding: 11px 15px; border-top: 1px solid #eef2f7; background: #fafbfc; color: #718096; font-size: 9px; font-weight: 650; }
+.drp-alert-menu .notification-menu-footer i { color: #7c83a0; }
+.drp-alert-menu .notification-empty-state { display: grid; justify-items: center; gap: 6px; padding: 25px 15px 27px; text-align: center; }
+.drp-alert-menu .notification-empty-state>span { display: grid; width: 38px; height: 38px; place-items: center; margin-bottom: 3px; border-radius: 50%; background: #dcfce7; color: #16a34a; }
+.drp-alert-menu .notification-empty-state>strong { color: #1e293b; font-size: 12px; }
+.drp-alert-menu .notification-empty-state p { margin: 0; color: #718096; font-size: 10px; }
+@media(max-width:575px) { .drp-alert-menu .notification-menu { position: fixed; top: 62px; right: 10px; width: min(390px,calc(100vw - 20px)); } }
 .drp-shared-topbar .topbar-clock { min-width: 112px; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 .drp-shared-topbar .topbar-clock span { color: rgba(255,255,255,.68) !important; font-size: 9px; font-weight: 700; }
 .drp-shared-topbar .topbar-clock strong { margin-top: 3px; color: #fff !important; font-size: 12px; font-weight: 850; white-space: nowrap; }

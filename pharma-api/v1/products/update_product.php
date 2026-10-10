@@ -74,7 +74,7 @@ try {
     $productName = trim((string) ($payload['product_name'] ?? ''));
     $productStatus = normalizeProductStatus($payload['status'] ?? 'Active');
     $variation = (isset($payload['variations'][0]) && is_array($payload['variations'][0])) ? $payload['variations'][0] : $payload;
-    $typeId = cleanId($variation['type_id'] ?? $typeId);
+    $typeId = cleanId($variation['type_id'] ?? null) ?: $typeId;
     $inventoryUnit = requiredProductInventoryUnit($pdo, $variation['inventory_unit_id'] ?? null);
     $detailSchema = strtolower(trim((string) ($variation['detail_schema'] ?? '')));
     $pricingMethod = normalizePricingMethod($payload['pricing_method'] ?? 'manual');
@@ -175,6 +175,18 @@ try {
     if ($barcodeCheck->fetchColumn()) {
         throw new InvalidArgumentException('This barcode already belongs to another product variant.');
     }
+    $unitBarcodeColumn = productSellingOptionBarcodeColumn($pdo);
+    if ($unitBarcodeColumn !== null) {
+        $unitBarcodeCheck = $pdo->prepare(
+            "SELECT product_id FROM product_selling_options
+             WHERE LOWER(TRIM(`{$unitBarcodeColumn}`)) = LOWER(TRIM(:barcode))
+               AND product_id <> :product_id LIMIT 1"
+        );
+        $unitBarcodeCheck->execute([':barcode' => $barcode, ':product_id' => $productId]);
+        if ($unitBarcodeCheck->fetchColumn()) {
+            throw new InvalidArgumentException('This barcode already belongs to a sellable unit of another product.');
+        }
+    }
 
     $pdo->beginTransaction();
 
@@ -241,7 +253,7 @@ try {
         $dosageForm = $medicineDetails['dosage_form'];
         $netContentValue = $medicineDetails['net_content_value'];
         $netContentUnit = $medicineDetails['net_content_unit'];
-        $packageType = $medicineDetails['package_type'];
+        $packageType = null;
         $exists = $pdo->prepare('SELECT medicine_detail_id FROM medicine_details WHERE product_id = :product_id LIMIT 1');
         $exists->execute([':product_id' => $productId]);
         if (cleanId($exists->fetchColumn()) !== '') {
@@ -270,8 +282,8 @@ try {
             ':size' => cleanUpdateField($variation, 'size_value') ?? cleanUpdateField($variation, 'display_size'),
             ':net_weight' => $netWeight,
             ':unit' => cleanUpdateField($variation, 'unit') ?? cleanUpdateField($variation, 'weight_unit') ?? cleanUpdateField($variation, 'weight_volume_unit'),
-            ':package_type' => cleanUpdateField($variation, 'package_type') ?? cleanUpdateField($variation, 'packaging'),
-            ':pack_content' => cleanUpdateField($variation, 'pack_content') ?? joinUpdateParts(cleanUpdateNumber($variation, 'pack_content_qty'), cleanUpdateField($variation, 'pack_content_unit'))
+            ':package_type' => null,
+            ':pack_content' => null
         ];
         $exists = $pdo->prepare('SELECT grocery_detail_id FROM grocery_details WHERE product_id = :product_id LIMIT 1');
         $exists->execute([':product_id' => $productId]);
@@ -291,8 +303,8 @@ try {
             ':size' => cleanUpdateField($variation, 'size_value') ?? cleanUpdateField($variation, 'display_size'),
             ':material' => cleanUpdateField($variation, 'material'),
             ':sterile_status' => cleanUpdateField($variation, 'sterile_status'),
-            ':package_type' => cleanUpdateField($variation, 'package_type') ?? cleanUpdateField($variation, 'packaging'),
-            ':pack_content' => cleanUpdateField($variation, 'pack_content') ?? joinUpdateParts(cleanUpdateNumber($variation, 'pack_content_qty'), cleanUpdateField($variation, 'pack_content_unit'))
+            ':package_type' => null,
+            ':pack_content' => null
         ];
         $exists = $pdo->prepare('SELECT medical_supply_detail_id FROM medical_supply_details WHERE product_id = :product_id LIMIT 1');
         $exists->execute([':product_id' => $productId]);

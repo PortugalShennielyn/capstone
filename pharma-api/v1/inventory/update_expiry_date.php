@@ -1,6 +1,7 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once '../purchase_orders/purchase_order_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -34,19 +35,25 @@ try {
     if ($batchId === '' && $inventoryId === '') {
         throw new InvalidArgumentException('Inventory batch is required.');
     }
-    if ($alertDays <= 0 || $alertDays > 3650) {
-        throw new InvalidArgumentException('Alert before expiry must be between 1 and 3650 days.');
+    if (!in_array($alertDays, [30, 60], true)) {
+        throw new InvalidArgumentException('Expiry alerts can be set to 30 or 60 days only.');
     }
-    if ($expiryDate !== '') {
-        $parsed = DateTime::createFromFormat('Y-m-d', $expiryDate);
-        if (!$parsed || $parsed->format('Y-m-d') !== $expiryDate) {
-            throw new InvalidArgumentException('Expiry date must be a valid date.');
-        }
-    }
+    $expiryDate = validateDateNotBeforeToday(
+        $expiryDate,
+        'Expiry date must be a valid date.',
+        'Expiry date cannot be earlier than today.',
+        true
+    );
 
     $pdo->beginTransaction();
     $lookup = $pdo->prepare(
-        'SELECT batch_id, legacy_inventory_id, product_id
+        'SELECT batch_id, legacy_inventory_id, product_id, received_date, expiry_date,
+                CASE
+                    WHEN received_date >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                     AND NOT EXISTS (SELECT 1 FROM inventory_transfer_allocations ita WHERE ita.source_batch_id = inventory_batches.batch_id)
+                     AND NOT EXISTS (SELECT 1 FROM product_selling_stock pss WHERE pss.source_batch_id = inventory_batches.batch_id)
+                    THEN 1 ELSE 0
+                END AS can_edit_expiry
          FROM inventory_batches
          WHERE batch_id = :batch_id
             OR legacy_inventory_id = :inventory_id
@@ -58,10 +65,15 @@ try {
     if (!$batch) {
         throw new InvalidArgumentException('Inventory batch not found.');
     }
+    $currentExpiryDate = trim((string) ($batch['expiry_date'] ?? ''));
+    if ((int) ($batch['can_edit_expiry'] ?? 0) !== 1 && $expiryDate !== $currentExpiryDate) {
+        throw new InvalidArgumentException('Expiry date locked. Expiry information can only be corrected within 24 hours of receiving the batch before inventory activity occurs.');
+    }
 
-    $updateBatch = $pdo->prepare('UPDATE inventory_batches SET expiry_date = :expiry_date WHERE batch_id = :batch_id');
+    $updateBatch = $pdo->prepare('UPDATE inventory_batches SET expiry_date = :expiry_date, expiry_alert_days = :expiry_alert_days WHERE batch_id = :batch_id');
     $updateBatch->execute([
         ':expiry_date' => $expiryDate === '' ? null : $expiryDate,
+        ':expiry_alert_days' => $alertDays,
         ':batch_id' => $batch['batch_id']
     ]);
 

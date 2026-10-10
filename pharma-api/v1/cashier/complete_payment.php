@@ -14,15 +14,19 @@ try {
     ensureActivityLogSchema($pdo);
     ensureSalesOrderCashSchema($pdo);
     ensureCashierPaymentDiscountSchema($pdo);
+    ensureSalesProfitAllocationSchema($pdo);
 
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);
     $amountPaid = cashierMoney($payload['amount_paid'] ?? $payload['cash_received'] ?? 0);
     $cashierDiscountType = strtolower(trim((string) ($payload['cashier_discount_type'] ?? 'none')));
     $cashierDiscountAmount = cashierMoney($payload['cashier_discount_amount'] ?? 0);
-    if (in_array($cashierDiscountType, ['senior', 'pwd'], true)) {
-        throw new RuntimeException('Senior Citizen and PWD VAT exemptions require eligible-item tax classification before they can be applied.');
+    $beneficiaryName = trim((string) ($payload['beneficiary_name'] ?? ''));
+    $beneficiaryId = trim((string) ($payload['beneficiary_id'] ?? ''));
+    if (in_array($cashierDiscountType, ['senior', 'pwd'], true) && ($beneficiaryName === '' || $beneficiaryId === '')) {
+        throw new InvalidArgumentException('Enter the beneficiary name and Senior Citizen or PWD ID number.');
     }
+    if (mb_strlen($beneficiaryName) > 150 || mb_strlen($beneficiaryId) > 150) throw new InvalidArgumentException('Beneficiary details must be 150 characters or fewer.');
     if ($orderId <= 0) {
         http_response_code(400);
         echo json_encode(['status' => 'error', 'message' => 'Missing order_id.']);
@@ -49,12 +53,26 @@ try {
     if (!in_array($oldStatus, ['accepted_by_cashier', 'processing_payment', 'processing'], true)) {
         throw new RuntimeException('Only accepted cashier orders can be completed.');
     }
+    if (!cashierIsAdminSession() && (string) $order['assigned_cashier_id'] !== $cashierId) {
+        throw new RuntimeException('Only the assigned cashier can complete this order.');
+    }
+
+    $eligibleStmt = $pdo->prepare(
+        "SELECT COALESCE(SUM(i.line_total), 0)
+         FROM sales_order_items i
+         INNER JOIN product p ON p.product_id = i.product_id
+         INNER JOIN product_categories pc ON pc.category_id = p.category_id
+         WHERE i.order_id = :order_id AND LOWER(TRIM(pc.category_name)) = 'medicine'"
+    );
+    $eligibleStmt->execute([':order_id' => $orderId]);
+    $eligibleGross = cashierMoney($eligibleStmt->fetchColumn());
 
     $totals = cashierPaymentTotals(
         cashierMoney($order['subtotal'] ?? 0),
         $cashierDiscountType,
         $cashierDiscountAmount,
-        cashierMoney($order['discount'] ?? 0)
+        cashierMoney($order['discount'] ?? 0),
+        $eligibleGross
     );
     $totalAmount = $totals['final_amount'];
     if ($amountPaid <= 0) {
@@ -84,18 +102,22 @@ try {
 
     $payment = $pdo->prepare(
         "INSERT INTO sales_payments
-            (order_id, cashier_id, payment_method, total_amount, sales_clerk_discount, cashier_discount_type, cashier_discount_amount, final_amount, amount_paid, change_amount, payment_status, paid_at)
+            (order_id, cashier_id, payment_method, total_amount, sales_clerk_discount, cashier_discount_type, cashier_discount_amount, final_amount, vat_exempt_sales, vat_exemption_amount, beneficiary_name, beneficiary_id, amount_paid, change_amount, payment_status, paid_at)
          VALUES
-            (:order_id, :cashier_id, 'cash', :total_amount, :sales_clerk_discount, :cashier_discount_type, :cashier_discount_amount, :final_amount, :amount_paid, :change_amount, 'paid', NOW())"
+            (:order_id, :cashier_id, 'cash', :total_amount, :sales_clerk_discount, :cashier_discount_type, :cashier_discount_amount, :final_amount, :vat_exempt_sales, :vat_exemption_amount, :beneficiary_name, :beneficiary_id, :amount_paid, :change_amount, 'paid', NOW())"
     );
     $payment->execute([
         ':order_id' => $orderId,
         ':cashier_id' => $cashierId,
         ':total_amount' => $totalAmount,
-        ':sales_clerk_discount' => cashierMoney($order['discount'] ?? 0),
+        ':sales_clerk_discount' => $totals['sales_clerk_discount'],
         ':cashier_discount_type' => $totals['discount_type'],
         ':cashier_discount_amount' => $totals['discount_amount'],
         ':final_amount' => $totalAmount,
+        ':vat_exempt_sales' => $totals['vat_exempt_sales'],
+        ':vat_exemption_amount' => $totals['vat_exemption_amount'],
+        ':beneficiary_name' => in_array($cashierDiscountType, ['senior', 'pwd'], true) ? $beneficiaryName : null,
+        ':beneficiary_id' => in_array($cashierDiscountType, ['senior', 'pwd'], true) ? $beneficiaryId : null,
         ':amount_paid' => $amountPaid,
         ':change_amount' => $changeAmount,
     ]);
@@ -120,6 +142,7 @@ try {
         "UPDATE sales_orders
          SET status = 'completed',
              assigned_cashier_id = :cashier_id,
+             discount = :sales_clerk_discount,
              vat = :vat,
              total_amount = :total_amount,
              completed_at = NOW()
@@ -127,6 +150,7 @@ try {
     );
     $update->execute([
         ':cashier_id' => $cashierId,
+        ':sales_clerk_discount' => $totals['sales_clerk_discount'],
         ':vat' => $totals['vat'],
         ':total_amount' => $totalAmount,
         ':order_id' => $orderId,

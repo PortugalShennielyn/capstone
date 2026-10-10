@@ -6,7 +6,7 @@ import {
     primaryAccessRole,
     roleLabel,
     sessionRoleSet
-} from './rbac.js?v=7';
+} from './rbac.js?v=8';
 
 const TAB_TOKEN_KEY = 'pharma_tab_token';
 const TAB_CHANNEL = 'pharma_tab_session_channel';
@@ -101,14 +101,18 @@ function sessionTimeoutConfig() {
     };
 }
 
-async function clearServerSession() {
+async function clearServerSession(reason = 'logout') {
     const token = tabToken();
     try {
         await fetch(`${API_BASE_URL}/auth/logout.php`, {
             method: 'POST',
             credentials: 'include',
             cache: 'no-store',
-            headers: token ? { 'X-Tab-Token': token } : {}
+            headers: {
+                ...(token ? { 'X-Tab-Token': token } : {}),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reason })
         });
     } catch (error) {}
 }
@@ -150,7 +154,7 @@ async function expireInactiveSession() {
 
     inactivityLogoutStarted = true;
     window.clearTimeout(inactivityTimer);
-    await clearServerSession();
+    await clearServerSession('timeout');
     clearTabToken();
     window.alert('Your session has expired due to inactivity. Please log in again.');
     window.location.replace('login.html');
@@ -404,7 +408,7 @@ function redirectUnauthorizedPage() {
         return;
     }
     if (roles.includes('salesclerk') || roles.includes('ro_sales_clerk')) {
-        window.location.replace('sales_clerk_pos.html?access=denied');
+        window.location.replace('sales_clerk_dashboard.html?access=denied');
         return;
     }
     if (roles.includes('cashier') || roles.includes('ro_cashier')) {
@@ -482,7 +486,7 @@ async function initializePageSession() {
 
     const accessRole = primaryAccessRole(currentSession);
     document.body.dataset.sessionRole = accessRole;
-    if (accessRole === 'supervisor') {
+    if (accessRole === 'supervisor' && !window.location.pathname.endsWith('/profile.html')) {
         document.body.classList.add('supervisor-read-only');
         document.querySelectorAll('button, a').forEach(control => {
             const copy = `${control.textContent || ''} ${control.getAttribute('title') || ''} ${control.getAttribute('aria-label') || ''}`.toLowerCase();

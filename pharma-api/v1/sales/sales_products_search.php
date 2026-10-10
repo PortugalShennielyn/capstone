@@ -14,16 +14,24 @@ try {
     $typeName = trim((string) ($_GET['type_name'] ?? ''));
     $params = [];
     $whereParts = ["p.status = 'Active'"];
+    $unitBarcodeColumn = productSellingOptionBarcodeColumn($pdo);
 
     if ($search !== '') {
+        $inactiveUnitBarcodeSql = $unitBarcodeColumn
+            ? " OR EXISTS (SELECT 1 FROM product_selling_options inactive_unit
+                          WHERE inactive_unit.product_id = product.product_id
+                            AND inactive_unit.`{$unitBarcodeColumn}` = :inactive_unit_barcode)"
+            : '';
         $inactiveBarcode = $pdo->prepare(
             "SELECT product_name
              FROM product
-             WHERE barcode = :barcode
+             WHERE (barcode = :barcode{$inactiveUnitBarcodeSql})
                AND status = 'Inactive'
              LIMIT 1"
         );
-        $inactiveBarcode->execute([':barcode' => $search]);
+        $inactiveBarcodeParams = [':barcode' => $search];
+        if ($unitBarcodeColumn) $inactiveBarcodeParams[':inactive_unit_barcode'] = $search;
+        $inactiveBarcode->execute($inactiveBarcodeParams);
         if ($inactiveBarcode->fetchColumn() !== false) {
             http_response_code(409);
             echo json_encode([
@@ -32,7 +40,14 @@ try {
             ]);
             exit();
         }
-            $whereParts[] = "CONCAT_WS(' ',
+            $unitBarcodeSearchSql = $unitBarcodeColumn
+                ? " OR EXISTS (SELECT 1 FROM product_selling_options barcode_unit
+                              WHERE barcode_unit.product_id = p.product_id
+                                AND barcode_unit.is_active = 1
+                                AND barcode_unit.pos_enabled = 1
+                                AND barcode_unit.`{$unitBarcodeColumn}` = :unit_barcode_search)"
+                : '';
+            $whereParts[] = "(CONCAT_WS(' ',
                   p.barcode,
                   p.brand_name,
                   p.product_name,
@@ -57,8 +72,9 @@ try {
                   msd.sterile_status,
                   msd.pack_content,
                   msd.package_type
-              ) LIKE :search";
+              ) LIKE :search{$unitBarcodeSearchSql})";
         $params[':search'] = '%' . $search . '%';
+        if ($unitBarcodeColumn) $params[':unit_barcode_search'] = $search;
     }
     if ($type !== '' && strcasecmp($type, 'All Items') !== 0) {
         $whereParts[] = '(pt.type_name = :type OR pc.category_name = :type)';
@@ -93,6 +109,8 @@ try {
                 pc.category_name,
                 pt.type_name,
                 md.generic_name,
+                classification_values.medicine_classification,
+                classification_values.medicine_classification_badge,
                 md.strength,
                 md.strength_value,
                 md.strength_unit,
@@ -120,22 +138,66 @@ try {
                  INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
                  LEFT JOIN product_type_specifications pts ON pts.type_id=p.type_id AND pts.specification_id=psv.specification_id
                  LEFT JOIN product_measurement_units spec_unit ON spec_unit.measurement_unit_id=psv.measurement_unit_id
-                 WHERE psv.product_id=p.product_id) AS normalized_specification,
-                COALESCE(stock.available_stock, 0) AS available_stock
+                 WHERE psv.product_id=p.product_id
+                   AND LOWER(TRIM(ps.specification_name)) <> 'medicine classification') AS normalized_specification,
+                COALESCE(stock.available_stock, 0) AS available_stock,
+                COALESCE(stock.shelf_stock, 0) AS shelf_stock,
+                stock.first_expiry_date,
+                stock.first_days_until_expiry,
+                stock.first_batch_number,
+                stock.expired_batch_count
             FROM product p
             LEFT JOIN product_categories pc ON pc.category_id = p.category_id
             LEFT JOIN product_types pt ON pt.type_id = p.type_id
             LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = p.inventory_unit_id
             LEFT JOIN medicine_details md ON md.product_id = p.product_id
+            LEFT JOIN (
+                SELECT psv.product_id,
+                       psv.value_text AS medicine_classification,
+                       CASE WHEN LOWER(TRIM(psv.value_text)) = 'prescription (rx)' THEN 'Rx' ELSE NULL END AS medicine_classification_badge
+                FROM product_specification_values psv
+                INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
+                WHERE LOWER(TRIM(ps.specification_name))='medicine classification'
+            ) classification_values ON classification_values.product_id=p.product_id
             LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
             LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
             LEFT JOIN (
-                SELECT product_id, SUM(quantity_remaining) AS available_stock
-                FROM product_selling_stock
-                GROUP BY product_id
+                SELECT pss.product_id,
+                       SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                     AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                     AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS available_stock,
+                       SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                     AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                     AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS shelf_stock,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                                          THEN COALESCE(ib.expiry_date, pss.expiration_date) END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_expiry_date,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                                          THEN DATEDIFF(COALESCE(ib.expiry_date, pss.expiration_date), CURDATE()) END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_days_until_expiry,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                                          THEN pss.batch_number END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_batch_number,
+                       SUM(CASE WHEN pss.quantity_remaining > 0 AND COALESCE(ib.expiry_date, pss.expiration_date) IS NOT NULL
+                                     AND COALESCE(ib.expiry_date, pss.expiration_date) <= CURDATE()
+                                THEN 1 ELSE 0 END) AS expired_batch_count
+                FROM product_selling_stock pss
+                LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
+                GROUP BY pss.product_id
             ) stock ON stock.product_id = p.product_id
             {$where}
-            HAVING available_stock > 0
+            HAVING shelf_stock > 0
             ORDER BY p.brand_name ASC, p.product_name ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -144,10 +206,12 @@ try {
         return [
             'product_id' => (string) $row['product_id'],
             'brand_name' => trim((string) ($row['brand_name'] ?? '')),
-            'product_name' => trim((string) ($row['product_name'] ?? '')),
+            'product_name' => salesResolvedProductName($row),
             'specification' => trim((string) ($row['normalized_specification'] ?? '')) ?: salesBuildSpecification($row),
             'inventory_unit' => trim((string) ($row['inventory_unit'] ?? '')),
             'generic_name' => trim((string) ($row['generic_name'] ?? '')),
+            'medicine_classification' => trim((string) ($row['medicine_classification'] ?? '')),
+            'medicine_classification_badge' => trim((string) ($row['medicine_classification_badge'] ?? '')),
             'strength' => trim((string) ($row['strength'] ?? '')),
             'strength_value' => salesSpecificationValue($row['strength_value'] ?? ''),
             'strength_unit' => trim((string) ($row['strength_unit'] ?? '')),
@@ -172,6 +236,10 @@ try {
             'type_name' => trim((string) ($row['type_name'] ?? '')),
             'price' => is_numeric($row['price'] ?? null) ? round((float) $row['price'], 2) : null,
             'available_stock' => (int) ($row['available_stock'] ?? 0),
+            'shelf_stock' => (int) ($row['shelf_stock'] ?? 0),
+            'first_expiry_date' => $row['first_expiry_date'] ?? null,
+            'first_expiry_status' => (int)($row['available_stock'] ?? 0) > 0 ? inventoryExpiryStatus($row['first_expiry_date'] ?? null, $row['first_days_until_expiry'] ?? null) : 'Expired',
+            'first_batch_number' => trim((string) ($row['first_batch_number'] ?? '')),
             'status' => strcasecmp(trim((string) ($row['product_status'] ?? 'Active')), 'Inactive') === 0 ? 'Inactive' : 'Active',
         ];
     }, $stmt->fetchAll(PDO::FETCH_ASSOC));

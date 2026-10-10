@@ -1,7 +1,7 @@
 <aside class="app-sidebar sidebar collapsed" id="sidebar" aria-label="Application sidebar">
     <div class="sidebar-header">
         <a href="dashboard.html" class="sidebar-brand" aria-label="Dr. R Pharmacy dashboard" data-dashboard-view="dashboard">
-            <span class="brand-mark"><i class="fa-solid fa-prescription-bottle-medical"></i></span>
+            <span class="brand-mark"><img src="./assets/doc-r-navbar.jpeg" alt="" width="44" height="44"></span>
             <span class="brand-text">Dr. R Pharmacy</span>
         </a>
         <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-expanded="false" aria-label="Close sidebar">
@@ -110,6 +110,10 @@
                 <i class="fa-solid fa-hourglass-half"></i>
                 <span class="nav-label">Expiry Monitoring</span>
             </a>
+            <a href="returns_disposals.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="returns-disposals" title="Returns &amp; Disposals">
+                <i class="fa-solid fa-box-archive"></i>
+                <span class="nav-label">Returns &amp; Disposals</span>
+            </a>
             <a href="reports.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="reports" data-dashboard-view="dashboard/reports" title="Reports">
                 <i class="fa-solid fa-chart-column"></i>
                 <span class="nav-label">Reports</span>
@@ -122,6 +126,10 @@
             <i class="fa-solid fa-angle-right ms-auto collapse-arrow"></i>
         </a>
         <div class="collapse" id="administrationCollapse">
+            <a href="audit_logs.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="audit-logs" data-dashboard-view="audit-logs" title="Audit Logs">
+                <i class="fa-solid fa-clipboard-list"></i>
+                <span class="nav-label">Audit Logs</span>
+            </a>
             <a href="admin_settings.html" class="nav-link-item ms-3 nav-sublink" data-nav-page="settings" data-dashboard-view="settings" title="Admin Settings">
                 <i class="fa-solid fa-gear"></i>
                 <span class="nav-label">Settings</span>
@@ -145,9 +153,9 @@
                     <span data-navbar-role-label></span>
                 </div>
             </div>
-            <a href="dashboard.html#dashboard/user/settings" class="sidebar-user-action" data-nav-page="user-settings" data-dashboard-view="dashboard/user/settings" role="menuitem">
+            <a href="profile.html" class="sidebar-user-action" data-nav-page="user-settings" role="menuitem">
                 <i class="fa-solid fa-user-gear"></i>
-                <span>User Settings</span>
+                <span>Profile Settings</span>
             </a>
             <a href="dashboard.html#dashboard/billing" class="sidebar-user-action" data-nav-page="billing" data-dashboard-view="dashboard/billing" role="menuitem">
                 <i class="fa-solid fa-credit-card"></i>

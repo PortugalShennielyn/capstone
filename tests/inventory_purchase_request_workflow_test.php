@@ -128,6 +128,21 @@ try {
         ->execute([':pr_id' => $prId]);
     inventoryPrAssert(activePurchaseRequestConflict($pdo, $cases['A']['product_id']) !== null, 'Submitted PR duplicate detection failed.');
 
+    $rejectedRetryId = newUuid($pdo);
+    $rejectedRetryNumber = 'PR-WORKFLOW-REJECTED-' . strtoupper(bin2hex(random_bytes(3)));
+    $pdo->prepare(
+        "INSERT INTO purchase_requests (pr_id, pr_number, requested_by, request_date, status, created_at)
+         VALUES (:pr_id, :pr_number, :requested_by, CURDATE(), 'Rejected', DATE_ADD(NOW(), INTERVAL 1 SECOND))"
+    )->execute([':pr_id' => $rejectedRetryId, ':pr_number' => $rejectedRetryNumber, ':requested_by' => $managerId]);
+    $pdo->prepare(
+        "INSERT INTO purchase_request_items
+            (pr_item_id, pr_id, product_id, stock_qty_at_request, requested_qty, unit_label_at_request)
+         VALUES (:item_id, :pr_id, :product_id, 0, 24, 'pcs')"
+    )->execute([':item_id' => newUuid($pdo), ':pr_id' => $rejectedRetryId, ':product_id' => $cases['A']['product_id']]);
+    inventoryPrAssert(activePurchaseRequestConflict($pdo, $cases['A']['product_id']) === null, 'A newer rejected PR must clear older pending PR conflicts.');
+    $pdo->prepare('DELETE FROM purchase_request_items WHERE pr_id = :pr_id')->execute([':pr_id' => $rejectedRetryId]);
+    $pdo->prepare('DELETE FROM purchase_requests WHERE pr_id = :pr_id')->execute([':pr_id' => $rejectedRetryId]);
+
     $supplierIds = $pdo->query('SELECT supplier_id FROM suppliers WHERE archived_at IS NULL ORDER BY supplier_id LIMIT 2')->fetchAll(PDO::FETCH_COLUMN);
     inventoryPrAssert(count($supplierIds) === 2, 'The multi-PO fixture requires two active suppliers.');
     $pdo->prepare("UPDATE purchase_requests SET status = 'Approved' WHERE pr_id = :pr_id")->execute([':pr_id' => $prId]);

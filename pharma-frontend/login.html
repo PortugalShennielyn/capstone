@@ -13,179 +13,74 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
 
-    <style>
-        :root {
-            --brand-purple: #8A2BE2;
-            --brand-purple-dark: #7020bd;
-            --page-bg: #f4f6fb;
-            --text-main: #252b37;
-            --text-muted: #747d8c;
-            --border-soft: #e6eaf2;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            color: var(--text-main);
-            background:
-                radial-gradient(circle at top left, rgba(138, 43, 226, 0.14), transparent 34%),
-                linear-gradient(135deg, #f8f9fd 0%, var(--page-bg) 55%, #eef1f8 100%);
-            letter-spacing: 0;
-        }
-
-        .login-card {
-            width: min(100%, 420px);
-            padding: 34px;
-            border: 1px solid rgba(230, 234, 242, 0.86);
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.94);
-            box-shadow: 0 22px 60px rgba(31, 37, 48, 0.12);
-            backdrop-filter: blur(12px);
-        }
-
-        .brand-icon {
-            width: 58px;
-            height: 58px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 14px;
-            color: #fff;
-            background: linear-gradient(135deg, var(--brand-purple), #a855f7);
-            font-size: 25px;
-            box-shadow: 0 16px 30px rgba(138, 43, 226, 0.28);
-        }
-
-        .login-title {
-            margin-top: 18px;
-            margin-bottom: 6px;
-            font-size: 25px;
-            font-weight: 800;
-            color: var(--text-main);
-        }
-
-        .login-subtitle {
-            margin-bottom: 28px;
-            color: var(--text-muted);
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .form-label {
-            color: #3f4654;
-            font-size: 13px;
-            font-weight: 700;
-        }
-
-        .input-group-text {
-            width: 46px;
-            justify-content: center;
-            color: var(--brand-purple);
-            background: #f7f4fc;
-            border-color: var(--border-soft);
-        }
-
-        .form-control {
-            min-height: 48px;
-            border-color: var(--border-soft);
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .form-control:focus {
-            border-color: rgba(138, 43, 226, 0.48);
-            box-shadow: 0 0 0 0.22rem rgba(138, 43, 226, 0.12);
-        }
-
-        .btn-login {
-            min-height: 48px;
-            border: 0;
-            border-radius: 8px;
-            background: var(--brand-purple);
-            font-weight: 800;
-            box-shadow: 0 14px 26px rgba(138, 43, 226, 0.22);
-        }
-
-        .btn-login:hover,
-        .btn-login:focus {
-            background: var(--brand-purple-dark);
-        }
-
-        .login-message {
-            display: none;
-            margin-bottom: 16px;
-            padding: 12px 14px;
-            border-radius: 8px;
-            border: 1px solid #f3b4b4;
-            color: #8a1f1f;
-            background: #fff1f1;
-            font-size: 13px;
-            font-weight: 700;
-            line-height: 1.45;
-            overflow-wrap: anywhere;
-        }
-
-        .login-message.is-visible {
-            display: block;
-        }
-
-        .login-footer {
-            margin-top: 22px;
-            color: var(--text-muted);
-            font-size: 12px;
-            font-weight: 600;
-            text-align: center;
-        }
-
-        .toast {
-            border-radius: 8px;
-            box-shadow: 0 16px 40px rgba(31, 37, 48, 0.14);
-        }
-    </style>
+    <link href="./css/login.css?v=1" rel="stylesheet">
 </head>
 <body>
-    <main class="d-flex align-items-center justify-content-center min-vh-100 px-3 py-4">
-        <section class="login-card">
-            <div class="text-center">
-                <div class="brand-icon">
-                    <i class="fa-solid fa-prescription-bottle-medical"></i>
-                </div>
-                <h1 class="login-title">Dr. R Pharmacy</h1>
-                <p class="login-subtitle">Sign in to continue to Pharmacy POS</p>
+    <main class="login-layout">
+        <section class="login-showcase" aria-labelledby="showcaseTitle">
+            <div class="showcase-content">
+                <p class="showcase-eyebrow">Pharmacy POS</p>
+                <img class="showcase-logo" src="./assets/doc-r-login.jpg" alt="Doc R Pharma Distributor" width="960" height="480">
+                <h2 id="showcaseTitle">Your inventory, billing and orders<br class="showcase-desktop-break"> in one secure place.</h2>
+                <ul class="showcase-features">
+                    <li><span class="feature-icon"><i class="fa-solid fa-cube" aria-hidden="true"></i></span>Live stock &amp; expiry tracking</li>
+                    <li><span class="feature-icon"><i class="fa-solid fa-receipt" aria-hidden="true"></i></span>Fast POS billing</li>
+                    <li><span class="feature-icon"><i class="fa-solid fa-truck" aria-hidden="true"></i></span>Distributor orders in one place</li>
+                </ul>
+                <p class="showcase-footnote">Trusted by pharmacy teams every day</p>
             </div>
+        </section>
 
-            <form id="loginForm" novalidate>
-                <div class="login-message" id="loginMessage" role="alert" aria-live="polite"></div>
+        <section class="login-panel" aria-labelledby="loginTitle">
+            <div class="login-panel-inner">
+                <div class="login-card">
+                    <h1 class="login-title" id="loginTitle">Sign in</h1>
+                    <p class="login-subtitle">Welcome back to Doc R Pharmacy POS.</p>
 
-                <div class="mb-3">
-                    <label for="username" class="form-label">Username</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="fa-regular fa-user"></i></span>
-                        <input type="text" class="form-control" id="username" name="username" placeholder="Enter username" autocomplete="username">
-                    </div>
+                    <form id="loginForm" novalidate>
+                        <div class="login-message" id="loginMessage" role="alert" aria-live="polite"></div>
+
+                        <div class="field-row">
+                            <label for="username" class="form-label">Username</label>
+                            <div class="login-input-wrap">
+                                <i class="fa-regular fa-user" aria-hidden="true"></i>
+                                <input type="text" class="form-control" id="username" name="username" placeholder="Enter your username" autocomplete="username" required>
+                            </div>
+                        </div>
+
+                        <div class="field-row password-field">
+                            <div class="field-label-row"><label for="password" class="form-label">Password</label><button id="forgotPasswordButton" type="button" class="text-action">Forgot password?</button></div>
+                            <div class="login-input-wrap">
+                                <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                                <input type="password" class="form-control" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+                                <button id="passwordVisibility" class="password-visibility" type="button" aria-label="Show password" aria-pressed="false"><i class="fa-regular fa-eye" aria-hidden="true"></i></button>
+                            </div>
+                        </div>
+
+                        <label class="remember-choice"><input id="rememberUsername" type="checkbox"><span>Remember my username on this device</span></label>
+
+                        <button type="submit" class="btn btn-primary btn-login w-100">
+                            <span class="login-button-content">Sign in <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+                        </button>
+                    </form>
+
+                    <p class="login-footer"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Secure access for authorized pharmacy personnel</p>
                 </div>
-
-                <div class="mb-4">
-                    <label for="password" class="form-label">Password</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="fa-solid fa-lock"></i></span>
-                        <input type="password" class="form-control" id="password" name="password" placeholder="Enter password" autocomplete="current-password">
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary btn-login w-100">
-                    <span class="login-button-content"><i class="fa-solid fa-right-to-bracket me-2"></i>Login</span>
-                </button>
-            </form>
-
-            <div class="login-footer">Secure access for authorized pharmacy personnel</div>
+            </div>
+            <p class="login-copyright">© 2026 Doc R Pharma Distributor · Authorized personnel only</p>
         </section>
     </main>
+
+    <dialog id="forgotPasswordDialog" class="forgot-dialog" aria-labelledby="forgotPasswordTitle">
+        <div class="forgot-dialog-header"><h2 id="forgotPasswordTitle">Reset your password</h2><button id="closeForgotPassword" type="button" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
+        <p>Enter the email linked to your account. We’ll send a reset link if it is registered.</p>
+        <form id="forgotPasswordForm" novalidate>
+            <label class="form-label" for="resetEmail">Email address</label>
+            <input class="form-control" id="resetEmail" name="email" type="email" placeholder="you@example.com" autocomplete="email" required>
+            <div id="forgotPasswordMessage" class="reset-message" role="status" aria-live="polite"></div>
+            <button class="btn btn-primary btn-login w-100" type="submit">Send reset link</button>
+        </form>
+    </dialog>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -199,6 +94,11 @@
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const loginMessage = document.getElementById('loginMessage');
+        const rememberUsername = document.getElementById('rememberUsername');
+        const passwordVisibility = document.getElementById('passwordVisibility');
+        const forgotDialog = document.getElementById('forgotPasswordDialog');
+        const forgotForm = document.getElementById('forgotPasswordForm');
+        const forgotMessage = document.getElementById('forgotPasswordMessage');
         const submitButton = loginForm.querySelector('button[type="submit"]');
         const submitButtonContent = submitButton.querySelector('.login-button-content');
         const LOGIN_TIMEOUT_MS = 12000;
@@ -209,6 +109,63 @@
         let loginInProgress = false;
 
         clearTabToken();
+
+        try {
+            const savedUsername = localStorage.getItem('drpRememberedUsername');
+            if (savedUsername) {
+                usernameInput.value = savedUsername;
+                rememberUsername.checked = true;
+            }
+        } catch (_) {
+            // Storage may be unavailable in private browsing mode.
+        }
+
+        passwordVisibility.addEventListener('click', () => {
+            const showing = passwordInput.type === 'password';
+            passwordInput.type = showing ? 'text' : 'password';
+            passwordVisibility.setAttribute('aria-pressed', String(showing));
+            passwordVisibility.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+            passwordVisibility.querySelector('i').className = showing ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+        });
+
+        document.getElementById('forgotPasswordButton').addEventListener('click', () => {
+            forgotMessage.textContent = '';
+            forgotMessage.className = 'reset-message';
+            forgotDialog.showModal();
+            document.getElementById('resetEmail').focus();
+        });
+        document.getElementById('closeForgotPassword').addEventListener('click', () => forgotDialog.close());
+        forgotDialog.addEventListener('click', (event) => {
+            if (event.target === forgotDialog) forgotDialog.close();
+        });
+        forgotForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const email = document.getElementById('resetEmail').value.trim();
+            const button = forgotForm.querySelector('button[type="submit"]');
+            if (!email || !document.getElementById('resetEmail').checkValidity()) {
+                forgotMessage.textContent = 'Enter a valid email address.';
+                forgotMessage.className = 'reset-message is-error';
+                return;
+            }
+            button.disabled = true;
+            forgotMessage.textContent = 'Sending reset link…';
+            forgotMessage.className = 'reset-message';
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/request_password_reset.php`, {
+                    method: 'POST', credentials: 'include',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const result = await response.json();
+                forgotMessage.textContent = result.message || 'Unable to request a password reset.';
+                forgotMessage.className = `reset-message ${response.ok ? 'is-success' : 'is-error'}`;
+            } catch (_) {
+                forgotMessage.textContent = 'Unable to reach the reset service. Please try again.';
+                forgotMessage.className = 'reset-message is-error';
+            } finally {
+                button.disabled = false;
+            }
+        });
 
         if (mustUseApacheOrigin) {
             submitButton.disabled = true;
@@ -238,7 +195,7 @@
             submitButton.setAttribute('aria-busy', String(isLoading));
             submitButtonContent.innerHTML = isLoading
                 ? '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Signing in...'
-                : '<i class="fa-solid fa-right-to-bracket me-2"></i>Login';
+                : 'Sign in <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>';
         }
 
         function getFrontendRedirectUrl(redirect) {
@@ -316,6 +273,12 @@
 
                 setTabToken(data.tab_token);
                 cacheAuthenticatedProfile(data.session);
+                try {
+                    if (rememberUsername.checked) localStorage.setItem('drpRememberedUsername', username);
+                    else localStorage.removeItem('drpRememberedUsername');
+                } catch (_) {
+                    // Sign-in still succeeds if device storage is unavailable.
+                }
                 sessionStorage.removeItem('drpAccessDeniedMessage');
                 isRedirecting = true;
                 toastr.success('Login successful! Redirecting...');

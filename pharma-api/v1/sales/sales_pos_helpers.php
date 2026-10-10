@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../activity_log_helpers.php';
 require_once __DIR__ . '/sales_financials.php';
 require_once __DIR__ . '/../products/product_selling_options.php';
+require_once __DIR__ . '/../inventory/expiry_status_helpers.php';
 
 function salesReadJsonBody(): array
 {
@@ -201,12 +202,34 @@ function salesBuildSpecification(array $row): string
     return implode(' • ', $parts);
 }
 
+function salesResolvedProductName(array $row): string
+{
+    $brand = trim((string) ($row['brand_name'] ?? ''));
+    $product = trim((string) ($row['product_name'] ?? ''));
+    $generic = trim((string) ($row['generic_name'] ?? ''));
+    $category = strtolower(trim((string) ($row['category_name'] ?? '')));
+
+    if ($category === 'medicine' && $generic !== '') {
+        return $generic;
+    }
+
+    if ($product !== '' && strcasecmp($product, $brand) !== 0) {
+        return $product;
+    }
+
+    return $generic !== '' ? $generic : ($product !== '' ? $product : $brand);
+}
+
 function salesProductStock(PDO $pdo, string $productId): int
 {
     $stmt = $pdo->prepare(
-        'SELECT COALESCE(SUM(quantity_remaining), 0)
-         FROM product_selling_stock
-         WHERE product_id = :product_id'
+        'SELECT COALESCE(SUM(pss.quantity_remaining - pss.expiry_quarantined_qty), 0)
+         FROM product_selling_stock pss
+         LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
+         WHERE pss.product_id = :product_id
+           AND pss.quantity_remaining > pss.expiry_quarantined_qty
+           AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+           AND COALESCE(ib.expiry_action_status, \'\') NOT IN (\'For Disposal\', \'Disposed\')'
     );
     $stmt->execute([':product_id' => $productId]);
     return (int) $stmt->fetchColumn();
@@ -267,16 +290,46 @@ function salesLoadProductsByIds(PDO $pdo, array $productIds): array
                 msd.sterile_status,
                 msd.package_type AS medical_package_type,
                 msd.pack_content AS medical_pack_content,
-                COALESCE(stock.available_stock, 0) AS available_stock
+                COALESCE(stock.available_stock, 0) AS available_stock,
+                stock.first_expiry_date,
+                stock.first_days_until_expiry,
+                stock.first_batch_number
             FROM product p
             LEFT JOIN product_categories pc ON pc.category_id = p.category_id
             LEFT JOIN medicine_details md ON md.product_id = p.product_id
             LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
             LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
             LEFT JOIN (
-                SELECT product_id, SUM(quantity_remaining) AS available_stock
-                FROM product_selling_stock
-                GROUP BY product_id
+                SELECT pss.product_id,
+                       SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                     AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                     AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS available_stock,
+                       SUM(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                     AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                     AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                THEN pss.quantity_remaining - pss.expiry_quarantined_qty ELSE 0 END) AS shelf_stock,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                                          THEN COALESCE(ib.expiry_date, pss.expiration_date) END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_expiry_date,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                                          THEN DATEDIFF(COALESCE(ib.expiry_date, pss.expiration_date), CURDATE()) END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_days_until_expiry,
+                       SUBSTRING_INDEX(GROUP_CONCAT(CASE WHEN pss.quantity_remaining > pss.expiry_quarantined_qty
+                                                               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+                                                               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+                                                          THEN pss.batch_number END
+                                                          ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                                                                   COALESCE(ib.expiry_date, pss.expiration_date), pss.created_at, pss.selling_stock_id), ',', 1) AS first_batch_number
+                FROM product_selling_stock pss
+                LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
+                GROUP BY pss.product_id
             ) stock ON stock.product_id = p.product_id
             WHERE p.product_id IN ({$placeholders})";
     $stmt = $pdo->prepare($sql);
@@ -285,7 +338,9 @@ function salesLoadProductsByIds(PDO $pdo, array $productIds): array
     $products = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $row['specification'] = salesBuildSpecification($row);
+        $row['product_name'] = salesResolvedProductName($row);
         $row['available_stock'] = (int) ($row['available_stock'] ?? 0);
+        $row['first_expiry_status'] = inventoryExpiryStatus($row['first_expiry_date'] ?? null, $row['first_days_until_expiry'] ?? null);
         $row['price'] = round((float) ($row['price'] ?? 0), 2);
         $products[(string) $row['product_id']] = $row;
     }
@@ -315,14 +370,15 @@ function salesNormalizeCartItems(array $items): array
             continue;
         }
 
-        if (!isset($normalized[$productId])) {
-            $normalized[$productId] = [
+        $key = $productId . "\0" . mb_strtolower($unit);
+        if (!isset($normalized[$key])) {
+            $normalized[$key] = [
                 'product_id' => $productId,
                 'quantity' => 0,
                 'unit' => $unit,
             ];
         }
-        $normalized[$productId]['quantity'] += $quantity;
+        $normalized[$key]['quantity'] += $quantity;
     }
 
     return array_values($normalized);
@@ -349,7 +405,7 @@ function salesWriteOrderItems(PDO $pdo, int $orderId, array $items, array $produ
         foreach ($product['selling_units'] as $candidate) if ($requestedUnit === '' || strcasecmp($candidate['unit'], $requestedUnit) === 0) { $sellingUnit=$candidate; break; }
         if (!$sellingUnit) throw new InvalidArgumentException('The selected selling unit is not valid for ' . $product['product_name'] . '.');
         $factor = (int) $sellingUnit['base_quantity'];
-        $quantity = $selectedQuantity * $factor;
+        $quantity = sellingUnitBaseQuantity($selectedQuantity, $factor);
         $unitPrice = round((float) $sellingUnit['selling_price'], 2);
         $lineTotal = round($selectedQuantity * $unitPrice, 2);
         $total += $lineTotal;
@@ -459,6 +515,7 @@ function salesRecordStatusChange(PDO $pdo, int $orderId, ?string $oldStatus, str
 
 function salesValidateCartStock(array $items, array $products): array
 {
+    $requestedByProduct = [];
     foreach ($items as $item) {
         $product = $products[$item['product_id']] ?? null;
         if (!$product) {
@@ -479,8 +536,10 @@ function salesValidateCartStock(array $items, array $products): array
         $factor = null;
         foreach (($product['selling_units'] ?? []) as $unit) if ($requestedUnit === '' || strcasecmp($unit['unit'], $requestedUnit) === 0) { $factor=(int)$unit['base_quantity']; break; }
         if ($factor === null) return [false, 'The selected selling unit is no longer valid for ' . ($product['product_name'] ?? 'the selected product') . '.'];
-        $baseRequested = (int) $item['quantity'] * $factor;
-        if ($baseRequested > (int) $product['available_stock']) {
+        $baseRequested = sellingUnitBaseQuantity((int) $item['quantity'], $factor);
+        $productId = (string) $item['product_id'];
+        $requestedByProduct[$productId] = ($requestedByProduct[$productId] ?? 0) + $baseRequested;
+        if ($requestedByProduct[$productId] > (int) $product['available_stock']) {
             return [
                 false,
                 sprintf(

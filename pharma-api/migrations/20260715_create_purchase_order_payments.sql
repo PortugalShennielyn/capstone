@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_payments (
     po_id CHAR(36) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
     payment_method VARCHAR(40) NOT NULL,
+    payment_type VARCHAR(40) NOT NULL DEFAULT 'Advance Payment',
     payment_date DATE NOT NULL,
     reference_number VARCHAR(100) NULL,
     remarks TEXT NULL,

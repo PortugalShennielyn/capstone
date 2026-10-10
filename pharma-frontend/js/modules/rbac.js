@@ -2,6 +2,7 @@ const ACCESS_DENIED_MESSAGE = 'Access denied. Your account does not have permiss
 
 const ROLE_PAGE_ACCESS = Object.freeze({
     manager: new Set([
+        'profile.html',
         'dashboard.html',
         'products.html',
         'inventory.html',
@@ -15,12 +16,15 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'arrived_orders.html',
         'return_damage.html',
         'expiry_monitoring.html',
+        'expiry_monitoring_advanced.html',
+        'returns_disposals.html',
         'reports.html',
         'admin_settings.html',
         'sales_history.html',
         'cashier_shift_summary.html'
     ]),
     supervisor: new Set([
+        'profile.html',
         'supervisor_dashboard.html',
         'products.html',
         'inventory.html',
@@ -32,10 +36,13 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'purchase_request_print.html',
         'return_damage.html',
         'expiry_monitoring.html',
+        'expiry_monitoring_advanced.html',
+        'returns_disposals.html',
         'reports.html',
         'supervisor_approval.html'
     ]),
     cashier: new Set([
+        'profile.html',
         'cashier_dashboard.html',
         'cashier.html',
         'cashier_pos.html',
@@ -49,10 +56,15 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'reports.html'
     ]),
     salesclerk: new Set([
+        'profile.html',
         'clerk.html',
+        'sales_clerk_dashboard.html',
         'sales_clerk_pos.html',
+        'sales_clerk_scan_pos.html',
         'sales_clerk_orders.html',
-        'reports.html'
+        'sales_clerk_reports.html',
+        'inventory.html',
+        'shelf_inventory.html'
     ])
 });
 
@@ -68,6 +80,7 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'inspect-deliveries',
         'return-damage',
         'expiry-monitoring',
+        'returns-disposals',
         'reports',
         'settings',
         'sales-history',
@@ -81,6 +94,8 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'shelf-inventory',
         'supplier',
         'purchase-orders',
+        'expiry-monitoring',
+        'returns-disposals',
         'reports',
         'supervisor-approval',
         'user-settings'
@@ -95,8 +110,11 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'user-settings'
     ]),
     salesclerk: new Set([
+        'dashboard',
         'sales-clerk-pos',
         'sales-clerk-orders',
+        'inventory',
+        'shelf-inventory',
         'reports',
         'user-settings'
     ])
@@ -144,6 +162,9 @@ function roleLabel(session) {
 
 function isPageAllowed(session, filename) {
     const role = primaryAccessRole(session);
+    if (filename === 'sales_clerk_dashboard.html' || filename === 'sales_clerk_reports.html') {
+        return role === 'salesclerk';
+    }
     if (filename === 'purchase_request_print.html' || filename === 'purchase_order_print.html') return Boolean(role);
     if (filename === 'supervisor_approval.html') return role === 'supervisor';
     if (role === 'super_admin' || role === 'admin') return true;

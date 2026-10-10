@@ -2,7 +2,9 @@
 
 $allowedRoles = ['super_admin', 'admin', 'manager', 'supervisor', 'cashier', 'salesclerk', 'ro-super-admin', 'ro-admin', 'ro-manager', 'ro-supervisor', 'ro-cashier', 'ro-sales-clerk', 'ro_super_admin', 'ro_admin', 'ro_manager', 'ro_supervisor', 'ro_cashier', 'ro_sales_clerk'];
 require_once __DIR__ . '/../../config/db_connection.php';
-require_once __DIR__ . '/../../config/require_auth.php';
+if (!defined('REPORTS_LIBRARY_ONLY')) {
+    require_once __DIR__ . '/../../config/require_auth.php';
+}
 require_once __DIR__ . '/reports_helpers.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
@@ -44,12 +46,42 @@ function salesReport(PDO $pdo, array $f, array $role): array
         $summaryShare = 'CASE WHEN o.subtotal>0 THEN item_scope.line_subtotal/o.subtotal ELSE 0 END';
         $summaryItemCount = 'item_scope.item_count';
         $summarySubtotal = 'item_scope.line_subtotal';
+        $summaryCost = 'item_scope.cost_of_goods';
+        $summaryAllocatedQuantity = 'item_scope.allocated_quantity';
+        $summaryQuantity = 'item_scope.item_count';
+        $summaryMissingCostQuantity = 'item_scope.missing_cost_quantity';
+        $summaryMissingCostBasis = 'item_scope.missing_cost_line_subtotal';
     } else {
-        $summaryItemJoin = 'LEFT JOIN (SELECT order_id,SUM(quantity) item_count FROM sales_order_items GROUP BY order_id) items ON items.order_id=o.order_id';
+        $summaryItemJoin = 'LEFT JOIN (SELECT sales_item.order_id,SUM(sales_item.quantity) item_count,
+                SUM(sales_item.quantity) item_quantity,
+                SUM(CASE WHEN batch_cost.allocated_quantity >= sales_item.quantity AND batch_cost.missing_cost_quantity=0 THEN sales_item.quantity
+                    WHEN known_cost.unit_cost IS NOT NULL THEN sales_item.quantity ELSE COALESCE(batch_cost.allocated_quantity,0) END) allocated_quantity,
+                SUM(CASE WHEN batch_cost.allocated_quantity >= sales_item.quantity AND batch_cost.missing_cost_quantity=0 THEN batch_cost.cost_of_goods
+                    WHEN known_cost.unit_cost IS NOT NULL THEN sales_item.quantity*known_cost.unit_cost ELSE COALESCE(batch_cost.cost_of_goods,0) END) cost_of_goods,
+                SUM(CASE WHEN (batch_cost.allocated_quantity >= sales_item.quantity AND batch_cost.missing_cost_quantity=0) OR known_cost.unit_cost IS NOT NULL THEN 0
+                    ELSE COALESCE(batch_cost.missing_cost_quantity,0)+GREATEST(sales_item.quantity-COALESCE(batch_cost.allocated_quantity,0),0) END) missing_cost_quantity,
+                SUM(sales_item.line_total * CASE WHEN (batch_cost.allocated_quantity >= sales_item.quantity AND batch_cost.missing_cost_quantity=0)
+                        OR known_cost.unit_cost IS NOT NULL THEN 0
+                    ELSE LEAST(1,(COALESCE(batch_cost.missing_cost_quantity,0)+GREATEST(sales_item.quantity-COALESCE(batch_cost.allocated_quantity,0),0))/NULLIF(sales_item.quantity,0)) END) missing_cost_line_subtotal
+            FROM sales_order_items sales_item
+            LEFT JOIN (SELECT order_item_id,SUM(quantity) allocated_quantity,
+                    SUM(CASE WHEN unit_cost IS NOT NULL AND unit_cost>0 THEN quantity*unit_cost ELSE 0 END) cost_of_goods,
+                    SUM(CASE WHEN unit_cost IS NULL OR unit_cost<=0 THEN quantity ELSE 0 END) missing_cost_quantity
+                FROM sales_order_item_batch_allocations GROUP BY order_item_id) batch_cost ON batch_cost.order_item_id=sales_item.order_item_id
+            LEFT JOIN (SELECT product_id,MIN(unit_cost) unit_cost FROM inventory_batches GROUP BY product_id
+                HAVING MIN(unit_cost)>0 AND MIN(unit_cost)=MAX(unit_cost)) known_cost ON known_cost.product_id=sales_item.product_id
+            GROUP BY sales_item.order_id) items ON items.order_id=o.order_id';
         $summaryShare = '1';
         $summaryItemCount = 'COALESCE(items.item_count,0)';
         $summarySubtotal = 'o.subtotal';
+        $summaryCost = 'COALESCE(items.cost_of_goods,0)';
+        $summaryAllocatedQuantity = 'COALESCE(items.allocated_quantity,0)';
+        $summaryQuantity = 'COALESCE(items.item_quantity,0)';
+        $summaryMissingCostQuantity = 'COALESCE(items.missing_cost_quantity,0)';
+        $summaryMissingCostBasis = 'COALESCE(items.missing_cost_line_subtotal,0)';
     }
+    $vatAmountSql = 'CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END';
+    $summaryMissingCostNetSales = "CASE WHEN o.subtotal>0 THEN GREATEST(pay.final_amount-({$vatAmountSql}),0)*{$summaryMissingCostBasis}/o.subtotal ELSE 0 END";
     $summary = reportRow($pdo, "SELECT
         COALESCE(SUM(pay.final_amount*{$summaryShare}),0) net_sales,
         COUNT(DISTINCT o.order_id) transactions,
@@ -58,11 +90,68 @@ function salesReport(PDO $pdo, array $f, array $role): array
         COALESCE(SUM({$summarySubtotal}),0) subtotal,
         COALESCE(SUM((COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$summaryShare}),0) discounts,
         COALESCE(SUM(GREATEST(pay.payment_total-o.vat,0)*{$summaryShare}),0) vatable_sales,
-        COALESCE(SUM(o.vat*{$summaryShare}),0) vat,
+        COALESCE(SUM(CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$summaryShare}),0) vat,
+        COALESCE(SUM({$summaryCost}),0) cost_of_goods,
+        COALESCE(SUM({$summaryAllocatedQuantity}),0) costed_quantity,
+        COALESCE(SUM({$summaryQuantity}),0) total_quantity,
+        COALESCE(SUM({$summaryMissingCostQuantity}),0) missing_cost_quantity,
+        COALESCE(SUM({$summaryMissingCostNetSales}),0) missing_cost_net_sales,
         COALESCE(SUM(pay.refund_amount*{$summaryShare}),0) refunds
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
         {$summaryItemJoin}
         WHERE {$where}", $summaryParams);
+
+    $comparisonPeriod = null;
+    $previousSummary = [];
+    $previousPaymentValues = [];
+    if (in_array($f['report_view'] ?? '', ['', 'Sales Summary', 'Management Overview'], true)) {
+    $periodStart = new DateTimeImmutable($f['start_date']);
+    $periodDays = $periodStart->diff(new DateTimeImmutable($f['end_date']))->days + 1;
+    $previousStart = $periodStart->modify('-'.$periodDays.' days');
+    $previousEnd = $periodStart->modify('-1 day');
+    $previousFilters = $f;
+    $previousFilters['start_date'] = $previousStart->format('Y-m-d');
+    $previousFilters['end_date'] = $previousEnd->format('Y-m-d');
+    $previousFilters['date_end_exclusive'] = $periodStart->format('Y-m-d');
+    [$previousWhere, $previousParams] = reportSalesWhere($previousFilters, $role);
+    $previousBaseParams = $previousParams;
+    if ($itemScoped) {
+        $previousScopeSql = reportSalesItemScopeSubquery($previousFilters, $previousParams, 'previous_summary_scope');
+        $previousItemJoin = "INNER JOIN ({$previousScopeSql}) item_scope ON item_scope.order_id=o.order_id";
+        $previousShare = 'CASE WHEN o.subtotal>0 THEN item_scope.line_subtotal/o.subtotal ELSE 0 END';
+        $previousItemCount = 'item_scope.item_count';
+        $previousSubtotal = 'item_scope.line_subtotal';
+    } else {
+        $previousItemJoin = 'LEFT JOIN (SELECT order_id,SUM(quantity) item_count FROM sales_order_items GROUP BY order_id) items ON items.order_id=o.order_id';
+        $previousShare = '1';
+        $previousItemCount = 'COALESCE(items.item_count,0)';
+        $previousSubtotal = 'o.subtotal';
+    }
+    $previousSummary = reportRow($pdo, "SELECT
+        COALESCE(SUM(pay.final_amount*{$previousShare}),0) net_sales,
+        COUNT(DISTINCT o.order_id) transactions,
+        COALESCE(SUM({$previousItemCount}),0) items_sold,
+        COALESCE(SUM(pay.final_amount*{$previousShare})/NULLIF(COUNT(DISTINCT o.order_id),0),0) average_transaction,
+        COALESCE(SUM((COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$previousShare}),0) discounts,
+        COALESCE(SUM(GREATEST(pay.payment_total-o.vat,0)*{$previousShare}),0) vatable_sales,
+        COALESCE(SUM(CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$previousShare}),0) vat
+        FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+        {$previousItemJoin} WHERE {$previousWhere}", $previousParams);
+    $previousPaymentParams = $previousBaseParams;
+    $previousPaymentScope = '';
+    $previousPaymentShare = '1';
+    if ($itemScoped) {
+        $previousPaymentScopeSql = reportSalesItemScopeSubquery($previousFilters, $previousPaymentParams, 'previous_payment_scope');
+        $previousPaymentScope = "INNER JOIN ({$previousPaymentScopeSql}) payment_scope ON payment_scope.order_id=o.order_id";
+        $previousPaymentShare = 'CASE WHEN o.subtotal>0 THEN payment_scope.line_subtotal/o.subtotal ELSE 0 END';
+    }
+    $previousPayments = reportRows($pdo, "SELECT UPPER(pay.payment_method) label,
+        ROUND(SUM(pay.final_amount*{$previousPaymentShare}),2) value
+        FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$previousPaymentScope}
+        WHERE {$previousWhere} GROUP BY pay.payment_method", $previousPaymentParams);
+    $previousPaymentValues = array_column($previousPayments, 'value', 'label');
+    $comparisonPeriod = ['start'=>$previousStart->format('Y-m-d'),'end'=>$previousEnd->format('Y-m-d'),'days'=>$periodDays];
+    }
 
     $group = in_array($f['group_by'], ['day','week','month','product','brand','category','product_type','cashier','sales_clerk','payment_method'], true) ? $f['group_by'] : 'day';
     $trendExpressions = [
@@ -80,9 +169,28 @@ function salesReport(PDO $pdo, array $f, array $role): array
             $groupScopeJoin = "INNER JOIN ({$groupScopeSql}) item_scope ON item_scope.order_id=o.order_id";
             $groupShare = 'CASE WHEN o.subtotal>0 THEN item_scope.line_subtotal/o.subtotal ELSE 0 END';
         }
-        $groupRows = reportRows($pdo, "SELECT {$labelSql} label,MIN(DATE(o.completed_at)) raw_date,ROUND(SUM(pay.final_amount*{$groupShare}),2) value,COUNT(DISTINCT o.order_id) secondary
-            FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$groupScopeJoin} WHERE {$where}
+        $groupMetricJoin = $itemScoped ? $groupScopeJoin : $summaryItemJoin;
+        $groupVat = "CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END";
+        $groupRows = reportRows($pdo, "SELECT {$labelSql} label,MIN(DATE(o.completed_at)) raw_date,
+            ROUND(SUM(pay.final_amount*{$groupShare}),2) value,
+            ROUND(SUM({$groupVat}*{$groupShare}),2) vat,
+            ROUND(SUM({$summaryCost}),2) cost_of_goods,
+            SUM({$summaryMissingCostQuantity}) missing_cost_quantity,
+            SUM({$summaryMissingCostNetSales}) missing_cost_sales,
+            COUNT(DISTINCT o.order_id) secondary
+            FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$groupMetricJoin} WHERE {$where}
             GROUP BY {$groupSql},{$labelSql} ORDER BY {$groupSql}", $groupParams);
+        if ($role['management']) {
+            $trendMissingQuantity = array_sum(array_map(static fn($row): float => (float)($row['missing_cost_quantity']??0), $groupRows));
+            $trendCostRatio = $trendMissingQuantity > 0 ? reportKnownCostToSalesRatio($pdo) : null;
+            foreach ($groupRows as &$groupRow) {
+                $hasCostBasis = (float)($groupRow['missing_cost_quantity']??0) <= 0 || $trendCostRatio !== null;
+                $groupRow['gross_profit'] = $hasCostBasis
+                    ? round((float)$groupRow['value']-(float)$groupRow['vat']-(float)$groupRow['cost_of_goods']-(float)$groupRow['missing_cost_sales']*(float)($trendCostRatio??0),2)
+                    : null;
+            }
+            unset($groupRow);
+        }
         $groupChart = ['id'=>'sales-trend','title'=>'Net sales over time','type'=>'line','tone'=>'sales','rows'=>$groupRows];
     } elseif (in_array($group, ['cashier','sales_clerk','payment_method'], true)) {
         $groupSql = match ($group) {
@@ -168,7 +276,7 @@ function salesReport(PDO $pdo, array $f, array $role): array
         COALESCE(r.receipt_no,o.order_no) reference,COALESCE(NULLIF(ca.full_name,''),ca.username,'Unassigned') cashier,
         COALESCE(NULLIF(sc.full_name,''),sc.username,'Unassigned') sales_clerk,{$rowItemCount} item_count,
         {$rowSubtotal} subtotal,(COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$rowShare} discount,
-        GREATEST(pay.payment_total-o.vat,0)*{$rowShare} vatable_sales,o.vat*{$rowShare} vat,
+        GREATEST(pay.payment_total-o.vat,0)*{$rowShare} vatable_sales,CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$rowShare} vat,
         pay.refund_amount*{$rowShare} refund_reversal,pay.final_amount*{$rowShare} final_total,UPPER(pay.payment_method) payment_method,'Completed' status
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
         {$rowItemJoin}
@@ -178,6 +286,8 @@ function salesReport(PDO $pdo, array $f, array $role): array
 
     $charts = [$groupChart];
     if ($group !== 'product') $charts[] = ['id'=>'top-products','title'=>'Top five products by units sold','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>$topProducts];
+    $workflowChart = reportMyOrderStatusChart($pdo, $f, $role);
+    if ($workflowChart !== null) $charts[] = $workflowChart;
     $cashierReport = !$role['management'] && $role['cashier'];
     $paymentSales = array_column($payment, 'value', 'label');
     if ($cashierReport) {
@@ -190,7 +300,7 @@ function salesReport(PDO $pdo, array $f, array $role): array
       $rows = reportRows($pdo, "SELECT o.order_no transaction_id,DATE_FORMAT(o.completed_at,'%Y-%m-%d %H:%i') date_time,
         {$cashierItems} items,pay.final_amount*{$rowShare} total_amount,
         (COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$rowShare} discount,
-        o.vat*{$rowShare} vat,UPPER(pay.payment_method) payment_method,o.status status
+        CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$rowShare} vat,UPPER(pay.payment_method) payment_method,o.status status
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
         {$cashierItemJoin} LEFT JOIN sales_receipts r ON r.order_id=o.order_id
         WHERE {$rowWhere} ORDER BY {$sort} {$f['direction']} LIMIT :limit OFFSET :offset", $rowParams);
@@ -198,13 +308,13 @@ function salesReport(PDO $pdo, array $f, array $role): array
       $numericColumns = [];
       $currencyColumns = ['total_amount','discount','vat'];
       $summaryCards = [
-        reportCard('Today\'s Net Sales',(float)$summary['net_sales'],'currency','fa-peso-sign','blue'),
+        reportCard('Net Sales',(float)$summary['net_sales'],'currency','fa-peso-sign','blue'),
         reportCard('Completed Transactions',(int)$summary['transactions'],'number','fa-receipt','blue'),
         reportCard('Items Sold',(int)$summary['items_sold'],'number','fa-box','teal'),
         reportCard('Cash Sales',(float)($paymentSales['CASH']??0),'currency','fa-money-bill-wave','green'),
         reportCard('GCash Sales',(float)($paymentSales['GCASH']??0),'currency','fa-mobile-screen-button','blue'),
         reportCard('Discounts',(float)$summary['discounts'],'currency','fa-tags','amber'),
-        reportCard('VAT',(float)$summary['vat'],'currency','fa-percent','teal'),
+        reportCard('Total VAT Collected',(float)$summary['vat'],'currency','fa-percent','teal','VAT recorded on completed paid sales for the selected period and filters.'),
         reportCard('Average Transaction',(float)$summary['average_transaction'],'currency','fa-chart-line','purple'),
       ];
     } else {
@@ -218,21 +328,75 @@ function salesReport(PDO $pdo, array $f, array $role): array
         reportCard('Average Transaction',(float)$summary['average_transaction'],'currency','fa-chart-line','blue'),
         reportCard('Discounts',(float)$summary['discounts'],'currency','fa-tags','amber'),
         reportCard('VATable Sales',(float)$summary['vatable_sales'],'currency','fa-file-invoice-dollar','teal'),
-        reportCard('VAT',(float)$summary['vat'],'currency','fa-percent','blue'),
+        reportCard('Total VAT Collected',(float)$summary['vat'],'currency','fa-percent','blue','VAT recorded on completed paid sales for the selected period and filters.'),
       ];
     }
+    if ($role['management']) {
+        $hasSales = (int)($summary['transactions'] ?? 0) > 0;
+        $missingCostQuantity = max(0, (int)($summary['missing_cost_quantity'] ?? 0));
+        $costCoverageComplete = (int)($summary['costed_quantity'] ?? 0) >= (int)($summary['total_quantity'] ?? 0)
+            && (int)($summary['missing_cost_quantity'] ?? 0) === 0;
+        $knownCostRatio = $missingCostQuantity > 0 ? reportKnownCostToSalesRatio($pdo) : null;
+        $canEstimateMissingCost = $missingCostQuantity > 0 && $knownCostRatio !== null;
+        $estimatedMissingCost = $canEstimateMissingCost
+            ? (float)($summary['missing_cost_net_sales'] ?? 0) * $knownCostRatio
+            : 0.0;
+        $profitValue = !$hasSales ? 0 : (($costCoverageComplete || $canEstimateMissingCost)
+            ? round((float)$summary['net_sales'] - (float)$summary['vat'] - (float)$summary['cost_of_goods'] - $estimatedMissingCost, 2)
+            : 'Incomplete history');
+        $profitTitle = $canEstimateMissingCost ? 'Estimated Gross Profit' : 'Gross Profit';
+        $profitTooltip = $canEstimateMissingCost
+            ? 'Selected-period profit uses recorded costs where available. Costs for ' . number_format($missingCostQuantity) . ' uncosted units are estimated using the all-time cost-to-sales ratio of ' . number_format($knownCostRatio * 100, 1) . '% from sales with reliable costs.'
+            : ($costCoverageComplete
+                ? 'Selected-period completed net sales excluding VAT, less recorded or unambiguously reconstructed batch costs.'
+                : 'The selected period includes ' . number_format($missingCostQuantity) . ' sold units without costs, and there are no reliable costed sales to calculate an estimate.');
+        $summaryCards[] = reportCard(
+            $profitTitle, $profitValue, is_numeric($profitValue) ? 'currency' : 'text', 'fa-chart-line', 'green',
+            $profitTooltip
+        );
+    }
+    $previousValues = [
+        'Net Sales'=>(float)($previousSummary['net_sales']??0),
+        'Completed Transactions'=>(float)($previousSummary['transactions']??0),
+        'Transactions'=>(float)($previousSummary['transactions']??0),
+        'Items Sold'=>(float)($previousSummary['items_sold']??0),
+        'Average Transaction'=>(float)($previousSummary['average_transaction']??0),
+        'Discounts'=>(float)($previousSummary['discounts']??0),
+        'VATable Sales'=>(float)($previousSummary['vatable_sales']??0),
+        'Total VAT Collected'=>(float)($previousSummary['vat']??0),
+        'Cash Sales'=>(float)($previousPaymentValues['CASH']??0),
+        'GCash Sales'=>(float)($previousPaymentValues['GCASH']??0),
+    ];
+    if ($comparisonPeriod !== null) {
+        foreach ($summaryCards as &$card) {
+            $previousValue = $previousValues[$card['title']] ?? null;
+            $card['comparison'] = $previousValue !== null && $previousValue > 0
+                ? ['percent'=>round(100*((float)$card['value']-$previousValue)/$previousValue,1),'previous_value'=>$previousValue]
+                : null;
+        }
+        unset($card);
+    }
+    $notes = [
+        'Net Sales = completed paid final amounts − recorded refunded amounts. Cancelled, unpaid, and incomplete transactions are excluded.',
+        'Gross / Subtotal is the sum of VAT-inclusive item prices. Discount is the stored sales-clerk discount plus cashier discount. VATable Sales and VAT use the saved completed-order snapshot; VAT is extracted from, not added to, the final price. Refund / Reversal is the recorded refunded final amount.',
+        'Product/category net sales are allocated proportionally from each transaction’s final amount using item line subtotal ÷ order subtotal. Transactions are aggregated before item joins to prevent duplicate totals.',
+        'Total VAT Collected is the saved VAT from completed paid sales in the selected date range and filters, reduced proportionally for recorded refunds; it covers the sold items in those transactions.',
+    ];
+    if ($role['management']) $notes[] = 'Gross Profit = completed net sales after recorded refunds, excluding VAT, minus actual batch costs. When checkout allocations are missing, costs are reconstructed only if every recorded batch for that product has the same positive unit cost. Remaining unknown costs are estimated using the all-time cost-to-sales ratio from sales with reliable cost records and the card is labeled Estimated Gross Profit.';
+    if ($workflowChart !== null) $notes[] = 'My orders by status counts orders created in the selected date range and assigned to your account.';
+    $actions = [];
+    if (!empty($role['cashier'])) $actions[] = ['title'=>'Shift reconciliation','description'=>'Review recorded payments and reconcile your cashier shift.','href'=>'cashier_shift_summary.html','label'=>'Open shift summary','tone'=>'teal'];
+    if (!empty($role['sales_clerk'])) $actions[] = ['title'=>'Order follow-up','description'=>'Review your open, waiting, and completed sales orders.','href'=>'sales_clerk_orders.html','label'=>'Open order queue','tone'=>'indigo'];
     return [
       'summary'=>$summaryCards,
         'charts'=>$charts,
         'insights'=>[['title'=>'Payment methods','tone'=>'sales','rows'=>$payment,'format'=>'currency']],
+        'comparison_period'=>$comparisonPeriod,
+        'actions'=>$actions,
         'columns'=>$columns,
         'numeric_columns'=>$numericColumns,'currency_columns'=>$currencyColumns,'rows'=>$rows,
         'pagination'=>reportPagination((int)($count['total']??0),$f),
-        'notes'=>[
-            'Net Sales = completed paid final amounts − recorded refunded amounts. Cancelled, unpaid, and incomplete transactions are excluded.',
-            'Gross / Subtotal is the sum of VAT-inclusive item prices. Discount is the stored sales-clerk discount plus cashier discount. VATable Sales and VAT use the saved completed-order snapshot; VAT is extracted from, not added to, the final price. Refund / Reversal is the recorded refunded final amount.',
-            'Product/category net sales are allocated proportionally from each transaction’s final amount using item line subtotal ÷ order subtotal. Transactions are aggregated before item joins to prevent duplicate totals.',
-        ],
+        'notes'=>$notes,
     ];
 }
 
@@ -241,24 +405,28 @@ function inventoryBaseSql(array $f, array &$params): string
     $productFilter=reportProductFilterSql($f,$params);
     if($f['supplier_id']!==''){$params[':supplier_id']=$f['supplier_id'];$productFilter.=' AND b.supplier_id=:supplier_id';}
     $spec=reportProductSpecificationSql();
+    $shelf='COALESCE(selling.shelf_qty,0)';
+    $storage='GREATEST(b.storage_qty-COALESCE(b.expiry_quarantined_storage_qty,0),0)';
+    $stock="({$shelf}+{$storage})";
     return "SELECT p.product_id,p.brand_name,p.product_name,{$spec} specification,COALESCE(pc.category_name,'Uncategorized') category,
         COALESCE(pt.type_name,'Unspecified') product_type,
-        COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN b.shelf_qty ELSE 0 END),0) shelf_stock,
-        COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN b.storage_qty ELSE 0 END),0) storage_stock,
-        COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN (b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0) ELSE 0 END),0) inventory_value,
+        COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$shelf} ELSE 0 END),0) shelf_stock,
+        COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$storage} ELSE 0 END),0) storage_stock,
+        COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$stock}*COALESCE(b.unit_cost,0) ELSE 0 END),0) inventory_value,
         10 reorder_level,
-        CASE WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN b.shelf_qty+b.storage_qty ELSE 0 END),0)<0 THEN 'Negative Stock — Data Issue'
-             WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN b.shelf_qty+b.storage_qty ELSE 0 END),0)=0 THEN 'Out of Stock'
-             WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN b.shelf_qty+b.storage_qty ELSE 0 END),0)<=10 THEN 'Low Stock' ELSE 'Healthy' END stock_status,
-        CASE WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN b.shelf_qty+b.storage_qty ELSE 0 END),0)<>0
-             THEN SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN (b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0) ELSE 0 END)/
-                  SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN b.shelf_qty+b.storage_qty ELSE 0 END) ELSE 0 END unit_cost
+        CASE WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$stock} ELSE 0 END),0)<0 THEN 'Negative Stock — Data Issue'
+             WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$stock} ELSE 0 END),0)=0 THEN 'Out of Stock'
+             WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$stock} ELSE 0 END),0)<=10 THEN 'Low Stock' ELSE 'Healthy' END stock_status,
+        CASE WHEN COALESCE(SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$stock} ELSE 0 END),0)<>0
+             THEN SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$stock}*COALESCE(b.unit_cost,0) ELSE 0 END)/
+                  SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN {$stock} ELSE 0 END) ELSE 0 END unit_cost
         FROM product p LEFT JOIN product_categories pc ON pc.category_id=p.category_id LEFT JOIN product_types pt ON pt.type_id=p.type_id
         LEFT JOIN medicine_details md ON md.product_id=p.product_id LEFT JOIN grocery_details gd ON gd.product_id=p.product_id
-        LEFT JOIN inventory_batches b ON b.product_id=p.product_id WHERE 1=1{$productFilter}
+        LEFT JOIN inventory_batches b ON b.product_id=p.product_id
+        LEFT JOIN (SELECT source_batch_id,SUM(GREATEST(quantity_remaining-expiry_quarantined_qty,0)) shelf_qty FROM product_selling_stock WHERE source_batch_id IS NOT NULL GROUP BY source_batch_id) selling ON selling.source_batch_id=b.batch_id
+        WHERE 1=1{$productFilter}
         GROUP BY p.product_id,p.brand_name,p.product_name,pc.category_name,pt.type_name,md.generic_name,md.strength_value,md.strength_unit,md.strength,md.dosage_form,md.package_type,gd.variant,gd.size,gd.net_weight,gd.unit,gd.package_type";
 }
-
 function inventoryReport(PDO $pdo,array $f): array
 {
     $params=[];$base=inventoryBaseSql($f,$params);$statusMap=['healthy'=>'Healthy','low'=>'Low Stock','out'=>'Out of Stock','negative'=>'Negative Stock — Data Issue'];
@@ -285,6 +453,27 @@ function inventoryReport(PDO $pdo,array $f): array
         'notes'=>['On Hand = active, unexpired shelf stock + storage stock. Damaged, returned, depleted, and expired quantities are excluded.','Inventory Cost = sum of each sellable batch quantity × inventory_batches.unit_cost. The existing system has no product reorder-level field, so the established report threshold of 10 units is displayed.']];
 }
 
+function supervisorInventoryPayload(array $report): array
+{
+    $report['summary'] = array_values(array_filter($report['summary'] ?? [], static fn(array $card): bool => ($card['title'] ?? '') !== 'Inventory Cost'));
+    unset($report['columns']['unit_cost'], $report['columns']['inventory_value']);
+    $report['currency_columns'] = array_values(array_diff($report['currency_columns'] ?? [], ['unit_cost', 'inventory_value']));
+    if (isset($report['rows']) && is_array($report['rows'])) {
+        foreach ($report['rows'] as &$row) {
+            unset($row['unit_cost'], $row['inventory_value']);
+        }
+        unset($row);
+    }
+    $report['notes'] = [
+        'On Hand = active, unexpired Shelf stock + Storage stock. Damaged, returned, depleted, and expired quantities are excluded.',
+        'Cost and valuation figures are restricted for this role.'
+    ];
+    return $report;
+}
+function supervisorInventoryReport(PDO $pdo, array $filters): array
+{
+    return supervisorInventoryPayload(inventoryReport($pdo, $filters));
+}
 function purchaseAggregateSql(): string
 {
     return "LEFT JOIN (SELECT po_id,COUNT(*) items,SUM(COALESCE(NULLIF(inventory_qty_ordered,0),quantity)) ordered_qty,SUM(line_total) item_total FROM purchase_order_items GROUP BY po_id) item ON item.po_id=po.po_id
@@ -304,6 +493,21 @@ function purchasesReport(PDO $pdo,array $f): array
         if($f['payment_state']==='outstanding'){$where[]="po.status='Delivered' AND GREATEST(po.final_payment-COALESCE(pay.amount_paid,0),0)>0";}
     if($f['search']!==''){$where[]='(po.po_number LIKE :po_search OR s.supplier_name LIKE :supplier_search)';$params[':po_search']=$params[':supplier_search']='%'.$f['search'].'%';}
     $whereSql=implode(' AND ',$where);$joins=purchaseAggregateSql();
+    $poSalesJoin = "LEFT JOIN (
+        SELECT allocation.po_id,SUM(allocation.quantity) tracked_units_sold,
+          SUM(CASE WHEN allocation.unit_cost IS NOT NULL AND allocation.unit_cost>0 THEN allocation.quantity*allocation.unit_cost ELSE 0 END) tracked_cost_of_goods,
+          SUM(CASE WHEN allocation.unit_cost IS NULL OR allocation.unit_cost<=0 THEN allocation.quantity ELSE 0 END) missing_cost_quantity,
+          SUM(CASE WHEN orders.subtotal>0 AND items.quantity>0
+              THEN GREATEST(payments.final_amount-CASE WHEN payments.payment_total>0 THEN orders.vat*payments.final_amount/payments.payment_total ELSE orders.vat END,0)
+                *(items.line_total/orders.subtotal)*(allocation.quantity/items.quantity) ELSE 0 END) tracked_net_sales,
+          COUNT(*) allocation_count
+        FROM sales_order_item_batch_allocations allocation
+        INNER JOIN sales_order_items items ON items.order_item_id=allocation.order_item_id
+        INNER JOIN sales_orders orders ON orders.order_id=allocation.order_id AND orders.status='completed'
+        INNER JOIN (".reportPaidSalesSubquery().") payments ON payments.order_id=orders.order_id
+        WHERE allocation.po_id IS NOT NULL
+        GROUP BY allocation.po_id
+    ) po_sales ON po_sales.po_id=po.po_id";
     $summary=reportRow($pdo,"SELECT COUNT(*) total_orders,
       COALESCE(SUM(CASE WHEN po.status IN ('Draft','Pending') THEN COALESCE(po.total_amount,0) ELSE 0 END),0) open_commitments,
             COALESCE(SUM(CASE WHEN po.status='Delivered' THEN COALESCE(po.total_amount,0) ELSE 0 END),0) received_cost,
@@ -327,7 +531,7 @@ function purchasesReport(PDO $pdo,array $f): array
             WHERE {$whereSql} AND po.status='Delivered'
       GROUP BY s.supplier_id,s.supplier_name ORDER BY accepted_value DESC",$params);
     $count=reportRow($pdo,"SELECT COUNT(*) total FROM purchase_orders po JOIN suppliers s ON s.supplier_id=po.supplier_id {$joins} WHERE {$whereSql}",$params);
-    $sortMap=['po_number'=>'po.po_number','order_date'=>'po.created_at','supplier_name'=>'s.supplier_name','ordered_qty'=>'ordered_qty','received_qty'=>'received_qty','accepted_qty'=>'accepted_qty','returned_qty'=>'returned_qty','damaged_qty'=>'damaged_qty','original_total'=>'po.total_amount','accepted_value'=>'accepted_value','final_payable'=>'po.final_payment','amount_paid'=>'amount_paid','remaining_balance'=>'remaining_balance','delivery_status'=>'po.status','payment_status'=>'payment_status'];
+    $sortMap=['po_number'=>'po.po_number','order_date'=>'po.created_at','supplier_name'=>'s.supplier_name','ordered_qty'=>'ordered_qty','received_qty'=>'received_qty','accepted_qty'=>'accepted_qty','returned_qty'=>'returned_qty','damaged_qty'=>'damaged_qty','original_total'=>'po.total_amount','accepted_value'=>'accepted_value','final_payable'=>'po.final_payment','amount_paid'=>'amount_paid','remaining_balance'=>'remaining_balance','tracked_units_sold'=>'tracked_units_sold','tracked_net_sales'=>'tracked_net_sales','tracked_gross_profit'=>'tracked_gross_profit','delivery_status'=>'po.status','payment_status'=>'payment_status'];
     $sort=$sortMap[$f['sort']]??'po.created_at';$params[':limit']=$f['page_size'];$params[':offset']=$f['offset'];
     $rows=reportRows($pdo,"SELECT po.po_number,DATE(po.created_at) order_date,s.supplier_name,COALESCE(item.ordered_qty,0) ordered_qty,
       COALESCE(rec.received_qty,0) received_qty,GREATEST(COALESCE(rec.received_qty,0)-COALESCE(ret.returned_qty,0)-COALESCE(ret.rejected_qty,0),0) accepted_qty,
@@ -336,8 +540,13 @@ function purchasesReport(PDO $pdo,array $f): array
                 CASE WHEN po.status='Delivered' THEN po.final_payment ELSE 0 END final_payable,
       COALESCE(pay.amount_paid,0) amount_paid,
                 CASE WHEN po.status='Delivered' THEN GREATEST(po.final_payment-COALESCE(pay.amount_paid,0),0) ELSE 0 END remaining_balance,
+                COALESCE(po_sales.tracked_units_sold,0) tracked_units_sold,
+                COALESCE(po_sales.tracked_net_sales,0) tracked_net_sales,
+                COALESCE(po_sales.tracked_cost_of_goods,0) tracked_cost_of_goods,
+                CASE WHEN COALESCE(po_sales.allocation_count,0)=0 OR COALESCE(po_sales.missing_cost_quantity,0)>0 THEN NULL
+                     ELSE ROUND(COALESCE(po_sales.tracked_net_sales,0)-COALESCE(po_sales.tracked_cost_of_goods,0),2) END tracked_gross_profit,
                 po.status delivery_status,CASE WHEN po.status='Cancelled' THEN 'Cancelled' WHEN po.status<>'Delivered' THEN 'Not Yet Payable' ELSE po.payment_status END payment_status
-      FROM purchase_orders po JOIN suppliers s ON s.supplier_id=po.supplier_id {$joins} WHERE {$whereSql}
+      FROM purchase_orders po JOIN suppliers s ON s.supplier_id=po.supplier_id {$joins} {$poSalesJoin} WHERE {$whereSql}
       ORDER BY {$sort} {$f['direction']} LIMIT :limit OFFSET :offset",$params);
     $supplierInsight=['title'=>'Supplier delivery performance','tone'=>'purchases','columns'=>['supplier_name'=>'Supplier','completed_deliveries'=>'Completed Deliveries','on_time_rate'=>'On-Time %','fulfillment_rate'=>'Fulfillment %','accepted_rate'=>'Accepted %','return_damage_rate'=>'Return / Damage %','average_delay_days'=>'Avg Delay (Days)','accepted_value'=>'Accepted Value'],'rows'=>$supplierPerformance,'currency_columns'=>['accepted_value'],'numeric_columns'=>['completed_deliveries','on_time_rate','fulfillment_rate','accepted_rate','return_damage_rate','average_delay_days']];
     return ['summary'=>[
@@ -351,8 +560,8 @@ function purchasesReport(PDO $pdo,array $f): array
         reportCard('Cancelled PO Value',(float)$summary['cancelled_value'],'currency','fa-ban','gray')],
         'charts'=>[['id'=>'po-status','title'=>'Purchase orders by status','type'=>'doughnut','tone'=>'status','rows'=>$statuses]],
         'table_insights'=>[$supplierInsight],
-        'columns'=>['po_number'=>'PO Number','order_date'=>'Order Date','supplier_name'=>'Supplier','ordered_qty'=>'Ordered Qty','received_qty'=>'Received Qty','accepted_qty'=>'Accepted Qty','returned_qty'=>'Returned Qty','damaged_qty'=>'Damaged Qty','original_total'=>'Original Total','accepted_value'=>'Accepted Value','final_payable'=>'Final Payable','amount_paid'=>'Amount Paid','remaining_balance'=>'Remaining Balance','delivery_status'=>'Delivery Status','payment_status'=>'Payment Status'],
-        'numeric_columns'=>['ordered_qty','received_qty','accepted_qty','returned_qty','damaged_qty'],'currency_columns'=>['original_total','accepted_value','final_payable','amount_paid','remaining_balance'],
+        'columns'=>['po_number'=>'PO Number','order_date'=>'Order Date','supplier_name'=>'Supplier','ordered_qty'=>'Ordered Qty','received_qty'=>'Received Qty','accepted_qty'=>'Accepted Qty','returned_qty'=>'Returned Qty','damaged_qty'=>'Damaged Qty','original_total'=>'Original Total','accepted_value'=>'Accepted Value','final_payable'=>'Final Payable','amount_paid'=>'Amount Paid','remaining_balance'=>'Remaining Balance','tracked_units_sold'=>'Units Sold from PO (tracked)','tracked_net_sales'=>'Net Sales from PO (tracked)','tracked_cost_of_goods'=>'Cost of Goods Sold (tracked)','tracked_gross_profit'=>'Gross Profit from PO (tracked)','delivery_status'=>'Delivery Status','payment_status'=>'Payment Status'],
+        'numeric_columns'=>['ordered_qty','received_qty','accepted_qty','returned_qty','damaged_qty','tracked_units_sold'],'currency_columns'=>['original_total','accepted_value','final_payable','amount_paid','remaining_balance','tracked_net_sales','tracked_cost_of_goods','tracked_gross_profit'],
         'rows'=>$rows,'pagination'=>reportPagination((int)($count['total']??0),$f),
         'notes'=>[
             'Draft and Pending POs do not have a monetary commitment until the actual supplier receipt total is entered at arrival.',
@@ -360,6 +569,7 @@ function purchasesReport(PDO $pdo,array $f): array
             'Accepted Qty = received quantity − quantities returned for credit/replacement − rejected quantities. Accepted Value uses the adjusted PO payable without allocating the overall receipt total across items.',
             'Supplier performance includes only Delivered POs. On-time = received by expected date; fulfillment = received ÷ ordered; accepted = accepted ÷ received; return/damage = returned or rejected ÷ received; delay counts days after expected delivery.',
             'Amount Paid is retained in the response and detail table; Final Payable and Outstanding Payables are emphasized as management liabilities.'
+            ,'PO gross profit compares tracked net sales excluding VAT with the actual batch costs for units sold from that PO. It includes only sales captured after batch allocation tracking was added; a blank gross-profit cell means there are no tracked sales or a cost is incomplete.'
         ]];
 }
 
@@ -367,21 +577,22 @@ function expiryReport(PDO $pdo,array $f): array
 {
     $params=[':expiry_end'=>date('Y-m-d',strtotime('+'.$f['expiry_days'].' days'))];$extra=reportProductFilterSql($f,$params);
     if($f['supplier_id']!==''){$extra.=' AND b.supplier_id=:supplier_id';$params[':supplier_id']=$f['supplier_id'];}
-    $spec=reportProductSpecificationSql();
+    $spec=reportProductSpecificationSql();$shelf='COALESCE(selling.shelf_qty,0)';$storage='GREATEST(b.storage_qty-COALESCE(b.expiry_quarantined_storage_qty,0),0)';$remaining="({$storage}+{$shelf})";
     $base="FROM inventory_batches b JOIN product p ON p.product_id=b.product_id LEFT JOIN product_categories pc ON pc.category_id=p.category_id
-      LEFT JOIN medicine_details md ON md.product_id=p.product_id LEFT JOIN grocery_details gd ON gd.product_id=p.product_id
-      LEFT JOIN suppliers s ON s.supplier_id=b.supplier_id WHERE b.expiry_date IS NOT NULL AND b.batch_status<>'depleted'
-      AND (b.shelf_qty+b.storage_qty)>0 AND b.expiry_date<=:expiry_end{$extra}";
+      LEFT JOIN medicine_details md ON md.product_id=p.product_id LEFT JOIN grocery_details gd ON gd.product_id=p.product_id LEFT JOIN suppliers s ON s.supplier_id=b.supplier_id
+      LEFT JOIN (SELECT source_batch_id,SUM(GREATEST(quantity_remaining-expiry_quarantined_qty,0)) shelf_qty FROM product_selling_stock WHERE source_batch_id IS NOT NULL GROUP BY source_batch_id) selling ON selling.source_batch_id=b.batch_id
+      WHERE b.expiry_date IS NOT NULL AND b.batch_status<>'depleted'
+      AND {$remaining}>0 AND b.expiry_date<=:expiry_end{$extra}";
     $s=reportRow($pdo,"SELECT COALESCE(SUM(b.expiry_date<CURDATE()),0) expired_batches,COALESCE(SUM(b.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 7 DAY)),0) expiring_7,
-      COALESCE(SUM(b.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 30 DAY)),0) expiring_30,COALESCE(SUM(b.shelf_qty+b.storage_qty),0) quantity_risk,
-      COALESCE(SUM((b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0)),0) cost_risk {$base}",$params);
-    $windows=reportRows($pdo,"SELECT CASE WHEN b.expiry_date<CURDATE() THEN 'Expired' WHEN DATEDIFF(b.expiry_date,CURDATE())<=7 THEN '0–7 days' WHEN DATEDIFF(b.expiry_date,CURDATE())<=30 THEN '8–30 days' ELSE '31+ days' END label,SUM(b.shelf_qty+b.storage_qty) value {$base} GROUP BY label ORDER BY MIN(b.expiry_date)",$params);
-    $costs=reportRows($pdo,"SELECT COALESCE(pc.category_name,'Uncategorized') label,ROUND(SUM((b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0)),2) value {$base} GROUP BY pc.category_id,pc.category_name ORDER BY value DESC",$params);
+      COALESCE(SUM(b.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 30 DAY)),0) expiring_30,COALESCE(SUM({$remaining}),0) quantity_risk,
+      COALESCE(SUM({$remaining}*COALESCE(b.unit_cost,0)),0) cost_risk {$base}",$params);
+    $windows=reportRows($pdo,"SELECT CASE WHEN b.expiry_date<CURDATE() THEN 'Expired' WHEN DATEDIFF(b.expiry_date,CURDATE())<=7 THEN '0–7 days' WHEN DATEDIFF(b.expiry_date,CURDATE())<=30 THEN '8–30 days' ELSE '31+ days' END label,SUM({$remaining}) value {$base} GROUP BY label ORDER BY MIN(b.expiry_date)",$params);
+    $costs=reportRows($pdo,"SELECT COALESCE(pc.category_name,'Uncategorized') label,ROUND(SUM({$remaining}*COALESCE(b.unit_cost,0)),2) value {$base} GROUP BY pc.category_id,pc.category_name ORDER BY value DESC",$params);
     $count=reportRow($pdo,"SELECT COUNT(*) total {$base}",$params);$params[':limit']=$f['page_size'];$params[':offset']=$f['offset'];
     $sortMap=['product_name'=>'p.product_name','brand_name'=>'p.brand_name','expiry_date'=>'b.expiry_date','days_remaining'=>'days_remaining','quantity_at_risk'=>'quantity_at_risk','cost_at_risk'=>'cost_at_risk','expiry_status'=>'expiry_status'];$sort=$sortMap[$f['sort']]??'b.expiry_date';
     $rows=reportRows($pdo,"SELECT p.product_name,p.brand_name,{$spec} specification,COALESCE(b.legacy_inventory_id,b.batch_id) batch_reference,
-      COALESCE(s.supplier_name,'Unknown') supplier,b.expiry_date,DATEDIFF(b.expiry_date,CURDATE()) days_remaining,b.shelf_qty,b.storage_qty,
-      b.shelf_qty+b.storage_qty quantity_at_risk,(b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0) cost_at_risk,
+      COALESCE(s.supplier_name,'Unknown') supplier,b.expiry_date,DATEDIFF(b.expiry_date,CURDATE()) days_remaining,{$shelf} shelf_qty,{$storage} storage_qty,
+      {$remaining} quantity_at_risk,{$remaining}*COALESCE(b.unit_cost,0) cost_at_risk,
       CASE WHEN b.expiry_date<CURDATE() THEN 'Expired' WHEN DATEDIFF(b.expiry_date,CURDATE())<=7 THEN 'Critical' WHEN DATEDIFF(b.expiry_date,CURDATE())<=30 THEN 'Expiring Soon' ELSE 'Watch' END expiry_status
       {$base} ORDER BY {$sort} {$f['direction']} LIMIT :limit OFFSET :offset",$params);
     return ['summary'=>[
@@ -392,29 +603,51 @@ function expiryReport(PDO $pdo,array $f): array
         'empty_message'=>'No active batches expire within the selected period.',
         'columns'=>['product_name'=>'Product','brand_name'=>'Brand','specification'=>'Specification','batch_reference'=>'Batch / Receiving Reference','supplier'=>'Supplier','expiry_date'=>'Expiry Date','days_remaining'=>'Days Remaining','shelf_qty'=>'Shelf Qty','storage_qty'=>'Storage Qty','quantity_at_risk'=>'Qty at Risk','cost_at_risk'=>'Cost at Risk','expiry_status'=>'Expiry Status'],
         'numeric_columns'=>['days_remaining','shelf_qty','storage_qty','quantity_at_risk'],'currency_columns'=>['cost_at_risk'],'rows'=>$rows,'pagination'=>reportPagination((int)($count['total']??0),$f),
-        'notes'=>['Only active, non-depleted batches with positive shelf or storage quantity are included.','Cost at Risk = (shelf quantity + storage quantity) × inventory_batches.unit_cost.']];
+        'notes'=>['Only non-depleted batches with sellable Storage or Shelf quantity are included; quantities reserved for expiry resolution are excluded.','Cost at Risk = remaining batch units × inventory_batches.unit_cost.']];
 }
-
+function supervisorExpiryPayload(array $report): array
+{
+    $report['summary'] = array_values(array_filter($report['summary'] ?? [], static fn(array $card): bool => ($card['title'] ?? '') !== 'Cost at Risk'));
+    $report['charts'] = array_values(array_filter($report['charts'] ?? [], static fn(array $chart): bool => ($chart['id'] ?? '') !== 'expiry-cost'));
+    unset($report['columns']['cost_at_risk']);
+    $report['currency_columns'] = array_values(array_diff($report['currency_columns'] ?? [], ['cost_at_risk']));
+    if (isset($report['rows']) && is_array($report['rows'])) {
+        foreach ($report['rows'] as &$row) {
+            unset($row['cost_at_risk']);
+        }
+        unset($row);
+    }
+    $report['notes'] = [
+        'Expiry quantities include sellable Shelf and Storage stock for non-depleted batches; stock reserved for expiry resolution is excluded.',
+        'Cost-at-risk figures are restricted for this role.'
+    ];
+    return $report;
+}
+function supervisorExpiryReport(PDO $pdo, array $filters): array
+{
+    return supervisorExpiryPayload(expiryReport($pdo, $filters));
+}
 function productReport(PDO $pdo,array $f,array $role): array
 {
     [$where,$params]=reportSalesWhere($f,$role);$paid=reportPaidSalesSubquery();$productParams=$params;$filter=reportProductFilterSql($f,$productParams);$spec=reportProductSpecificationSql();
+    if(($f['rx_filter']??'')!==''){$filter.=" AND EXISTS (SELECT 1 FROM product_specification_values class_value INNER JOIN product_specifications class_spec ON class_spec.specification_id=class_value.specification_id WHERE class_value.product_id=p.product_id AND LOWER(TRIM(class_spec.specification_name))='medicine classification' AND ".($f['rx_filter']==='rx'?"LOWER(TRIM(class_value.value_text))='prescription (rx)'":"LOWER(TRIM(class_value.value_text))<>'prescription (rx)'").")";}
     $sales=reportRows($pdo,"SELECT p.product_id,p.brand_name,p.product_name,{$spec} specification,COALESCE(pc.category_name,'Uncategorized') category,
       COALESCE(SUM(i.quantity),0) sold_qty,COALESCE(SUM(CASE WHEN o.subtotal>0 THEN i.line_total/o.subtotal*pay.final_amount ELSE 0 END),0) revenue,MAX(o.completed_at) last_sale
       FROM product p LEFT JOIN product_categories pc ON pc.category_id=p.category_id LEFT JOIN medicine_details md ON md.product_id=p.product_id LEFT JOIN grocery_details gd ON gd.product_id=p.product_id
       LEFT JOIN (sales_order_items i INNER JOIN sales_orders o ON o.order_id=i.order_id INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id AND {$where}) ON i.product_id=p.product_id
       WHERE 1=1{$filter} GROUP BY p.product_id,p.brand_name,p.product_name,pc.category_name,md.generic_name,md.strength_value,md.strength_unit,md.strength,md.dosage_form,md.package_type,gd.variant,gd.size,gd.net_weight,gd.unit,gd.package_type",$productParams);
-    $inv=reportRows($pdo,"SELECT product_id,SUM(CASE WHEN batch_status='active' AND (expiry_date IS NULL OR expiry_date>=CURDATE()) THEN shelf_qty+storage_qty ELSE 0 END) on_hand FROM inventory_batches GROUP BY product_id");
+    $inv=reportRows($pdo,"SELECT b.product_id,SUM(CASE WHEN b.batch_status='active' AND (b.expiry_date IS NULL OR b.expiry_date>=CURDATE()) THEN GREATEST(b.storage_qty-COALESCE(b.expiry_quarantined_storage_qty,0),0)+COALESCE(selling.shelf_qty,0) ELSE 0 END) on_hand FROM inventory_batches b LEFT JOIN (SELECT source_batch_id,SUM(GREATEST(quantity_remaining-expiry_quarantined_qty,0)) shelf_qty FROM product_selling_stock WHERE source_batch_id IS NOT NULL GROUP BY source_batch_id) selling ON selling.source_batch_id=b.batch_id GROUP BY b.product_id");
     $map=[];foreach($inv as $r)$map[$r['product_id']]=(int)$r['on_hand'];$selling=array_filter($sales,fn($r)=>(int)$r['sold_qty']>0);$avgSales=count($selling)?array_sum(array_column($selling,'sold_qty'))/count($selling):0;
     $stocked=array_filter($sales,fn($r)=>($map[$r['product_id']]??0)>0);$avgStock=count($stocked)?array_sum(array_map(fn($r)=>$map[$r['product_id']]??0,$stocked))/count($stocked):0;
     foreach($sales as &$r){$r['sold_qty']=(int)$r['sold_qty'];$r['revenue']=(float)$r['revenue'];$r['on_hand']=$map[$r['product_id']]??0;$r['sell_through_rate']=$r['sold_qty']+$r['on_hand']>0?round(100*$r['sold_qty']/($r['sold_qty']+$r['on_hand']),1):0;$r['days_since_last_sale']=$r['last_sale']!==null?(int)((new DateTime($r['last_sale']))->diff(new DateTime())->days):null;
       if($r['on_hand']>0&&$r['sold_qty']===0)$r['performance_status']='No Sales';elseif($r['on_hand']>=$avgStock&&$r['sold_qty']<=$avgSales*.25)$r['performance_status']='High Stock / Low Sales';elseif($r['sold_qty']>0&&$r['sold_qty']<=$avgSales*.25)$r['performance_status']='Slow Moving';elseif(count($selling)>1&&$r['sold_qty']>=$avgSales)$r['performance_status']='Fast Moving';else $r['performance_status']='Steady';}unset($r);
     usort($sales,fn($a,$b)=>$b['revenue']<=>$a['revenue']);$topQty=$sales;$topRevenue=$sales;usort($topQty,fn($a,$b)=>$b['sold_qty']<=>$a['sold_qty']);
     $chart=static fn($rows,$field)=>array_map(fn($r)=>['label'=>$r['brand_name'].' — '.$r['product_name'],'value'=>$r[$field]],array_slice(array_values(array_filter($rows,fn($r)=>$r[$field]>0)),0,5));
-    $s=['sold'=>array_sum(array_column($sales,'sold_qty')),'revenue'=>array_sum(array_column($sales,'revenue')),'no'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='No Sales')),'slow'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='Slow Moving')),'high'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='High Stock / Low Sales'))];
+    $s=['sold'=>array_sum(array_column($sales,'sold_qty')),'revenue'=>array_sum(array_column($sales,'revenue')),'no'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='No Sales')),'slow'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='Slow Moving')),'high'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='High Stock / Low Sales')),'fast'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='Fast Moving'))];
     $sales=reportSortArray($sales,$f);
     return ['summary'=>[
         reportCard('Units Sold',$s['sold'],'number','fa-box','teal'),reportCard('Product Revenue',$s['revenue'],'currency','fa-chart-column','blue'),
-        reportCard('Products with No Sales',$s['no'],'number','fa-circle-minus','gray'),reportCard('Slow-Moving Products',$s['slow'],'number','fa-gauge-low','amber'),reportCard('High Stock / Low Sales',$s['high'],'number','fa-boxes-stacked','red')],
+        reportCard('Products with No Sales',$s['no'],'number','fa-circle-minus','gray'),reportCard('Slow-Moving Products',$s['slow'],'number','fa-gauge-low','amber'),reportCard('High Stock / Low Sales',$s['high'],'number','fa-boxes-stacked','red'),reportCard('Fast-Moving Products',$s['fast'],'number','fa-gauge-high','green')],
         'charts'=>[['id'=>'top-qty','title'=>'Top five products by sold quantity','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>$chart($topQty,'sold_qty')],['id'=>'top-revenue','title'=>'Top five products by revenue','type'=>'bar','orientation'=>'horizontal','tone'=>'sales','rows'=>$chart($topRevenue,'revenue')]],
         'columns'=>['brand_name'=>'Brand','product_name'=>'Product','specification'=>'Specification','category'=>'Category','sold_qty'=>'Sold Qty','revenue'=>'Revenue','on_hand'=>'On Hand','sell_through_rate'=>'Sell-Through Rate','days_since_last_sale'=>'Days Since Last Sale','performance_status'=>'Performance Status'],
         'numeric_columns'=>['sold_qty','on_hand','sell_through_rate','days_since_last_sale'],'currency_columns'=>['revenue'],'rows'=>array_slice($sales,$f['offset'],$f['page_size']),'pagination'=>reportPagination(count($sales),$f),
@@ -468,26 +701,32 @@ function supervisorPurchaseRequestReport(PDO $pdo, array $f): array
     $params = [':start_date'=>$f['start_date'], ':end_date'=>$f['date_end_exclusive']];
     $statusRows = reportRows($pdo, "SELECT status label,COUNT(*) value FROM purchase_requests WHERE request_date>=:start_date AND request_date<:end_date GROUP BY status ORDER BY value DESC", $params);
     $summaryMap = array_column($statusRows, 'value', 'label');
+    $pendingAging = reportRow($pdo, "SELECT COUNT(*) total FROM purchase_requests WHERE status='Pending Supervisor Approval' AND request_date<DATE_SUB(CURDATE(),INTERVAL 2 DAY)");
     $count = reportRow($pdo, "SELECT COUNT(*) total FROM purchase_requests WHERE request_date>=:start_date AND request_date<:end_date", $params);
     $params[':limit']=$f['page_size']; $params[':offset']=$f['offset'];
     $rows = reportRows($pdo, "SELECT pr.pr_number,pr.request_date,COALESCE(NULLIF(u.full_name,''),u.username,'Unknown') requested_by,
         COUNT(pri.pr_item_id) item_count,COALESCE(SUM(pri.requested_qty),0) requested_quantity,pr.status,
+        CASE WHEN pr.status='Pending Supervisor Approval' THEN DATEDIFF(CURDATE(),pr.request_date) ELSE NULL END days_waiting,
         COALESCE(NULLIF(su.full_name,''),su.username,'—') reviewed_by,pr.decided_at
         FROM purchase_requests pr INNER JOIN users u ON u.user_id=pr.requested_by
         LEFT JOIN users su ON su.user_id=pr.supervisor_user_id LEFT JOIN purchase_request_items pri ON pri.pr_id=pr.pr_id
         WHERE pr.request_date>=:start_date AND pr.request_date<:end_date
         GROUP BY pr.pr_id,pr.pr_number,pr.request_date,u.full_name,u.username,pr.status,su.full_name,su.username,pr.decided_at
-        ORDER BY pr.request_date DESC,pr.created_at DESC LIMIT :limit OFFSET :offset", $params);
+        ORDER BY (pr.status='Pending Supervisor Approval') DESC,
+            CASE WHEN pr.status='Pending Supervisor Approval' THEN pr.request_date END ASC,
+            pr.request_date DESC,pr.created_at DESC LIMIT :limit OFFSET :offset", $params);
     return [
         'summary'=>[
             reportCard('Pending Approval',(int)($summaryMap['Pending Supervisor Approval']??0),'number','fa-clock','indigo'),
+            reportCard('Pending over 2 days',(int)($pendingAging['total']??0),'number','fa-hourglass-half','amber'),
             reportCard('Approved',(int)($summaryMap['Approved']??0),'number','fa-circle-check','green'),
             reportCard('Revision Requested',(int)($summaryMap['Revision Requested']??0),'number','fa-rotate-left','amber'),
             reportCard('Rejected',(int)($summaryMap['Rejected']??0),'number','fa-circle-xmark','red')],
-        'charts'=>[['id'=>'pr-status','title'=>'Purchase request approval status','type'=>'doughnut','tone'=>'status','rows'=>$statusRows]],
+        'charts'=>[['id'=>'pr-status','title'=>'Purchase request approval status','type'=>'doughnut','tone'=>'status','rows'=>$statusRows,'href'=>'supervisor_approval.html','link_label'=>'Open approvals']],
         'columns'=>['pr_number'=>'PR Number','request_date'=>'Request Date','requested_by'=>'Requested By','item_count'=>'Items','requested_quantity'=>'Requested Qty','status'=>'Status','reviewed_by'=>'Reviewed By','decided_at'=>'Decision Date'],
-        'numeric_columns'=>['item_count','requested_quantity'],'currency_columns'=>[],'rows'=>$rows,
+        'numeric_columns'=>['item_count','requested_quantity','days_waiting'],'currency_columns'=>[],'rows'=>$rows,
         'pagination'=>reportPagination((int)($count['total']??0),$f),
+        'actions'=>[['title'=>'Purchase request follow-up','description'=>'Review pending requests; the oldest approvals are listed first.','href'=>'supervisor_approval.html','label'=>'Open approval queue','tone'=>'indigo']],
         'notes'=>['This Inventory Supervisor view contains purchase request quantities and approval activity only; purchase costs and payment information are excluded.']];
 }
 
@@ -499,13 +738,21 @@ function supervisorOverviewReport(PDO $pdo, array $f, array $role): array
     $expiryFilters=$filters; $expiryFilters['expiry_days']=90;
     $expiry=expiryReport($pdo,$expiryFilters);
     $products=supervisorProductReport($pdo,$filters,$role);
-    $prs=supervisorPurchaseRequestReport($pdo,$filters);
+    $pendingRequests=(int)(reportRow($pdo,"SELECT COUNT(*) total FROM purchase_requests WHERE status='Pending Supervisor Approval'")['total']??0);
+    $overdueRequests=(int)(reportRow($pdo,"SELECT COUNT(*) total FROM purchase_requests WHERE status='Pending Supervisor Approval' AND request_date<DATE_SUB(CURDATE(),INTERVAL 2 DAY)")['total']??0);
+    $dateQuery='start_date='.rawurlencode($f['start_date']).'&end_date='.rawurlencode($f['end_date']);
+
+    // ⚠️ Purchase Requests have their own section — they are NOT part of this Overview.
     return [
-        'summary'=>array_merge(array_slice($inventory['summary'],0,5),array_slice($prs['summary'],0,1)),
-        'charts'=>[$inventory['charts'][1],$products['charts'][0],$expiry['charts'][0],$prs['charts'][0]],
-        'attention'=>[], 'overview_previews'=>[], 'columns'=>[], 'numeric_columns'=>[], 'currency_columns'=>[], 'rows'=>[],
+        'summary'=>array_slice($inventory['summary'],0,5),
+        'charts'=>[$inventory['charts'][1],$products['charts'][0],$expiry['charts'][0]],
+        'attention'=>[
+            ['singular'=>'Purchase request awaiting your review','plural'=>'Purchase requests awaiting your review','value'=>$pendingRequests,'tone'=>'indigo','icon'=>'fa-clipboard-check','href'=>'reports.html?category=purchases&'.$dateQuery],
+            ['singular'=>'Request pending over 2 days','plural'=>'Requests pending over 2 days','value'=>$overdueRequests,'tone'=>'amber','icon'=>'fa-hourglass-half','href'=>'reports.html?category=purchases&'.$dateQuery],
+        ], 'overview_previews'=>[], 'columns'=>[], 'numeric_columns'=>[], 'currency_columns'=>[], 'rows'=>[],
+        'actions'=>[['title'=>'Purchase approvals','description'=>'Review pending requests and see how long they have been waiting.','href'=>'supervisor_approval.html','label'=>'Open approval queue','tone'=>'indigo']],
         'pagination'=>reportPagination(0,$f),
-        'notes'=>['Inventory Supervisor overview contains current inventory, expiry, product movement, and purchase-request approval information only. Financial and staff-performance reports are excluded.']];
+        'notes'=>['Inventory Supervisor overview contains current inventory, expiry, and product movement information only. Purchase requests have their own section.']];
 }
 
 function overviewReport(PDO $pdo,array $f,array $role): array
@@ -537,16 +784,19 @@ function overviewReport(PDO $pdo,array $f,array $role): array
       SUM(shelf_stock) shelf_stock,SUM(storage_stock) storage_stock,SUM(shelf_stock+storage_stock) total_on_hand
       FROM ({$inventoryBase}) current_inventory",$inventoryParams);
 
+    $expiryShelf='COALESCE(selling.shelf_qty,0)';$expiryStorage='GREATEST(b.storage_qty-COALESCE(b.expiry_quarantined_storage_qty,0),0)';$expiryRemaining="({$expiryStorage}+{$expiryShelf})";
+    $expiryShelfJoin='LEFT JOIN (SELECT source_batch_id,SUM(GREATEST(quantity_remaining-expiry_quarantined_qty,0)) shelf_qty FROM product_selling_stock WHERE source_batch_id IS NOT NULL GROUP BY source_batch_id) selling ON selling.source_batch_id=b.batch_id';
     $expiryRisk=reportRow($pdo,"SELECT
+      COUNT(DISTINCT b.batch_id) active_batches,
       SUM(b.expiry_date<CURDATE()) expired,
       SUM(b.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 7 DAY)) within_7,
       SUM(b.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 30 DAY)) within_30,
       SUM(b.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(),INTERVAL 60 DAY)) within_60,
-      SUM(CASE WHEN b.expiry_date<=DATE_ADD(CURDATE(),INTERVAL 60 DAY) THEN b.shelf_qty+b.storage_qty ELSE 0 END) quantity_at_risk,
-      SUM(CASE WHEN b.expiry_date<=DATE_ADD(CURDATE(),INTERVAL 30 DAY) THEN (b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0) ELSE 0 END) cost_at_risk_30,
-      SUM(CASE WHEN b.expiry_date<=DATE_ADD(CURDATE(),INTERVAL 60 DAY) THEN (b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0) ELSE 0 END) cost_at_risk
-      FROM inventory_batches b
-      WHERE b.expiry_date IS NOT NULL AND b.batch_status='active' AND (b.shelf_qty+b.storage_qty)>0");
+      SUM(CASE WHEN b.expiry_date<=DATE_ADD(CURDATE(),INTERVAL 60 DAY) THEN {$expiryRemaining} ELSE 0 END) quantity_at_risk,
+      SUM(CASE WHEN b.expiry_date<=DATE_ADD(CURDATE(),INTERVAL 30 DAY) THEN {$expiryRemaining}*COALESCE(b.unit_cost,0) ELSE 0 END) cost_at_risk_30,
+      SUM(CASE WHEN b.expiry_date<=DATE_ADD(CURDATE(),INTERVAL 60 DAY) THEN {$expiryRemaining}*COALESCE(b.unit_cost,0) ELSE 0 END) cost_at_risk
+      FROM inventory_batches b {$expiryShelfJoin}
+      WHERE b.expiry_date IS NOT NULL AND b.batch_status='active' AND {$expiryRemaining}>0");
     $expiryChartRows=reportRows($pdo,"SELECT
       CASE
         WHEN b.expiry_date<CURDATE() THEN 'Expired'
@@ -555,15 +805,14 @@ function overviewReport(PDO $pdo,array $f,array $role): array
         ELSE 'Within 60 days'
       END label,
       COUNT(DISTINCT b.batch_id) batch_count,
-      SUM(b.shelf_qty+b.storage_qty) quantity_at_risk,
-      ROUND(SUM((b.shelf_qty+b.storage_qty)*COALESCE(b.unit_cost,0)),2) cost_at_risk
-      FROM inventory_batches b
+      SUM({$expiryRemaining}) quantity_at_risk,
+      ROUND(SUM({$expiryRemaining}*COALESCE(b.unit_cost,0)),2) cost_at_risk
+      FROM inventory_batches b {$expiryShelfJoin}
       WHERE b.expiry_date IS NOT NULL AND b.batch_status='active'
-        AND (b.shelf_qty+b.storage_qty)>0
+        AND {$expiryRemaining}>0
         AND b.expiry_date<=DATE_ADD(CURDATE(),INTERVAL 60 DAY)
       GROUP BY label
       ORDER BY MIN(b.expiry_date)");
-
     $poStatuses=[];
         foreach(['Draft','Pending','Arrived','Delivered','Cancelled'] as $status)$poStatuses[$status]=0;
     foreach($purchases['charts'][0]['rows']??[] as $row)if(array_key_exists($row['label'],$poStatuses))$poStatuses[$row['label']]=(int)$row['value'];
@@ -605,14 +854,18 @@ function overviewReport(PDO $pdo,array $f,array $role): array
     ];
     $salesChart=$sales['charts'][0];
     $salesChart['href']=$links['sales'];$salesChart['link_label']='View Sales Report';$salesChart['overview_trend']=true;
+    $overviewCards=[$sales['summary'][0],$sales['summary'][1],$sales['summary'][3],$inventory['summary'][5],reportCard('Cost at Risk',(float)($expiryRisk['cost_at_risk_30']??0),'currency','fa-coins','red'),$purchases['summary'][5]];
+    foreach ($sales['summary'] as $salesCard) {
+        if (in_array($salesCard['title'] ?? '', ['Gross Profit','Estimated Gross Profit','Total VAT Collected'], true)) $overviewCards[]=$salesCard;
+    }
     return [
-      'summary'=>[$sales['summary'][0],$sales['summary'][1],$sales['summary'][3],$inventory['summary'][5],reportCard('Cost at Risk',(float)($expiryRisk['cost_at_risk_30']??0),'currency','fa-coins','red'),$purchases['summary'][5]],
+      'summary'=>$overviewCards,
       'charts'=>[$salesChart],
       'attention'=>$attention,
       'overview_previews'=>[
         'top_products'=>['rows'=>$topProducts,'href'=>$links['products']],
         'inventory_health'=>['healthy'=>(int)$inventoryHealth['healthy'],'low_stock'=>(int)$inventoryHealth['low_stock'],'out_of_stock'=>(int)$inventoryHealth['out_of_stock'],'data_issues'=>(int)$inventoryHealth['data_issues'],'total_products'=>(int)$inventoryHealth['total_products'],'total_on_hand'=>(int)$inventoryHealth['total_on_hand'],'shelf_stock'=>(int)$inventoryHealth['shelf_stock'],'storage_stock'=>(int)$inventoryHealth['storage_stock'],'href'=>$links['inventory']],
-        'expiry_risk'=>['expired'=>(int)($expiryRisk['expired']??0),'within_7'=>(int)($expiryRisk['within_7']??0),'within_30'=>(int)($expiryRisk['within_30']??0),'within_60'=>(int)($expiryRisk['within_60']??0),'quantity_at_risk'=>(int)($expiryRisk['quantity_at_risk']??0),'cost_at_risk'=>(float)($expiryRisk['cost_at_risk']??0),'chart_rows'=>$expiryChartRows,'href'=>$links['expiry']],
+        'expiry_risk'=>['active_batches'=>(int)($expiryRisk['active_batches']??0),'expired'=>(int)($expiryRisk['expired']??0),'within_7'=>(int)($expiryRisk['within_7']??0),'within_30'=>(int)($expiryRisk['within_30']??0),'within_60'=>(int)($expiryRisk['within_60']??0),'quantity_at_risk'=>(int)($expiryRisk['quantity_at_risk']??0),'cost_at_risk'=>(float)($expiryRisk['cost_at_risk']??0),'chart_rows'=>$expiryChartRows,'href'=>$links['expiry']],
         'purchase_status'=>['statuses'=>$poStatuses,'arrived_awaiting_inspection'=>$arrived,'open_commitments'=>(float)$purchases['summary'][0]['value'],'outstanding_payable'=>(float)$purchases['summary'][5]['value'],'href'=>$links['purchases']],
         'staff_activity'=>['active_cashiers'=>(int)($staff['active_cashiers']??0),'active_sales_clerks'=>(int)($staff['active_sales_clerks']??0),'cashiers'=>$topCashiers,'sales_clerks'=>$topClerks,'completed_transactions'=>(int)($staff['completed_transactions']??0),'average_transaction'=>(float)($staff['average_transaction']??0),'href'=>$links['staff']],
       ],
@@ -622,10 +875,20 @@ function overviewReport(PDO $pdo,array $f,array $role): array
     ];
 }
 
+require_once __DIR__ . '/reports_reference_views.php';
+
+if (!defined('REPORTS_LIBRARY_ONLY')) {
 try {
-    reportApplyConfiguredTimezone($pdo);$role=reportRoleContext();$f=reportFilters();$defaultCategory=$role['cashier']&&!$role['management']?'sales':'overview';$category=strtolower(trim((string)($_GET['category']??$defaultCategory)));
+    reportApplyConfiguredTimezone($pdo);$role=reportRoleContext();$f=reportFilters();$category=strtolower(trim((string)($_GET['category']??'overview')));
     if(!in_array($category,$role['available_categories'],true)){http_response_code(403);echo json_encode(['status'=>'error','message'=>'You do not have access to this report category.','access'=>$role]);exit;}
-    $report=match($category){'sales'=>salesReport($pdo,$f,$role),'inventory'=>inventoryReport($pdo,$f),'purchases'=>(!empty($role['supervisor'])?supervisorPurchaseRequestReport($pdo,$f):purchasesReport($pdo,$f)),'expiry'=>expiryReport($pdo,$f),'products'=>(!empty($role['supervisor'])?supervisorProductReport($pdo,$f,$role):productReport($pdo,$f,$role)),'staff'=>staffReport($pdo,$f,$role),default=>overviewReport($pdo,$f,$role)};
+    if(in_array($category,['sales','purchases','overview'],true))ensureSalesProfitAllocationSchema($pdo);
+    $referenceLayout=$role['management'] && ($_GET['layout']??'')==='reference';
+    // Sales Clerk and Cashier use the same reports UI, but their sales views must
+    // also be routed through the view-aware report builder. Its queries still
+    // apply reportSalesWhere() with the current role scope.
+    $referenceSalesLayout=($_GET['layout']??'')==='reference';
+    $report=match($category){'sales'=>($referenceSalesLayout?referenceSalesReport($pdo,$f,$role):salesReport($pdo,$f,$role)),'inventory'=>(!empty($role['supervisor'])?supervisorInventoryReport($pdo,$f):($referenceLayout?referenceInventoryReport($pdo,$f,$role):inventoryReport($pdo,$f))),'purchases'=>(!empty($role['supervisor'])?supervisorPurchaseRequestReport($pdo,$f):($referenceLayout?referencePurchasingReport($pdo,$f):purchasesReport($pdo,$f))),'expiry'=>(!empty($role['supervisor'])?supervisorExpiryReport($pdo,$f):($referenceLayout?referenceExpiryReport($pdo,$f):expiryReport($pdo,$f))),'supplier'=>referenceSupplierReport($pdo,$f),'products'=>(!empty($role['supervisor'])?supervisorProductReport($pdo,$f,$role):productReport($pdo,$f,$role)),'staff'=>($referenceLayout?referenceStaffReport($pdo,$f):staffReport($pdo,$f,$role)),default=>overviewReport($pdo,$f,$role)};
     echo json_encode(['status'=>'success','category'=>$category,'access'=>$role,'system'=>reportSystem($pdo,$role,$f),'filters'=>reportFilterOptions($pdo,$role)]+$report,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 } catch(InvalidArgumentException $e){http_response_code(422);echo json_encode(['status'=>'error','message'=>$e->getMessage()]);}
 catch(Throwable $e){error_log('Reports error: '.$e->getMessage());http_response_code(500);echo json_encode(['status'=>'error','message'=>'Unable to generate the selected report.']);}
+}

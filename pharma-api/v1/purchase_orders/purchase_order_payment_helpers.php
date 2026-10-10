@@ -2,6 +2,30 @@
 
 require_once __DIR__ . '/purchase_order_invoice_helpers.php';
 
+function ensurePurchaseOrderPaymentSchema(PDO $pdo): void
+{
+    static $ensured = false;
+    if ($ensured) return;
+    $columnStatement = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_order_payments' AND COLUMN_NAME = 'payment_type'");
+    $columnStatement->execute();
+    $columnExists = (int) $columnStatement->fetchColumn() > 0;
+    if (!$columnExists) {
+        $pdo->exec("ALTER TABLE purchase_order_payments ADD COLUMN payment_type VARCHAR(40) NULL AFTER payment_method");
+        $pdo->exec("UPDATE purchase_order_payments pop
+        SET pop.payment_type = CASE
+            WHEN EXISTS (
+                SELECT 1 FROM purchase_order_receiving por
+                WHERE por.po_id = pop.po_id
+                  AND por.inspection_status = 'Confirmed'
+                  AND por.received_date <= pop.created_at
+            ) THEN 'Post-Inspection Payment'
+            ELSE 'Advance Payment'
+        END
+        WHERE pop.payment_type IS NULL OR pop.payment_type = ''");
+    }
+    $ensured = true;
+}
+
 function purchaseOrderPaymentTableExists(PDO $pdo): bool
 {
     $statement = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_order_payments'");
@@ -11,9 +35,8 @@ function purchaseOrderPaymentTableExists(PDO $pdo): bool
 function purchaseOrderPaymentStatus(float $adjustedPayable, float $totalPaid): string
 {
     if ($adjustedPayable <= 0) return 'Paid';
-    if ($totalPaid <= 0) return 'Unpaid';
     if ($adjustedPayable > 0 && $totalPaid >= $adjustedPayable) return 'Paid';
-    return 'Partially Paid';
+    return 'Unpaid';
 }
 
 function purchaseOrderNormalizedPaymentState(?float $adjustedPayable, float $totalPaid): string
@@ -68,8 +91,9 @@ function purchaseOrderPaymentSummary(PDO $pdo, string $poId, ?float $adjustedPay
 
 function purchaseOrderPaymentHistory(PDO $pdo, string $poId): array
 {
+    ensurePurchaseOrderPaymentSchema($pdo);
     $statement = $pdo->prepare(
-        'SELECT pop.payment_id, pop.amount, pop.payment_method, pop.payment_date,
+        'SELECT pop.payment_id, pop.amount, pop.payment_method, pop.payment_type, pop.payment_date,
                 pop.reference_number, pop.remarks, pop.recorded_by, pop.created_at,
                 COALESCE(NULLIF(u.full_name, \'\'), u.username, \'System migration\') AS recorded_by_name
          FROM purchase_order_payments pop
@@ -95,6 +119,7 @@ function purchaseOrderPaymentHistory(PDO $pdo, string $poId): array
 
 function buildPurchaseOrderPaymentDetails(PDO $pdo, string $poId): ?array
 {
+    ensurePurchaseOrderPaymentSchema($pdo);
     $statement = $pdo->prepare(
         'SELECT po.po_id, po.po_number, po.status, po.payment_status, po.payment_terms,
                 po.created_at AS order_date, po.expected_delivery_date,
@@ -118,11 +143,37 @@ function buildPurchaseOrderPaymentDetails(PDO $pdo, string $poId): ?array
     $details['invoice_other_charges'] = round((float) ($details['invoice_other_charges'] ?? 0), 2);
     $invoice = $details['invoice_recorded'] ? purchaseOrderInvoice($pdo, $poId) : null;
     $details['invoice_items'] = $invoice['items'] ?? [];
+    $details['supplier_credit_applications'] = $invoice['supplier_credit_applications'] ?? [];
     $details['invoice_subtotal'] = round((float) ($invoice['subtotal'] ?? 0), 2);
     $effectivePayable = $details['total_amount'] ?? 0.0;
     $details['final_payment'] = $effectivePayable;
     $details['payment'] = purchaseOrderPaymentSummary($pdo, $poId, $effectivePayable);
     $details['payment']['payments'] = purchaseOrderPaymentHistory($pdo, $poId);
+
+    $receivingStatement = $pdo->prepare(
+        "SELECT por.receiving_id, por.received_date, por.inspection_status,
+                COALESCE(SUM(pori.accepted_quantity), 0) AS accepted_quantity
+         FROM purchase_order_receiving por
+         LEFT JOIN purchase_order_receiving_items pori ON pori.receiving_id = por.receiving_id
+         WHERE por.po_id = :po_id
+         GROUP BY por.receiving_id, por.received_date, por.inspection_status
+         ORDER BY (por.inspection_status = 'Confirmed') DESC, por.received_date DESC
+         LIMIT 1"
+    );
+    $receivingStatement->execute([':po_id' => $poId]);
+    $receiving = $receivingStatement->fetch(PDO::FETCH_ASSOC) ?: [];
+    $inspectionCompleted = ($details['status'] ?? '') === 'Delivered'
+        || (($receiving['inspection_status'] ?? '') === 'Confirmed');
+    $deliveryReceived = in_array(($details['status'] ?? ''), ['Arrived', 'Delivered'], true)
+        || !empty($receiving['receiving_id']);
+    $details['receiving'] = [
+        'delivery_received' => $deliveryReceived,
+        'delivery_status' => $deliveryReceived ? 'Received' : 'Not Yet Received',
+        'inspection_completed' => $inspectionCompleted,
+        'inspection_status' => $inspectionCompleted ? 'Completed' : ($deliveryReceived ? 'Pending Inspection' : 'Not Yet Inspected'),
+        'accepted_quantity' => round((float) ($receiving['accepted_quantity'] ?? 0), 4),
+    ];
+    $details['payment_type'] = $inspectionCompleted ? 'Post-Inspection Payment' : 'Advance Payment';
 
     $replacementStatement = $pdo->prepare(
         "SELECT COALESCE(SUM(GREATEST(sc.replacement_expected_qty - sc.replacement_received_qty, 0)), 0)

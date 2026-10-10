@@ -141,6 +141,25 @@ function selectedDateText(data) {
     return `Selected date: ${formatDate(data.selected_start_date)}`;
 }
 
+function reportKind(data) {
+    return data?.is_single_day ? 'END OF SHIFT REPORT' : 'CASHIER PERIOD SUMMARY';
+}
+
+function shiftStatus(data) {
+    if (!data?.is_single_day) return 'Period Summary';
+    if (data.selected_end_date < todayIso) return 'Closed';
+    return 'Active';
+}
+
+function reportFrom(data) {
+    return data?.activity?.first_transaction_time || `${data.selected_start_date} 00:00:00`;
+}
+
+function reportTo(data) {
+    if (data?.activity?.last_transaction_time) return data.activity.last_transaction_time;
+    return data?.is_single_day ? `${data.selected_end_date} 23:59:59` : `${data.selected_end_date} 23:59:59`;
+}
+
 async function request(path, signal) {
     const token = sessionStorage.getItem('pharma_tab_token') || '';
     const response = await fetch(`${API_BASE_URL}/${path}`, {
@@ -278,11 +297,10 @@ function renderCashierControls(data) {
 
     const selected = data.selected_cashier_id || state.requestedCashierId || cashierSelect.value || '';
     const cashiers = Array.isArray(data.cashiers) ? data.cashiers : [];
-    const existing = cashierSelect.value;
-    cashierSelect.replaceChildren(new Option('Select cashier', ''));
+    cashierSelect.replaceChildren(new Option('All Cashiers', ''));
     cashiers.forEach((cashier) => cashierSelect.add(new Option(cashier.name || 'Cashier', cashier.user_id)));
-    cashierSelect.value = selected || existing;
-    state.requestedCashierId = cashierSelect.value || selected || '';
+    cashierSelect.value = selected;
+    state.requestedCashierId = selected;
     cashierSelect.hidden = false;
     cashierIdentity.hidden = true;
 }
@@ -317,23 +335,26 @@ function historyUrl(data) {
     return `cashier_transaction_history.html?${query.toString()}`;
 }
 
-function renderRecent(rows, data) {
+function renderRecent(rows, data, options = {}) {
     if (!rows.length) {
         return '<div class="state-card"><div><strong>No completed transactions</strong><span>No completed transactions were found for the selected cashier and date range.</span></div></div>';
     }
     const timeHeader = data.is_single_day ? 'Time' : 'Date / Time';
+    const allCashiers = options.allCashiers === true;
     return `
         <div class="table-scroll">
-            <table class="shift-table">
-                <thead><tr><th>${timeHeader}</th><th>Receipt No.</th><th>Customer</th><th>Payment Method</th><th class="money-cell">Total</th><th>Status</th><th class="action-cell">Action</th></tr></thead>
-                <tbody>${rows.map((row) => `
+            <table class="shift-table${allCashiers ? ' all-cashiers-table' : ''}">
+                <thead><tr>${allCashiers ? '<th class="index-cell">#</th>' : ''}<th>${timeHeader}</th><th>Receipt No.</th>${allCashiers ? '<th>Cashier</th>' : ''}<th>Customer</th><th>Payment Method</th><th class="money-cell">Total</th><th class="status-cell">Status</th><th class="action-cell">Action</th></tr></thead>
+                <tbody>${rows.slice(0, allCashiers ? 10 : rows.length).map((row, index) => `
                     <tr>
+                        ${allCashiers ? `<td class="index-cell">${index + 1}</td>` : ''}
                         <td>${escapeHtml(data.is_single_day ? formatTime(row.completed_at) : formatDateTime(row.completed_at))}</td>
                         <td class="receipt-cell" title="${escapeHtml(row.receipt_no || row.order_no)}">${escapeHtml(row.receipt_no || row.order_no || '-')}</td>
+                        ${allCashiers ? `<td>${escapeHtml(row.cashier_name || 'Cashier')}</td>` : ''}
                         <td>${escapeHtml(row.customer_name || 'Walk-in Customer')}</td>
                         <td>${escapeHtml(methodLabel(row.payment_method))}</td>
                         <td class="money-cell">${escapeHtml(currency(row.total_amount))}</td>
-                        <td><span class="status-pill completed">${escapeHtml(row.status || 'Completed')}</span></td>
+                        <td class="status-cell"><span class="status-pill completed">${escapeHtml(row.status || 'Completed')}</span></td>
                         <td class="action-cell"><button class="view-button interactive-only" type="button" data-view-transaction="${escapeHtml(row.order_id)}" title="View transaction details" aria-label="View transaction ${escapeHtml(row.receipt_no || row.order_no || row.order_id)}"><i class="fa-regular fa-eye"></i></button></td>
                     </tr>`).join('')}</tbody>
             </table>
@@ -343,105 +364,159 @@ function renderRecent(rows, data) {
 function renderActivity(data) {
     const activity = data.activity || {};
     const completedCount = Number(activity.completed_transaction_count || 0);
-    if (data.is_single_day) {
-        return `
-            <h2 class="card-heading">Shift Activity</h2>
-            <div class="detail-list">
-                <div class="detail-row"><span>Cashier</span><strong>${escapeHtml(data.cashier_name)}</strong></div>
-                <div class="detail-row"><span>Date Status</span><strong>${escapeHtml(data.selected_start_date === todayIso ? 'Today' : formatDate(data.selected_start_date))}</strong></div>
-                <div class="detail-row"><span>First Transaction</span><strong>${escapeHtml(formatTime(activity.first_transaction_time))}</strong></div>
-                <div class="detail-row"><span>Last Transaction</span><strong>${escapeHtml(formatTime(activity.last_transaction_time))}</strong></div>
-                <div class="detail-row"><span>Transaction Activity Duration</span><strong>${escapeHtml(duration(activity.first_transaction_time, activity.last_transaction_time))}</strong></div>
-                <div class="detail-row"><span>Completed Transactions</span><strong>${escapeHtml(number(completedCount))}</strong></div>
-            </div>`;
-    }
-
     return `
-        <h2 class="card-heading">Period Activity</h2>
+        <h2 class="card-heading">Shift Information</h2>
         <div class="detail-list">
-            <div class="detail-row"><span>Cashier</span><strong>${escapeHtml(data.cashier_name)}</strong></div>
-            <div class="detail-row"><span>Period Start</span><strong>${escapeHtml(formatDate(data.selected_start_date))}</strong></div>
-            <div class="detail-row"><span>Period End</span><strong>${escapeHtml(formatDate(data.selected_end_date))}</strong></div>
-            <div class="detail-row"><span>Active Days</span><strong>${escapeHtml(number(activity.active_days || 0))}</strong></div>
+            <div class="detail-row"><span>Cashier</span><strong>${escapeHtml(data.cashier_name || 'All Cashiers')}</strong></div>
+            <div class="detail-row"><span>Shift Start</span><strong>${escapeHtml(formatDateTime(reportFrom(data)))}</strong></div>
+            <div class="detail-row"><span>Shift End</span><strong>${escapeHtml(formatDateTime(reportTo(data)))}</strong></div>
+            <div class="detail-row"><span>Status</span><strong>${escapeHtml(shiftStatus(data))}</strong></div>
             <div class="detail-row"><span>Completed Transactions</span><strong>${escapeHtml(number(completedCount))}</strong></div>
         </div>`;
 }
 
-function renderSummary(data) {
-    renderCashierControls(data);
-    if (state.isAdmin && !data.selected_cashier_id) {
-        state.lastData = null;
-        printButton.disabled = true;
-        renderState('fa-user-check', 'Select a cashier', 'Select a cashier to review their shift summary.');
-        return;
+function renderCashierSummaryGrid(reports) {
+    if (!reports.length) {
+        return '<div class="state-card"><div><strong>No cashier activity</strong><span>No cashier transactions were found for the selected date range.</span></div></div>';
     }
 
-    state.lastData = data;
+    return `
+        <section class="cashier-summaries">
+            <header class="cashier-summaries-head">
+                <h2>Cashier Summaries</h2>
+                <span>${escapeHtml(number(reports.length))} cashier${reports.length === 1 ? '' : 's'} in this period</span>
+            </header>
+            <div class="cashier-summary-grid">
+                ${reports.map((report) => {
+                    const summary = report.summary || {};
+                    const sales = report.sales_breakdown || {};
+                    return `
+                        <article class="cashier-summary-item">
+                            <span class="eyebrow">${escapeHtml(report.cashier_name || 'Cashier')}</span>
+                            <h3>${escapeHtml(report.cashier_name || 'Cashier')} <span>— Cashier Transaction Summary</span></h3>
+                            <div class="report-lines">
+                                <div><span>Completed Transactions</span><strong>${escapeHtml(number(summary.completed_transactions))}</strong></div>
+                                <div><span>Cancelled / Voided</span><strong>${escapeHtml(number(summary.cancelled_voided_transactions))}</strong></div>
+                                <div><span>Refunded Transactions</span><strong>${escapeHtml(number(summary.refunded_transactions))}</strong></div>
+                                <div><span>Gross Sales</span><strong>${escapeHtml(currency(sales.gross_completed_sales))}</strong></div>
+                                <div><span>Net Sales</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
+                                <div class="grand"><span>Total Collected</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
+                            </div>
+                        </article>`;
+                }).join('')}
+            </div>
+        </section>`;
+}
+
+function renderPrintReport(data, generated) {
     const summary = data.summary || {};
     const sales = data.sales_breakdown || {};
-    const cashMatched = Math.abs(Number(summary.cash_variance || 0)) < .005;
-    const generated = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+    const timezone = data.pharmacy?.timezone || 'Asia/Manila';
+    const paperCurrency = (value) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const printedAt = new Date().toLocaleString('en-PH', { timeZone: timezone, dateStyle: 'long', timeStyle: 'short' });
+    const recentRows = (data.recent_transactions || []).slice(0, 10);
+    const address = String(data.pharmacy?.address || '').trim();
+    const period = displayPeriod(data.selected_start_date, data.selected_end_date);
+    return `
+        <section class="print-receipt-report">
+            <header class="cashier-paper-head">
+                <h1>DOC R PHARMACY</h1>
+                ${address ? `<p>${escapeHtml(address)}</p>` : ''}
+            </header>
+            <div class="cashier-paper-report-title">
+                <h2>SALES REPORT</h2>
+                <p>Reporting Period: ${escapeHtml(period)}</p>
+                <small>Date Printed: ${escapeHtml(printedAt)}</small>
+            </div>
+            <section class="cashier-paper-summary">
+                <h3>Sales Summary</h3>
+                <div class="cashier-paper-metrics">
+                    <article><span>Completed Transactions</span><strong>${escapeHtml(number(summary.completed_transactions))}</strong></article>
+                    <article><span>Gross Sales</span><strong>${escapeHtml(paperCurrency(sales.gross_completed_sales))}</strong></article>
+                    <article><span>Discounts</span><strong>${escapeHtml(paperCurrency(sales.discounts))}</strong></article>
+                    <article><span>Net Sales</span><strong>${escapeHtml(paperCurrency(sales.net_completed_sales))}</strong></article>
+                </div>
+            </section>
+            <section class="cashier-paper-transactions">
+                <h3>Transaction Details</h3>
+                <table>
+                    <thead><tr><th>Receipt No.</th><th>Date / Time</th><th>Cashier</th><th>Payment</th><th>Amount</th></tr></thead>
+                    <tbody>${recentRows.length ? recentRows.map((row) => `<tr><td>${escapeHtml(row.receipt_no || row.order_no || '-')}</td><td>${escapeHtml(formatDateTime(row.completed_at))}</td><td>${escapeHtml(row.cashier_name || data.cashier_name || 'Cashier')}</td><td>${escapeHtml(methodLabel(row.payment_method))}</td><td>${escapeHtml(paperCurrency(row.total_amount))}</td></tr>`).join('') : '<tr><td colspan="5" class="cashier-paper-empty">No completed transactions for this reporting period.</td></tr>'}</tbody>
+                </table>
+                <p class="cashier-paper-note">Transaction details list up to 10 recent completed transactions. Summary totals reflect the selected reporting period.</p>
+            </section>
+            <footer class="cashier-paper-signatures">
+                <div><span>Prepared by:</span><strong>${escapeHtml(data.cashier_name || '____________________')}</strong></div>
+                <div><span>Reviewed by:</span><strong>____________________</strong></div>
+            </footer>
+        </section>`;
+}
+
+function renderSummaryReport(data, options = {}) {
+    const summary = data.summary || {};
+    const sales = data.sales_breakdown || {};
     const completedCount = Number(summary.completed_transactions || 0);
     const cancelledCount = Number(summary.cancelled_voided_transactions || 0);
-    const reportTitle = data.is_single_day ? 'Shift Summary' : 'Activity Summary';
-    const recentTitle = data.is_single_day ? 'Recent Transactions for This Shift' : 'Recent Transactions for This Period';
+    const refundedCount = Number(summary.refunded_transactions || 0);
+    const paymentRows = data.payment_breakdown || [];
+    const totalCollected = paymentRows.reduce((total, row) => total + Number(row.amount || 0), 0);
+
+    return `
+        <section class="summary-report">
+            <header class="report-header">
+                <div>
+                    <span class="eyebrow">${escapeHtml(options.eyebrow || data.cashier_name)}</span>
+                    <h1>${escapeHtml(options.title || 'Cashier Transaction Summary')}</h1>
+                    <p>${escapeHtml(data.is_single_day ? `Shift period: ${formatDateTime(reportFrom(data))} to ${formatDateTime(reportTo(data))}` : `Selected period: ${displayPeriod(data.selected_start_date, data.selected_end_date)}`)}</p>
+                </div>
+                <span class="status-pill report-status">${escapeHtml(options.badge || shiftStatus(data))}</span>
+            </header>
+            <div class="report-grid two">
+                <article class="report-section">
+                    <h2>Transaction Summary</h2>
+                    <div class="report-lines">
+                        <div><span>Completed Transactions</span><strong>${escapeHtml(number(completedCount))}</strong></div>
+                        <div><span>Cancelled / Voided</span><strong>${escapeHtml(number(cancelledCount))}</strong></div>
+                        <div><span>Refunded Transactions</span><strong>${escapeHtml(number(refundedCount))}</strong></div>
+                    </div>
+                </article>
+                <article class="report-section">
+                    ${renderActivity(data)}
+                </article>
+            </div>
+            <hr class="report-divider">
+            <div class="report-grid two">
+                <article class="report-section">
+                    <h2>Sales</h2>
+                    <div class="report-lines">
+                        <div><span>Gross Completed Sales</span><strong>${escapeHtml(currency(sales.gross_completed_sales))}</strong></div>
+                        <div class="negative"><span>Less: Discounts</span><strong>-${escapeHtml(currency(sales.discounts))}</strong></div>
+                        <div class="negative"><span>Less: Refunds</span><strong>-${escapeHtml(currency(sales.refunds))}</strong></div>
+                        <div class="grand"><span>NET SALES</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
+                    </div>
+                </article>
+                <article class="report-section">
+                    <h2>Payment / Tender Breakdown</h2>
+                    <div class="report-lines">
+                        ${paymentRows.length ? paymentRows.map((row) => `<div><span>${escapeHtml(methodLabel(row.payment_method))}</span><strong>${escapeHtml(currency(row.amount))}</strong></div>`).join('') : '<div><span>No collected tenders</span><strong>PHP 0.00</strong></div>'}
+                        <div class="grand"><span>TOTAL COLLECTED</span><strong>${escapeHtml(currency(totalCollected))}</strong></div>
+                    </div>
+                </article>
+            </div>
+        </section>`;
+}
+
+function renderSummary(data) {
+    renderCashierControls(data);
+    state.lastData = data;
+    const generated = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+    const recentTitle = 'Recent Transactions';
     const selectedText = selectedDateText(data);
 
     page.innerHTML = `
         <div class="loading-strip"><span class="spinner-border spinner-border-sm"></span><span>Updating report...</span></div>
-        <header class="print-report-head">
-            <strong>${escapeHtml(data.pharmacy?.name || 'Dr. R Pharmacy')}</strong>
-            <h1>Cashier ${escapeHtml(reportTitle)}</h1>
-            <p>Cashier: ${escapeHtml(data.cashier_name)} &nbsp; | &nbsp; Period: ${escapeHtml(displayPeriod(data.selected_start_date, data.selected_end_date))}</p>
-            <p>Generated: ${escapeHtml(generated)}</p>
-        </header>
-        <section class="selected-shift">
-            <i class="fa-solid fa-user-clock"></i>
-            <div><h1>${escapeHtml(data.cashier_name)} &mdash; ${escapeHtml(reportTitle)}</h1><p>Transaction activity based on completed payment records. This is not a physical drawer count.</p></div>
-            <span class="date-badge">${escapeHtml(displayPeriod(data.selected_start_date, data.selected_end_date, true))}</span>
-        </section>
-        <section class="kpi-grid" aria-label="Shift key totals">
-            ${kpi('fa-chart-line', 'Net Completed Sales', currency(summary.total_completed_sales))}
-            ${kpi('fa-circle-check', 'Completed Transactions', `${number(completedCount)} Transaction${completedCount === 1 ? '' : 's'}`)}
-            ${kpi('fa-ban', 'Cancelled / Voided', `${number(cancelledCount)} Voided`)}
-            ${kpi('fa-receipt', 'Average Transaction Value', currency(sales.average_transaction_value))}
-            ${kpi('fa-tag', 'Discounts / Refunds', currency(Number(sales.discounts || 0) + Number(sales.refunds || 0)))}
-        </section>
-        <section class="primary-grid">
-            <article class="report-card">
-                <h2 class="card-heading">Cash Sales Reconciliation</h2>
-                <p class="card-subtitle">Cash activity based on finalized payment records. This is not a physical drawer count.</p>
-                <div class="calculation-list">
-                    <div class="calculation-row"><span>Cash Tendered</span><strong>${escapeHtml(currency(summary.cash_tendered))}</strong></div>
-                    <div class="calculation-row negative"><span>Less: Change Given</span><strong>-${escapeHtml(currency(summary.change_given))}</strong></div>
-                    <div class="calculation-row total"><span>Net Cash Sales</span><strong>${escapeHtml(currency(summary.net_cash_sales))}</strong></div>
-                </div>
-                <p class="reconciliation-note">Cash tendered minus change given represents recorded cash-paid sales.</p>
-                <div class="comparison-strip">
-                    <div><span>Recorded Cash-Paid Sales</span><strong>${escapeHtml(currency(summary.cash_paid_sales))}</strong></div>
-                    <span class="comparison-badge ${cashMatched ? 'matched' : 'review'}">${cashMatched ? 'System Totals Match' : `Review Difference: ${escapeHtml(currency(Math.abs(Number(summary.cash_variance || 0))))}`}</span>
-                </div>
-            </article>
-            <article class="report-card">
-                ${renderActivity(data)}
-            </article>
-        </section>
-        <section class="breakdown-grid">
-            <article class="report-card">
-                <h2 class="card-heading">Payment Breakdown</h2>
-                ${renderPaymentBreakdown(data.payment_breakdown || [])}
-            </article>
-            <article class="report-card">
-                <h2 class="card-heading">Sales Breakdown</h2>
-                <div class="breakdown-list">
-                    <div class="breakdown-row"><span>Gross Completed Sales</span><strong>${escapeHtml(currency(sales.gross_completed_sales))}</strong></div>
-                    <div class="breakdown-row negative"><span>Discounts</span><strong>-${escapeHtml(currency(sales.discounts))}</strong></div>
-                    ${sales.refunds_supported ? `<div class="breakdown-row negative"><span>Refunds</span><strong>-${escapeHtml(currency(sales.refunds))}</strong></div>` : ''}
-                    <div class="breakdown-row total"><span>Net Completed Sales</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
-                    <div class="breakdown-row"><span>Average Transaction Value</span><strong>${escapeHtml(currency(sales.average_transaction_value))}</strong></div>
-                </div>
-            </article>
-        </section>
+        ${renderPrintReport(data, generated)}
+        ${renderSummaryReport(data)}
         <section class="report-card transactions-card">
             <header class="transactions-head">
                 <h2>${escapeHtml(recentTitle)}</h2>
@@ -453,6 +528,102 @@ function renderSummary(data) {
 
     printButton.disabled = false;
     page.dataset.selectedText = selectedText;
+}
+
+function sumValues(rows, path) {
+    return rows.reduce((total, row) => total + Number(path.split('.').reduce((value, key) => value?.[key], row) || 0), 0);
+}
+
+function aggregatePaymentBreakdown(rows) {
+    const byMethod = new Map();
+    rows.flatMap((row) => row.payment_breakdown || []).forEach((payment) => {
+        const key = String(payment.payment_method || 'cash').toLowerCase();
+        const current = byMethod.get(key) || { payment_method: payment.payment_method || 'cash', transaction_count: 0, amount: 0 };
+        current.transaction_count += Number(payment.transaction_count || 0);
+        current.amount += Number(payment.amount || 0);
+        byMethod.set(key, current);
+    });
+    return Array.from(byMethod.values()).sort((a, b) => methodLabel(a.payment_method).localeCompare(methodLabel(b.payment_method)));
+}
+
+function aggregateRecentTransactions(rows) {
+    const byOrder = new Map();
+    rows.flatMap((row) => row.recent_transactions || []).forEach((transaction) => {
+        if (!byOrder.has(String(transaction.order_id))) byOrder.set(String(transaction.order_id), transaction);
+    });
+    return Array.from(byOrder.values())
+        .sort((a, b) => new Date(String(b.completed_at || '').replace(' ', 'T')) - new Date(String(a.completed_at || '').replace(' ', 'T')))
+        .slice(0, 12);
+}
+
+function buildAllCashiersData(base, reports) {
+    const activeReports = reports.filter((report) => report?.has_records);
+    const paymentBreakdown = aggregatePaymentBreakdown(activeReports);
+    const completedTransactions = sumValues(activeReports, 'summary.completed_transactions');
+    const grossSales = sumValues(activeReports, 'sales_breakdown.gross_completed_sales');
+    const netSales = sumValues(activeReports, 'sales_breakdown.net_completed_sales');
+    const cashTendered = sumValues(activeReports, 'summary.cash_tendered');
+    const changeGiven = sumValues(activeReports, 'summary.change_given');
+    const netCashSales = cashTendered - changeGiven;
+    return {
+        ...base,
+        selected_cashier_id: '',
+        cashier_name: 'All Cashiers',
+        all_cashiers: true,
+        cashier_reports: activeReports,
+        has_records: activeReports.length > 0,
+        summary: {
+            total_completed_sales: netSales,
+            cash_tendered: cashTendered,
+            change_given: changeGiven,
+            net_cash_sales: netCashSales,
+            cash_paid_sales: sumValues(activeReports, 'summary.cash_paid_sales'),
+            cash_variance: sumValues(activeReports, 'summary.cash_variance'),
+            completed_transactions: completedTransactions,
+            cancelled_voided_transactions: sumValues(activeReports, 'summary.cancelled_voided_transactions'),
+            refunded_transactions: sumValues(activeReports, 'summary.refunded_transactions'),
+        },
+        activity: {
+            first_transaction_time: activeReports.map((report) => report.activity?.first_transaction_time).filter(Boolean).sort()[0] || null,
+            last_transaction_time: activeReports.map((report) => report.activity?.last_transaction_time).filter(Boolean).sort().at(-1) || null,
+            completed_transaction_count: completedTransactions,
+            active_days: sumValues(activeReports, 'activity.active_days'),
+        },
+        payment_breakdown: paymentBreakdown,
+        sales_breakdown: {
+            gross_completed_sales: grossSales,
+            discounts: sumValues(activeReports, 'sales_breakdown.discounts'),
+            refunds: sumValues(activeReports, 'sales_breakdown.refunds'),
+            refunds_supported: true,
+            net_completed_sales: netSales,
+            average_transaction_value: completedTransactions > 0 ? netSales / completedTransactions : 0,
+        },
+        recent_transactions: aggregateRecentTransactions(activeReports),
+    };
+}
+
+function renderAllCashiersSummary(data) {
+    renderCashierControls(data);
+    state.lastData = data;
+    const generated = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+    const reports = data.cashier_reports || [];
+    page.innerHTML = `
+        <div class="loading-strip"><span class="spinner-border spinner-border-sm"></span><span>Updating report...</span></div>
+        ${renderPrintReport({ ...data, cashier_name: 'All Cashiers', include_recent_print: true }, generated).replace(reportKind(data), 'ALL CASHIERS PERIOD SUMMARY')}
+        ${reports.map((report) => renderPrintReport(report, generated)).join('')}
+        <section class="all-cashiers-report">
+            ${renderSummaryReport(data, { eyebrow: 'All Cashiers', title: 'All Cashiers Summary', badge: data.is_single_day ? 'End of Shift' : 'Period Summary' })}
+            ${renderCashierSummaryGrid(reports)}
+            <section class="transactions-card">
+            <header class="transactions-head">
+                <h2>Recent Transactions (All Cashiers)</h2>
+                <a class="history-link interactive-only" href="${escapeHtml(historyUrl(data))}"><i class="fa-solid fa-clock-rotate-left"></i>View Full Transaction History</a>
+            </header>
+            ${renderRecent(data.recent_transactions || [], data, { allCashiers: true })}
+            </section>
+        </section>`;
+    printButton.disabled = false;
+    page.dataset.selectedText = selectedDateText(data);
 }
 
 async function loadSummary(options = {}) {
@@ -474,7 +645,27 @@ async function loadSummary(options = {}) {
         if (state.isAdmin && cashierId) query.set('cashier_id', cashierId);
         const data = await request(`cashier/get_cashier_shift_summary.php?${query}`, state.controller.signal);
         if (requestId !== state.requestId) return;
-        renderSummary(data);
+        if (state.isAdmin && !cashierId) {
+            renderCashierControls(data);
+            const cashiers = Array.isArray(data.cashiers) ? data.cashiers : [];
+            if (!cashiers.length) {
+                renderAllCashiersSummary(buildAllCashiersData(data, []));
+                return;
+            }
+            const reports = await Promise.all(cashiers.map((cashier) => {
+                const cashierQuery = new URLSearchParams({
+                    start_date: state.startDate,
+                    end_date: state.endDate,
+                    cashier_id: cashier.user_id,
+                });
+                return request(`cashier/get_cashier_shift_summary.php?${cashierQuery}`, state.controller.signal)
+                    .catch(() => null);
+            }));
+            if (requestId !== state.requestId) return;
+            renderAllCashiersSummary(buildAllCashiersData(data, reports.filter(Boolean)));
+        } else {
+            renderSummary(data);
+        }
     } catch (error) {
         if (error.name === 'AbortError' || requestId !== state.requestId) return;
         state.lastData = null;
@@ -607,7 +798,7 @@ async function initializeShiftSummary() {
     window.addEventListener('popstate', () => {
         const cashierId = readUrlState();
         state.requestedCashierId = cashierId;
-        if (state.isAdmin && cashierId) cashierSelect.value = cashierId;
+        if (state.isAdmin) cashierSelect.value = cashierId || '';
         loadSummary();
     });
     await loadSummary();

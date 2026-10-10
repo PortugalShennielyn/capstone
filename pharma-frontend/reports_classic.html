@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Reports</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=42" rel="stylesheet">
+    <style>
+        body { background: #f4f5f9; font-family: 'Inter', sans-serif; color: #2d3342; }
+        .supervisor-badge { background: #f3e8ff; color: #6b21a8; padding: 0.2rem 0.8rem; border-radius: 30px; font-size: 0.72rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid #d8b4fe; }
+        .btn-soft-purple { background: #ede9fe; color: #6b21a8; border: 1px solid #d8b4fe; font-weight: 500; font-size: 0.82rem; border-radius: 6px; }
+        .btn-soft-purple:hover { background: #ddd6fe; color: #5b21b6; }
+        .btn-purple { background: #7c3aed; border-color: #7c3aed; color: #fff; font-weight: 600; font-size: 0.82rem; border-radius: 6px; }
+        .btn-purple:hover { background: #6d28d9; border-color: #6d28d9; color: #fff; }
+        .page-wrap { padding: 24px 28px 40px; max-width: 1400px; margin: 0 auto; }
+        .page-title { font-size: 1.5rem; font-weight: 800; margin: 0 0 18px; color: #0f172a; }
+        .filter-strip { background: #fff; border: 1px solid #e5e9f0; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+        .filter-strip .field { display: flex; flex-direction: column; gap: 5px; min-width: 130px; }
+        .filter-strip label { font-size: 0.68rem; font-weight: 700; color: #7a8194; text-transform: uppercase; letter-spacing: 0.4px; }
+        .filter-strip input, .filter-strip select { font-size: 0.82rem; border: 1px solid #d9dee8; border-radius: 6px; padding: 7px 10px; color: #2d3342; background: #fff; }
+        .filter-buttons { display: flex; gap: 8px; margin-left: auto; }
+        .data-card { background: #fff; border: 1px solid #e5e9f0; border-radius: 10px; overflow: hidden; margin-bottom: 24px; }
+        .data-card-header { padding: 14px 20px; border-bottom: 1px solid #eef1f6; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+        .data-card-header h2 { font-size: 1rem; font-weight: 700; margin: 0; color: #0f172a; }
+        .data-card-header .search { position: relative; }
+        .data-card-header .search input { font-size: 0.82rem; border: 1px solid #d9dee8; border-radius: 6px; padding: 6px 10px 6px 32px; width: 220px; }
+        .data-card-header .search i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #9aa2b5; font-size: 0.8rem; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+        .data-table thead th { text-align: left; font-size: 0.7rem; font-weight: 700; color: #7a8194; text-transform: uppercase; letter-spacing: 0.4px; padding: 12px 16px; background: #f9fafc; border-bottom: 1px solid #eef1f6; white-space: nowrap; }
+        .data-table tbody td { padding: 12px 16px; border-bottom: 1px solid #f3f5f9; color: #2d3342; }
+        .data-table tbody tr:hover { background: #fafbfd; }
+        .data-table tbody tr:last-child td { border-bottom: 0; }
+        .data-table .muted { color: #8b93a7; }
+        .chart-area { padding: 16px 20px 20px; border-top: 1px solid #eef1f6; background: #fafbfd; }
+        .chart-label { font-size: 0.72rem; font-weight: 700; color: #7a8194; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px; }
+        .chart-canvas { position: relative; height: 220px; width: 100%; }
+        .totals-title { font-size: 1.15rem; font-weight: 800; margin: 24px 0 14px; color: #0f172a; }
+        .totals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+        .total-card { background: #fff; border: 1px solid #e5e9f0; border-radius: 10px; padding: 18px 20px; }
+        .total-card h3 { font-size: 0.92rem; font-weight: 700; margin: 0 0 12px; color: #0f172a; }
+        .total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 0.83rem; border-bottom: 1px solid #f3f5f9; }
+        .total-row:last-child { border-bottom: 0; }
+        .total-row span { color: #5c6478; }
+        .total-row strong { color: #0f172a; font-weight: 700; }
+        .state-box { padding: 60px 20px; text-align: center; color: #8b93a7; font-size: 0.85rem; }
+        .err-box { padding: 16px; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 8px; font-size: 0.85rem; }
+        .empty-note { padding: 40px 20px; text-align: center; color: #9aa2b5; font-size: 0.85rem; }
+        .settings-panel { background: #fff; border: 1px solid #e5e9f0; border-radius: 10px; padding: 24px; margin: 20px auto; max-width: 1400px; }
+        .settings-panel h3 { font-size: 1rem; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+        .settings-panel h3 i { color: #7c3aed; }
+        .avatar-preview { width: 48px; height: 48px; border-radius: 50%; background: #ede9fe; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #6d28d9; font-size: 1.1rem; border: 2px solid #c4b5fd; flex-shrink: 0; }
+        .settings-section { background: #f9fafc; border: 1px solid #eef1f6; border-radius: 8px; padding: 20px; height: 100%; display: flex; flex-direction: column; }
+        .settings-section h6 { font-size: 0.85rem; font-weight: 700; color: #0f172a; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .settings-section h6 i { color: #7c3aed; font-size: 0.8rem; }
+        .settings-section label { font-size: 0.72rem; font-weight: 600; color: #7a8194; margin-bottom: 5px; display: block; }
+        .settings-section input { font-size: 0.83rem; border: 1px solid #d9dee8; border-radius: 6px; padding: 8px 10px; width: 100%; background: #fff; }
+        .settings-section input[readonly] { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+        #overallReportModal .modal-content { border-radius: 10px; border: 0; }
+        #overallReportModal .modal-header { background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; border-radius: 10px 10px 0 0; }
+        #overallReportModal .modal-body { max-height: 70vh; overflow-y: auto; }
+        @media (max-width: 768px) {
+            .page-wrap { padding: 16px; }
+            .filter-strip .field { min-width: 100%; }
+            .filter-buttons { margin-left: 0; width: 100%; }
+            .data-card-header .search input { width: 100%; }
+            .chart-canvas { height: 180px; }
+        }
+        #toastMessage { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: #fff; padding: 12px 22px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; z-index: 9999; display: none; opacity: 0; transform: translateY(20px); transition: all 0.25s ease; pointer-events: none; }
+        #toastMessage.show { display: block; opacity: 1; transform: translateY(0); }
+    </style>
+    <script src="./js/navbar.js?v=97" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body class="role-loading">
+    <div id="navbar-container"></div>
+
+    <main class="main-wrapper" id="mainWrapper">
+        <header class="topbar d-flex align-items-center justify-content-between px-4 py-3 bg-white border-bottom">
+            <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-light border" type="button" id="sidebarToggle"><i class="fa-solid fa-bars"></i></button>
+                <div>
+                    <h1 class="m-0" style="font-size:1rem;font-weight:700;">Reports</h1>
+                    <p class="m-0" style="font-size:0.72rem;color:#8b93a7;">Business performance and pharmacy operations</p>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <a class="btn btn-sm btn-soft-purple" href="./reports.html"><i class="fa-solid fa-chart-line"></i> <span class="d-none d-sm-inline">Admin Reports</span></a>
+                <span class="supervisor-badge" id="supervisorBadge" style="display:none;">
+                    <i class="fa-solid fa-user-tie"></i> Supervisor
+                </span>
+                <button class="btn btn-sm btn-purple" id="generateOverallReport">
+                    <i class="fa-solid fa-file-circle-plus"></i> <span class="d-none d-sm-inline">Overall Report</span>
+                </button>
+                <button class="btn btn-sm btn-light" id="reportRefresh"><i class="fa-solid fa-rotate"></i> <span class="d-none d-sm-inline">Refresh</span></button>
+                <button class="btn btn-sm btn-light" id="reportPrint"><i class="fa-solid fa-print"></i> <span class="d-none d-sm-inline">Print</span></button>
+                <button class="btn btn-sm btn-soft-purple" id="settingsToggle" data-bs-toggle="collapse" data-bs-target="#userSettingsPanel">
+                    <i class="fa-solid fa-gear"></i> <span class="d-none d-sm-inline">Settings</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="collapse" id="userSettingsPanel">
+            <div class="settings-panel">
+                <h3><i class="fa-solid fa-id-card"></i> User Settings</h3>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="settings-section">
+                            <h6><i class="fa-regular fa-user"></i> Profile</h6>
+
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <div class="avatar-preview" id="avatarPreview">DR</div>
+                                <div class="flex-grow-1">
+                                    <label>Display name</label>
+                                    <input type="text" id="displayNameInput" placeholder="Your name">
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label>Username</label>
+                                <input type="text" id="usernameInput" placeholder="username" readonly>
+                            </div>
+
+                            <div class="mb-3">
+                                <label>Email address</label>
+                                <input type="email" id="emailInput" placeholder="email@example.com">
+                            </div>
+
+                            <div class="mb-3">
+                                <label>Contact number</label>
+                                <input type="text" id="contactInput" placeholder="09XX XXX XXXX">
+                            </div>
+
+                            <button type="button" class="btn btn-sm btn-purple w-100" id="saveProfileBtn" style="display:block !important; visibility:visible !important; opacity:1 !important; margin-top:12px;">
+                                <i class="fa-regular fa-floppy-disk me-1"></i> Save Changes
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="settings-section">
+                            <h6><i class="fa-solid fa-lock"></i> Change Password</h6>
+
+                            <div class="mb-3">
+                                <label>Current password</label>
+                                <input type="password" id="currentPasswordInput" placeholder="Enter current password">
+                            </div>
+
+                            <div class="mb-3">
+                                <label>New password</label>
+                                <input type="password" id="newPasswordInput" placeholder="At least 8 characters">
+                            </div>
+
+                            <div class="mb-3">
+                                <label>Confirm new password</label>
+                                <input type="password" id="confirmPasswordInput" placeholder="Re-enter new password">
+                            </div>
+
+                            <button type="button" class="btn btn-sm btn-purple w-100" id="changePasswordBtn">
+                                <i class="fa-solid fa-key me-1"></i> Change password
+                            </button>
+
+                            <div class="mt-2 small" id="passwordStatus"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4" id="supervisorDecisionsRow" hidden>
+                    <h3><i class="fa-solid fa-clipboard-check"></i> My Recent Decisions</h3>
+                    <div id="supervisorDecisions" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-wrap">
+            <h1 class="page-title">Reports</h1>
+
+            <div class="filter-strip" id="filtersBar">
+                <div class="field"><label>From</label><input type="date" id="fStartDate" name="start_date"></div>
+                <div class="field"><label>To</label><input type="date" id="fEndDate" name="end_date"></div>
+                <div class="field"><label>Category</label><select id="fCategory" name="category_id"><option value="">Select category</option></select></div>
+                <div class="field"><label>Supplier</label><select id="fSupplier" name="supplier_id"><option value="">Select supplier</option></select></div>
+                <div class="field"><label>Stock</label>
+                    <select id="fStock" name="stock_status">
+                        <option value="">All stock</option>
+                        <option value="healthy">Healthy</option>
+                        <option value="low">Low Stock</option>
+                        <option value="out">Out of Stock</option>
+                    </select>
+                </div>
+                <div class="field"><label>Expiry</label>
+                    <select id="fExpiry" name="expiry_days">
+                        <option value="0">Expired / today</option>
+                        <option value="7">Within 7 days</option>
+                        <option value="15">Within 15 days</option>
+                        <option value="30" selected>Within 30 days</option>
+                        <option value="60">Within 60 days</option>
+                        <option value="90">Within 90 days</option>
+                    </select>
+                </div>
+                <div class="filter-buttons">
+                    <button class="btn btn-purple btn-sm" id="applyFilters"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+                    <button class="btn btn-soft-purple btn-sm" id="resetFilters"><i class="fa-solid fa-rotate-left"></i> Reset</button>
+                </div>
+            </div>
+
+            <div class="state-box" id="reportLoading">
+                <div class="spinner-border text-primary mb-3" style="width:1.6rem;height:1.6rem;"></div>
+                <div>Loading reports…</div>
+            </div>
+            <div class="err-box d-none" id="reportError"></div>
+
+            <div id="reportStack"></div>
+        </div>
+    </main>
+
+    <div id="toastMessage"></div>
+
+    <div class="modal fade" id="overallReportModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fa-solid fa-file-circle-plus me-2"></i> Overall Report</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="overallReportBody">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-3 text-muted">Generating…</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" data-bs-dismiss="modal">Close</button>
+                    <button class="btn btn-light" id="overallPrintBtn"><i class="fa-solid fa-print"></i> Print</button>
+                    <button class="btn btn-success" id="overallDownloadBtn"><i class="fa-solid fa-file-csv"></i> CSV</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script type="module">
+        import { initUserSettings } from './js/modules/user_settings.js';
+        import { initSupervisorActions } from './js/modules/supervisor_actions.js';
+        import { initOverallReport } from './js/modules/overall_report.js';
+        import { initReportsSingle } from './js/modules/reports_single.js?v=14';
+
+        function boot() {
+            initUserSettings();
+            initSupervisorActions();
+            initOverallReport();
+            initReportsSingle();
+        }
+        if (window.__drpSession) boot();
+        window.addEventListener('pharma:session-ready', boot);
+    </script>
+</body>
+</html>

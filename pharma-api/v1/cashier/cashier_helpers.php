@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../sales/sales_pos_helpers.php';
+require_once __DIR__ . '/../sales/sales_profit_helpers.php';
 
 function cashierCurrentUserId(): string
 {
@@ -45,6 +46,16 @@ function ensureCashierPaymentDiscountSchema(PDO $pdo): void
     if (!salesColumnExists($pdo, 'sales_payments', 'final_amount')) {
         $pdo->exec('ALTER TABLE sales_payments ADD COLUMN final_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER cashier_discount_amount');
     }
+    foreach (['vat_exempt_sales', 'vat_exemption_amount'] as $column) {
+        if (!salesColumnExists($pdo, 'sales_payments', $column)) {
+            $pdo->exec("ALTER TABLE sales_payments ADD COLUMN {$column} DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER final_amount");
+        }
+    }
+    foreach (['beneficiary_name', 'beneficiary_id'] as $column) {
+        if (!salesColumnExists($pdo, 'sales_payments', $column)) {
+            $pdo->exec("ALTER TABLE sales_payments ADD COLUMN {$column} VARCHAR(150) NULL AFTER final_amount");
+        }
+    }
 }
 
 function cashierDiscountAmount(string $discountType, float $customAmount, float $subtotal): float
@@ -56,10 +67,31 @@ function cashierPaymentTotals(
     float $subtotal,
     string $discountType,
     float $customAmount,
-    float $salesClerkDiscount = 0
+    float $salesClerkDiscount = 0,
+    float $eligibleGross = 0
 ): array
 {
     $discountType = in_array($discountType, ['none', 'senior', 'pwd', 'promo', 'custom'], true) ? $discountType : 'none';
+    if (in_array($discountType, ['senior', 'pwd'], true)) {
+        $eligibleGross = cashierMoney(min(max(0, $eligibleGross), $subtotal));
+        if ($eligibleGross <= 0) throw new RuntimeException('This order has no eligible medicine items.');
+        $vatExemptSales = cashierMoney($eligibleGross / SALES_VAT_DIVISOR);
+        $vatExemption = cashierMoney($eligibleGross - $vatExemptSales);
+        $statutoryDiscount = cashierMoney($vatExemptSales * 0.20);
+        $taxableGross = cashierMoney($subtotal - $eligibleGross);
+        $taxableSales = cashierMoney($taxableGross / SALES_VAT_DIVISOR);
+        return [
+            'discount_type' => $discountType,
+            'discount_amount' => $statutoryDiscount,
+            'sales_clerk_discount' => 0.0,
+            'total_discount' => cashierMoney($statutoryDiscount + $vatExemption),
+            'vat_exempt_sales' => $vatExemptSales,
+            'vat_exemption_amount' => $vatExemption,
+            'vatable_sales' => $taxableSales,
+            'vat' => cashierMoney($taxableGross - $taxableSales),
+            'final_amount' => cashierMoney($taxableGross + $vatExemptSales - $statutoryDiscount),
+        ];
+    }
     $totals = salesVatInclusivePaymentTotals(
         $subtotal,
         $salesClerkDiscount,
@@ -72,6 +104,8 @@ function cashierPaymentTotals(
         'discount_amount' => $totals['cashier_discount_amount'],
         'sales_clerk_discount' => $totals['sales_clerk_discount'],
         'total_discount' => $totals['discount_amount'],
+        'vat_exempt_sales' => 0.0,
+        'vat_exemption_amount' => 0.0,
         'vatable_sales' => $totals['vatable_sales'],
         'vat' => $totals['vat'],
         'final_amount' => $totals['total_amount'],
@@ -122,8 +156,12 @@ function cashierOrderRow(array $row): array
         'sales_clerk_discount' => cashierMoney($row['sales_clerk_discount'] ?? $row['discount'] ?? 0),
         'cashier_discount_type' => cashierDisplay($row['cashier_discount_type'] ?? 'none', 'none'),
         'cashier_discount_amount' => cashierMoney($row['cashier_discount_amount'] ?? 0),
+        'vat_exempt_sales' => cashierMoney($row['vat_exempt_sales'] ?? 0),
+        'vat_exemption_amount' => cashierMoney($row['vat_exemption_amount'] ?? 0),
+        'beneficiary_name' => cashierDisplay($row['beneficiary_name'] ?? ''),
+        'beneficiary_id' => cashierDisplay($row['beneficiary_id'] ?? ''),
         'final_amount' => $finalAmount,
-        'vatable_sales' => cashierMoney(max(0, $finalAmount - $vat)),
+        'vatable_sales' => cashierMoney(max(0, $finalAmount - $vat - cashierMoney($row['vat_exempt_sales'] ?? 0) + (in_array($row['cashier_discount_type'] ?? '', ['senior', 'pwd'], true) ? cashierMoney($row['cashier_discount_amount'] ?? 0) : 0))),
         'vat' => $vat,
         'total_amount' => cashierMoney($row['total_amount'] ?? 0),
         'cash_received' => cashierMoney($row['cash_received'] ?? 0),
@@ -168,6 +206,10 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             p.sales_clerk_discount AS payment_sales_clerk_discount,
             p.cashier_discount_type,
             p.cashier_discount_amount,
+            p.vat_exempt_sales,
+            p.vat_exemption_amount,
+            p.beneficiary_name,
+            p.beneficiary_id,
             p.final_amount,
             p.change_amount AS payment_change_amount,
             p.payment_method,
@@ -198,13 +240,26 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             i.unit_base_quantity,
             i.unit_price,
             i.line_total,
+            pc.category_name,
             p.status AS product_status,
             md.generic_name,
-            COALESCE(NULLIF(md.strength, ''), TRIM(CONCAT(COALESCE(md.strength_value, ''), COALESCE(md.strength_unit, '')))) AS medicine_strength,
+            classification_values.medicine_classification,
+            classification_values.medicine_classification_badge,
+            COALESCE(NULLIF(md.strength, ''), TRIM(CONCAT(COALESCE(md.strength_value, ''), CASE WHEN md.strength_unit IS NULL OR md.strength_unit = '' THEN '' ELSE CONCAT(' ', md.strength_unit) END))) AS medicine_strength,
+            md.dosage_form,
             TRIM(CONCAT(COALESCE(gd.net_weight, ''), CASE WHEN gd.unit IS NULL OR gd.unit = '' THEN '' ELSE CONCAT(' ', gd.unit) END)) AS grocery_net_weight
          FROM sales_order_items i
          LEFT JOIN product p ON p.product_id = i.product_id
+         LEFT JOIN product_categories pc ON pc.category_id = p.category_id
          LEFT JOIN medicine_details md ON md.product_id = i.product_id
+         LEFT JOIN (
+            SELECT psv.product_id,
+                   psv.value_text AS medicine_classification,
+                   CASE WHEN LOWER(TRIM(psv.value_text)) = 'prescription (rx)' THEN 'Rx' ELSE NULL END AS medicine_classification_badge
+            FROM product_specification_values psv
+            INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+            WHERE LOWER(TRIM(ps.specification_name)) = 'medicine classification'
+         ) classification_values ON classification_values.product_id = i.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = i.product_id
          WHERE i.order_id = :order_id
          ORDER BY i.order_item_id ASC"
@@ -217,7 +272,10 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             'product_name' => cashierDisplay($item['product_name'] ?? '', 'Item'),
             'specification' => cashierDisplay($item['specification'] ?? ''),
             'generic_name' => cashierDisplay($item['generic_name'] ?? ''),
+            'medicine_classification' => cashierDisplay($item['medicine_classification'] ?? ''),
+            'medicine_classification_badge' => cashierDisplay($item['medicine_classification_badge'] ?? ''),
             'strength' => cashierDisplay($item['medicine_strength'] ?? ''),
+            'dosage_form' => cashierDisplay($item['dosage_form'] ?? ''),
             'net_weight' => cashierDisplay($item['grocery_net_weight'] ?? ''),
             'quantity' => (int) (($item['selected_quantity'] ?? 0) ?: ($item['quantity'] ?? 0)),
             'selected_unit' => cashierDisplay($item['selected_unit'] ?? ''),
@@ -225,6 +283,7 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             'unit_base_quantity' => max(1, (int) ($item['unit_base_quantity'] ?? 1)),
             'unit_price' => cashierMoney($item['unit_price'] ?? 0),
             'line_total' => cashierMoney($item['line_total'] ?? 0),
+            'discount_eligible' => strcasecmp(trim((string) ($item['category_name'] ?? '')), 'Medicine') === 0,
             'product_status' => cashierDisplay($item['product_status'] ?? 'Active', 'Active'),
         ];
     }, $itemsStmt->fetchAll(PDO::FETCH_ASSOC));
@@ -286,7 +345,7 @@ function cashierAssertOrderProductsActive(PDO $pdo, int $orderId): void
 function cashierDeductShelfStock(PDO $pdo, int $orderId): void
 {
     $itemsStmt = $pdo->prepare(
-        'SELECT product_id, product_name, quantity
+        'SELECT order_item_id, product_id, product_name, quantity
          FROM sales_order_items
          WHERE order_id = :order_id
          ORDER BY order_item_id ASC'
@@ -301,11 +360,17 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
         }
 
         $stockStmt = $pdo->prepare(
-            "SELECT selling_stock_id, quantity_remaining
-             FROM product_selling_stock
-             WHERE product_id = :product_id
-               AND quantity_remaining > 0
-             ORDER BY expiration_date IS NULL, expiration_date ASC, created_at ASC, selling_stock_id ASC
+            "SELECT pss.selling_stock_id, pss.source_batch_id,
+                    pss.quantity_remaining - pss.expiry_quarantined_qty AS available_qty,
+                    ib.po_id, ib.unit_cost
+             FROM product_selling_stock pss
+             LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
+             WHERE pss.product_id = :product_id
+               AND pss.quantity_remaining > pss.expiry_quarantined_qty
+               AND (COALESCE(ib.expiry_date, pss.expiration_date) IS NULL OR COALESCE(ib.expiry_date, pss.expiration_date) > CURDATE())
+               AND COALESCE(ib.expiry_action_status, '') NOT IN ('For Disposal', 'Disposed')
+             ORDER BY COALESCE(ib.expiry_date, pss.expiration_date) IS NULL,
+                      COALESCE(ib.expiry_date, pss.expiration_date) ASC, pss.created_at ASC, pss.selling_stock_id ASC
              FOR UPDATE"
         );
         $stockStmt->execute([':product_id' => $productId]);
@@ -316,20 +381,48 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
                 break;
             }
 
-            $available = (int) ($batch['quantity_remaining'] ?? 0);
+            $available = (int) ($batch['available_qty'] ?? 0);
             $deduct = min($available, $remaining);
             if ($deduct <= 0) {
                 continue;
             }
 
             $update = $pdo->prepare(
-                'UPDATE product_selling_stock
+                "UPDATE product_selling_stock
                  SET quantity_remaining = quantity_remaining - :deduct
-                 WHERE selling_stock_id = :selling_stock_id'
+                 WHERE selling_stock_id = :selling_stock_id
+                   AND quantity_remaining - expiry_quarantined_qty >= :deduct_guard
+                   AND (expiration_date IS NULL OR expiration_date > CURDATE())
+                   AND (
+                       source_batch_id IS NULL
+                       OR EXISTS (
+                           SELECT 1 FROM inventory_batches ib
+                           WHERE ib.batch_id = product_selling_stock.source_batch_id
+                             AND ib.expiry_action_status NOT IN ('For Disposal', 'Disposed')
+                             AND (ib.expiry_date IS NULL OR ib.expiry_date > CURDATE())
+                       )
+                   )"
             );
             $update->execute([
                 ':deduct' => $deduct,
+                ':deduct_guard' => $deduct,
                 ':selling_stock_id' => $batch['selling_stock_id'],
+            ]);
+            if ($update->rowCount() !== 1) {
+                throw new RuntimeException('Shelf stock changed while completing the sale. Please review the order and try again.');
+            }
+
+            $allocation = $pdo->prepare('INSERT INTO sales_order_item_batch_allocations
+                (order_item_id, order_id, batch_id, po_id, quantity, unit_cost)
+                VALUES (:item_id, :order_id, :batch_id, :po_id, :quantity, :unit_cost)');
+            $unitCost = $batch['unit_cost'] === null ? null : (float) $batch['unit_cost'];
+            $allocation->execute([
+                ':item_id' => (int) $item['order_item_id'],
+                ':order_id' => $orderId,
+                ':batch_id' => $batch['source_batch_id'],
+                ':po_id' => $batch['po_id'],
+                ':quantity' => $deduct,
+                ':unit_cost' => $unitCost,
             ]);
 
             $remaining -= $deduct;

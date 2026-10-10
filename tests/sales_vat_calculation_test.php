@@ -39,4 +39,16 @@ assertMoney(80.36, $cashier['vatable_sales'], 'Cashier VATable Sales');
 assertMoney(9.64, $cashier['vat'], 'Cashier VAT');
 assertMoney(90.00, $cashier['final_amount'], 'Cashier final amount');
 
+$senior = cashierPaymentTotals(112, 'senior', 0, 5, 112);
+assertMoney(20.00, $senior['discount_amount'], 'Senior 20% discount on VAT-exclusive medicine');
+assertMoney(12.00, $senior['vat_exemption_amount'], 'Senior VAT exemption');
+assertMoney(80.00, $senior['final_amount'], 'Senior total replaces clerk discount');
+assertMoney(0.00, $senior['sales_clerk_discount'], 'Clerk discount replaced');
+
+$pwd = cashierPaymentTotals(212, 'pwd', 0, 0, 112);
+assertMoney(180.00, $pwd['final_amount'], 'Mixed basket PWD total');
+assertMoney(89.29, $pwd['vatable_sales'], 'Mixed basket taxable sales');
+assertMoney(10.71, $pwd['vat'], 'Mixed basket VAT');
+assertMoney(100.00, $pwd['vat_exempt_sales'], 'Mixed basket exempt sales');
+
 echo "VAT-inclusive calculation tests passed.\n";

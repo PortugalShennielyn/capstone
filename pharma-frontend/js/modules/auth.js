@@ -51,7 +51,24 @@ function mapSessionUser(user) {
     setDbText('settingsAccountType', accountType, hasDbValue(user.account_type));
     setDbText('settingsAccountRoles', roles, hasDbValue(user.roles) || hasDbValue(user.role));
     setDbText('settingsTenantName', tenantName, hasDbValue(user.tenant_name));
+    setText('settingsJoinedDate', user.created_at ? `Joined ${formatDateValue(user.created_at)}` : 'Joined date unavailable');
+    setText('userSettingsStatusBadge', user.user_status || 'Active');
+    const profileFields = {
+        profileSettingsFullName: user.full_name || '',
+        profileSettingsUsername: user.username || '',
+        profileSettingsEmail: user.email || '',
+        profileSettingsContact: user.contact_number || '',
+    };
+    Object.entries(profileFields).forEach(([id, value]) => {
+        const field = document.getElementById(id);
+        if (!field || document.activeElement === field) return;
+        if ('value' in field) field.value = value;
+        else field.textContent = value || 'Not configured';
+    });
+    setText('passwordResetEmail', email);
+    setText('settingsJoinedDateDetail', user.created_at ? formatDateValue(user.created_at) : 'Joined date unavailable');
     setDbText('settingsSessionSummary', sessionSummary, hasDbValue(user.account_id) || hasDbValue(user.auth_session_id));
+    setText('profileSessionSummary', `${displayName} • ${user.auth_session_created_at ? `Signed in ${formatDateValue(user.auth_session_created_at)}` : 'Login time unavailable'} • ${user.auth_session_is_revoked ? 'Revoked' : 'Active'}`);
     setText('tenantSettingsName', tenantName);
     setText('tenantSettingsNameInline', tenantName);
     setText('tenantSettingsInitials', initialsFromName(tenantName, 'TN'));
@@ -84,6 +101,7 @@ function mapSessionUser(user) {
 
 function initProfileIdentityEdit(user) {
     const editButton = document.getElementById('editProfileIdentityBtn');
+    if (document.getElementById('profileSettingsForm')) return;
     if (!editButton || editButton.dataset.profileEditBound === 'true') {
         return;
     }
@@ -160,6 +178,7 @@ function initProfileIdentityEdit(user) {
 
 function initPasswordUpdate() {
     const updateButton = document.getElementById('updatePasswordBtn');
+    if (document.getElementById('profilePasswordForm')) return;
     if (!updateButton || updateButton.dataset.passwordUpdateBound === 'true') {
         return;
     }
@@ -220,6 +239,99 @@ function initPasswordUpdate() {
         } catch (error) {
             PharmaUtils.modal.error('Unable to update password', error.message);
         }
+    });
+}
+
+function formatDateValue(value) {
+    const date = new Date(String(value).replace(' ', 'T'));
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function settingsMessage(id, message = '', type = 'error') {
+    const target = document.getElementById(id);
+    if (!target) return;
+    target.textContent = message;
+    target.className = `settings-form-message ${type}`;
+    target.hidden = !message;
+}
+
+function initProfileSettings() {
+    const profileForm = document.getElementById('profileSettingsForm');
+    if (!profileForm || profileForm.dataset.bound === 'true') return;
+    profileForm.dataset.bound = 'true';
+
+    document.querySelectorAll('[data-settings-tab]').forEach((button) => button.addEventListener('click', () => {
+        const tab = button.dataset.settingsTab;
+        document.querySelectorAll('[data-settings-tab]').forEach((item) => item.classList.toggle('active', item === button));
+        document.querySelectorAll('[data-settings-panel]').forEach((panel) => { panel.hidden = panel.dataset.settingsPanel !== tab; });
+    }));
+    document.getElementById('editProfileIdentityBtn')?.addEventListener('click', () => {
+        profileForm.classList.remove('is-readonly');
+        profileForm.querySelectorAll('input').forEach((input) => { input.readOnly = false; });
+        profileForm.querySelector('.profile-settings-actions').hidden = false;
+        document.getElementById('editProfileIdentityBtn').hidden = true;
+    });
+    document.getElementById('profileSettingsCancel')?.addEventListener('click', () => {
+        mapSessionUser(currentSessionUser || {});
+        profileForm.classList.add('is-readonly');
+        profileForm.querySelectorAll('input').forEach((input) => { input.readOnly = true; });
+        profileForm.querySelector('.profile-settings-actions').hidden = true;
+        document.getElementById('editProfileIdentityBtn').hidden = false;
+    });
+
+    profileForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        settingsMessage('profileSettingsError');
+        const data = Object.fromEntries(new FormData(profileForm).entries());
+        if (!data.full_name || !data.username || !data.email) return settingsMessage('profileSettingsError', 'Full name, username, and email are required.');
+        if (!/^[A-Za-z0-9._-]+$/.test(data.username)) return settingsMessage('profileSettingsError', 'Username can only include letters, numbers, dots, underscores, and hyphens.');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) return settingsMessage('profileSettingsError', 'Enter a valid email address.');
+        try {
+            const updatedUser = await PharmaUtils.safeFetch(`${API_BASE_URL}/auth/update_profile.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            mapSessionUser(updatedUser);
+            profileForm.classList.add('is-readonly');
+            profileForm.querySelectorAll('input').forEach((input) => { input.readOnly = true; });
+            profileForm.querySelector('.profile-settings-actions').hidden = true;
+            document.getElementById('editProfileIdentityBtn').hidden = false;
+            settingsMessage('profileSettingsError');
+            PharmaUtils.toast.success('Profile settings saved.');
+        } catch (error) { settingsMessage('profileSettingsError', error.message || 'Unable to save profile settings.'); }
+    });
+    document.querySelectorAll('.password-toggle').forEach((button) => button.addEventListener('click', () => {
+        const input = button.closest('.password-field')?.querySelector('input');
+        if (!input) return;
+        const visible = input.type === 'text';
+        input.type = visible ? 'password' : 'text';
+        button.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+        button.innerHTML = `<i class="fa-regular fa-eye${visible ? '' : '-slash'}"></i>`;
+    }));
+    document.querySelectorAll('[data-notification-key]').forEach((input) => {
+        const storageKey = `drp_notification_${currentSessionUser?.user_id || 'current'}_${input.dataset.notificationKey}`;
+        input.checked = localStorage.getItem(storageKey) !== '0';
+        input.addEventListener('change', () => localStorage.setItem(storageKey, input.checked ? '1' : '0'));
+    });
+
+    const passwordForm = document.getElementById('profilePasswordForm');
+    passwordForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        settingsMessage('profilePasswordError'); settingsMessage('profilePasswordSuccess');
+        const data = Object.fromEntries(new FormData(passwordForm).entries());
+        if (!data.current_password || !data.new_password || !data.confirm_password) return settingsMessage('profilePasswordError', 'All password fields are required.');
+        if (data.new_password.length < 8 || data.new_password.length > 72) return settingsMessage('profilePasswordError', 'New password must be between 8 and 72 characters.');
+        if (data.new_password !== data.confirm_password) return settingsMessage('profilePasswordError', 'New password and confirmation do not match.');
+        try {
+            const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/auth/update_password.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            passwordForm.reset(); settingsMessage('profilePasswordSuccess', response.message || 'Password updated.', 'success');
+        } catch (error) { settingsMessage('profilePasswordError', error.message || 'Unable to update password.'); }
+    });
+    document.getElementById('requestPasswordResetBtn')?.addEventListener('click', async () => {
+        const email = document.getElementById('passwordResetEmail')?.textContent.trim() || '';
+        settingsMessage('passwordResetMessage');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return settingsMessage('passwordResetMessage', 'No registered email address is available for this account.');
+        try {
+            const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/auth/request_password_reset.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+            settingsMessage('passwordResetMessage', response.message || 'If the email is registered, a reset link has been sent.', 'success');
+        } catch (error) { settingsMessage('passwordResetMessage', error.message || 'Unable to request a reset link.'); }
     });
 }
 
@@ -416,7 +528,9 @@ function initLogoutLinks() {
             try {
                 await PharmaUtils.safeFetch(`${API_BASE_URL}/auth/logout.php`, {
                     method: 'POST',
-                    credentials: 'include'
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: 'logout' })
                 });
             } finally {
                 clearTabToken();
@@ -441,6 +555,7 @@ async function verifySession() {
             });
 
         mapSessionUser(user);
+        initProfileSettings();
         initProfileIdentityEdit(user);
         initPasswordUpdate();
         initSessionReview();

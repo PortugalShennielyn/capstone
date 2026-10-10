@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/id_helpers.php';
 require_once __DIR__ . '/rbac.php';
+require_once __DIR__ . '/audit_log.php';
 
 function tableExists(PDO $pdo, string $table): bool
 {
@@ -71,6 +72,21 @@ function recordLoginAttempt(PDO $pdo, string $username, ?string $userId, bool $s
         ':user_agent' => clientUserAgent(),
         ':is_successful' => $success ? 1 : 0,
         ':failure_reason' => $failureReason,
+    ]);
+}
+
+function auditAuthenticationEvent(PDO $pdo, string $action, array $context = []): void
+{
+    recordAuditLog($pdo, [
+        'module' => 'Authentication',
+        'action' => $action,
+        'success' => $context['success'] ?? true,
+        'user_id' => $context['user_id'] ?? ($_SESSION['user_id'] ?? null),
+        'user_name' => $context['user_name'] ?? auditCurrentUserName(),
+        'role' => $context['role'] ?? ($_SESSION['role'] ?? null),
+        'auth_session_id' => $context['auth_session_id'] ?? ($_SESSION['auth_session_id'] ?? null),
+        'details' => $context['details'] ?? null,
+        'idempotency_key' => $context['idempotency_key'] ?? null,
     ]);
 }
 
@@ -355,6 +371,26 @@ function revokeCurrentAuthSession(PDO $pdo, string $reason = 'logout'): void
         return;
     }
 
+    $authSessionId = trim((string) ($_SESSION['auth_session_id'] ?? ''));
+    if ($authSessionId === '' && $presentedToken !== '') {
+        $loaded = loadAuthSessionByPresentedToken($pdo);
+        $authSessionId = trim((string) ($loaded['auth_session_id'] ?? ''));
+        if ($loaded && empty($_SESSION['user_id'])) {
+            hydrateSessionFromAuthRecord($pdo, $loaded);
+        }
+    }
+    $auditAction = match (strtolower(trim($reason))) {
+        'timeout', 'session_timeout', 'inactivity' => 'SESSION_TIMEOUT',
+        'expired', 'session_expired' => 'SESSION_EXPIRED',
+        'revoked', 'admin_revoked', 'session_revoked' => 'SESSION_REVOKED',
+        default => 'LOGOUT',
+    };
+    auditAuthenticationEvent($pdo, $auditAction, [
+        'auth_session_id' => $authSessionId,
+        'details' => $auditAction === 'LOGOUT' ? 'User logged out' : $reason,
+        'idempotency_key' => $authSessionId !== '' ? $authSessionId . ':' . $auditAction : null,
+    ]);
+
     if ($presentedToken !== '') {
         $stmt = $pdo->prepare(
             'UPDATE auth_sessions
@@ -455,9 +491,21 @@ function requireValidSession(PDO $pdo, array $allowedRoles = []): void
             if ((int) $authSession['is_revoked'] === 1
                 || (int) $authSession['is_active'] !== 1
                 || (int) $authSession['is_deleted'] === 1) {
+                auditAuthenticationEvent($pdo, 'SESSION_REVOKED', [
+                    'auth_session_id' => (string) ($authSession['auth_session_id'] ?? ''),
+                    'user_id' => $authSession['user_id'] ?? null,
+                    'details' => 'Session is revoked or inactive.',
+                    'idempotency_key' => ($authSession['auth_session_id'] ?? '') . ':SESSION_REVOKED',
+                ]);
                 sendUnauthorizedResponse();
             }
             if ((int) ($authSession['is_expired'] ?? 0) === 1) {
+                auditAuthenticationEvent($pdo, 'SESSION_EXPIRED', [
+                    'auth_session_id' => (string) ($authSession['auth_session_id'] ?? ''),
+                    'user_id' => $authSession['user_id'] ?? null,
+                    'details' => 'Session reached expires_at.',
+                    'idempotency_key' => ($authSession['auth_session_id'] ?? '') . ':SESSION_EXPIRED',
+                ]);
                 sendUnauthorizedResponse('Session expired. Please sign in again.');
             }
             if (!hydrateSessionFromAuthRecord($pdo, $authSession)) {
@@ -511,6 +559,7 @@ function currentSessionPayload(): array
         'last_name' => $_SESSION['last_name'] ?? null,
         'role' => $_SESSION['role'] ?? '',
         'user_status' => $_SESSION['user_status'] ?? null,
+        'created_at' => $_SESSION['user_created_at'] ?? null,
         'roles' => $_SESSION['roles'] ?? (isset($_SESSION['role']) ? [$_SESSION['role']] : []),
         'role_identifiers' => $_SESSION['role_identifiers'] ?? [],
         'account_id' => $_SESSION['account_id'] ?? null,

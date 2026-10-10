@@ -1,12 +1,17 @@
 <?php
+require_once __DIR__ . '/../sales/sales_profit_helpers.php';
 
 function reportNormalizeRole(string $role): string
 {
     $role = strtolower(trim($role));
     $role = str_replace([' ', '-'], '_', $role);
-    return str_replace(['sales_clerk', 'ro_sales_clerk'], ['salesclerk', 'ro_salesclerk'], $role);
+    return match ($role) {
+        'sales_clerk' => 'salesclerk',
+        'ro_sales_clerk' => 'ro_salesclerk',
+        'manager/owner', 'owner/manager', 'manager_owner', 'owner_manager', 'manager_/_owner' => 'manager',
+        default => $role,
+    };
 }
-
 function reportSessionRoles(): array
 {
     $roles = array_merge(
@@ -32,9 +37,40 @@ function reportRoleContext(): array
         'user_id' => (string) ($_SESSION['user_id'] ?? ''),
         'user_name' => (string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User'),
         'available_categories' => $management
-            ? ['overview', 'sales', 'inventory', 'purchases', 'expiry', 'products', 'staff']
+            ? ['overview', 'sales', 'inventory', 'purchases', 'expiry', 'supplier', 'products', 'staff']
             : ($supervisor ? ['overview', 'inventory', 'purchases', 'expiry', 'products']
-            : ($cashier ? ['sales'] : ['sales', 'products', 'staff'])),
+            : ($cashier ? ['sales'] : ($clerk ? ['sales', 'products'] : []))),
+    ];
+}
+
+function reportMyOrderStatusChart(PDO $pdo, array $filters, array $role): ?array
+{
+    if (!empty($role['management']) || !empty($role['supervisor']) || (empty($role['cashier']) && empty($role['sales_clerk']))) return null;
+    if (!in_array($filters['report_view'] ?? '', ['', 'Sales Summary'], true)) return null;
+    $params = [':workflow_start'=>$filters['start_date'], ':workflow_end'=>$filters['date_end_exclusive']];
+    $scope = [];
+    if (!empty($role['sales_clerk'])) {
+        $scope[] = 'o.sales_clerk_id=:workflow_clerk_id';
+        $params[':workflow_clerk_id'] = $role['user_id'];
+    }
+    if (!empty($role['cashier'])) {
+        $scope[] = "(o.status='waiting_cashier' OR o.assigned_cashier_id=:workflow_cashier_id OR EXISTS (SELECT 1 FROM sales_payments wp WHERE wp.order_id=o.order_id AND wp.cashier_id=:workflow_payment_cashier_id))";
+        $params[':workflow_cashier_id'] = $role['user_id'];
+        $params[':workflow_payment_cashier_id'] = $role['user_id'];
+    }
+    $rows = reportRows($pdo, "SELECT CASE o.status
+        WHEN 'draft' THEN 'Draft' WHEN 'waiting_cashier' THEN 'Waiting for cashier'
+        WHEN 'accepted_by_cashier' THEN 'Accepted by cashier' WHEN 'processing_payment' THEN 'Processing payment'
+        WHEN 'completed' THEN 'Completed' WHEN 'cancelled' THEN 'Cancelled' WHEN 'rejected' THEN 'Rejected'
+        ELSE 'Other' END label, COUNT(*) value
+        FROM sales_orders o
+        WHERE o.created_at>=:workflow_start AND o.created_at<:workflow_end
+          AND (".implode(' OR ', $scope).")
+        GROUP BY o.status ORDER BY value DESC", $params);
+    return [
+        'id'=>'my-order-status','title'=>'My orders by status','type'=>'bar','orientation'=>'horizontal','tone'=>'status','rows'=>$rows,
+        'href'=>!empty($role['cashier'])?'cashier_transaction_history.html':'sales_clerk_orders.html',
+        'link_label'=>!empty($role['cashier'])?'Open transactions':'Open order queue',
     ];
 }
 
@@ -93,7 +129,8 @@ function reportFilters(): array
         'po_status' => trim((string) ($_GET['po_status'] ?? '')),
         'payment_state' => strtolower(trim((string) ($_GET['payment_state'] ?? ''))),
         'stock_status' => strtolower(trim((string) ($_GET['stock_status'] ?? ''))),
-        'expiry_days' => min(3650, max(0, (int) ($_GET['expiry_days'] ?? 30))),
+        'rx_filter' => in_array(strtolower(trim((string) ($_GET['rx_filter'] ?? ''))), ['rx','otc'], true) ? strtolower(trim((string) $_GET['rx_filter'])) : '',
+        'expiry_days' => min(3650, max(0, (int) ($_GET['expiry_days'] ?? 365))),
         'report_view' => mb_substr(trim((string) ($_GET['report_view'] ?? '')), 0, 80),
         'group_by' => strtolower(trim((string) ($_GET['group_by'] ?? 'day'))),
         'search' => mb_substr(trim((string) ($_GET['search'] ?? '')), 0, 100),
@@ -145,6 +182,31 @@ function reportPaidSalesSubquery(): string
             WHERE payment_status IN ('paid','refunded')
             GROUP BY order_id
             HAVING SUM(payment_status='paid') > 0";
+}
+
+function reportKnownCostToSalesRatio(PDO $pdo): ?float
+{
+    $paid = reportPaidSalesSubquery();
+    $row = reportRow($pdo, "SELECT
+        SUM(CASE WHEN batch_cost.allocated_quantity >= sale_item.quantity AND batch_cost.missing_cost_quantity=0
+            THEN batch_cost.cost_of_goods ELSE sale_item.quantity*known_cost.unit_cost END) known_cost_of_goods,
+        SUM(GREATEST(pay.final_amount-(CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END),0)
+            * sale_item.line_total/NULLIF(o.subtotal,0)) known_net_sales
+        FROM sales_orders o
+        INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+        INNER JOIN sales_order_items sale_item ON sale_item.order_id=o.order_id
+        LEFT JOIN (SELECT order_item_id,SUM(quantity) allocated_quantity,
+                SUM(CASE WHEN unit_cost IS NOT NULL AND unit_cost>0 THEN quantity*unit_cost ELSE 0 END) cost_of_goods,
+                SUM(CASE WHEN unit_cost IS NULL OR unit_cost<=0 THEN quantity ELSE 0 END) missing_cost_quantity
+            FROM sales_order_item_batch_allocations GROUP BY order_item_id) batch_cost ON batch_cost.order_item_id=sale_item.order_item_id
+        LEFT JOIN (SELECT product_id,MIN(unit_cost) unit_cost FROM inventory_batches GROUP BY product_id
+            HAVING MIN(unit_cost)>0 AND MIN(unit_cost)=MAX(unit_cost)) known_cost ON known_cost.product_id=sale_item.product_id
+        WHERE o.status='completed' AND o.subtotal>0
+          AND ((batch_cost.allocated_quantity >= sale_item.quantity AND batch_cost.missing_cost_quantity=0)
+            OR known_cost.unit_cost IS NOT NULL)");
+    $netSales = (float)($row['known_net_sales'] ?? 0);
+    if ($netSales <= 0) return null;
+    return (float)($row['known_cost_of_goods'] ?? 0) / $netSales;
 }
 
 function reportSalesWhere(array $filters, array $role, string $alias = 'o'): array
@@ -215,9 +277,26 @@ function reportSalesItemScopeSubquery(array $filters, array &$params, string $sc
         throw new InvalidArgumentException('A product filter is required for scoped sales totals.');
     }
     return "SELECT scope_item.order_id, SUM(scope_item.quantity) item_count, SUM(scope_item.line_total) line_subtotal,
+            SUM(CASE WHEN batch_cost.allocated_quantity >= scope_item.quantity AND batch_cost.missing_cost_quantity=0 THEN batch_cost.cost_of_goods
+                WHEN known_cost.unit_cost IS NOT NULL THEN scope_item.quantity*known_cost.unit_cost ELSE COALESCE(batch_cost.cost_of_goods,0) END) cost_of_goods,
+            SUM(CASE WHEN (batch_cost.allocated_quantity >= scope_item.quantity AND batch_cost.missing_cost_quantity=0) OR known_cost.unit_cost IS NOT NULL THEN scope_item.quantity
+                ELSE COALESCE(batch_cost.allocated_quantity,0) END) allocated_quantity,
+            SUM(CASE WHEN (batch_cost.allocated_quantity >= scope_item.quantity AND batch_cost.missing_cost_quantity=0) OR known_cost.unit_cost IS NOT NULL THEN 0
+                ELSE COALESCE(batch_cost.missing_cost_quantity,0)+GREATEST(scope_item.quantity-COALESCE(batch_cost.allocated_quantity,0),0) END) missing_cost_quantity,
+            SUM(scope_item.line_total * CASE WHEN (batch_cost.allocated_quantity >= scope_item.quantity AND batch_cost.missing_cost_quantity=0)
+                    OR known_cost.unit_cost IS NOT NULL THEN 0
+                ELSE LEAST(1,(COALESCE(batch_cost.missing_cost_quantity,0)+GREATEST(scope_item.quantity-COALESCE(batch_cost.allocated_quantity,0),0))/NULLIF(scope_item.quantity,0)) END) missing_cost_line_subtotal,
             GROUP_CONCAT(CONCAT(scope_item.product_name,' (x',scope_item.quantity,')') ORDER BY scope_item.order_item_id SEPARATOR ', ') item_summary
         FROM sales_order_items scope_item
         INNER JOIN product scope_product ON scope_product.product_id = scope_item.product_id
+        LEFT JOIN (SELECT order_item_id,SUM(quantity) allocated_quantity,
+                          SUM(CASE WHEN unit_cost IS NOT NULL AND unit_cost>0 THEN quantity*unit_cost ELSE 0 END) cost_of_goods,
+                          SUM(CASE WHEN unit_cost IS NULL OR unit_cost<=0 THEN quantity ELSE 0 END) missing_cost_quantity
+                   FROM sales_order_item_batch_allocations GROUP BY order_item_id) batch_cost
+          ON batch_cost.order_item_id=scope_item.order_item_id
+        LEFT JOIN (SELECT product_id,MIN(unit_cost) unit_cost FROM inventory_batches GROUP BY product_id
+                   HAVING MIN(unit_cost)>0 AND MIN(unit_cost)=MAX(unit_cost)) known_cost
+          ON known_cost.product_id=scope_item.product_id
         WHERE " . implode(' AND ', $conditions) . '
         GROUP BY scope_item.order_id';
 }
@@ -280,9 +359,10 @@ function reportFilterOptions(PDO $pdo, array $role): array
 
 function reportSystem(PDO $pdo, array $role, array $filters): array
 {
-    $settings = reportRow($pdo, 'SELECT pharmacy_name, timezone FROM system_settings ORDER BY setting_id LIMIT 1');
+    $settings = reportRow($pdo, 'SELECT pharmacy_name, pharmacy_address, timezone FROM system_settings ORDER BY setting_id LIMIT 1');
     return [
         'pharmacy_name' => (string) ($settings['pharmacy_name'] ?? 'Dr. R Pharmacy'),
+        'pharmacy_address' => (string) ($settings['pharmacy_address'] ?? ''),
         'timezone' => (string) ($settings['timezone'] ?? 'Asia/Manila'),
         'generated_at' => date(DATE_ATOM),
         'generated_by' => $role['user_name'],

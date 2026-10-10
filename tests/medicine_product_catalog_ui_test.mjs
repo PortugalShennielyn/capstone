@@ -4,7 +4,8 @@ import {
     formatMedicineSpecificationLines,
     formatProductCatalogSpecificationLines,
     formatProductContainer,
-    formatProductSpecification
+    formatProductSpecification,
+    medicineCatalogSpecificationParts
 } from '../pharma-frontend/js/modules/product_specification.js';
 
 const products = await readFile(new URL('../pharma-frontend/js/modules/products.js', import.meta.url), 'utf8');
@@ -68,6 +69,16 @@ assert.deepEqual(formatMedicineSpecificationLines({
         { specification_name: 'Flavor', value_text: 'strawberry' }
     ]
 }), ['Powder for Suspension', '250 mg / 5 mL', '60 mL • Strawberry']);
+assert.deepEqual(medicineCatalogSpecificationParts({
+    ...prescription,
+    specifications: [...prescription.specifications, { specification_name: 'Flavor', value_text: 'strawberry' }]
+}), {
+    dosageForm: 'Powder for Suspension',
+    strength: '250 mg / 5 mL',
+    details: '60 mL • Strawberry',
+    detailCount: 2,
+    hasConcentration: true
+});
 assert.equal(formatProductContainer({ ...prescription, package_type: 'Bottle' }), 'Bottle');
 
 const otcTablet = {
@@ -98,6 +109,11 @@ assert.deepEqual(formatMedicineSpecificationLines({
         { specification_name: 'Package Type', value_text: 'Blister Pack' }
     ]
 }), ['Tablet • 10 mg • 100 tablets']);
+assert.equal(medicineCatalogSpecificationParts({
+    category_name: 'Medicine',
+    type_name: 'Tablet',
+    specifications: [{ specification_name: 'Pack Content', value_number: '100', unit_symbol: 'tablet' }]
+}).details, '100 tablets');
 
 assert.deepEqual(formatMedicineSpecificationLines({
     category_name: 'Medicine',

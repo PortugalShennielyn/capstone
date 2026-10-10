@@ -379,8 +379,8 @@ function dashboardSalesPayload(PDO $pdo, array &$missing): array
 }
 
 try {
-    $configuredTimezone = (string) dashboardScalar($pdo, 'SELECT timezone FROM system_settings ORDER BY setting_id LIMIT 1', [], 'Asia/Manila');
     try {
+        $configuredTimezone = (string) dashboardScalar($pdo, 'SELECT timezone FROM system_settings ORDER BY setting_id LIMIT 1', [], 'Asia/Manila');
         $dashboardTimezone = new DateTimeZone($configuredTimezone ?: 'Asia/Manila');
     } catch (Throwable $timezoneError) {
         $configuredTimezone = 'Asia/Manila';
@@ -388,6 +388,59 @@ try {
     }
     date_default_timezone_set($configuredTimezone);
     $pdo->exec('SET time_zone = ' . $pdo->quote((new DateTime('now', $dashboardTimezone))->format('P')));
+
+    // Keep the shared alerts menu independent from the heavier dashboard report.
+    // This lets alerts load even when unrelated sales or activity sources are unavailable.
+    if (($_GET['scope'] ?? '') === 'alerts') {
+        $inventoryStockSql = inventoryStockSummarySql();
+        $stockRows = dashboardRows(
+            $pdo,
+            "SELECT stock.stock_status, COUNT(*) AS total
+             FROM ({$inventoryStockSql}) stock
+             INNER JOIN product p ON p.product_id = stock.product_id
+             WHERE COALESCE(NULLIF(TRIM(p.status), ''), 'Active') <> 'Inactive'
+             GROUP BY stock.stock_status"
+        );
+        $lowStock = 0;
+        $outOfStock = 0;
+        foreach ($stockRows as $stockRow) {
+            if (($stockRow['stock_status'] ?? '') === 'Low Stock') $lowStock = (int) $stockRow['total'];
+            if (($stockRow['stock_status'] ?? '') === 'Out of Stock') $outOfStock = (int) $stockRow['total'];
+        }
+
+        $expiringRows = dashboardRows(
+            $pdo,
+            "SELECT ib.expiry_date,
+                    COALESCE(ib.expiry_alert_days, pi.expiry_alert_days, 30) AS expiry_alert_days,
+                    DATEDIFF(ib.expiry_date, CURDATE()) AS days_left
+             FROM inventory_batches ib
+             INNER JOIN product p ON p.product_id = ib.product_id
+             LEFT JOIN product_inventory pi ON pi.inventory_id = ib.legacy_inventory_id
+             LEFT JOIN (
+                 SELECT source_batch_id, SUM(quantity_remaining) AS shelf_qty
+                 FROM product_selling_stock GROUP BY source_batch_id
+             ) selling ON selling.source_batch_id = ib.batch_id
+             WHERE ib.batch_status = 'active'
+               AND ib.storage_qty + COALESCE(selling.shelf_qty, 0) > 0"
+        );
+        $expiringSoon = 0;
+        foreach ($expiringRows as $expiryRow) {
+            if (inventoryExpiryStatus(
+                $expiryRow['expiry_date'] ?? null,
+                $expiryRow['days_left'] ?? null,
+                (int) ($expiryRow['expiry_alert_days'] ?? 30)
+            ) === 'Expiring Soon') $expiringSoon++;
+        }
+
+        echo json_encode([
+            'status' => 'success',
+            'out_of_stock' => $outOfStock,
+            'low_stock' => $lowStock,
+            'expiring_soon' => $expiringSoon,
+            'pending_po' => (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM purchase_orders WHERE status = 'Pending'")
+        ]);
+        exit();
+    }
 
     $missing = [];
     $sales = dashboardSalesPayload($pdo, $missing);
@@ -591,7 +644,7 @@ try {
     $expiryRows = dashboardRows(
         $pdo,
         "SELECT ib.batch_id, p.product_name, p.brand_name, ib.expiry_date,
-                COALESCE(pi.expiry_alert_days, 30) AS expiry_alert_days,
+                COALESCE(ib.expiry_alert_days, pi.expiry_alert_days, 30) AS expiry_alert_days,
                 DATEDIFF(ib.expiry_date, CURDATE()) AS days_left,
                 ib.storage_qty + COALESCE(selling.shelf_qty, 0) AS on_hand
          FROM inventory_batches ib

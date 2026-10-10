@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+ <script src="./js/navbar_profile.js?v=1"></script><script src="./js/navbar_bootstrap.js?v=11"></script>
+ <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>Dr. R Pharmacy | Returns &amp; Disposals</title>
+ <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+ <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+ <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+ <link href="./css/navbar.css?v=42" rel="stylesheet"><link href="./css/inventory_resolution.css?v=2" rel="stylesheet">
+ <script src="./js/navbar.js?v=97" defer></script><script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+</head>
+<body>
+ <div id="navbar-container"></div>
+ <main class="main-wrapper" id="mainWrapper">
+  <header class="topbar"><div class="page-title-mini"><button class="drp-sidebar-open-toggle" id="sidebarOpenToggle" type="button" aria-label="Open sidebar" aria-expanded="false"><i class="fa-solid fa-bars" aria-hidden="true"></i></button><strong>Returns &amp; Disposals</strong></div><span class="topbar-spacer"></span><span class="topbar-date" id="currentDate"></span></header>
+  <section class="resolution-page">
+   <div class="resolution-hero"><div><h1 id="caseHeadline">Loading cases…</h1><p><strong id="openCaseValue">₱0.00</strong> of stock pulled out and not yet resolved</p></div><div class="resolution-hero-actions"><div class="resolution-type-tabs" role="tablist" aria-label="Case type"><button type="button" class="active" data-case-type="All" role="tab" aria-selected="true">All</button><button type="button" data-case-type="Return" role="tab" aria-selected="false">Returns</button><button type="button" data-case-type="Disposal" role="tab" aria-selected="false">Disposals</button></div><a class="resolution-quiet-link" href="expiry_monitoring.html">Expiry Monitoring</a></div></div>
+   <div class="resolution-overdue" id="overdueNotice" hidden><span><i class="fa-regular fa-clock"></i> <strong id="overdueCount">0</strong> returns waiting more than 14 days for replacement. Follow up with the supplier.</span><button id="showOverdueButton" type="button">Show them</button></div>
+   <div class="resolution-card"><div class="resolution-toolbar"><div class="resolution-chips" id="caseStatusChips"></div><label class="resolution-search"><i class="fa-solid fa-magnifying-glass"></i><input id="caseSearch" type="search" placeholder="Search case, product or supplier" aria-label="Search cases"></label></div><div class="resolution-table-scroll"><table class="resolution-table" id="casesTable"><thead><tr><th>Case</th><th>Product</th><th>Qty</th><th>Value</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody><tr><td colspan="7" class="resolution-empty">Loading cases…</td></tr></tbody></table></div></div>
+  </section>
+ </main>
+ <div class="resolution-drawer" id="caseDrawer" aria-hidden="true"><div class="resolution-backdrop" data-close-case></div><aside class="resolution-panel" role="dialog" aria-modal="true" aria-labelledby="caseDrawerTitle"><header class="resolution-panel-header"><div><div class="resolution-title-line"><h2 id="caseDrawerTitle">Case</h2><span class="resolution-status" id="caseDrawerStatus"></span></div><p id="caseDrawerSubtitle"></p></div><button type="button" class="resolution-close" data-close-case aria-label="Close"><i class="fa-solid fa-xmark"></i></button></header><div class="resolution-panel-body"><div class="resolution-case-summary"><strong id="caseDrawerQty">0 units</strong><small id="caseDrawerValue">₱0.00 at cost · Batch —</small></div><ol class="resolution-progress" id="caseProgress"></ol><p class="resolution-warning" id="caseOverdueHint" hidden></p><div class="resolution-next-step" id="caseNextStep"></div><section class="resolution-details"><h3>Details</h3><dl id="caseDetails"></dl></section><section class="resolution-details"><h3>Activity</h3><ol id="caseActivity" class="resolution-activity"></ol></section></div></aside></div>
+ <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script type="module" src="./js/modules/returns_disposals.js?v=2"></script>
+</body>
+</html>

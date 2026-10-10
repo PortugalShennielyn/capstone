@@ -2,6 +2,7 @@ import API_BASE_URL from "../config/config.js";
 import { ensurePageTabSession, tabToken } from "./auth_guard.js?v=27";
 import { primaryAccessRole } from "./rbac.js";
 import { formatProductSpecification as productSpecification } from "./product_specification.js?v=8";
+import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=1";
 
 let products = [];
 let requests = [];
@@ -24,11 +25,11 @@ const selectedItems = new Map();
 const inventoryByProduct = new Map();
 const productById = new Map();
 const activeRequestStatuses = new Set([
-    "Draft",
-    "Pending Supervisor Approval",
-    "Approved",
-    "Revision Requested",
-    "Partially Ordered",
+    "draft",
+    "pending supervisor approval",
+    "approved",
+    "revision requested",
+    "partially ordered",
 ]);
 const creatorRoles = new Set(["super_admin", "admin", "manager"]);
 const esc = (value) =>
@@ -105,23 +106,52 @@ function replenishmentType(productId) {
     return "";
 }
 
-function activeConflict(productId, excludePrId = "") {
-    return (
-        requests.find((request) => {
-            if (
-                String(request.pr_id) === String(excludePrId) ||
-                !activeRequestStatuses.has(request.status)
-            )
-                return false;
-            const item = (request.items || []).find(
+function normalizedRequestStatus(request) {
+    return String(request?.workflow_status || request?.status || "").trim().toLowerCase();
+}
+
+function requestSortTime(request) {
+    const value = request?.created_at || request?.submitted_at || request?.request_date || "";
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? time : 0;
+}
+
+function productRequestHistory(productId, excludePrId = "") {
+    return requests
+        .filter((request) => {
+            if (String(request.pr_id) === String(excludePrId)) return false;
+            return (request.items || []).some(
                 (candidate) => String(candidate.product_id) === String(productId),
             );
-            return (
-                Boolean(item) &&
-                (request.status !== "Approved" || Number(item.remaining_qty || 0) > 0)
-            );
-        }) || null
+        })
+        .sort((a, b) => requestSortTime(b) - requestSortTime(a));
+}
+
+function activeConflict(productId, excludePrId = "") {
+    const latest = productRequestHistory(productId, excludePrId)[0] || null;
+    if (!latest) return null;
+
+    const status = normalizedRequestStatus(latest);
+    if (!activeRequestStatuses.has(status)) return null;
+
+    const item = (latest.items || []).find(
+        (candidate) => String(candidate.product_id) === String(productId),
     );
+    if (!item) return null;
+    return status !== "approved" || Number(item.remaining_qty || 0) > 0 ? latest : null;
+}
+
+function conflictBadgeLabel(request) {
+    const status = normalizedRequestStatus(request);
+    if (status === "pending supervisor approval") return "Pending";
+    if (status === "revision requested") return "Revision";
+    if (status === "draft") return "Draft";
+    if (status === "partially ordered") return "Partial";
+    return "Active";
+}
+
+function isHiddenApprovedConflict(productId) {
+    return normalizedRequestStatus(activeConflict(productId, currentRequestId())) === "approved";
 }
 
 function currentRequestId() {
@@ -376,6 +406,7 @@ function visibleEligibleProducts(requiredType = "") {
                 "active",
         )
         .filter(hasActiveSupplierAssignment)
+        .filter((product) => !isHiddenApprovedConflict(product.product_id))
         .filter((product) => {
             const type = replenishmentType(product.product_id);
             return (
@@ -428,7 +459,7 @@ function renderProductCatalog() {
     const rows = visibleEligibleProducts();
     if (!rows.length) {
         body.innerHTML =
-            '<tr><td colspan="10" class="product-selector-empty">No eligible replenishment items match these filters.</td></tr>';
+            '<tr><td colspan="11" class="product-selector-empty">No eligible replenishment items match these filters.</td></tr>';
         syncVisibleSelectionCheckbox();
         return;
     }
@@ -447,9 +478,12 @@ function renderProductCatalog() {
                   : "";
             const unit = baseInventoryUnit(product);
             const step = "1";
-            const checkbox = `<input class="catalog-checkbox" type="checkbox" data-product-select="${esc(productId)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} aria-label="Select ${esc(product.product_name || "product")}" title="${esc(disabledReason || "Select product")}">`;
+            const selectControl =
+                conflict && !selected
+                    ? `<span class="catalog-pending-badge" title="${esc(disabledReason)}">${esc(conflictBadgeLabel(conflict))}<small>${esc(conflict.pr_number || "Submitted PR")}</small></span>`
+                    : `<input class="catalog-checkbox" type="checkbox" data-product-select="${esc(productId)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} aria-label="Select ${esc(product.product_name || "product")}" title="${esc(disabledReason || "Select product")}">`;
             const quantityInput = `<input class="form-control catalog-qty" type="number" min="${step}" step="${step}" inputmode="decimal" value="${selected ? esc(selected.requested_qty) : ""}" data-selected-qty="${esc(productId)}" ${selected ? "" : "disabled"} aria-label="Requested quantity for ${esc(product.product_name || "product")}">`;
-            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${checkbox}</td><td class="catalog-product"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span></td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control">${quantityInput}${packageSelector(product, selected)}</div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
+            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${selectControl}</td><td class="catalog-product"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span></td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control">${quantityInput}${packageSelector(product, selected)}</div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
         })
         .join("");
     syncVisibleSelectionCheckbox();
@@ -600,6 +634,24 @@ function renderSummary() {
     document.getElementById("rejectedPrCount").textContent = count("Rejected");
 }
 
+function requestItemDisplayName(item = {}) {
+    const isMedicine = String(item.category_name || "").trim().toLowerCase() === "medicine";
+    return String((isMedicine ? item.generic_name : "") || item.product_name || "").trim();
+}
+
+function productIdentityLines(item = {}) {
+    const brand = String(item.brand_name || "").trim();
+    const product = requestItemDisplayName(item);
+    const primary = product || brand || "-";
+    const secondary = brand && brand.toLowerCase() !== primary.toLowerCase() ? brand : "";
+    return { primary, secondary };
+}
+
+function productIdentityMarkup(item = {}) {
+    const identity = productIdentityLines(item);
+    return `<strong>${esc(identity.primary)}</strong>${identity.secondary ? `<span>${esc(identity.secondary)}</span>` : ""}`;
+}
+
 function filteredRequests() {
     const search = String(document.getElementById("prSearch")?.value || "")
         .trim()
@@ -611,7 +663,12 @@ function filteredRequests() {
         const haystack = [
             request.pr_number,
             request.requested_by_name,
-            ...(request.items || []).flatMap((item) => [item.product_name, item.brand_name]),
+            ...(request.items || []).flatMap((item) => [
+                requestItemDisplayName(item),
+                item.product_name,
+                item.generic_name,
+                item.brand_name,
+            ]),
         ]
             .join(" ")
             .toLowerCase();
@@ -839,7 +896,7 @@ function renderManagerPurchasingSetup(request) {
                     return `<option value="${esc(option.supplier_product_id)}" ${String(option.supplier_product_id) === String(calc.option?.supplier_product_id) ? "selected" : ""}>${esc(option.supplier_name)}</option>`;
                 })
                 .join("");
-            return `<tr data-manager-pr-item="${esc(item.pr_item_id)}"><td class="setup-product"><strong>${esc(item.product_name || "-")}</strong><span>${esc(poProductSpecification(item))}</span></td><td><strong>${approvedRequirement(item).toLocaleString()} ${esc(item.unit || "units")}</strong></td><td><select class="form-select form-select-sm" data-manager-supplier ${options.length ? "" : "disabled"}><option value="">${options.length ? "Select supplier" : "No active supplier setup"}</option>${optionMarkup}</select></td><td><strong>${esc(calc.option?.purchase_unit || "-")}</strong></td><td>${calc.option ? esc(calc.option.summary || `${calc.conversion} ${calc.option.inventory_unit} per ${calc.option.purchase_unit}`) : "-"}</td><td><strong>${calc.option ? `${calc.orderQty.toLocaleString()} ${esc(purchaseUnitLabel(calc.option.purchase_unit, calc.orderQty))}` : "-"}</strong></td><td class="expected-qty"><strong>${calc.option ? `${calc.expected.toLocaleString()} ${esc(calc.option.inventory_unit)}` : "-"}</strong><small>${calc.option ? `PR Approved: ${approvedRequirement(item).toLocaleString()} ${esc(item.unit)}` : ""}</small></td></tr>`;
+            return `<tr data-manager-pr-item="${esc(item.pr_item_id)}"><td class="setup-product">${productIdentityMarkup(item)}<small>${esc(poProductSpecification(item))}</small></td><td><strong>${approvedRequirement(item).toLocaleString()} ${esc(item.unit || "units")}</strong></td><td><select class="form-select form-select-sm" data-manager-supplier ${options.length ? "" : "disabled"}><option value="">${options.length ? "Select supplier" : "No active supplier setup"}</option>${optionMarkup}</select></td><td><strong>${esc(calc.option?.purchase_unit || "-")}</strong></td><td>${calc.option ? esc(calc.option.summary || `${calc.conversion} ${calc.option.inventory_unit} per ${calc.option.purchase_unit}`) : "-"}</td><td><strong>${calc.option ? `${calc.orderQty.toLocaleString()} ${esc(purchaseUnitLabel(calc.option.purchase_unit, calc.orderQty))}` : "-"}</strong></td><td class="expected-qty"><strong>${calc.option ? `${calc.expected.toLocaleString()} ${esc(calc.option.inventory_unit)}` : "-"}</strong><small>${calc.option ? `PR Approved: ${approvedRequirement(item).toLocaleString()} ${esc(item.unit)}` : ""}</small></td></tr>`;
         })
         .join("");
     const errors = procurementErrors(request);
@@ -877,7 +934,12 @@ function poProductSpecification(item) {
             .trim()
             .toLowerCase() === "medicine"
     ) {
-        const medicine = [item.generic_name, item.strength]
+        const displayName = requestItemDisplayName(item).toLowerCase();
+        const genericName = String(item.generic_name || "").trim();
+        const medicine = [
+            genericName && genericName.toLowerCase() !== displayName ? genericName : "",
+            item.strength,
+        ]
             .filter((value) => String(value || "").trim())
             .join(" ");
         return (
@@ -921,11 +983,25 @@ function supplierContactMarkup(group) {
     return `${group.address ? `<address>${esc(group.address)}</address>` : ""}${contact.length ? `<p>${contact.map(esc).join('<span aria-hidden="true">•</span>')}</p>` : ""}`;
 }
 
+function localTodayDateString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function isPastLocalDate(value) {
+    return Boolean(value) && value < localTodayDateString();
+}
+
 function previewErrors(request) {
     const errors = [];
     managerSupplierGroups(request).forEach((group) => {
         if (!supplierEtas[group.id])
             errors.push(`${group.name}: enter the expected delivery date.`);
+        else if (isPastLocalDate(supplierEtas[group.id]))
+            errors.push(`${group.name}: ETA cannot be earlier than today.`);
     });
     return errors;
 }
@@ -939,13 +1015,13 @@ function renderManagerPoPreview(request) {
     document.getElementById("managerSupplierPoPreview").innerHTML = groups
         .map(
             (group, index) =>
-                `<article class="supplier-po-card"><header><div class="supplier-po-order"><span>Purchase Order ${index + 1}</span></div><div class="supplier-po-identity"><h4>${esc(group.name)}</h4>${supplierContactMarkup(group)}</div><div class="supplier-po-fields"><label><span>ETA</span><input class="form-control form-control-sm" type="date" data-manager-eta="${esc(group.id)}" value="${esc(supplierEtas[group.id] || "")}"></label></div></header><div class="supplier-po-table-wrap"><table><thead><tr><th>Product / Description</th><th>Approved Requirement</th><th>PO Qty</th><th>Purchase Unit</th><th>Contents / Packaging</th></tr></thead><tbody>${group.items
+                `<article class="supplier-po-card"><header><div class="supplier-po-order"><span>Purchase Order ${index + 1}</span></div><div class="supplier-po-identity"><h4>${esc(group.name)}</h4>${supplierContactMarkup(group)}</div><div class="supplier-po-fields"><label><span>ETA</span><input class="form-control form-control-sm" type="date" min="${localTodayDateString()}" data-manager-eta="${esc(group.id)}" value="${esc(supplierEtas[group.id] || "")}"></label></div></header><div class="supplier-po-table-wrap"><table><thead><tr><th>Product / Description</th><th>Approved Requirement</th><th>PO Qty</th><th>Purchase Unit</th><th>Contents / Packaging</th></tr></thead><tbody>${group.items
                     .map((row) => {
                         const packaging =
                             row.option.summary ||
                             supplierPackagingDescription(row.option) ||
                             `${row.conversion.toLocaleString()} ${row.option.inventory_unit} per ${row.option.purchase_unit}`;
-                        return `<tr><td><strong>${esc(row.item.product_name)}</strong><span>${esc(poProductSpecification(row.item))}</span></td><td>${approvedRequirement(row.item).toLocaleString()} ${esc(row.item.unit || row.option.inventory_unit)}</td><td>${row.orderQty.toLocaleString()}</td><td>${esc(row.option.purchase_unit)}</td><td>${esc(packaging)}</td></tr>`;
+                        return `<tr><td>${productIdentityMarkup(row.item)}<small>${esc(poProductSpecification(row.item))}</small></td><td>${approvedRequirement(row.item).toLocaleString()} ${esc(row.item.unit || row.option.inventory_unit)}</td><td>${row.orderQty.toLocaleString()}</td><td>${esc(row.option.purchase_unit)}</td><td>${esc(packaging)}</td></tr>`;
                     })
                     .join("")}</tbody></table></div></article>`,
         )
@@ -1048,9 +1124,7 @@ async function generatePurchaseOrders() {
 }
 
 function actionButtons(request) {
-    const buttons = [
-        `<button type="button" class="btn btn-outline-secondary pr-view-btn" data-pr-action="view" data-pr-id="${esc(request.pr_id)}" title="View" aria-label="View ${esc(request.pr_number)}"><i class="fa-regular fa-eye"></i></button>`,
-    ];
+    const buttons = [];
     if (request.status === "Approved")
         buttons.push(
             `<button type="button" class="btn btn-outline-dark pr-print-btn" data-pr-action="print" data-pr-id="${esc(request.pr_id)}" title="Print" aria-label="Print ${esc(request.pr_number)}"><i class="fa-solid fa-print"></i></button>`,
@@ -1080,7 +1154,7 @@ function actionButtons(request) {
                 `<button class="btn btn-success pr-labeled-action" data-pr-action="generate-po" data-pr-id="${esc(request.pr_id)}" title="Generate PO"><i class="fa-solid fa-file-circle-plus"></i> Generate PO</button>`,
             );
     }
-    return `<div class="pr-actions">${buttons.join("")}</div>`;
+    return buttons.length ? `<div class="pr-actions">${buttons.join("")}</div>` : "";
 }
 
 function renderTable() {
@@ -1088,23 +1162,18 @@ function renderTable() {
     if (!body) return;
     const rows = filteredRequests();
     if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="7" class="pr-empty">No purchase requests yet.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="pr-empty">No purchase requests yet.</td></tr>';
         return;
     }
     body.innerHTML = rows
         .map((request) => {
             const items = request.items || [];
-            const names = items
-                .slice(0, 2)
-                .map((item) => item.product_name)
-                .join(", ");
-            const overflow = items.length > 2 ? ` +${items.length - 2} more` : "";
             const poCount = Math.max(0, Number(request.po_generated_count || 0));
             const poCountMarkup =
                 poCount > 0
                     ? `<button type="button" class="pr-po-generated" data-pr-action="related-pos" data-pr-id="${esc(request.pr_id)}" title="View ${poCount} related Purchase Order${poCount === 1 ? "" : "s"}" aria-label="View ${poCount} related Purchase Order${poCount === 1 ? "" : "s"} for ${esc(request.pr_number)}">${poCount}</button>`
                     : '<span class="pr-po-generated-zero">0</span>';
-            return `<tr><td><strong class="pr-number-value">${prNumberMarkup(request.pr_number)}</strong></td><td><span class="requested-by-value">${esc(request.requested_by_name || "Unknown")}</span></td><td>${esc(formatSubmittedDate(request.submitted_at || request.created_at || request.request_date))}</td><td><div class="pr-item-summary"><strong>${items.length} ${items.length === 1 ? "item" : "items"}</strong><span title="${esc(names + overflow)}">${esc(names + overflow || "No items")}</span></div></td><td>${poCountMarkup}</td><td><span class="pr-status ${statusClass(request.status)}">${esc(visiblePrStatus(request.status))}</span></td><td>${actionButtons(request)}</td></tr>`;
+            return `<tr class="pr-clickable-row" data-pr-id="${esc(request.pr_id)}" tabindex="0" aria-label="View details for ${esc(request.pr_number)}"><td><strong class="pr-number-value">${prNumberMarkup(request.pr_number)}</strong></td><td>${esc(formatSubmittedDate(request.submitted_at || request.created_at || request.request_date))}</td><td>${purchaseRequestItemsSummary(items)}</td><td>${poCountMarkup}</td><td><span class="pr-status ${statusClass(request.status)}">${esc(visiblePrStatus(request.status))}</span></td><td>${actionButtons(request)}</td></tr>`;
         })
         .join("");
 }
@@ -1189,6 +1258,12 @@ function showDetails(request) {
     document.getElementById("detailsPrintButton").dataset.prId = request.pr_id;
     document.getElementById("detailsPrStatus").innerHTML =
         `<span class="pr-status ${statusClass(request.status)}">${esc(visiblePrStatus(request.status))}</span>`;
+    const rejectionInfo = document.getElementById("detailsRejectionInfo");
+    const rejectionReason = String(request.rejection_reason || request.decision_reason || "").trim();
+    const showRejectionReason = request.status === "Rejected" && Boolean(rejectionReason);
+    if (rejectionInfo) rejectionInfo.hidden = !showRejectionReason;
+    const rejectionReasonElement = document.getElementById("detailsRejectionReason");
+    if (rejectionReasonElement) rejectionReasonElement.textContent = showRejectionReason ? rejectionReason : "";
     const frame = document.getElementById("requestPreviewFrame");
     frame.dataset.contentHeight = "1123";
     frame.src = `purchase_request_print.html?pr_id=${encodeURIComponent(request.pr_id)}&embed=1&ui=final2`;
@@ -1425,7 +1500,7 @@ async function load() {
         maybeOpenInventoryShortcut();
     } catch (error) {
         document.getElementById("requestRows").innerHTML =
-            `<tr><td colspan="7" class="pr-empty text-danger">${esc(error.message)}</td></tr>`;
+            `<tr><td colspan="6" class="pr-empty text-danger">${esc(error.message)}</td></tr>`;
         toastr.error(error.message);
     }
 }
@@ -1572,8 +1647,14 @@ document.getElementById("managerProcurementAssignments")?.addEventListener("chan
     renderGenerationActions();
 });
 document.getElementById("managerSupplierPoPreview")?.addEventListener("change", (event) => {
-    if (event.target.matches("[data-manager-eta]"))
+    if (event.target.matches("[data-manager-eta]")) {
+        event.target.min = localTodayDateString();
+        if (isPastLocalDate(event.target.value)) {
+            event.target.value = "";
+            toastr.error("ETA cannot be earlier than today.");
+        }
         supplierEtas[event.target.dataset.managerEta] = event.target.value;
+    }
     renderManagerPoPreview(generatingRequest);
     renderGenerationActions();
 });
@@ -1609,12 +1690,16 @@ window.addEventListener("message", (event) => {
 });
 document.getElementById("requestRows")?.addEventListener("click", (event) => {
     const control = event.target.closest("[data-pr-action]");
-    if (!control) return;
+    if (!control) {
+        const row = event.target.closest("tr[data-pr-id]");
+        const request = requests.find((item) => String(item.pr_id) === row?.dataset.prId);
+        if (request) showDetails(request);
+        return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const request = requests.find((item) => item.pr_id === control.dataset.prId);
     if (!request) return;
-    if (control.dataset.prAction === "view") showDetails(request);
     if (control.dataset.prAction === "print") {
         try {
             openPurchaseRequestPrint(request.pr_id);
@@ -1628,6 +1713,14 @@ document.getElementById("requestRows")?.addEventListener("click", (event) => {
     if (control.dataset.prAction === "generate-po") openPoGeneration(request);
     if (control.dataset.prAction === "related-pos")
         showRelatedPurchaseOrders(request.pr_id).catch((error) => toastr.error(error.message));
+});
+document.getElementById("requestRows")?.addEventListener("keydown", (event) => {
+    const row = event.target.closest("tr[data-pr-id]");
+    if (event.target !== row || !["Enter", " "].includes(event.key)) return;
+    const request = requests.find((item) => String(item.pr_id) === row.dataset.prId);
+    if (!request) return;
+    event.preventDefault();
+    showDetails(request);
 });
 ["prSearch", "prStatusFilter", "prStartDate", "prEndDate"].forEach((id) => {
     document

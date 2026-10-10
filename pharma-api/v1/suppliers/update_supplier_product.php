@@ -124,7 +124,9 @@ try {
     ], $savedHierarchy);
 
     $unit = supplierProductText($payload, 'unit');
-    $packaging = supplierProductText($payload, 'packaging');
+    // Supplier ordering units and their conversion are stored on the supplier
+    // assignment. Product Master no longer owns a package/container value.
+    $packaging = null;
     $genericName = supplierProductText($payload, 'generic_name');
     $variant = supplierProductText($payload, 'variant_flavor');
     $strengthValue = supplierProductNumberOrNull($payload, 'strength_value');

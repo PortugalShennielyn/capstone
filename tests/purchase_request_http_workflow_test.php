@@ -231,8 +231,9 @@ try {
     $resubmittedDecision->execute([':pr_id' => $managerPrId]);
     $resubmittedDecisionRow = $resubmittedDecision->fetch(PDO::FETCH_ASSOC);
     prHttpAssert($resubmittedDecisionRow['supervisor_user_id'] === null && $resubmittedDecisionRow['decided_at'] === null, 'Resubmission retained stale decision metadata.');
+    $rejectionReason = 'Requested quantity is too high for current inventory requirements.';
     $rejected = apiRequest('POST', 'purchase_requests/decide_purchase_request.php', $supervisorSession, [
-        'pr_id' => $managerPrId, 'decision' => 'reject',
+        'pr_id' => $managerPrId, 'decision' => 'reject', 'rejection_reason' => $rejectionReason,
     ]);
     prHttpAssert($rejected['status'] === 200 && ($rejected['body']['data']['status'] ?? '') === 'Rejected', 'Supervisor could not reject the resubmitted PR.');
     $rejectedList = apiRequest('GET', 'purchase_requests/get_purchase_requests.php', $supervisorSession);
@@ -240,7 +241,8 @@ try {
     prHttpAssert(
         ($rejectedRecord['status'] ?? '') === 'Rejected'
         && !empty($rejectedRecord['supervisor_name'])
-        && !empty($rejectedRecord['decided_at']),
+        && !empty($rejectedRecord['decided_at'])
+        && ($rejectedRecord['rejection_reason'] ?? '') === $rejectionReason,
         'Rejected PR audit information was not retained.'
     );
 

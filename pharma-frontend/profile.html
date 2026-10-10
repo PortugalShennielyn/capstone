@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=12"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dr. R Pharmacy | Profile Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=42" rel="stylesheet">
+    <link href="./css/profile.css?v=2" rel="stylesheet">
+    <script src="./js/navbar.js?v=97" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+</head>
+<body class="role-loading">
+<div id="navbar-container"></div>
+<main class="main-wrapper" id="mainWrapper">
+    <header class="profile-topbar">
+        <button class="profile-sidebar-toggle" id="sidebarOpenToggle" type="button" aria-expanded="false" aria-label="Open sidebar"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+        <div><strong>Profile Settings</strong><span>Manage your account and security</span></div>
+    </header>
+
+    <div class="profile-page">
+        <section class="profile-hero" aria-labelledby="profileName">
+            <div class="profile-hero-content">
+                <div class="profile-avatar-wrap">
+                    <div class="profile-avatar" id="profileAvatar" aria-label="Profile photo"><span id="profileInitials">U</span></div>
+                    <button class="avatar-camera" id="avatarCameraButton" type="button" aria-label="Change profile photo"><i class="fa-solid fa-camera"></i></button>
+                </div>
+                <div class="profile-identity">
+                    <h1 id="profileName">Your profile</h1>
+                    <div class="profile-identity-meta"><span id="profileHandle">@username</span><span class="meta-divider"></span><span id="profileRoleText">Account</span><span class="profile-role-badge"><i class="fa-solid fa-user"></i><span id="profileRoleBadge">Account</span></span></div>
+                    <p>Manage your account information, password, profile photo, and personal theme.</p>
+                </div>
+                <div class="profile-hero-actions">
+                    <button class="profile-button profile-button-light" id="changePhotoButton" type="button"><i class="fa-solid fa-camera"></i> Change Profile Photo</button>
+                    <button class="profile-button profile-button-primary" id="saveProfileButton" type="submit" form="accountForm"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
+                </div>
+            </div>
+        </section>
+
+        <nav class="profile-tabs" role="tablist" aria-label="Profile sections">
+            <button class="active" id="accountTab" type="button" role="tab" aria-controls="accountPanel" data-profile-tab="account" aria-selected="true"><i class="fa-solid fa-user"></i> Account</button>
+            <button id="securityTab" type="button" role="tab" aria-controls="securityPanel" data-profile-tab="security" aria-selected="false"><i class="fa-solid fa-lock"></i> Password &amp; Security</button>
+        </nav>
+
+        <div class="profile-grid">
+            <div class="profile-main-column">
+                <section class="profile-card" id="accountPanel" role="tabpanel" data-profile-panel="account" aria-labelledby="accountTab">
+                    <div class="profile-card-heading"><span class="profile-card-icon"><i class="fa-solid fa-user"></i></span><div><h2 id="accountTitle">Account Information</h2><p>Keep your account information up to date.</p></div></div>
+                    <form id="accountForm" novalidate>
+                        <div class="profile-fields">
+                            <label class="profile-field full-width">Full Name<input id="profileFullName" name="full_name" type="text" maxlength="100" autocomplete="name" required></label>
+                            <label class="profile-field">Username<input id="profileUsername" type="text" readonly><small>Username is assigned to your account.</small></label>
+                            <label class="profile-field">Role<input id="profileRole" type="text" readonly><small>Role is assigned by the administrator.</small></label>
+                            <label class="profile-field">Email<input id="profileEmail" name="email" type="email" maxlength="255" autocomplete="email"></label>
+                            <label class="profile-field">Contact Number<input id="profileContact" name="contact_number" type="tel" maxlength="50" autocomplete="tel"></label>
+                        </div>
+                        <div id="accountMessage" class="profile-message" role="status" aria-live="polite" hidden></div>
+                        <div class="profile-form-footer"><span>Your changes will be saved to your account.</span><button class="profile-button profile-button-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button></div>
+                    </form>
+                </section>
+
+                <section class="profile-card" id="securityPanel" role="tabpanel" data-profile-panel="security" aria-labelledby="securityTab" hidden>
+                    <div class="profile-card-heading"><span class="profile-card-icon"><i class="fa-solid fa-lock"></i></span><div><h2 id="securityTitle">Password &amp; Security</h2><p>Keep your account protected.</p></div></div>
+                    <form id="passwordForm" novalidate>
+                        <div class="profile-fields">
+                            <label class="profile-field full-width">Current Password<span class="profile-password-wrap"><input name="current_password" type="password" autocomplete="current-password" required><button type="button" class="profile-password-toggle" aria-label="Show current password"><i class="fa-regular fa-eye"></i></button></span></label>
+                            <label class="profile-field">New Password<span class="profile-password-wrap"><input name="new_password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required><button type="button" class="profile-password-toggle" aria-label="Show new password"><i class="fa-regular fa-eye"></i></button></span></label>
+                            <label class="profile-field">Confirm New Password<span class="profile-password-wrap"><input name="confirm_password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required><button type="button" class="profile-password-toggle" aria-label="Show password confirmation"><i class="fa-regular fa-eye"></i></button></span></label>
+                        </div>
+                        <p class="profile-help">Use 8 to 72 characters. Updating your password may require you to sign in again on other devices.</p>
+                        <div id="passwordMessage" class="profile-message" role="status" aria-live="polite" hidden></div>
+                        <div class="profile-form-footer"><span>Your password is stored as a secure hash.</span><button class="profile-button profile-button-primary" type="submit"><i class="fa-solid fa-key"></i> Update Password</button></div>
+                    </form>
+                    <div class="profile-reset-row"><div><h3>Forgot your password?</h3><p>Send a reset link to your registered email address.</p></div><button class="profile-button profile-button-light" id="requestResetButton" type="button">Send Reset Link</button></div>
+                    <div id="resetMessage" class="profile-message" role="status" aria-live="polite" hidden></div>
+                </section>
+            </div>
+
+            <aside class="profile-card profile-side-card" aria-labelledby="profileSettingsTitle">
+                <div class="profile-card-heading"><span class="profile-card-icon"><i class="fa-solid fa-palette"></i></span><div><h2 id="profileSettingsTitle">Profile Settings</h2><p>Personalize how your profile looks.</p></div></div>
+                <div class="profile-side-section"><div><h3>Profile Photo</h3><p>Upload a JPG, PNG, or WEBP image.</p></div><button class="profile-button profile-button-outline" id="choosePhotoButton" type="button"><i class="fa-solid fa-image"></i> Choose Photo</button></div>
+                <button class="profile-remove-photo" id="removePhotoButton" type="button" hidden>Remove photo</button>
+                <div class="profile-side-section profile-background-section"><div><h3>Profile Background</h3><p>Choose your preferred profile header color.</p></div><div class="profile-swatches" role="group" aria-label="Profile background color"><button type="button" data-theme="navy" aria-label="Navy background" aria-pressed="false"></button><button type="button" data-theme="purple" aria-label="Purple background" aria-pressed="true"></button><button type="button" data-theme="teal" aria-label="Teal background" aria-pressed="false"></button><button type="button" data-theme="orange" aria-label="Orange background" aria-pressed="false"></button><button type="button" data-theme="berry" aria-label="Berry background" aria-pressed="false"></button><button type="button" data-theme="slate" aria-label="Slate background" aria-pressed="false"></button></div></div>
+                <div class="profile-secure-note"><i class="fa-solid fa-user-shield"></i><div><strong>Secure account</strong><p>Your account remains protected by your assigned access rules.</p></div></div>
+                <p class="profile-local-note">Photo and color preferences are saved in this browser for your account.</p>
+            </aside>
+        </div>
+    </div>
+</main>
+
+<input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module" src="./js/modules/profile.js?v=1"></script>
+</body>
+</html>

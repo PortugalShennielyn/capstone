@@ -37,6 +37,7 @@ if (!$date || $date->format('Y-m-d') !== $paymentDate) paymentError('Payment dat
 if (strlen($paymentRequestKey) > 100 || strlen($reference) > 100) paymentError('Reference number or submission key is too long.', 400);
 
 try {
+    ensurePurchaseOrderPaymentSchema($pdo);
     $pdo->beginTransaction();
     $duplicate = $pdo->prepare('SELECT payment_id FROM purchase_order_payments WHERE payment_request_key = :key LIMIT 1');
     $duplicate->execute([':key' => $paymentRequestKey]);
@@ -52,11 +53,16 @@ try {
     $orderStatement->execute([':po_id' => $poId]);
     $order = $orderStatement->fetch(PDO::FETCH_ASSOC);
     if (!$order) paymentError('Purchase order not found.', 404);
+    assertPurchaseOrderHasProducts($pdo, $poId);
     if (!in_array($order['status'], ['Pending','Arrived','Delivered'], true)) paymentError('Supplier payments can only be recorded for Pending, Arrived, or Delivered purchase orders.', 422);
     if (empty($order['invoice_id']) || (float) $order['supplier_invoice_total'] <= 0) {
         paymentError('Record the supplier invoice before recording a payment.', 422);
     }
     $effectivePayable = (float) $order['supplier_invoice_total'];
+    $inspectionStatement = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_receiving WHERE po_id = :po_id AND inspection_status = 'Confirmed'");
+    $inspectionStatement->execute([':po_id' => $poId]);
+    $inspectionCompleted = $order['status'] === 'Delivered' || (int) $inspectionStatement->fetchColumn() > 0;
+    $paymentType = $inspectionCompleted ? 'Post-Inspection Payment' : 'Advance Payment';
     $before = purchaseOrderPaymentSummary($pdo, $poId, $effectivePayable);
     if ($before['remaining_balance'] <= 0) paymentError('This purchase order is already fully paid.', 409);
     if ($expectedRemaining !== null && abs($expectedRemaining - $before['remaining_balance']) >= 0.01) {
@@ -73,13 +79,14 @@ try {
     if ($amount > $before['remaining_balance']) paymentError('Payment amount exceeds the remaining balance by ₱' . number_format($amount - $before['remaining_balance'], 2) . '.', 422);
     $statement = $pdo->prepare(
         'INSERT INTO purchase_order_payments
-            (payment_id, po_id, amount, payment_method, payment_date, reference_number, remarks, recorded_by, payment_request_key)
+            (payment_id, po_id, amount, payment_method, payment_type, payment_date, reference_number, remarks, recorded_by, payment_request_key)
          VALUES
-            (:payment_id, :po_id, :amount, :payment_method, :payment_date, :reference_number, :remarks, :recorded_by, :payment_request_key)'
+            (:payment_id, :po_id, :amount, :payment_method, :payment_type, :payment_date, :reference_number, :remarks, :recorded_by, :payment_request_key)'
     );
     $paymentId = newUuid($pdo);
     $statement->execute([
         ':payment_id' => $paymentId, ':po_id' => $poId, ':amount' => $amount, ':payment_method' => $method,
+        ':payment_type' => $paymentType,
         ':payment_date' => $paymentDate, ':reference_number' => $reference !== '' ? $reference : null,
         ':remarks' => $remarks !== '' ? $remarks : null, ':recorded_by' => $_SESSION['user_id'] ?? null,
         ':payment_request_key' => $paymentRequestKey
@@ -91,7 +98,8 @@ try {
         'status' => 'success', 'message' => 'Supplier payment recorded.', 'payment_id' => $paymentId,
         'payment_recorded' => $amount, 'total_paid' => $summary['total_paid'],
         'remaining_balance' => $summary['remaining_balance'], 'payment_status' => $summary['payment_status'],
-        'payment_timing' => $order['status'] === 'Pending' ? 'Prepaid' : 'Standard'
+        'payment_type' => $paymentType,
+        'payment_timing' => $paymentType === 'Advance Payment' ? 'Prepaid' : 'Standard'
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (PDOException $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();

@@ -2982,6 +2982,23 @@ CREATE TABLE `sales_order_items` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- Per-sale FIFO batch allocations support actual cost of goods and PO-level gross profit.
+CREATE TABLE `sales_order_item_batch_allocations` (
+  `allocation_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `order_item_id` int(11) NOT NULL,
+  `order_id` int(11) NOT NULL,
+  `batch_id` char(36) DEFAULT NULL,
+  `po_id` char(36) DEFAULT NULL,
+  `quantity` int(11) NOT NULL,
+  `unit_cost` decimal(12,4) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`allocation_id`),
+  KEY `idx_sales_batch_alloc_item` (`order_item_id`),
+  KEY `idx_sales_batch_alloc_order` (`order_id`),
+  KEY `idx_sales_batch_alloc_po` (`po_id`),
+  KEY `idx_sales_batch_alloc_batch` (`batch_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 --
 -- Dumping data for table `sales_order_items`
 --
