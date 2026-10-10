@@ -4,7 +4,7 @@ import {
     isPrescriptionProduct,
     productSearchText
 } from './product_specification.js?v=12';
-import { primaryAccessRole } from './rbac.js?v=6';
+import { primaryAccessRole } from './rbac.js?v=9';
 import { loadMeasurementUnits, measurementUnitsForContext } from './measurement_units.js?v=2';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
 import { createPackagingEditor } from './packaging_breakdown.js?v=1';

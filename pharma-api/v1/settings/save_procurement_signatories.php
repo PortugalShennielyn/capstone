@@ -1,6 +1,7 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/auth_context.php';
+require_once '../activity_log_helpers.php';
 
 requireValidSession($pdo);
 
@@ -37,6 +38,20 @@ foreach ($documentSettings as $key => $value) {
     }
 }
 
+$settings = [
+    'pr_prepared_name' => $documentSettings['prPreparedName'] !== '' ? $documentSettings['prPreparedName'] : null,
+    'pr_prepared_role' => $documentSettings['prPreparedRole'],
+    'pr_reviewed_name' => $documentSettings['prReviewedName'] !== '' ? $documentSettings['prReviewedName'] : null,
+    'pr_reviewed_role' => $documentSettings['prReviewedRole'],
+    'po_prepared_name' => $documentSettings['poPreparedName'] !== '' ? $documentSettings['poPreparedName'] : null,
+    'po_prepared_role' => $documentSettings['poPreparedRole'],
+    'po_approved_name' => $documentSettings['poApprovedName'] !== '' ? $documentSettings['poApprovedName'] : null,
+    'po_approved_role' => $documentSettings['poApprovedRole'],
+];
+$pdo->beginTransaction();
+try {
+$oldStmt = $pdo->query('SELECT pr_prepared_name, pr_prepared_role, pr_reviewed_name, pr_reviewed_role, po_prepared_name, po_prepared_role, po_approved_name, po_approved_role FROM system_settings WHERE setting_id = 1 LIMIT 1');
+$previous = $oldStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $statement = $pdo->prepare(
     "INSERT INTO system_settings
         (setting_id, pr_prepared_name, pr_prepared_role, pr_reviewed_name, pr_reviewed_role, po_prepared_name, po_prepared_role, po_approved_name, po_approved_role)
@@ -54,15 +69,25 @@ $statement = $pdo->prepare(
         updated_at = NOW()"
 );
 $statement->execute([
-    ':pr_prepared_name' => $documentSettings['prPreparedName'] !== '' ? $documentSettings['prPreparedName'] : null,
-    ':pr_prepared' => $documentSettings['prPreparedRole'],
-    ':pr_reviewed_name' => $documentSettings['prReviewedName'] !== '' ? $documentSettings['prReviewedName'] : null,
-    ':pr_reviewed' => $documentSettings['prReviewedRole'],
-    ':po_prepared_name' => $documentSettings['poPreparedName'] !== '' ? $documentSettings['poPreparedName'] : null,
-    ':po_prepared' => $documentSettings['poPreparedRole'],
-    ':po_approved_name' => $documentSettings['poApprovedName'] !== '' ? $documentSettings['poApprovedName'] : null,
-    ':po_approved' => $documentSettings['poApprovedRole'],
+    ':pr_prepared_name' => $settings['pr_prepared_name'], ':pr_prepared' => $settings['pr_prepared_role'],
+    ':pr_reviewed_name' => $settings['pr_reviewed_name'], ':pr_reviewed' => $settings['pr_reviewed_role'],
+    ':po_prepared_name' => $settings['po_prepared_name'], ':po_prepared' => $settings['po_prepared_role'],
+    ':po_approved_name' => $settings['po_approved_name'], ':po_approved' => $settings['po_approved_role'],
 ]);
+recordSettingsDiffAudit($pdo, $previous, $settings, [
+    'pr_prepared_name' => 'PR Prepared By', 'pr_prepared_role' => 'PR Prepared Role',
+    'pr_reviewed_name' => 'PR Reviewed By', 'pr_reviewed_role' => 'PR Reviewer Role',
+    'po_prepared_name' => 'PO Prepared By', 'po_prepared_role' => 'PO Prepared Role',
+    'po_approved_name' => 'PO Approved By', 'po_approved_role' => 'PO Approver Role',
+]);
+$pdo->commit();
+} catch (Throwable $error) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('Procurement signatory settings transaction failed: ' . $error->getMessage());
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => 'Unable to save procurement settings.']);
+    exit();
+}
 
 echo json_encode([
     'status' => 'success',

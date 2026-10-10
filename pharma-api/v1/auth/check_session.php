@@ -28,8 +28,9 @@ if ($user) {
     $_SESSION['user_created_at'] = $user['created_at'];
 
     $accountContext = loadPrimaryAccountContext($pdo, $_SESSION['user_id'], $user['role']);
-    $_SESSION['roles'] = $accountContext['roles'];
-    $_SESSION['role_identifiers'] = $accountContext['role_identifiers'];
+    $assignedRole = strtolower(trim((string) $user['role']));
+    $_SESSION['roles'] = [$assignedRole];
+    $_SESSION['role_identifiers'] = [legacyRoleIdentifier($assignedRole)];
     $_SESSION['account_id'] = $accountContext['account_id'];
     $_SESSION['account_type'] = $accountContext['account_type'];
     $_SESSION['tenant_id'] = $accountContext['tenant_id'];

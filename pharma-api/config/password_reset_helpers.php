@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/id_helpers.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/password_policy.php';
 
 function ensurePasswordResetTable(PDO $pdo): void
 {

@@ -13,7 +13,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
 
-    <link href="./css/login.css?v=1" rel="stylesheet">
+    <link href="./css/login.css?v=2" rel="stylesheet">
 </head>
 <body>
     <main class="login-layout">
@@ -71,6 +71,35 @@
         </section>
     </main>
 
+    <dialog id="firstLoginPasswordDialog" class="forgot-dialog first-login-dialog" aria-labelledby="firstLoginPasswordTitle">
+        <div class="forgot-dialog-header"><h2 id="firstLoginPasswordTitle">Change Your Temporary Password</h2></div>
+        <p>For your security, you must create a new password before continuing.</p>
+        <form id="firstLoginPasswordForm" novalidate>
+            <label class="form-label" for="firstLoginCurrentPassword">Current Temporary Password</label>
+            <div class="login-input-wrap first-login-password-wrap"><input class="form-control" id="firstLoginCurrentPassword" type="password" autocomplete="current-password" required><button class="password-visibility" type="button" data-password-toggle="firstLoginCurrentPassword" aria-label="Show current temporary password"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+            <div class="reset-message" id="firstLoginCurrentMessage" aria-live="polite"></div>
+            <label class="form-label mt-3" for="firstLoginNewPassword">New Password</label>
+            <div class="login-input-wrap first-login-password-wrap"><input class="form-control" id="firstLoginNewPassword" type="password" autocomplete="new-password" required><button class="password-visibility" type="button" data-password-toggle="firstLoginNewPassword" aria-label="Show new password"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+            <div id="firstLoginPasswordStrength" class="password-strength" aria-live="polite">
+                <div class="password-strength-heading">Password strength: <strong id="firstLoginStrengthLabel" data-strength="weak">Weak</strong></div>
+                <ul class="password-strength-rules">
+                    <li data-first-password-rule="length"><span class="password-rule-check">○</span> 12–16 characters long.</li>
+                    <li data-first-password-rule="uppercase"><span class="password-rule-check">○</span> At least one uppercase letter.</li>
+                    <li data-first-password-rule="lowercase"><span class="password-rule-check">○</span> At least one lowercase letter.</li>
+                    <li data-first-password-rule="number"><span class="password-rule-check">○</span> At least one number.</li>
+                    <li data-first-password-rule="special"><span class="password-rule-check">○</span> At least one special character.</li>
+                </ul>
+            </div>
+            <div class="reset-message" id="firstLoginNewMessage" aria-live="polite"></div>
+            <label class="form-label mt-3" for="firstLoginConfirmPassword">Confirm New Password</label>
+            <div class="login-input-wrap first-login-password-wrap"><input class="form-control" id="firstLoginConfirmPassword" type="password" autocomplete="new-password" required><button class="password-visibility" type="button" data-password-toggle="firstLoginConfirmPassword" aria-label="Show password confirmation"><i class="fa-regular fa-eye" aria-hidden="true"></i></button></div>
+            <div class="reset-message" id="firstLoginConfirmMessage" aria-live="polite"></div>
+            <div class="reset-message" id="firstLoginPasswordMessage" role="status" aria-live="polite"></div>
+            <button class="btn btn-primary btn-login w-100" id="firstLoginUpdateButton" type="submit" disabled>Update Password</button>
+            <button class="text-action first-login-sign-in-again" id="firstLoginSignInAgain" type="button" hidden>Sign in again</button>
+        </form>
+    </dialog>
+
     <dialog id="forgotPasswordDialog" class="forgot-dialog" aria-labelledby="forgotPasswordTitle">
         <div class="forgot-dialog-header"><h2 id="forgotPasswordTitle">Reset your password</h2><button id="closeForgotPassword" type="button" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
         <p id="forgotPasswordInstructions">Enter the email linked to your account. We’ll send a verification code if it is registered.</p>
@@ -84,9 +113,19 @@
             <label class="form-label" for="resetCode">Email verification code</label>
             <input class="form-control" id="resetCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="Enter the 6-digit code" required>
             <label class="form-label mt-3" for="newResetPassword">New password</label>
-            <input class="form-control" id="newResetPassword" name="new_password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
+            <input class="form-control" id="newResetPassword" name="new_password" type="password" autocomplete="new-password" aria-describedby="resetPasswordStrength" required>
+            <div id="resetPasswordStrength" class="password-strength" aria-live="polite">
+                <div class="password-strength-heading">Password strength: <strong id="resetPasswordStrengthLabel">Weak</strong></div>
+                <ul class="password-strength-rules">
+                    <li data-password-rule="length"><span class="password-rule-check" aria-hidden="true">○</span> 12–16 characters long.</li>
+                    <li data-password-rule="uppercase"><span class="password-rule-check" aria-hidden="true">○</span> Contains an uppercase letter.</li>
+                    <li data-password-rule="lowercase"><span class="password-rule-check" aria-hidden="true">○</span> Contains a lowercase letter.</li>
+                    <li data-password-rule="number"><span class="password-rule-check" aria-hidden="true">○</span> Contains a number.</li>
+                    <li data-password-rule="special"><span class="password-rule-check" aria-hidden="true">○</span> Contains a special character.</li>
+                </ul>
+            </div>
             <label class="form-label mt-3" for="confirmResetPassword">Confirm new password</label>
-            <input class="form-control" id="confirmResetPassword" name="confirm_password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
+            <input class="form-control" id="confirmResetPassword" name="confirm_password" type="password" autocomplete="new-password" required>
             <div id="resetPasswordMessage" class="reset-message" role="status" aria-live="polite"></div>
             <button class="btn btn-primary btn-login w-100" type="submit">Reset password</button>
             <div class="forgot-dialog-actions">
@@ -111,11 +150,23 @@
         const rememberUsername = document.getElementById('rememberUsername');
         const passwordVisibility = document.getElementById('passwordVisibility');
         const forgotDialog = document.getElementById('forgotPasswordDialog');
+        const firstLoginDialog = document.getElementById('firstLoginPasswordDialog');
+        const firstLoginForm = document.getElementById('firstLoginPasswordForm');
+        const firstLoginCurrent = document.getElementById('firstLoginCurrentPassword');
+        const firstLoginNew = document.getElementById('firstLoginNewPassword');
+        const firstLoginConfirm = document.getElementById('firstLoginConfirmPassword');
+        const firstLoginStrengthLabel = document.getElementById('firstLoginStrengthLabel');
+        const firstLoginUpdateButton = document.getElementById('firstLoginUpdateButton');
+        const firstLoginMessage = document.getElementById('firstLoginPasswordMessage');
+        const firstLoginSignInAgain = document.getElementById('firstLoginSignInAgain');
         const forgotForm = document.getElementById('forgotPasswordForm');
         const forgotMessage = document.getElementById('forgotPasswordMessage');
         const resetForm = document.getElementById('resetPasswordForm');
         const resetMessage = document.getElementById('resetPasswordMessage');
         const forgotInstructions = document.getElementById('forgotPasswordInstructions');
+        const resetPasswordInput = document.getElementById('newResetPassword');
+        const resetPasswordStrength = document.getElementById('resetPasswordStrength');
+        const resetPasswordStrengthLabel = document.getElementById('resetPasswordStrengthLabel');
         const submitButton = loginForm.querySelector('button[type="submit"]');
         const submitButtonContent = submitButton.querySelector('.login-button-content');
         const LOGIN_TIMEOUT_MS = 12000;
@@ -125,6 +176,182 @@
         const mustUseApacheOrigin = isLocalApi && window.location.origin !== apiUrl.origin;
         let loginInProgress = false;
         let resetCodeSending = false;
+        let firstLoginToken = '';
+        let firstLoginSubmitting = false;
+        let firstLoginRedirecting = false;
+
+        function getFirstLoginPasswordRules(value) {
+            const characters = Array.from(value).length;
+            return {
+                length: characters >= 12 && characters <= 16,
+                uppercase: /[A-Z]/.test(value),
+                lowercase: /[a-z]/.test(value),
+                number: /[0-9]/.test(value),
+                special: /[^A-Za-z0-9\s]/.test(value)
+            };
+        }
+
+        function updateFirstLoginPasswordStrength() {
+            const value = firstLoginNew.value;
+            const rules = getFirstLoginPasswordRules(value);
+            const count = Object.values(rules).filter(Boolean).length;
+            const strength = count === 5 ? 'Strong' : count >= 3 ? 'Fair' : 'Weak';
+            firstLoginStrengthLabel.textContent = strength;
+            firstLoginStrengthLabel.dataset.strength = strength.toLowerCase();
+            Object.entries(rules).forEach(([name, valid]) => {
+                const row = firstLoginDialog.querySelector(`[data-first-password-rule="${name}"]`);
+                row.classList.toggle('is-met', valid);
+                row.querySelector('.password-rule-check').textContent = valid ? '✓' : '○';
+            });
+            const newMessage = document.getElementById('firstLoginNewMessage');
+            const firstMissing = Object.entries(rules).find(([, valid]) => !valid);
+            const guidance = {
+                length: 'Password must be 12–16 characters long.',
+                uppercase: 'Add at least one uppercase letter.',
+                lowercase: 'Add at least one lowercase letter.',
+                number: 'Add at least one number.',
+                special: 'Add at least one special character.'
+            };
+            newMessage.textContent = value && firstMissing ? guidance[firstMissing[0]] : '';
+            newMessage.className = value && firstMissing ? 'reset-message is-error' : 'reset-message';
+            const confirmation = firstLoginConfirm.value;
+            const matches = confirmation !== '' && confirmation === value;
+            const confirmationMessage = document.getElementById('firstLoginConfirmMessage');
+            confirmationMessage.textContent = confirmation && !matches ? 'Passwords do not match.' : '';
+            confirmationMessage.className = confirmation && !matches ? 'reset-message is-error' : 'reset-message';
+            const differs = firstLoginCurrent.value !== '' && firstLoginCurrent.value !== value;
+            if (value && Object.values(rules).every(Boolean) && !differs) {
+                newMessage.textContent = 'Your new password must be different from your temporary password.';
+                newMessage.className = 'reset-message is-error';
+            }
+            firstLoginUpdateButton.disabled = firstLoginSubmitting
+                || firstLoginCurrent.value === ''
+                || !Object.values(rules).every(Boolean)
+                || !matches || !differs;
+        }
+
+        function showFirstLoginPasswordDialog(token = '') {
+            if (token) firstLoginToken = token;
+            loginForm.inert = true;
+            document.getElementById('firstLoginCurrentMessage').textContent = '';
+            firstLoginMessage.textContent = '';
+            firstLoginMessage.className = 'reset-message';
+            firstLoginSignInAgain.hidden = true;
+            if (!firstLoginDialog.open) firstLoginDialog.showModal();
+            firstLoginCurrent.focus();
+            updateFirstLoginPasswordStrength();
+        }
+
+        firstLoginDialog.addEventListener('cancel', (event) => event.preventDefault());
+        firstLoginDialog.addEventListener('click', (event) => {
+            if (event.target === firstLoginDialog) event.preventDefault();
+        });
+        firstLoginSignInAgain.addEventListener('click', () => {
+            firstLoginToken = '';
+            firstLoginForm.reset();
+            firstLoginDialog.close();
+            loginForm.inert = false;
+            firstLoginSignInAgain.hidden = true;
+            showLoginMessage('Your password-change session ended. Sign in again to continue.');
+            passwordInput.focus();
+        });
+        [firstLoginCurrent, firstLoginNew, firstLoginConfirm].forEach((input) => input.addEventListener('input', updateFirstLoginPasswordStrength));
+        firstLoginDialog.querySelectorAll('[data-password-toggle]').forEach((toggle) => {
+            toggle.addEventListener('click', () => {
+                const input = document.getElementById(toggle.dataset.passwordToggle);
+                const showing = input.type === 'password';
+                input.type = showing ? 'text' : 'password';
+                toggle.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+                toggle.querySelector('i').className = showing ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
+            });
+        });
+
+        firstLoginForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            updateFirstLoginPasswordStrength();
+            if (firstLoginUpdateButton.disabled || firstLoginSubmitting) return;
+            firstLoginSubmitting = true;
+            firstLoginUpdateButton.disabled = true;
+            firstLoginMessage.textContent = 'Updating your password…';
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/complete_first_login_password.php`, {
+                    method: 'POST', credentials: 'include', cache: 'no-store',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        password_change_token: firstLoginToken,
+                        current_password: firstLoginCurrent.value,
+                        new_password: firstLoginNew.value,
+                        confirm_password: firstLoginConfirm.value
+                    })
+                });
+                const result = await response.json().catch(() => ({}));
+                if (response.ok && result.password_updated && result.requires_login) {
+                    firstLoginToken = '';
+                    firstLoginForm.reset();
+                    firstLoginDialog.close();
+                    loginForm.inert = false;
+                    firstLoginMessage.textContent = '';
+                    showLoginMessage(result.message || 'Password updated. Please sign in with your new password.');
+                    return;
+                }
+                if (!response.ok || result.status !== 'success' || !result.tab_token) {
+                    const updateError = new Error(result.message || 'Unable to update your password.');
+                    updateError.code = result.code || '';
+                    throw updateError;
+                }
+                setTabToken(result.tab_token);
+                cacheAuthenticatedProfile(result.session);
+                firstLoginToken = '';
+                firstLoginForm.reset();
+                firstLoginRedirecting = true;
+                firstLoginMessage.textContent = result.message || 'Password updated successfully. Redirecting to your dashboard...';
+                firstLoginMessage.className = 'reset-message is-success';
+                firstLoginSignInAgain.hidden = true;
+                toastr.success(result.message || 'Password updated successfully. Redirecting to your dashboard...');
+                window.setTimeout(() => window.location.replace(getFrontendRedirectUrl(result.redirect)), 900);
+            } catch (error) {
+                firstLoginMessage.textContent = error.message || 'Unable to update your password. Please try again.';
+                firstLoginMessage.className = 'reset-message is-error';
+                const resultCode = error.code || '';
+                if (['password_change_session_expired', 'password_change_session_invalid'].includes(resultCode)) firstLoginSignInAgain.hidden = false;
+            } finally {
+                firstLoginSubmitting = false;
+                if (!firstLoginRedirecting) updateFirstLoginPasswordStrength();
+            }
+        });
+
+        fetch(`${API_BASE_URL}/auth/first_login_password_status.php`, { credentials: 'include', cache: 'no-store' })
+            .then((response) => response.json())
+            .then((result) => { if (result.required) showFirstLoginPasswordDialog(result.password_change_token); })
+            .catch(() => {});
+
+        function getResetPasswordRules(value) {
+            return {
+                length: Array.from(value).length >= 12 && Array.from(value).length <= 16,
+                uppercase: /[A-Z]/.test(value),
+                lowercase: /[a-z]/.test(value),
+                number: /[0-9]/.test(value),
+                special: /[^A-Za-z0-9\s]/.test(value)
+            };
+        }
+
+        function updateResetPasswordStrength() {
+            const password = resetPasswordInput.value;
+            resetPasswordStrength.hidden = password.trim() === '';
+            const rules = getResetPasswordRules(password);
+            const satisfied = Object.values(rules).filter(Boolean).length;
+            const strength = satisfied === 5 ? 'Strong' : satisfied >= 3 ? 'Medium' : 'Weak';
+            resetPasswordStrengthLabel.textContent = strength;
+            resetPasswordStrengthLabel.dataset.strength = strength.toLowerCase();
+            Object.entries(rules).forEach(([name, met]) => {
+                const rule = document.querySelector(`[data-password-rule="${name}"]`);
+                rule.classList.toggle('is-met', met);
+                rule.querySelector('.password-rule-check').textContent = met ? '✓' : '○';
+            });
+        }
+
+        resetPasswordInput.addEventListener('input', updateResetPasswordStrength);
+        updateResetPasswordStrength();
 
         clearTabToken();
 
@@ -154,6 +381,7 @@
             forgotForm.hidden = false;
             resetForm.hidden = true;
             resetForm.reset();
+            updateResetPasswordStrength();
             forgotInstructions.textContent = 'Enter the email linked to your account. We’ll send a verification code if it is registered.';
             forgotDialog.showModal();
             document.getElementById('resetEmail').focus();
@@ -233,8 +461,8 @@
                 resetMessage.className = 'reset-message is-error';
                 return;
             }
-            if (newPassword.length < 8 || newPassword.length > 72) {
-                resetMessage.textContent = 'Password must be between 8 and 72 characters.';
+            if (!Object.values(getResetPasswordRules(newPassword)).every(Boolean)) {
+                resetMessage.textContent = 'Password must be 12–16 characters and include uppercase and lowercase letters, a number, and a special character.';
                 resetMessage.className = 'reset-message is-error';
                 return;
             }
@@ -264,6 +492,7 @@
                 resetMessage.textContent = result.message || 'Password reset successfully. You can now sign in.';
                 resetMessage.className = 'reset-message is-success';
                 resetForm.reset();
+                updateResetPasswordStrength();
                 window.setTimeout(() => forgotDialog.close(), 1800);
             } catch (error) {
                 resetMessage.textContent = error.message || 'Unable to reset the password. Please try again.';
@@ -368,6 +597,16 @@
                 if (!response.ok) {
                     showLoginMessage(data.message || 'Login failed');
                     toastr.error(data.message || 'Login failed');
+                    return;
+                }
+
+                if (data.must_change_password === true) {
+                    try {
+                        if (rememberUsername.checked) localStorage.setItem('drpRememberedUsername', username);
+                        else localStorage.removeItem('drpRememberedUsername');
+                    } catch (_) {}
+                    passwordInput.value = '';
+                    showFirstLoginPasswordDialog(data.password_change_token || '');
                     return;
                 }
 

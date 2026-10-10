@@ -34,6 +34,11 @@ function ensureUserManagementSchema(PDO $pdo): void
         $pdo->exec('ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL AFTER password');
         $pdo->exec('UPDATE users SET password_hash = password WHERE password_hash IS NULL OR password_hash = ""');
     }
+    // Existing accounts keep their current behavior; only accounts created by
+    // the user-management flow below are marked for a mandatory first login change.
+    if (!userColumnExists($pdo, 'must_change_password')) {
+        $pdo->exec('ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0 AFTER password_hash');
+    }
     if (!userColumnExists($pdo, 'contact_number')) {
         $pdo->exec('ALTER TABLE users ADD COLUMN contact_number VARCHAR(50) NULL AFTER email');
     }
@@ -97,6 +102,19 @@ function normalizeUserRole(string $role): string
         'sales_clerk' => 'salesclerk',
     ];
     return $aliases[$value] ?? $value;
+}
+
+function userDashboardPath(string $role): ?string
+{
+    $routes = [
+        'super_admin' => 'dashboard.html',
+        'admin' => 'dashboard.html',
+        'manager' => 'dashboard.html',
+        'supervisor' => 'supervisor_dashboard.html',
+        'cashier' => 'cashier_dashboard.html',
+        'salesclerk' => 'sales_clerk_dashboard.html',
+    ];
+    return $routes[normalizeUserRole($role)] ?? null;
 }
 
 function roleLabel(string $role): string

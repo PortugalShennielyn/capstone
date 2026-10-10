@@ -11,6 +11,7 @@ try {
         exit();
     }
     ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);
     $reason = trim((string) ($payload['reason'] ?? ''));
@@ -20,7 +21,7 @@ try {
 
     $cashierId = cashierCurrentUserId();
     $pdo->beginTransaction();
-    $stmt = $pdo->prepare('SELECT status, assigned_cashier_id FROM sales_orders WHERE order_id = :order_id LIMIT 1 FOR UPDATE');
+    $stmt = $pdo->prepare('SELECT status, assigned_cashier_id, order_no, total_amount FROM sales_orders WHERE order_id = :order_id LIMIT 1 FOR UPDATE');
     $stmt->execute([':order_id' => $orderId]);
     $order = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$order) throw new RuntimeException('Order not found.');

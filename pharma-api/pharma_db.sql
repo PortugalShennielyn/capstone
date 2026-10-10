@@ -694,6 +694,7 @@ CREATE TABLE `audit_logs` (
   `ip_address` varchar(80) DEFAULT NULL,
   `user_agent` text DEFAULT NULL,
   `session_reference` varchar(80) DEFAULT NULL,
+  `request_id` varchar(80) DEFAULT NULL,
   `details` text DEFAULT NULL,
   `idempotency_key` varchar(191) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
@@ -4887,6 +4888,7 @@ CREATE TABLE `users` (
   `contact_number` varchar(50) DEFAULT NULL,
   `password` varchar(255) NOT NULL,
   `password_hash` varchar(255) DEFAULT NULL,
+  `must_change_password` tinyint(1) NOT NULL DEFAULT 0,
   `full_name` varchar(100) NOT NULL,
   `first_name` varchar(100) DEFAULT NULL,
   `last_name` varchar(100) DEFAULT NULL,
@@ -4980,7 +4982,8 @@ ALTER TABLE `audit_logs`
   ADD KEY `idx_audit_logs_module_action` (`module`,`action`),
   ADD KEY `idx_audit_logs_user` (`user_id`),
   ADD KEY `idx_audit_logs_session` (`session_reference`),
-  ADD KEY `idx_audit_logs_target` (`target_type`,`target_id`);
+  ADD KEY `idx_audit_logs_target` (`target_type`,`target_id`),
+  ADD KEY `idx_audit_logs_request` (`request_id`);
 
 --
 -- Indexes for table `auth_sessions`

@@ -155,7 +155,7 @@ async function initializeNavbar(container) {
     const revealFailSafe = window.setTimeout(revealShell, 2500);
 
     try {
-        const rbac = await import("./modules/rbac.js?v=8");
+        const rbac = await import("./modules/rbac.js?v=9");
         const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v49";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
@@ -467,13 +467,7 @@ async function initializeNavbar(container) {
             const accessRole = rbac.primaryAccessRole(session);
             const currentFilename = window.location.pathname.split("/").pop() || "";
             if (!rbac.isPageAllowed(session, currentFilename)) {
-                const safePage = accessRole === "salesclerk"
-                    ? "sales_clerk_dashboard.html"
-                    : accessRole === "cashier"
-                        ? "cashier_pos.html"
-                        : accessRole === "supervisor"
-                            ? "supervisor_dashboard.html"
-                        : "dashboard.html";
+                const safePage = rbac.dashboardPathForRole(session) || "login.html";
                 window.location.replace(`${safePage}?access=denied`);
                 return;
             }

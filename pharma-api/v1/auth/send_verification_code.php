@@ -54,7 +54,13 @@ try {
     if (!$sent) {
         consumePasswordReset($pdo, $resetId);
         http_response_code(503);
-        echo json_encode(['success' => false, 'message' => 'We could not send the verification email right now. Please try again later.']);
+        $configurationIssue = verificationEmailConfigurationIssue();
+        echo json_encode([
+            'success' => false,
+            'message' => $configurationIssue !== null
+                ? 'Email delivery is not configured. Please contact the administrator.'
+                : 'We could not send the verification email right now. Please try again later.',
+        ]);
         exit();
     }
 

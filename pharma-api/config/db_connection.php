@@ -5,9 +5,19 @@ if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.use_only_cookies', '1');
     ini_set('session.cookie_httponly', '1');
 
+    // Keep PHP's session store alive slightly longer than the restricted
+    // first-login flow timeout, so ordinary requests do not GC it prematurely.
+    ini_set('session.gc_maxlifetime', '1800');
+    $requestScriptPath = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+    $apiMarkerPosition = stripos($requestScriptPath, '/pharma-api/');
+    $applicationPath = $apiMarkerPosition === false
+        ? ''
+        : rtrim(substr($requestScriptPath, 0, $apiMarkerPosition), '/');
+    $sessionCookiePath = $applicationPath === '' ? '/' : $applicationPath . '/';
+
     session_set_cookie_params([
         'lifetime' => 0,
-        'path' => '/PharmacySystem_for_DocR/',
+        'path' => $sessionCookiePath,
         'domain' => '',
         'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
         'httponly' => true,

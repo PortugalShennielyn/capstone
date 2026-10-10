@@ -2,11 +2,12 @@ import API_BASE_URL from '../config/config.js';
 import {
     ACCESS_DENIED_MESSAGE,
     allowedNavigationPages,
+    dashboardPathForRole,
     isPageAllowed,
     primaryAccessRole,
     roleLabel,
     sessionRoleSet
-} from './rbac.js?v=8';
+} from './rbac.js?v=9';
 
 const TAB_TOKEN_KEY = 'pharma_tab_token';
 const TAB_CHANNEL = 'pharma_tab_session_channel';
@@ -400,22 +401,9 @@ function redirectUnauthorizedPage() {
     try {
         sessionStorage.setItem('drpAccessDeniedMessage', ACCESS_DENIED_MESSAGE);
     } catch (error) {}
-    const roles = sessionRoles();
-    if (roles.includes('supervisor') || roles.includes('ro_supervisor')) {
-        if (!window.location.pathname.endsWith('/supervisor_dashboard.html')) {
-            window.location.replace('supervisor_dashboard.html?access=denied');
-        }
-        return;
-    }
-    if (roles.includes('salesclerk') || roles.includes('ro_sales_clerk')) {
-        window.location.replace('sales_clerk_dashboard.html?access=denied');
-        return;
-    }
-    if (roles.includes('cashier') || roles.includes('ro_cashier')) {
-        window.location.replace('cashier_pos.html?access=denied');
-        return;
-    }
-    window.location.replace('dashboard.html?access=denied');
+    const destination = dashboardPathForRole(currentSession) || 'login.html';
+    const currentPage = window.location.pathname.split('/').pop() || '';
+    if (currentPage !== destination) window.location.replace(`${destination}?access=denied`);
 }
 
 function revealAccessDeniedMessage() {

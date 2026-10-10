@@ -12,6 +12,7 @@ try {
     }
 
     ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     ensureSalesOrderCashSchema($pdo);
     ensureCashierPaymentDiscountSchema($pdo);
 
@@ -168,6 +169,21 @@ try {
     ]);
 
     salesRecordStatusChange($pdo, $orderId, $oldStatus, 'completed', $cashierId, 'Payment completed by cashier.');
+    $actorLabel = trim((string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Cashier'));
+    $discountAmount = cashierMoney($totals['total_discount'] ?? 0);
+    $salesEventDetails = [
+        'order_id' => $orderId, 'order_no' => (string) $order['order_no'],
+        'transaction_id' => $receiptNo, 'amount' => $totalAmount,
+        'payment_method' => 'cash', 'discount_type' => $cashierDiscountType,
+        'discount_amount' => $discountAmount,
+        'sales_clerk_discount' => cashierMoney($totals['sales_clerk_discount'] ?? 0),
+        'cashier_discount_amount' => cashierMoney($totals['discount_amount'] ?? 0),
+    ];
+    recordSalesAudit($pdo, 'SALE_COMPLETED', $actorLabel . ' completed transaction ' . $receiptNo . '.', $orderId, $salesEventDetails);
+    if ($discountAmount > 0) {
+        $discountTypeLabel = $cashierDiscountType !== 'none' ? $cashierDiscountType : 'sales clerk';
+        recordSalesAudit($pdo, 'DISCOUNT_APPLIED', $actorLabel . ' applied a ' . $discountTypeLabel . ' discount to transaction ' . $receiptNo . '.', $orderId, $salesEventDetails);
+    }
     $pdo->commit();
 
     echo json_encode([

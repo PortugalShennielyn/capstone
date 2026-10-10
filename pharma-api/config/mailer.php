@@ -30,9 +30,43 @@ function loadMailEnvironment(): void
     }
 }
 
+function verificationEmailConfigurationIssue(): ?string
+{
+    loadMailEnvironment();
+    $host = trim((string) getenv('MAIL_HOST'));
+    $username = trim((string) getenv('MAIL_USERNAME'));
+    $password = (string) getenv('MAIL_PASSWORD');
+    $from = trim((string) (getenv('PHARMA_MAIL_FROM') ?: $username));
+    $encryption = strtolower(trim((string) (getenv('MAIL_ENCRYPTION') ?: 'tls')));
+    $port = (int) (getenv('MAIL_PORT') ?: 587);
+
+    if (
+        $host === ''
+        || $host === 'smtp.example.com'
+        || $username === ''
+        || str_starts_with($username, 'your-')
+        || $password === ''
+        || str_starts_with($password, 'your-')
+        || !filter_var($from, FILTER_VALIDATE_EMAIL)
+        || str_ends_with(strtolower($from), '@example.com')
+    ) {
+        return 'SMTP settings are missing or still contain example placeholders.';
+    }
+    if (!in_array($encryption, ['tls', 'ssl'], true) || $port < 1 || $port > 65535) {
+        return 'SMTP encryption or port settings are invalid.';
+    }
+
+    return null;
+}
+
 function sendVerificationEmail(string $toEmail, string $code, string $displayName = 'User'): bool
 {
     loadMailEnvironment();
+    if (verificationEmailConfigurationIssue() !== null) {
+        error_log('[MAILER] SMTP settings are missing or invalid; verification email was not sent.');
+        return false;
+    }
+
     $subject  = 'Dr. R Pharmacy – Password Reset Code';
     $bodyHtml = buildVerificationEmailBody($code, $displayName);
 
@@ -46,7 +80,7 @@ function sendVerificationEmail(string $toEmail, string $code, string $displayNam
         if (file_exists($manual)) {
             require_once __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
             require_once __DIR__ . '/../lib/PHPMailer/src/SMTP.php';
-            require_once __DIR__ . '/../lib/PHPMailer/src/Exception.php';
+            require_once __DIR__ . '/../lib/PHPMailer/Exception.php';
         }
     }
 
@@ -101,12 +135,8 @@ function sendViaPhpMailer(string $toEmail, string $subject, string $html): bool
     $encryption = strtolower(trim((string) (getenv('MAIL_ENCRYPTION') ?: 'tls')));
     $port = (int) (getenv('MAIL_PORT') ?: 587);
 
-    if ($host === '' || $username === '' || $password === '' || !filter_var($from, FILTER_VALIDATE_EMAIL)) {
-        error_log('[MAILER] SMTP is not configured; verification email was not sent.');
-        return false;
-    }
-    if (!in_array($encryption, ['tls', 'ssl'], true) || $port < 1 || $port > 65535) {
-        error_log('[MAILER] SMTP encryption or port configuration is invalid.');
+    if (verificationEmailConfigurationIssue() !== null) {
+        error_log('[MAILER] SMTP settings are missing or invalid; verification email was not sent.');
         return false;
     }
 

@@ -32,9 +32,9 @@ if (!preg_match('/^\d{6}$/', $code)) {
     echo json_encode(['success' => false, 'message' => 'Invalid code format.']);
     exit();
 }
-if (strlen($newPass) < 8 || strlen($newPass) > 72) {
+if (!resetPasswordMeetsRequirements($newPass)) {
     http_response_code(422);
-    echo json_encode(['success' => false, 'message' => 'Password must be between 8 and 72 characters.']);
+    echo json_encode(['success' => false, 'message' => 'Password must be 12–16 characters and include uppercase and lowercase letters, a number, and a special character.']);
     exit();
 }
 if ($newPass !== $confirm) {
