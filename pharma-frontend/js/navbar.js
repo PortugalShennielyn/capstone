@@ -127,6 +127,30 @@
     });
 })();
 
+function normalizeSidebarUserMenu(container) {
+    const popover = container.querySelector("#sidebarUserPopover");
+    const summary = popover?.querySelector(".sidebar-user-summary");
+    if (!popover || !summary) return;
+
+    let anchor = summary;
+    [...summary.querySelectorAll(".sidebar-user-action")].forEach(action => {
+        anchor.after(action);
+        anchor = action;
+    });
+
+    const seen = new Set();
+    [...popover.querySelectorAll(".sidebar-user-action")].forEach(action => {
+        const key = action.dataset.authAction === "logout"
+            ? "logout"
+            : (action.dataset.navPage || action.getAttribute("href") || action.textContent.trim());
+        if (seen.has(key)) {
+            action.remove();
+            return;
+        }
+        seen.add(key);
+    });
+}
+
 async function initializeNavbar(container) {
     if (window.__drpNavbarLoaderStarted) {
         enhanceDataTables();
@@ -156,7 +180,7 @@ async function initializeNavbar(container) {
 
     try {
         const rbac = await import("./modules/rbac.js?v=9");
-        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v50";
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v52";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -193,6 +217,7 @@ async function initializeNavbar(container) {
         container.dataset.navbarSource = "runtime";
         container.classList.remove("navbar-skeleton-ready");
         container.classList.add("navbar-ready");
+        normalizeSidebarUserMenu(container);
         const profileAction = container.querySelector(".sidebar-user-action[data-nav-page='user-settings']");
         if (profileAction) {
             profileAction.href = "profile.html";

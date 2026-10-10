@@ -8,7 +8,7 @@
         document.head.appendChild(searchHighlightScript);
     }
 
-    const cacheKey = "drpNavbarHtml:v50";
+    const cacheKey = "drpNavbarHtml:v52";
     const expandedGroupsKey = "drpNavbarExpandedGroups";
     const supervisorNavigation = Object.freeze([
         ["supervisor_dashboard.html", "dashboard", "fa-gauge-high", "Dashboard"],
