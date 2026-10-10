@@ -8,7 +8,7 @@
         document.head.appendChild(searchHighlightScript);
     }
 
-    const cacheKey = "drpNavbarHtml:v48";
+    const cacheKey = "drpNavbarHtml:v50";
     const expandedGroupsKey = "drpNavbarExpandedGroups";
     const supervisorNavigation = Object.freeze([
         ["supervisor_dashboard.html", "dashboard", "fa-gauge-high", "Dashboard"],
@@ -101,6 +101,12 @@
             const isSalesClerk = profile.role === "salesclerk";
             reportsLink.href = isSalesClerk ? "sales_clerk_reports.html" : "reports.html";
             reportsLink.dataset.dashboardView = isSalesClerk ? "sales-clerk-reports" : "reports";
+        }
+        const dashboardLink = container.querySelector(".sidebar-nav [data-nav-page='dashboard']");
+        if (dashboardLink && profile.role !== "supervisor") {
+            const isSalesClerk = profile.role === "salesclerk";
+            dashboardLink.href = isSalesClerk ? "sales_clerk_dashboard.html" : "dashboard.html";
+            dashboardLink.dataset.dashboardView = isSalesClerk ? "sales-clerk-dashboard" : "dashboard";
         }
         container.querySelectorAll("[data-bs-toggle='collapse']").forEach(trigger => {
             const selector = trigger.getAttribute("href") || "";

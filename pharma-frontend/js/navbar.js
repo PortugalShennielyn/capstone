@@ -156,7 +156,7 @@ async function initializeNavbar(container) {
 
     try {
         const rbac = await import("./modules/rbac.js?v=9");
-        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v49";
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v50";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {

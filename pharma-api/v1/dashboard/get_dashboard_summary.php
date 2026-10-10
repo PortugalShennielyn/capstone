@@ -17,6 +17,7 @@ require_once '../activity_log_helpers.php';
 require_once '../purchase_orders/purchase_order_helpers.php';
 require_once '../products/product_category_schema.php';
 require_once '../inventory/inventory_stock_summary.php';
+require_once '../settings/settings_helpers.php';
 require_once '../inventory/expiry_status_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -439,7 +440,7 @@ try {
            AND GREATEST(COALESCE(NULLIF(po.final_payment, 0), po.total_amount) - COALESCE(payments.amount_paid, 0), 0) > 0"
     );
 
-    $inventoryStockSql = inventoryStockSummarySql();
+    $inventoryStockSql = inventoryStockSummarySql(fetchStockThresholds($pdo));
     $stockSummary = dashboardRows(
         $pdo,
         "SELECT

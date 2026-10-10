@@ -36,12 +36,26 @@ pricingSafetyAssert(!$missingCostPreview['eligible_for_apply'] && $missingCostPr
 
 $ids = $pdo->query('SELECT DISTINCT product_id FROM inventory_batches WHERE unit_cost > 0')->fetchAll(PDO::FETCH_COLUMN);
 $preview = $ids ? selectedCategoryPricingPreview($pdo, $ids) : [];
-$normal = current(array_filter($preview, static fn($row) => $row['eligible_for_apply'] && !$row['warning']));
-$flagged = current(array_filter($preview, static fn($row) => $row['eligible_for_apply'] && $row['warning']));
-pricingSafetyAssert((bool)$normal && (bool)$flagged, 'An eligible normal and flagged pricing fixture are required.');
+$priced = array_values(array_filter($preview, static fn($row) => $row['calculated_selling_price'] !== null && !empty($row['sellable_units'])));
+pricingSafetyAssert(count($priced) >= 2, 'Two products with accepted unit costs are required.');
 
 $pdo->beginTransaction();
 try {
+    $preparePrice = $pdo->prepare("UPDATE product SET pricing_method = 'category_markup', custom_markup_percentage = NULL, price = :price WHERE product_id = :id");
+    $preparePrice->execute([
+        ':price' => round((float) $priced[0]['calculated_selling_price'] * 1.1, 2),
+        ':id' => $priced[0]['product_id'],
+    ]);
+    $preparePrice->execute([
+        ':price' => round((float) $priced[1]['calculated_selling_price'] * 2, 2),
+        ':id' => $priced[1]['product_id'],
+    ]);
+    $fresh = selectedCategoryPricingPreview($pdo, [$priced[0]['product_id'], $priced[1]['product_id']]);
+    $normal = current(array_filter($fresh, static fn($row) => $row['product_id'] === $priced[0]['product_id']));
+    $flagged = current(array_filter($fresh, static fn($row) => $row['product_id'] === $priced[1]['product_id']));
+    pricingSafetyAssert($normal && $normal['eligible_for_apply'] && !$normal['warning'], 'Prepared normal category price is eligible.');
+    pricingSafetyAssert($flagged && $flagged['eligible_for_apply'] && $flagged['warning'], 'Prepared 50% price change is flagged.');
+
     $normalId = $normal['product_id'];
     $normalResult = applyCategoryMarkupToSelectedProducts($pdo, [$normalId], false, [$normalId => $normal['preview_token']]);
     pricingSafetyAssert($normalResult['applied_products'] === 1, 'Normal category markup was not applied.');

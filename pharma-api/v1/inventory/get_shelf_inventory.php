@@ -3,6 +3,7 @@ $allowedRoles = ['super_admin','admin','manager','supervisor','salesclerk','Admi
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'expiry_status_helpers.php';
+require_once '../settings/settings_helpers.php';
 
 function shelfDisplayBatchNumber(?string $batchNumber): string
 {
@@ -131,7 +132,11 @@ try {
         }
         unset($row);
     }
-    echo json_encode(['status'=>'success','data'=>$rows], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+    echo json_encode([
+        'status' => 'success',
+        'data' => $rows,
+        'stockThresholds' => fetchStockThresholds($pdo),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     http_response_code(500);
     echo json_encode(['status'=>'error','message'=>'Unable to load Shelf Inventory.']);

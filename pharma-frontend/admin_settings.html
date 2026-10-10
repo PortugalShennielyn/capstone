@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <script src="./js/navbar_bootstrap.js?v=13"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Admin Settings</title>
@@ -14,9 +14,10 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=39" rel="stylesheet">
-    <script src="./js/navbar.js?v=89" defer></script>
+    <script src="./js/navbar.js?v=92" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <script type="module" src="./js/modules/pr_quantity_limit_settings.js?v=1"></script>
+    <script type="module" src="./js/modules/stock_threshold_settings.js?v=2"></script>
 
     <style>
         :root {
@@ -3311,13 +3312,27 @@
                                                 <label class="admin-switch" aria-label="Expiry Monitoring"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Low Stock Threshold</span>
-                                                <input class="admin-setting-control" type="number" value="30" min="0" aria-label="Low Stock Threshold">
+                                                <label class="quantity-limit-label" for="storageLowStockThresholdInput">
+                                                    <span class="admin-setting-label">Storage Low Stock</span>
+                                                    <small>Storage quantity at or below this shows a yellow Low Stock tag.</small>
+                                                </label>
+                                                <input class="admin-setting-control" id="storageLowStockThresholdInput" type="number" value="30" min="0" max="1000000" step="1" aria-label="Storage Low Stock">
                                             </div>
                                             <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Critical Stock Threshold</span>
-                                                <input class="admin-setting-control" type="number" value="5" min="0" aria-label="Critical Stock Threshold">
+                                                <label class="quantity-limit-label" for="shelfLowStockThresholdInput">
+                                                    <span class="admin-setting-label">Shelf Low Stock</span>
+                                                    <small>Shelf quantity at or below this shows a yellow Low Stock tag.</small>
+                                                </label>
+                                                <input class="admin-setting-control" id="shelfLowStockThresholdInput" type="number" value="10" min="0" max="1000000" step="1" aria-label="Shelf Low Stock">
                                             </div>
+                                            <div class="admin-setting-item">
+                                                <label class="quantity-limit-label" for="criticalStockThresholdInput">
+                                                    <span class="admin-setting-label">Critical Stock Threshold</span>
+                                                    <small>A quantity above zero and at or below this shows a red Critical tag. Zero shows Out of Stock.</small>
+                                                </label>
+                                                <input class="admin-setting-control" id="criticalStockThresholdInput" type="number" value="15" min="0" max="1000000" step="1" aria-label="Critical Stock Threshold">
+                                            </div>
+                                            <p class="small text-muted mb-0 d-none" id="stockThresholdMessage" role="status" aria-live="polite"></p>
                                             <div class="admin-setting-item">
                                                 <label class="quantity-limit-label" for="purchaseRequestQuantityLimitInput">
                                                     <span class="admin-setting-label">Purchase Request Quantity Limit</span>

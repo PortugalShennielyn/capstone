@@ -49,19 +49,22 @@ body { min-height: 100vh; margin: 0; color: var(--ink); background: var(--soft);
 .queue-filter { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: #253050; background: #fff; font-size: 12px; font-weight: 900; }
 .queue-filter.active { color: #fff; border-color: var(--purple); background: var(--purple); }
 .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: visible; }
-.cashier-table { width: 100%; min-width: 1040px; margin: 0; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
-.cashier-table.has-staff-details { min-width: 1160px; }
-.cashier-table th { padding: 12px 14px; color: #667085; background: #fbfcff; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 900; text-align: left; text-transform: uppercase; }
-.cashier-table td { padding: 13px 14px; border-bottom: 1px solid #edf0f6; color: var(--ink); font-size: 13px; font-weight: 750; vertical-align: top; text-align: left; overflow-wrap: anywhere; }
-.cashier-table col.col-order { width: 136px; }
-.cashier-table col.col-customer { width: 190px; }
-.cashier-table col.col-staff { width: 150px; }
-.cashier-table col.col-items { width: 88px; }
-.cashier-table col.col-money { width: 132px; }
-.cashier-table col.col-method { width: 116px; }
-.cashier-table col.col-date { width: 150px; }
-.cashier-table col.col-action { width: 84px; }
-.cashier-table .nowrap { white-space: nowrap; overflow-wrap: normal; }
+.cashier-table { width: 100%; min-width: 1280px; margin: 0; border-collapse: separate; border-spacing: 0; table-layout: auto; }
+.cashier-table.has-staff-details { min-width: 1460px; }
+.cashier-table th { padding: 14px 16px; color: #667085; background: #fbfcff; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 900; text-align: left; text-transform: uppercase; line-height: 1.35; white-space: nowrap; }
+.cashier-table td { padding: 14px 16px; border-bottom: 1px solid #edf0f6; color: var(--ink); font-size: 13px; font-weight: 750; vertical-align: middle; text-align: left; line-height: 1.45; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.cashier-table col.col-order { width: 168px; }
+.cashier-table col.col-customer { width: 210px; }
+.cashier-table col.col-staff { width: 160px; }
+.cashier-table col.col-items { width: 96px; }
+.cashier-table col.col-money { width: 148px; }
+.cashier-table col.col-method { width: 140px; }
+.cashier-table col.col-date { width: 196px; }
+.cashier-table col.col-action { width: 96px; }
+.cashier-table .nowrap,
+.cashier-table td:first-child,
+.cashier-table th:first-child { min-width: 156px; white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+.cashier-table .empty-row td { white-space: normal; }
 .cashier-table th.action-col,
 .cashier-table td.action-col,
 .cashier-table th:last-child,

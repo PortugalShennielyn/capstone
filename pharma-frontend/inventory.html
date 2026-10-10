@@ -2,7 +2,7 @@
 <html data-bs-theme="light" lang="en">
  <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <script src="./js/navbar_bootstrap.js?v=13"></script>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
   <meta content="no-cache, no-store, must-revalidate" http-equiv="Cache-Control"/>
@@ -17,7 +17,7 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet"/>
   <link href="./css/navbar.css?v=39" rel="stylesheet"/>
   <link href="./css/inventory_history.css?v=3" rel="stylesheet"/>
-  <script defer="" src="./js/navbar.js?v=89">
+  <script defer="" src="./js/navbar.js?v=92">
   </script>
   <script src="./js/modules/auth_guard.js?v=29" type="module">
   </script>
@@ -98,6 +98,14 @@
         body.dark-mode .inventory-specification-details { color:#a9b6c8; }
         .search-match { padding:0 .08em; border-radius:3px; color:inherit; background:#ddd0ff; box-shadow:0 0 0 1px rgba(124,58,237,.1); }
         .qty-number { font-variant-numeric:tabular-nums; font-weight:850; }
+        .qty-stack { display:flex; flex-direction:column; align-items:center; gap:2px; }
+        .qty-stock-tag { display:inline-flex; align-items:center; justify-content:center; min-height:16px; padding:1px 6px; border-radius:999px; font-size:9px; font-weight:800; line-height:1.2; white-space:nowrap; }
+        .qty-stock-tag.is-low { color:#92400e; background:#fef3c7; }
+        .qty-stock-tag.is-critical { color:#991b1b; background:#fee2e2; }
+        .qty-stock-tag.is-out { color:#6d28d9; background:#ede9fe; }
+        body.dark-mode .qty-stock-tag.is-low { color:#fde68a; background:#78350f; }
+        body.dark-mode .qty-stock-tag.is-critical { color:#fecaca; background:#7f1d1d; }
+        body.dark-mode .qty-stock-tag.is-out { color:#ddd6fe; background:#4c1d95; }
         .expiry-cell,.expiry-stack { text-align:center; }
         .date-stack { display:flex; flex-direction:column; align-items:center; gap:5px; }
         .expiry-date { display:block; color:#64748b; font-size:11px; font-weight:600; line-height:1.2; margin-top:3px; }
@@ -181,6 +189,7 @@
         .inventory-stock-summary-item { min-width:0; }
         .inventory-stock-summary-item span { display:block; margin-bottom:4px; color:#64748b; font-size:10px; font-weight:850; line-height:1.2; text-transform:uppercase; }
         .inventory-stock-summary-item strong { display:block; color:#1f2937; font-size:16px; font-weight:850; line-height:1.25; overflow-wrap:anywhere; }
+        .inventory-stock-summary-item .qty-stock-tag { margin-top:4px; }
         .product-identity-section { padding:18px 0 0; }
         .product-identity-section h6 { margin:0 0 14px; color:#334155; font-size:13px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
         .inventory-flat-section { min-width:0; padding:18px 0; border-bottom:1px solid #edf0f5; }
@@ -620,7 +629,7 @@
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js">
   </script>
-  <script src="./js/modules/inventory.js?v=35" type="module">
+  <script src="./js/modules/inventory.js?v=37" type="module">
   </script>
   <script type="module">
    import verifySession from './js/modules/auth.js?v=8'; await verifySession();

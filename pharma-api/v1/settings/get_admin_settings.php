@@ -33,6 +33,11 @@ echo json_encode([
     'status' => 'success',
     'profile' => $profile,
     'prQuantityLimit' => (int) ($settings['prQuantityLimit'] ?? 50),
+    'stockThresholds' => [
+        'storageLow' => (int) ($settings['storageLowStock'] ?? 30),
+        'shelfLow' => (int) ($settings['shelfLowStock'] ?? 10),
+        'critical' => (int) ($settings['criticalStock'] ?? 15),
+    ],
     'grn' => [
         'receivedByName' => $settings['grnReceivedByName'] ?? '',
         'approvedByName' => $settings['grnApprovedByName'] ?? '',

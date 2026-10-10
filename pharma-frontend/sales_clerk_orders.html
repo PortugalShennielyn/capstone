@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <script src="./js/navbar_bootstrap.js?v=13"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Clerk Transactions</title>
@@ -11,7 +11,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=39" rel="stylesheet">
-    <script src="./js/navbar.js?v=90" defer></script>
+    <script src="./js/navbar.js?v=92" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root { --purple:#7c3aed; --purple-dark:#5b21b6; --ink:#101936; --muted:#667085; --line:#e6eaf2; --body:#f6f8fc; --shadow:0 14px 34px rgba(16,25,54,.07); --blue:#2563eb; --green:#16a34a; --red:#dc2626; --orange:#d97706; }
@@ -37,11 +37,11 @@
         .search-box { position:relative; width:clamp(280px,30vw,390px); }
         .search-box input { min-height:40px; padding-right:40px; border-color:var(--line); border-radius:8px; font-size:13px; font-weight:700; }
         .search-box i { position:absolute; top:50%; right:14px; color:#667085; transform:translateY(-50%); }
-        .orders-table-wrap { width:100%; overflow:visible; }
-        .orders-table { width:100%; margin:0; table-layout:fixed; }
-        .orders-table th,.orders-table td { padding:13px 14px !important; color:#162044 !important; font-size:13px !important; font-weight:750 !important; text-align:left !important; vertical-align:middle !important; white-space:normal; overflow-wrap:anywhere; }
+        .orders-table-wrap { width:100%; overflow-x:auto; }
+        .orders-table { width:100%; min-width:980px; margin:0; table-layout:auto; }
+        .orders-table th,.orders-table td { padding:14px 16px !important; color:#162044 !important; font-size:13px !important; font-weight:750 !important; line-height:1.45 !important; text-align:left !important; vertical-align:middle !important; white-space:nowrap !important; overflow-wrap:normal !important; word-break:normal !important; }
         .orders-table th { color:#34405f !important; background:#f8fafc !important; font-weight:900 !important; }
-        .orders-table .empty-row td { padding:40px 16px !important; text-align:center !important; white-space:normal; }
+        .orders-table .empty-row td { padding:40px 16px !important; text-align:center !important; white-space:normal !important; }
         .empty-title { display:block; color:#253050; font-size:15px; font-weight:900; }
         .empty-subtitle { display:block; margin-top:5px; color:var(--muted); font-size:13px; font-weight:650; }
         .status-pill { display:inline-flex; align-items:center; min-height:25px; padding:4px 10px; border-radius:7px; font-size:12px; font-weight:900; white-space:nowrap; }

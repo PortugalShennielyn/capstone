@@ -3,6 +3,7 @@ require_once '../../config/db_connection.php';
 $allowedRoles = ['super_admin', 'admin', 'manager', 'supervisor', 'ro-admin', 'ro-super-admin', 'ro-manager', 'ro-supervisor'];
 require_once '../../config/require_auth.php';
 require_once '../inventory/inventory_stock_summary.php';
+require_once '../settings/settings_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);
@@ -60,7 +61,7 @@ try {
     }
 
     $rows = [];
-    $stockSql = inventoryStockSummarySql();
+    $stockSql = inventoryStockSummarySql(fetchStockThresholds($pdo));
     $specification = alertProductSpecificationSql();
     $specificationJoin = alertProductSpecificationJoin();
 

@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <script src="./js/navbar_bootstrap.js?v=13"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -15,7 +15,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
     <link href="./css/navbar.css?v=39" rel="stylesheet">
     <link href="./css/product_workflows.css?v=5" rel="stylesheet">
-    <script src="./js/navbar.js?v=89" defer></script>
+    <script src="./js/navbar.js?v=92" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root { --purple:#7c3aed; --purple-dark:#6328d6; --body-bg:#f4f6fb; --topbar-height:70px; --border-soft:#e8ecf3; --text-main:#252b37; --transition:all .3s ease; }
@@ -189,7 +189,36 @@
         .pricing-selection-status.is-eligible { color:#166534; border-color:#bbf7d0; background:#f0fdf4; }
         .pricing-selection-status.is-outdated { color:#92400e; border-color:#fde68a; background:#fffbeb; }
         .pricing-selection-status.is-blocked { color:#667085; border-color:#e4e7ec; background:#f9fafb; }
-        .products-table.pricing-selection-mode th:nth-child(1),.products-table.pricing-selection-mode td:nth-child(1) { width:175px; min-width:175px; }
+        .products-table.pricing-selection-mode th:nth-child(1),.products-table.pricing-selection-mode td:nth-child(1) { width:44px; min-width:44px; max-width:44px; }
+        .product-pricing-toolbar,.markup-selection-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px 12px; margin:0 0 10px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
+        .product-pricing-toolbar-label { display:flex; align-items:center; gap:10px; min-width:0; margin-right:auto; }
+        .product-pricing-toolbar-label strong { color:#253047; font-size:13px; font-weight:800; }
+        .product-pricing-toolbar-actions,.markup-selection-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
+        .product-pricing-toolbar .btn,.markup-selection-actions .btn { height:36px; min-height:36px; padding:0 12px; white-space:nowrap; font-size:13px; }
+        .markup-selection-bar { background:#f5f3ff; border-color:#ddd6fe; }
+        .markup-selection-indicator { display:grid; gap:2px; min-width:min(100%,220px); margin-right:auto; }
+        .markup-selection-indicator strong { color:#4c1d95; font-size:13px; font-weight:800; }
+        .markup-selection-indicator span { color:#667085; font-size:12px; font-weight:650; line-height:1.35; }
+        .markup-category-field { display:grid; gap:3px; min-width:150px; color:#596274; font-size:11px; font-weight:800; }
+        .markup-category-field .form-select { min-width:150px; height:36px; font-size:13px; font-weight:650; }
+        .markup-selected-count { color:#253047; font-size:13px; font-weight:800; white-space:nowrap; }
+        #table-products.pricing-selection-mode tbody tr.is-markup-selected td,
+        #table-products.pricing-selection-mode tbody tr.is-markup-selected td:last-child { background:#eef2ff!important; }
+        #table-products.pricing-selection-mode tbody tr.is-markup-disabled { cursor:not-allowed; }
+        #table-products.pricing-selection-mode tbody tr.is-markup-disabled td,
+        #table-products.pricing-selection-mode tbody tr.is-markup-disabled td:last-child { color:#98a2b3; background:#f8fafc!important; }
+        .markup-row-state { display:inline-flex; max-width:110px; padding:3px 6px; border-radius:999px; font-size:10px; font-weight:800; line-height:1.2; white-space:normal; }
+        .markup-row-state.is-eligible,.markup-row-state.is-outdated { color:#166534; background:#dcfce7; }
+        .markup-row-state.is-blocked { color:#667085; background:#f2f4f7; }
+        body.dark-mode .product-pricing-toolbar,body.dark-mode .markup-selection-bar { border-color:#334155; background:#182131; }
+        body.dark-mode .markup-selection-bar { background:#241b3a; border-color:#5b21b6; }
+        body.dark-mode .product-pricing-toolbar-label strong,body.dark-mode .markup-selected-count { color:#f8fafc; }
+        body.dark-mode .markup-selection-indicator strong { color:#ddd6fe; }
+        body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-selected td,
+        body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-selected td:last-child { background:#2e2150!important; }
+        body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-disabled td,
+        body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-disabled td:last-child { color:#94a3b8; background:#141b27!important; }
+        .bulk-pricing-table { width:100%; min-width:720px; margin:0; table-layout:fixed; font-size:.72rem; }
         .product-refresh-indicator { display:inline-flex; align-items:center; gap:5px; margin-top:4px; color:#667085; font-size:11px; font-weight:700; }
         body.dark-mode .selling-price-value { color:#f8fafc; }
         body.dark-mode .pricing-method-category,body.dark-mode .manage-prices-count { color:#bfdbfe; border-color:#1d4ed8; background:#172554; }
@@ -231,7 +260,7 @@
         .bulk-pricing-metric strong { margin-top:2px; color:#253047; font-size:.92rem; font-weight:800; }
         .bulk-pricing-search { justify-self:end; width:min(100%,360px); }
         .bulk-pricing-table-wrap { min-height:0; flex:1 1 auto; overflow:auto; border:1px solid var(--border-soft); border-radius:9px; overscroll-behavior:contain; }
-        .bulk-pricing-table { width:100%; min-width:1200px; margin:0; table-layout:fixed; font-size:.72rem; }
+        @media (max-width:767px) { .product-pricing-toolbar,.markup-selection-bar { align-items:stretch; } .product-pricing-toolbar-label,.markup-selection-indicator { margin-right:0; } .product-pricing-toolbar-actions,.markup-selection-actions { width:100%; } .topbar-right .product-add-button { width:auto; min-height:36px; padding-inline:10px; } }
         .bulk-pricing-table th { position:sticky; top:0; z-index:3; padding:10px 8px; color:#596274; background:#f5f7fb; font-size:.67rem; font-weight:800; line-height:1.2; vertical-align:middle; }
         .bulk-pricing-table td { padding:9px 8px; vertical-align:middle; line-height:1.25; overflow-wrap:anywhere; }
         .bulk-pricing-table .text-column { text-align:left; }
@@ -560,8 +589,9 @@
         }
         @media (max-width: 640px) {
             body #mainWrapper.main-wrapper { width:100%!important; margin-left:0!important; }
-            .page-body { padding:14px 12px; }
-            .product-add-button { width:100%; }
+            .page-body { padding:14px 12px; overflow-x:hidden; }
+            .topbar { height:auto; min-height:var(--topbar-height); flex-wrap:wrap; row-gap:8px; padding:10px 12px; }
+            .topbar-right .product-add-button { width:auto; }
             .product-toolbar { gap:10px; padding:14px 16px; }
             .product-search-field,.product-toolbar-field:nth-child(n),.product-master-actions { flex:1 1 100%; min-width:0; }
             .product-master-actions { flex-wrap:wrap; }
@@ -657,6 +687,7 @@
                 </div>
             </div>
             <div class="topbar-right">
+                <button class="btn btn-purple product-add-button" type="button" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
                 <button class="icon-btn"><i class="fa-regular fa-bell"></i></button>
             </div>
         </header>
@@ -693,19 +724,35 @@
                             </select>
                         </div>
                         <div class="product-toolbar-field product-pricing-filter d-none" id="productPricingFilterWrap"><label class="form-label" for="productPricingFilter">Pricing</label><select class="form-select" id="productPricingFilter"><option value="all">All pricing</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option><option value="manual">Manual</option><option value="needs_update">Needs update</option><option value="no_cost">No accepted cost</option></select></div>
-                        <div class="product-master-actions">
-                            <span class="product-refresh-indicator d-none" id="productRefreshIndicator"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Refreshing...</span></span>
-                            <button class="btn btn-outline-secondary" id="btnCategorySpecifications" type="button"><i class="fa-solid fa-sliders me-2"></i>Specifications</button>
-                            <button class="btn btn-outline-primary" id="btnManagePrices" type="button"><i class="fa-regular fa-eye me-2"></i>Show markup prices</button>
-                            <div class="pricing-selection-actions d-none" id="pricingSelectionActions">
-                                <span class="pricing-selection-summary"><strong>Manage Product Prices</strong><span class="pricing-selection-count" id="pricingSelectionCount">0 selected · 0 eligible</span></span>
-                                <button class="btn btn-outline-primary" id="btnApplySelectedPricing" type="button" disabled><i class="fa-solid fa-percent me-2"></i>Apply Category Markup</button>
-                                <button class="btn btn-outline-secondary" id="btnExitPricingSelection" type="button">Hide markup prices</button>
-                            </div>
-                            <button class="btn btn-purple product-add-button" type="button" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
-                        </div>
                 </div>
-                <div class="product-markup-note d-none" id="productMarkupNote">Markup view shows accepted unit cost and the saved pricing method. Select eligible products to apply category markup.</div>
+                <div class="product-pricing-toolbar" id="productPricingToolbar">
+                    <div class="product-pricing-toolbar-label">
+                        <strong>Product Pricing</strong>
+                        <span class="product-refresh-indicator d-none" id="productRefreshIndicator"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Refreshing...</span></span>
+                    </div>
+                    <div class="product-pricing-toolbar-actions">
+                        <button class="btn btn-outline-secondary" id="btnCategorySpecifications" type="button"><i class="fa-solid fa-sliders me-2"></i>Specifications</button>
+                        <button class="btn btn-outline-secondary" id="btnManageCategoryMarkup" type="button"><i class="fa-solid fa-percent me-2"></i>Manage Markup Rates</button>
+                        <button class="btn btn-outline-primary" id="btnEnterMarkupMode" type="button"><i class="fa-solid fa-tags me-2"></i>Apply Category Markup</button>
+                    </div>
+                </div>
+                <div class="markup-selection-bar d-none" id="markupSelectionBar">
+                    <div class="markup-selection-indicator">
+                        <strong>Markup Selection Mode</strong>
+                        <span>Click a row to select it. Prices stay unchanged until you confirm the preview.</span>
+                    </div>
+                    <div class="markup-selection-actions">
+                        <label class="markup-category-field" for="markupCategorySelect">Category
+                            <select class="form-select form-select-sm" id="markupCategorySelect">
+                                <option value="">All products</option>
+                            </select>
+                        </label>
+                        <button class="btn btn-outline-secondary" id="btnSelectAllEligible" type="button">Select All Eligible</button>
+                        <span class="markup-selected-count" id="markupSelectedCount">0 selected</span>
+                        <button class="btn btn-purple" id="btnPreviewMarkupPrices" type="button" disabled>Preview Prices</button>
+                        <button class="btn btn-outline-secondary" id="btnExitPricingSelection" type="button">Cancel</button>
+                    </div>
+                </div>
                 <div class="product-master-container">
                     <div class="table-responsive product-table-wrapper">
                         <table id="table-products" class="table table-hover align-middle products-table">
@@ -1009,13 +1056,26 @@
         </div>
     </div>
 
-    <div class="modal fade" id="selectedPricingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="categoryMarkupModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header"><div><h5 class="modal-title fw-bold">Apply Category Markup</h5><small class="text-muted">Review selected products before changing their pricing method and active selling price.</small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-header"><div><h5 class="modal-title fw-bold">Manage Markup Rates</h5><small class="text-muted">Selling price = accepted unit cost × (1 + markup / 100). Saving here does not change product prices.</small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <form id="categoryMarkupForm">
+                    <div class="modal-body" id="categoryMarkupFields"></div>
+                    <div class="modal-footer"><div class="text-danger small me-auto" id="categoryMarkupError"></div><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" type="submit">Save markups</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="selectedPricingModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><div><h5 class="modal-title fw-bold">Apply Category Markup</h5><small class="text-muted">Each sellable unit uses its converted unit cost. Prices change only after you confirm.</small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <div class="modal-body">
-                    <div class="bulk-pricing-toolbar"><div class="bulk-pricing-metric"><span>Selected</span><strong id="selectedPricingSelectedCount">0</strong></div><div class="bulk-pricing-metric"><span>Eligible</span><strong id="selectedPricingEligibleCount">0</strong></div><div class="bulk-pricing-metric"><span>Blocked</span><strong id="selectedPricingBlockedCount">0</strong></div><div class="bulk-pricing-metric"><span>Price warnings</span><strong id="selectedPricingWarningCount">0</strong></div><div class="bulk-pricing-search"><label class="visually-hidden" for="selectedPricingSearch">Search selected products</label><input class="form-control form-control-sm" id="selectedPricingSearch" type="search" placeholder="Search brand, product, barcode, or specification"></div></div>
-                    <div class="bulk-pricing-table-wrap"><table class="table table-hover bulk-pricing-table"><colgroup><col style="width:3%"><col style="width:8%"><col style="width:7%"><col style="width:8%"><col style="width:17%"><col style="width:6%"><col style="width:7%"><col style="width:8%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:6%"><col style="width:9%"></colgroup><thead><tr><th class="center-column">Select</th><th class="text-column">Identifier</th><th class="text-column">Brand</th><th class="text-column">Product</th><th class="text-column">Specification</th><th class="text-column">Category</th><th class="text-column">Existing Method</th><th class="numeric-column">Cost Basis</th><th class="numeric-column">Applied Markup</th><th class="numeric-column">Current Price</th><th class="numeric-column">Calculated Price</th><th class="numeric-column">Difference</th><th class="center-column">Eligibility</th></tr></thead><tbody id="selectedPricingPreviewBody"></tbody></table></div>
+                    <div class="bulk-pricing-toolbar"><div class="bulk-pricing-metric"><span>Selected</span><strong id="selectedPricingSelectedCount">0</strong></div><div class="bulk-pricing-metric"><span>Eligible</span><strong id="selectedPricingEligibleCount">0</strong></div><div class="bulk-pricing-metric"><span>Excluded</span><strong id="selectedPricingBlockedCount">0</strong></div><div class="bulk-pricing-metric"><span>Price warnings</span><strong id="selectedPricingWarningCount">0</strong></div><div class="bulk-pricing-search"><label class="visually-hidden" for="selectedPricingSearch">Search selected products</label><input class="form-control form-control-sm" id="selectedPricingSearch" type="search" placeholder="Search product, category, or unit"></div></div>
+                    <div class="form-check mb-2"><input class="form-check-input" id="selectedPricingReplaceManual" type="checkbox"><label class="form-check-label" for="selectedPricingReplaceManual">Replace manual prices. Leave this off to keep manual overrides.</label></div>
+                    <div class="bulk-pricing-table-wrap"><table class="table table-hover bulk-pricing-table"><thead><tr><th class="center-column">Select</th><th class="text-column">Product</th><th class="text-column">Category</th><th class="text-column">Sellable Unit</th><th class="numeric-column">Accepted Unit Cost</th><th class="numeric-column">Current Price</th><th class="numeric-column">Markup %</th><th class="numeric-column">Proposed Price</th><th class="center-column">Status</th></tr></thead><tbody id="selectedPricingPreviewBody"></tbody></table></div>
                 </div>
                 <div class="modal-footer"><div class="bulk-pricing-footer-summary" id="selectedPricingPreviewSummary"></div><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" id="btnConfirmSelectedPricing" type="button">Apply to Selected Products</button></div>
             </div>
@@ -1028,7 +1088,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js?v=8';
-        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=95';
+        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=97';
 
         verifySession().then((user) => {
             if (!user) return;

@@ -22,8 +22,9 @@ try {
         throw new InvalidArgumentException('Pricing action must be preview or apply.');
     }
 
+    $replaceManual = !empty($payload['replace_manual']);
     if ($action === 'preview') {
-        $products = selectedCategoryPricingPreview($pdo, $productIds);
+        $products = selectedCategoryPricingPreview($pdo, $productIds, false, $replaceManual);
         echo json_encode([
             'status' => 'success',
             'products' => $products,
@@ -43,7 +44,8 @@ try {
         $productIds,
         !empty($payload['confirm_flagged']),
         is_array($payload['preview_tokens'] ?? null) ? $payload['preview_tokens'] : [],
-        $isAdmin
+        $isAdmin,
+        $replaceManual
     );
     $pdo->commit();
     echo json_encode([

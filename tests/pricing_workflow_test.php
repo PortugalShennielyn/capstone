@@ -16,9 +16,7 @@ ensureProductPricingSchema($pdo);
 foreach ([
     'Medicine' => 5.0,
     'Grocery' => 15.0,
-    'Cosmetics' => 15.0,
-    'Drinks' => 20.0,
-    'Others' => 15.0,
+    'Medical Supplies' => 15.0,
 ] as $categoryName => $expectedMarkup) {
     $statement = $pdo->prepare('SELECT category_id, default_markup_percentage FROM product_categories WHERE LOWER(TRIM(category_name)) = LOWER(TRIM(:category_name)) LIMIT 1');
     $statement->execute([':category_name' => $categoryName]);
@@ -28,8 +26,8 @@ foreach ([
 }
 $medicalSuppliesId = (string) $pdo->query("SELECT category_id FROM product_categories WHERE LOWER(TRIM(category_name)) = 'medical supplies' LIMIT 1")->fetchColumn();
 $medicalSuppliesResolution = categoryMarkupResolution($pdo, $medicalSuppliesId);
-pricingAssert($medicalSuppliesResolution['markup_percentage'] === 15.0 && $medicalSuppliesResolution['source_label'] === 'Others fallback', 'Medical Supplies uses 15% fallback from Others');
-pricingAssert(calculatedSellingPrice(50, $medicalSuppliesResolution['markup_percentage']) === 57.5, 'Green Cross Alcohol 50.00 cost calculates to 57.50 with Others fallback');
+pricingAssert($medicalSuppliesResolution['markup_percentage'] === 15.0 && $medicalSuppliesResolution['source_label'] === 'Medical Supplies', 'Medical Supplies uses its own 15% category markup');
+pricingAssert(calculatedSellingPrice(50, $medicalSuppliesResolution['markup_percentage']) === 57.5, 'Medical Supplies 50.00 cost calculates to 57.50 at 15% markup');
 pricingAssert(calculatedSellingPrice(50, 30) === 65.0, 'Custom 30% markup on 50.00 calculates to 65.00');
 pricingAssert(calculatedSellingPrice(50, 60) === 80.0, 'PHP 50 cost plus 60% markup equals 80.00');
 pricingAssert(round(50 * 100, 2) === 5000.0, 'PHP 50 unit cost times 100 units equals 5,000.00');
