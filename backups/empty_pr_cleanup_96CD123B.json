@@ -1,0 +1,66 @@
+{
+    "pr": {
+        "pr_id": "1dcfed7d-aa00-11f1-a501-0a002700000b",
+        "pr_number": "PR-RELATED-PO-96CD123B",
+        "requested_by": "09632669-6a16-11f1-895a-0a002700000b",
+        "request_date": "2026-09-06",
+        "status": "Approved",
+        "supervisor_user_id": null,
+        "submitted_at": null,
+        "decided_at": null,
+        "created_at": "2026-09-06 07:34:50",
+        "updated_at": null
+    },
+    "orders": [
+        {
+            "po_number": "PO-RELATED-1-1A467F16",
+            "payment_terms": null,
+            "expected_delivery_date": "2026-09-06",
+            "final_payment": "0.00",
+            "status": "Pending",
+            "approval_status": "Pending",
+            "created_at": "2026-09-06 07:34:50",
+            "payment_status": "Unpaid",
+            "total_amount": "100.00",
+            "po_id": "1dd38fce-aa00-11f1-a501-0a002700000b",
+            "pr_id": "1dcfed7d-aa00-11f1-a501-0a002700000b",
+            "supplier_id": "09694904-6a16-11f1-895a-0a002700000b"
+        },
+        {
+            "po_number": "PO-RELATED-2-BA0852F8",
+            "payment_terms": null,
+            "expected_delivery_date": "2026-09-06",
+            "final_payment": "0.00",
+            "status": "Pending",
+            "approval_status": "Pending",
+            "created_at": "2026-09-06 07:34:50",
+            "payment_status": "Unpaid",
+            "total_amount": "100.00",
+            "po_id": "1dd60c0e-aa00-11f1-a501-0a002700000b",
+            "pr_id": "1dcfed7d-aa00-11f1-a501-0a002700000b",
+            "supplier_id": "09694904-6a16-11f1-895a-0a002700000b"
+        }
+    ],
+    "dependencies": {
+        "PO-RELATED-1-1A467F16": {
+            "inventory_batches": [],
+            "inventory_receiving_transactions": [],
+            "purchase_order_approval_audit": [],
+            "purchase_order_invoices": [],
+            "purchase_order_items": [],
+            "purchase_order_payments": [],
+            "purchase_order_receiving": [],
+            "supplier_credit_applications": []
+        },
+        "PO-RELATED-2-BA0852F8": {
+            "inventory_batches": [],
+            "inventory_receiving_transactions": [],
+            "purchase_order_approval_audit": [],
+            "purchase_order_invoices": [],
+            "purchase_order_items": [],
+            "purchase_order_payments": [],
+            "purchase_order_receiving": [],
+            "supplier_credit_applications": []
+        }
+    }
+}

@@ -32,6 +32,7 @@ unset(
 echo json_encode([
     'status' => 'success',
     'profile' => $profile,
+    'prQuantityLimit' => (int) ($settings['prQuantityLimit'] ?? 50),
     'grn' => [
         'receivedByName' => $settings['grnReceivedByName'] ?? '',
         'approvedByName' => $settings['grnApprovedByName'] ?? '',

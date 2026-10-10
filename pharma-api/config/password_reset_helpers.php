@@ -1,4 +1,3 @@
-
 <?php
 require_once __DIR__ . '/id_helpers.php';
 require_once __DIR__ . '/mailer.php';
@@ -10,36 +9,34 @@ function generateVerificationCode(): string
 
 function createPasswordReset(PDO $pdo, string $userId, string $email, string $code): string
 {
-    // Invalidate previous unused codes for this user.
+    $resetId = newUuid($pdo);
+
     $pdo->prepare(
         'UPDATE password_resets
          SET used_at = NOW()
-         WHERE user_id = :user_id
-           AND used_at IS NULL'
+         WHERE user_id = :user_id AND used_at IS NULL'
     )->execute([':user_id' => $userId]);
 
-    // Create a new code that expires in 10 minutes.
     $stmt = $pdo->prepare(
         'INSERT INTO password_resets
-            (user_id, email, code_hash, expires_at)
+            (reset_id, user_id, email, code_hash, expires_at)
          VALUES
-            (:user_id, :email, :code_hash,
-             DATE_ADD(NOW(), INTERVAL 10 MINUTE))'
+            (:reset_id, :user_id, :email, :code_hash, DATE_ADD(NOW(), INTERVAL 10 MINUTE))'
     );
-
     $stmt->execute([
+        ':reset_id'  => $resetId,
         ':user_id'   => $userId,
         ':email'     => $email,
         ':code_hash' => password_hash($code, PASSWORD_DEFAULT),
     ]);
 
-    return (string) $pdo->lastInsertId();
+    return $resetId;
 }
 
 function verifyPasswordReset(PDO $pdo, string $email, string $code): ?array
 {
     $stmt = $pdo->prepare(
-        'SELECT id, user_id, code_hash, attempts, expires_at
+        'SELECT reset_id, user_id, code_hash, attempts, expires_at
          FROM password_resets
          WHERE email = :email
            AND used_at IS NULL
@@ -47,25 +44,17 @@ function verifyPasswordReset(PDO $pdo, string $email, string $code): ?array
          ORDER BY created_at DESC
          LIMIT 1'
     );
-
     $stmt->execute([':email' => $email]);
     $row = $stmt->fetch();
+    if (!$row) return null;
 
-    if (!$row) {
-        return null;
-    }
-
-    if ((int) $row['attempts'] >= 5) {
-        return null;
-    }
+    if ((int) $row['attempts'] >= 5) return null;
 
     if (!password_verify($code, $row['code_hash'])) {
         $pdo->prepare(
-            'UPDATE password_resets
-             SET attempts = attempts + 1
-             WHERE id = :id'
-        )->execute([':id' => $row['id']]);
-
+            'UPDATE password_resets SET attempts = attempts + 1
+             WHERE reset_id = :reset_id'
+        )->execute([':reset_id' => $row['reset_id']]);
         return null;
     }
 
@@ -75,8 +64,6 @@ function verifyPasswordReset(PDO $pdo, string $email, string $code): ?array
 function consumePasswordReset(PDO $pdo, string $resetId): void
 {
     $pdo->prepare(
-        'UPDATE password_resets
-         SET used_at = NOW()
-         WHERE id = :id'
-    )->execute([':id' => $resetId]);
+        'UPDATE password_resets SET used_at = NOW() WHERE reset_id = :reset_id'
+    )->execute([':reset_id' => $resetId]);
 }

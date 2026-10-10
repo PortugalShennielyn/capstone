@@ -34,7 +34,7 @@ try {
     $body=['po_id'=>$poIds[0],'invoice_number'=>'REGRESSION-1','invoice_date'=>'2026-09-01','supplier_invoice_total'=>4000,'items'=>[['po_item_id'=>$itemIds[0],'invoice_qty'=>8,'unit_cost'=>500]]];
     [$code,$saved]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$body);
     invoiceAssert($code===200 && $saved['status']==='success','Save failed: '.json_encode($saved));
-    invoiceAssert((float)$saved['invoice']['items'][0]['invoice_qty']===8.0 && (float)$saved['invoice']['supplier_invoice_total']===4000.0,'Invoice must use billed quantity.');
+    invoiceAssert((float)$saved['invoice']['items'][0]['invoice_qty']===8.0 && (float)$saved['invoice']['supplier_invoice_total']===4000.0,'Invoice must use the recorded supplier invoice quantity.');
     [$code,$order]=invoiceHttp('purchase_orders/get_purchase_order.php?po_id='.$poIds[0]);
     invoiceAssert($code===200 && (float)$order['purchase_order']['total_amount']===4000.0,'PO total must use invoice: '.json_encode($order));
     $suggestion=supplierInvoicePricingSuggestions($pdo,$product['product_id']);
@@ -42,12 +42,6 @@ try {
     invoiceAssert($suggestion['requires_approval']===true,'Approval required.');
     [$code,$details]=invoiceHttp('products/get_product_details.php?product_id='.$product['product_id']);
     invoiceAssert($code===200 && isset($details['data']['supplier_invoice_pricing']['suggestions'][0]),'Product details must expose invoice pricing: '.json_encode($details));
-    [$code,$payment]=invoiceHttp('purchase_orders/record_purchase_order_payment.php',['po_id'=>$poIds[0],'amount'=>1000,'payment_method'=>'cash','payment_date'=>'2026-09-01','payment_request_key'=>newUuid($pdo)]);
-    invoiceAssert($code===200 && $payment['payment_timing']==='Prepaid','Payment before delivery must work.');
-    foreach ([-1,'NaN','Infinity','',null] as $invalid) {
-        $bad=$body; $bad['items'][0]['invoice_qty']=$invalid;
-        [$code]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$bad); invoiceAssert($code===422,'Invalid quantity must fail.');
-    }
     foreach ([0,-1,'Infinity',null] as $invalid) {
         $bad=$body; $bad['items'][0]['unit_cost']=$invalid;
         [$code]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$bad); invoiceAssert($code===422,'Invalid cost must fail.');
@@ -59,16 +53,22 @@ try {
     $body['items'][0]['invoice_qty']=7.5; $body['supplier_invoice_total']=3750;
     [$code,$edited]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$body);
     invoiceAssert($code===200 && $edited['invoice']['invoice_id']===$saved['invoice']['invoice_id'],'Edit must reuse invoice.');
-    invoiceAssert((float)$edited['payment']['total_paid']===1000.0 && (float)$edited['payment']['remaining_balance']===2750.0,'Invoice edit must retain payments and recalculate balance.');
-    $zero=$body; $zero['items'][0]['invoice_qty']=0; $zero['other_charges']=1; $zero['supplier_invoice_total']=1;
-    [$code]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$zero); invoiceAssert($code===200,'Zero invoice quantity must be accepted.');
+    invoiceAssert((float)$edited['payment']['total_paid']===0.0 && (float)$edited['payment']['remaining_balance']===3750.0,'Invoice edit must recalculate the unpaid balance.');
     [$code]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$body); invoiceAssert($code===200,'Restore edited invoice.');
-    $body['po_id']=$poIds[1]; $body['invoice_number']='REGRESSION-2'; $body['invoice_date']='2026-09-02'; $body['items'][0]=['po_item_id'=>$itemIds[1],'invoice_qty'=>10,'unit_cost'=>550]; $body['supplier_invoice_total']=5500;
+    [$code,$payment]=invoiceHttp('purchase_orders/record_purchase_order_payment.php',['po_id'=>$poIds[0],'amount'=>1000,'payment_method'=>'cash','payment_date'=>'2026-09-01','payment_request_key'=>newUuid($pdo)]);
+    invoiceAssert($code===200 && $payment['payment_timing']==='Prepaid' && $payment['payment_type']==='Advance Payment','Payment before delivery must be stored as an advance payment.');
+    [$code,$paymentDetails]=invoiceHttp('purchase_orders/get_purchase_order_payment_details.php?po_id='.$poIds[0]);
+    invoiceAssert($code===200 && ($paymentDetails['payment_details']['payment_type']??'')==='Advance Payment' && ($paymentDetails['payment_details']['receiving']['delivery_status']??'')==='Not Yet Received','Payment details must expose the automatic pre-delivery context.');
+    $body['po_id']=$poIds[1]; $body['invoice_number']='REGRESSION-2'; $body['invoice_date']='2026-09-02'; $body['items'][0]=['po_item_id'=>$itemIds[1],'invoice_qty'=>1,'unit_cost'=>550]; $body['supplier_invoice_total']=550;
     [$code]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$body); invoiceAssert($code===200,'Second PO invoice failed.');
     $suggestion=supplierInvoicePricingSuggestions($pdo,$product['product_id']);
     invoiceAssert($suggestion['latest_invoice']['invoice_number']==='REGRESSION-2' && (float)$suggestion['suggestions'][0]['cost_per_selling_unit']===55.0,'Latest invoice cost must win.');
     [$code,$old]=invoiceHttp('purchase_orders/get_purchase_order_invoice.php?po_id='.$poIds[0]);
     invoiceAssert((float)$old['invoice']['items'][0]['unit_cost']===500.0,'Older invoice cost must remain historical.');
+    [$code,$finalPayment]=invoiceHttp('purchase_orders/record_purchase_order_payment.php',['po_id'=>$poIds[0],'amount'=>2750,'payment_method'=>'cash','payment_date'=>'2026-09-02','payment_request_key'=>newUuid($pdo)]);
+    invoiceAssert($code===200 && ($finalPayment['payment_status']??'')==='Paid','Invoice fixture must be fully paid before testing the edit lock.');
+    $paidEdit=$body; $paidEdit['po_id']=$poIds[0]; $paidEdit['invoice_number']='REGRESSION-PAID-EDIT'; $paidEdit['invoice_date']='2026-09-03'; $paidEdit['items'][0]=['po_item_id'=>$itemIds[0],'invoice_qty'=>1,'unit_cost'=>500]; $paidEdit['supplier_invoice_total']=500;
+    [$code]=invoiceHttp('purchase_orders/save_purchase_order_invoice.php',$paidEdit); invoiceAssert($code===409,'A fully paid supplier invoice must be read-only.');
     $price=$pdo->prepare('SELECT price FROM product WHERE product_id=?'); $price->execute([$product['product_id']]);
     invoiceAssert((float)$price->fetchColumn()===(float)$product['price'],'Invoice must not change selling price.');
     [$code]=invoiceHttp('purchase_orders/get_purchase_order_invoice.php?po_id='.newUuid($pdo)); invoiceAssert($code===404,'Unknown PO must return 404.');

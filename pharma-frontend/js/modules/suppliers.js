@@ -6,9 +6,14 @@ import {
     optionList as ruleOptionList
 } from './variation_rules.js';
 import {
+    cleanProductSpecificationText,
+    formatProductCatalogSpecificationLines,
+    formatProductIdentityParts,
     formatProductSpecification,
+    inventoryMedicineSpecificationParts,
+    isPrescriptionProduct,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=8';
+} from './product_specification.js?v=12';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
 import { primaryAccessRole } from './rbac.js?v=6';
 import { loadMeasurementUnits as loadSharedMeasurementUnits, measurementUnitsForContext, upsertMeasurementUnitCache } from './measurement_units.js?v=2';
@@ -43,6 +48,16 @@ const esc = (value) => String(value ?? '')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+
+function compactPrice(value) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '0';
+    return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function pesoPrice(value) {
+    return `₱${compactPrice(value)}`;
+}
 
 function combineValueUnit(value, unit) {
     const cleanValue = String(value || '').trim();
@@ -240,14 +255,15 @@ function removeBrandPrefix(productName, brandName) {
 }
 
 function productDisplayName(product) {
-    const brand = cleanText(product.brand_name);
-    const name = removeBrandPrefix(product.product_name, brand);
-    const base = [brand, name].filter(Boolean).join(' ');
-    return base || cleanText(product.product_name) || 'Unnamed product';
+    return formatProductIdentityParts(product).productName || cleanText(product.product_name) || 'Unnamed product';
+}
+
+function supplierRxBadge(product) {
+    return isPrescriptionProduct(product) ? '<span class="supplier-rx-badge" title="Prescription medicine">Rx</span>' : '';
 }
 
 function variantStrengthSize(product) {
-    return formatProductSpecification(product, 'Not set');
+    return cleanProductSpecificationText(formatProductSpecification(product, 'Not set')) || 'Not set';
     /* Legacy branches retained below for compatibility documentation. */
     const category = cleanText(product.category_name).toLowerCase();
     if (category === 'medicine') {
@@ -279,6 +295,24 @@ function variantStrengthSize(product) {
         cleanText(product.size_value || product.display_size),
         netWeight === 'Not set' ? '' : netWeight
     ].filter(Boolean).join(' • ') || 'Not set';
+}
+
+function supplierCatalogSpecification(product) {
+    const parts = inventoryMedicineSpecificationParts(product);
+    if (parts) {
+        const form = parts.dosageForm.toLowerCase();
+        const icon = /powder/.test(form) ? 'fa-solid fa-flask'
+            : /suspension|syrup|solution|drops|liquid/.test(form) ? 'fa-solid fa-droplet'
+            : /supplement|vitamin/.test(form) ? 'fa-solid fa-leaf'
+            : /capsule/.test(form) ? 'fa-solid fa-capsules' : 'fa-regular fa-circle-dot';
+        return `<span class="supplier-catalog-specification">
+            ${parts.dosageForm ? `<span class="supplier-catalog-specification-form"><i class="${icon}" aria-hidden="true"></i>${esc(parts.dosageForm)}</span>` : ''}
+            ${parts.strength ? `<strong class="supplier-catalog-specification-strength">${esc(parts.strength)}</strong>` : ''}
+            ${parts.details ? `<span class="supplier-catalog-specification-details">${esc(parts.details)}</span>` : ''}
+        </span>`;
+    }
+    const lines = formatProductCatalogSpecificationLines(product, 'Not set');
+    return `<span class="supplier-catalog-specification">${lines.map(line => `<span>${esc(line)}</span>`).join('')}</span>`;
 }
 
 const selectedAddCategoryName = () => document.getElementById('supplierProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '';
@@ -501,7 +535,9 @@ function renderSupplierProducts(rows) {
     if (!body) return;
     document.getElementById('table-supplier-products')?.classList.add('supplier-product-table');
     body.innerHTML = rows.length
-        ? rows.map((product) => `
+        ? rows.map((product) => {
+            const identity = formatProductIdentityParts(product);
+            return `
             <tr class="supplier-product-row" tabindex="0" data-supplier-product-id="${esc(product.supplier_product_id)}" aria-label="View details for ${esc(productDisplayName(product))}">
                 <td class="col-supplier">
                     <strong>${esc(displayOrNotSet(product.supplier_name))}</strong>
@@ -509,13 +545,13 @@ function renderSupplierProducts(rows) {
                 </td>
                 <td class="col-product">
                     <div class="supplier-product-name">
-                        <strong>${esc(displayOrNotSet(product.brand_name))}</strong>
-                        <small>${esc(displayOrNotSet(removeBrandPrefix(product.product_name, product.brand_name)))}</small>
+                        <strong><span class="supplier-product-primary">${esc(displayOrNotSet(identity.productName))}</span>${supplierRxBadge(product)}</strong>
+                        ${identity.genericName ? `<small>${esc(identity.genericName)}</small>` : ''}
                     </div>
                 </td>
-                <td class="col-specification">${esc(variantStrengthSize(product))}</td>
-                <td class="col-type">${esc(displayOrNotSet(product.type_name))}</td>
+                <td class="col-specification">${supplierCatalogSpecification(product)}</td>
                 <td class="col-purchase-unit"><div class="supplier-purchase-unit-display"><strong>${esc(displayOrNotSet(product.purchase_unit))}</strong><small>${esc(supplierContainsLabel(product))}</small></div></td>
+                <td class="col-supplier-price">${product.supplier_cost_input === null || product.supplier_cost_input === undefined || product.supplier_cost_input === '' ? '<span class="text-muted">Not set</span>' : esc(pesoPrice(product.supplier_cost_input))}</td>
                 <td class="col-actions actions-column">
                     ${supplierCatalogCanModify() ? `<div class="supplier-product-actions">
                         <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" title="Edit supplier product" aria-label="Edit supplier product">
@@ -527,7 +563,7 @@ function renderSupplierProducts(rows) {
                     </div>` : '<span class="text-muted small">Read only</span>'}
                 </td>
             </tr>
-        `).join('')
+        `;}).join('')
         : '<tr><td colspan="6" class="text-center text-muted py-4">No supplier products found.</td></tr>';
     window.PharmacySearchHighlight?.apply(body, document.getElementById('supplierProductSearch')?.value || '');
 }
@@ -1118,6 +1154,10 @@ function openSupplierProductDetails(supplierProductId) {
     const contains = Math.max(1, Number(product.units_per_purchase_unit || 1));
     const sellingPrice = Math.max(0, Number(product.price || 0));
     const inventoryUnit = singularInventoryUnit(supplierInventoryUnit(product, 1));
+    const isMedicine = sameText(product.category_name, 'Medicine');
+    const identityName = isMedicine
+        ? cleanText(product.generic_name) || removeBrandPrefix(product.product_name, product.brand_name) || cleanText(product.product_name)
+        : removeBrandPrefix(product.product_name, product.brand_name) || cleanText(product.product_name);
     document.getElementById('supplierProductDetailsTitle').textContent = productDisplayName(product);
     document.getElementById('supplierProductDetailsBody').innerHTML = `
         <div class="supplier-product-detail-grid">
@@ -1126,7 +1166,7 @@ function openSupplierProductDetails(supplierProductId) {
                 <dl class="supplier-detail-list">
                     <dt>Supplier</dt><dd>${esc(displayOrNotSet(product.supplier_name))}</dd>
                     <dt>Brand</dt><dd>${esc(displayOrNotSet(product.brand_name))}</dd>
-                    <dt>Product Name</dt><dd>${esc(displayOrNotSet(removeBrandPrefix(product.product_name, product.brand_name) || product.product_name))}</dd>
+                    <dt>${isMedicine ? 'Generic Name' : 'Product Name'}</dt><dd>${esc(displayOrNotSet(identityName))}${isMedicine ? supplierRxBadge(product) : ''}</dd>
                     <dt>Category</dt><dd>${esc(displayOrNotSet(product.category_name))}</dd>
                     <dt>Product Type</dt><dd>${esc(displayOrNotSet(product.type_name))}</dd>
                     <dt>Specification</dt><dd>${esc(variantStrengthSize(product))}</dd>
@@ -1139,6 +1179,7 @@ function openSupplierProductDetails(supplierProductId) {
                     <dt>Packaging</dt><dd>${esc(supplierProductPackaging(product))}</dd>
                     <dt>Purchase Unit</dt><dd>${esc(displayOrNotSet(product.purchase_unit))}</dd>
                     <dt>Units per Purchase Unit</dt><dd>${esc(supplierContainsLabel(product))}</dd>
+                    <dt>Product Master Base Price</dt><dd>${esc(pesoPrice(sellingPrice))}</dd>
                 </dl>
             </section>
             <section class="supplier-detail-section">
@@ -1570,6 +1611,10 @@ async function openEditSupplierProduct(supplierProductId) {
     document.getElementById('editSupplierProductLinkId').value = product.supplier_product_id || '';
     document.getElementById('editSupplierProductId').value = product.product_id || '';
     document.getElementById('editSupplierProductSupplierId').value = product.supplier_id || '';
+    const retailPriceInput = document.getElementById('editSupplierProductRetailPrice');
+    if (retailPriceInput) retailPriceInput.value = compactPrice(product.price || product.selling_price || 0);
+    const supplierCostInput = document.getElementById('editSupplierProductCost');
+    if (supplierCostInput) supplierCostInput.value = product.supplier_cost_input === null || product.supplier_cost_input === undefined ? '' : compactPrice(product.supplier_cost_input);
     setSupplierEditText('editSupplierProductSupplierNameText', product.supplier_name);
     document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = Math.max(1, Number(product.units_per_purchase_unit || product.purchase_unit_contains || 1));
     renderSupplierProductMasterDetails(product, [], product.specifications || []);
@@ -1631,10 +1676,19 @@ async function submitEditSupplierProduct(event) {
         purchase_unit: document.getElementById('editSupplierProductPurchaseUnit').value,
         inventory_unit: document.getElementById('editSupplierProductInventoryUnitPreview').value.trim(),
         purchase_unit_contains: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value,
-        units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value
+        units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value,
+        supplier_cost_input: document.getElementById('editSupplierProductCost')?.value || null,
+        product_price: document.getElementById('editSupplierProductRetailPrice')?.value || ''
     };
 
     const unitsPerPurchaseUnit = Number(payload.purchase_unit_contains);
+    const productPrice = Number(payload.product_price);
+    if (!Number.isFinite(productPrice) || productPrice <= 0 || !/^\d+(?:\.\d{1,2})?$/.test(payload.product_price)) {
+        document.getElementById('editSupplierProductRetailPrice')?.classList.add('is-invalid');
+        PharmaUtils.toast.error('Enter a valid Product Master Base Price greater than zero, with up to 2 decimal places.');
+        return;
+    }
+    document.getElementById('editSupplierProductRetailPrice')?.classList.remove('is-invalid');
     if (!['box', 'carton'].includes(normalizedSupplierUnit(payload.purchase_unit))) {
         document.getElementById('editSupplierProductPurchaseUnit')?.classList.add('is-invalid');
         PharmaUtils.toast.error('Purchase Unit must be Box or Carton.');

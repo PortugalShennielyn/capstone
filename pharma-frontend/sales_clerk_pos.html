@@ -13,8 +13,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=36" rel="stylesheet">
-    <script src="./js/navbar.js?v=83" defer></script>
+    <link href="./css/navbar.css?v=39" rel="stylesheet">
+    <link href="./css/sales_clerk_pos_tabs.css?v=1" rel="stylesheet">
+    <script src="./js/navbar.js?v=90" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <style>
         :root {
@@ -73,7 +74,9 @@
         .image-placeholder i { font-size: 20px; }
         .product-meta { min-width: 0; padding-top: 7px; flex: 1 1 auto; display: flex; flex-direction: column; }
         .brand { display: block; min-height: 17px; color: #667085; font-size: 13px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .product-name { display: -webkit-box; min-height: 40px; margin-top: 1px; color: var(--ink); font-size: 16px; font-weight: 900; line-height: 1.25; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .product-name { display: block; min-height: 20px; margin-top: 1px; color: var(--ink); font-size: 16px; font-weight: 900; line-height: 1.25; overflow: hidden; }
+        .product-generic, .order-generic-line, .receipt-generic-line { display:block; margin-top:4px; color:#51607a; font-size:13px; font-weight:800; line-height:1.25; overflow-wrap:anywhere; }
+        .rx-label { display:inline; margin-left:4px; color:#000; font-size:inherit; font-weight:600; line-height:inherit; vertical-align:baseline; white-space:nowrap; }
         .spec { display: -webkit-box; min-height: 35px; max-height: 35px; margin-top: 4px; color: #53627d; font-size: 13px; font-weight: 700; line-height: 1.35; overflow: hidden; overflow-wrap: break-word; word-break: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
         .spec-generic { color: #f97316; font-weight: 900; }
         .card-foot { min-height: 64px; display: flex; align-items: end; justify-content: space-between; gap: 10px; padding-top: 8px; }
@@ -81,9 +84,16 @@
         .product-price { display: block; color: #4c1d95; font-size: 16px; font-weight: 900; line-height: 1.1; font-variant-numeric: tabular-nums; }
         .product-price small { font-size:10px; font-weight:800; color:#64748b; }
         .product-price.is-unavailable { color:#b91c1c; font-size:12px; }
+        .card-selling-units { display:grid; gap:5px; margin-top:8px; }
+        .card-selling-unit { display:flex; justify-content:space-between; align-items:center; gap:6px; width:100%; padding:6px 8px; border:1px solid #dbe1ed; border-radius:7px; background:#fff; color:#25304a; text-align:left; font-size:11px; font-weight:800; }
+        .card-selling-unit:not(:disabled):hover { border-color:#5b45e8; background:#f6f5ff; }
+        .card-selling-unit:disabled { cursor:not-allowed; opacity:.55; }
+        .card-selling-unit small { color:#64748b; font-size:10px; white-space:nowrap; }
+        .expiry-status{display:inline-flex;align-items:center;width:max-content;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:900}.expiry-status.status-safe{color:#166534;background:#dcfce7}.expiry-status.status-soon{color:#92400e;background:#fef3c7}.expiry-status.status-expired{color:#991b1b;background:#fee2e2}.expiry-status.status-na{color:#475569;background:#e2e8f0}
         .stock strong { display: block; color: var(--green); font-size: 14px; font-weight: 900; line-height: 1; }
         .stock span { display: block; margin-top: 3px; color: #53627d; font-size: 10px; font-weight: 800; }
         .cart-btn { width: 40px; height: 40px; flex: 0 0 40px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; color: #fff; background: var(--purple); font-size: 16px; box-shadow: 0 12px 22px rgba(109,40,217,.24); }
+        .cart-btn:disabled{cursor:not-allowed;background:#94a3b8;box-shadow:none;opacity:.75}
         .item-added-toast { position: fixed; right: 22px; bottom: 22px; z-index: 1200; min-width: 230px; max-width: min(340px, calc(100vw - 32px)); display: flex; align-items: center; gap: 12px; padding: 13px 15px; border-radius: 8px; color: #0f5132; background: #e8f8ee; border: 1px solid #bde7cb; box-shadow: 0 18px 34px rgba(16,25,54,.16); opacity: 0; transform: translateY(10px); transition: opacity .18s ease, transform .18s ease; pointer-events: none; }
         .item-added-toast.is-visible { opacity: 1; transform: translateY(0); }
         .item-added-toast i { color: var(--green); font-size: 18px; }
@@ -97,6 +107,13 @@
         .filter-skeleton span:nth-child(3) { width: 128px; }
         .product-card-skeleton { pointer-events: none; }
         .order-unit { display:inline-flex; margin-top:5px; padding:3px 7px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:10px; font-weight:850; }
+        .order-unit-select { max-width:190px; min-height:32px; margin-top:5px; padding:4px 28px 4px 8px; color:#4338ca; border-color:#c7d2fe; font-size:11px; font-weight:750; }
+        .selling-unit-choice { width:100%; padding:12px; margin-bottom:8px; text-align:left; border:1px solid #dbe1ed; border-radius:9px; background:#fff; color:#1e293b; }
+        .selling-unit-choice:not(:disabled):hover { border-color:#5b45e8; background:#f6f5ff; }
+        .selling-unit-choice:disabled { opacity:.65; cursor:not-allowed; }
+        .selling-unit-choice strong, .selling-unit-choice span, .selling-unit-choice small { display:block; }
+        .selling-unit-choice span { color:#4c1d95; font-weight:800; }
+        .selling-unit-choice small { color:#64748b; }
         .pos-skeleton-block { display: block; border-radius: 8px; background: #edf0f6; animation: pos-skeleton-pulse 1.1s ease-in-out infinite alternate; }
         .pos-skeleton-image { width: 100%; height: 110px; }
         .pos-skeleton-brand { width: 42%; height: 14px; margin-top: 14px; }
@@ -257,6 +274,10 @@
         </header>
 
         <section class="page-body">
+            <nav class="pos-view-tabs" aria-label="Sales Clerk POS views">
+                <a href="sales_clerk_pos.html" aria-current="page"><i class="fa-solid fa-border-all"></i>Current POS</a>
+                <a href="sales_clerk_scan_pos.html"><i class="fa-solid fa-barcode"></i>Scan POS</a>
+            </nav>
             <div class="pos-shell">
                 <section class="catalog-panel" aria-label="Products">
                     <div class="catalog-head">
@@ -333,6 +354,15 @@
     </button>
     <input class="image-input" id="imagePicker" type="file" accept="image/*">
 
+    <div class="modal fade" id="sellingUnitModal" tabindex="-1" aria-labelledby="sellingUnitModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title fw-bold" id="sellingUnitModalTitle">Select Selling Unit</h5><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-body" id="sellingUnitChoices"></div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="posBarcodeModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -378,7 +408,7 @@
                 <div class="order-receipt-paper" id="orderSentReceipt">
                     <div class="order-success-head">
                         <div class="receipt-store">DOC R PHARMACY</div>
-                        <div class="receipt-address">Store Address Here</div>
+                        <div class="receipt-address" id="receiptStoreAddress">Loading store address...</div>
                         <div class="receipt-title">ORDER SUMMARY</div>
                         <div class="receipt-date" id="orderSentDate">Date: -</div>
                     </div>
@@ -501,6 +531,21 @@
             return data.data;
         }
 
+        async function loadStoreAddress() {
+            const token = sessionStorage.getItem('pharma_tab_token') || '';
+            const response = await fetch(`${API_BASE_URL}/settings/get_admin_settings.php`, {
+                credentials: 'include',
+                cache: 'no-store',
+                headers: token ? { 'X-Tab-Token': token } : {}
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status === 'error' || !data.profile) {
+                throw new Error(data.message || 'Unable to load pharmacy settings.');
+            }
+            document.getElementById('receiptStoreAddress').textContent =
+                String(data.profile.address || '').trim() || 'Store address not configured';
+        }
+
         function imageUrl(product) {
             const raw = product.product_image || '';
             if (!raw) return '';
@@ -543,11 +588,32 @@
             return parts.filter((part, index) => parts.findIndex(existing => existing.toLowerCase() === part.toLowerCase()) === index);
         }
 
+        function isMedicineClassification(value) {
+            return ['prescription (rx)', 'rx', 'otc'].includes(cleanSpecPart(value).toLowerCase());
+        }
+
+        function rxBadgeMarkup(product) {
+            return isPrescriptionProduct(product)
+                ? '<span class="rx-label">Rx</span>'
+                : '';
+        }
+
+        function orderRxBadgeMarkup(product) {
+            return isPrescriptionProduct(product)
+                ? '<span class="rx-label">Rx</span>'
+                : '';
+        }
+
+        function isPrescriptionProduct(product) {
+            return cleanSpecPart(product?.medicine_classification_badge) === 'Rx'
+                || cleanSpecPart(product?.medicine_classification).toLowerCase() === 'prescription (rx)';
+        }
+
         function productSpecificationParts(product) {
             const apiSpecification = cleanSpecPart(product.specification);
             if (apiSpecification) {
                 const inventoryUnit = canonicalUnitLabel(product.inventory_unit || product.selling_units?.[0]?.unit || 'Unit');
-                return uniqueParts(apiSpecification.split(/\s*[•/]\s*/).map(cleanSpecPart).filter(Boolean).map((part) => {
+                return uniqueParts(apiSpecification.split(/\s*[•/]\s*/).map(cleanSpecPart).filter(Boolean).filter(part => !isMedicineClassification(part)).map((part) => {
                     const content = part.match(/^(\d+(?:\.\d+)?)\s*(?:pc|pcs|piece|pieces)$/i);
                     return content && !/^pieces?$/i.test(inventoryUnit)
                         ? `${content[1]} Pieces per ${inventoryUnit}`
@@ -559,7 +625,6 @@
             let parts;
             if (category === 'medicine') {
                 parts = [
-                    cleanSpecPart(product.generic_name),
                     cleanSpecPart(product.strength) || joinStrengthValueUnit(product.strength_value, product.strength_unit),
                     cleanSpecPart(product.dosage_form),
                     joinSpecValueUnit(product.net_content_value || product.volume_value, product.net_content_unit || product.volume_unit),
@@ -592,15 +657,7 @@
 
         function productSpecificationMarkup(product) {
             const parts = productSpecificationParts(product);
-            const generic = cleanSpecPart(product.generic_name);
-
-            return parts.map(part => {
-                const escaped = escapeHtml(part);
-                if (generic && isMedicineProduct(product) && part.toLowerCase() === generic.toLowerCase()) {
-                    return `<span class="spec-generic">${escaped}</span>`;
-                }
-                return escaped;
-            }).join(' &bull; ');
+            return parts.map(part => escapeHtml(part)).join(' &bull; ');
         }
 
         function buildPosSpecification(product) {
@@ -611,14 +668,27 @@
             return buildPosSpecification(product);
         }
 
+        function expiryStatusClass(status) {
+            const value = cleanSpecPart(status);
+            if (value === 'Safe') return 'status-safe';
+            if (value === 'Expiring Soon') return 'status-soon';
+            if (value === 'Expired') return 'status-expired';
+            return 'status-na';
+        }
+
         function posSellingPrice(product) {
-            const rawPrice = product?.price;
-            const numericPrice = Number(rawPrice);
-            if (rawPrice === null || rawPrice === undefined || rawPrice === '' || !Number.isFinite(numericPrice)) {
-                console.error('Missing POS selling price', product);
-                return null;
-            }
-            return numericPrice;
+            const prices = (product?.selling_units || []).map(unit => Number(unit.selling_price)).filter(price => Number.isFinite(price) && price > 0);
+            return prices.length ? Math.min(...prices) : null;
+        }
+
+        function cartKey(productId, unit) { return `${productId}::${String(unit).toLowerCase()}`; }
+        function shelfQuantity(product) { return Math.max(0, Number(product.available_stock || 0)); }
+        function unitFactor(unit) { return Math.max(1, Number(unit.base_quantity || 1)); }
+        function cartBaseQuantity(productId, exceptKey = '') {
+            return Array.from(state.cart.entries()).reduce((sum, [key, item]) => sum + (item.product_id === productId && key !== exceptKey ? Number(item.quantity || 0) * Number(item.unit_base_quantity || 1) : 0), 0);
+        }
+        function unitAvailability(product, unit, exceptKey = '') {
+            return Math.floor(Math.max(0, shelfQuantity(product) - cartBaseQuantity(product.product_id, exceptKey)) / unitFactor(unit));
         }
 
         function canonicalUnitLabel(value, quantity = 1) {
@@ -735,24 +805,41 @@
                 const fullSpecification = buildPosSpecification(product) || 'No specification available';
                 const sellingPrice = posSellingPrice(product);
                 const inventoryUnit = posInventoryUnit(product);
+                const availableStock = Number(product.available_stock || 0);
+                const unavailable = availableStock <= 0 || product.first_expiry_status === 'Expired';
+            const expiryStatus = product.first_expiry_status || (unavailable ? 'Expired' : 'Safe');
+                const expiryBadge = expiryStatus === 'Expiring Soon' || expiryStatus === 'Expired'
+                    ? `<span class="expiry-status ${expiryStatusClass(expiryStatus)}">${escapeHtml(expiryStatus)}</span>`
+                    : '';
                 const priceMarkup = sellingPrice === null
                     ? '<span class="product-price is-unavailable">Price unavailable</span>'
-                    : `<span class="product-price">${escapeHtml(peso.format(sellingPrice))} <small>/ ${escapeHtml(canonicalUnitLabel(inventoryUnit))}</small></span>`;
+                    : product.selling_units?.length > 1
+                        ? `<span class="product-price">From ${escapeHtml(peso.format(sellingPrice))}</span>`
+                        : `<span class="product-price">${escapeHtml(peso.format(sellingPrice))} <small>/ ${escapeHtml(canonicalUnitLabel(product.selling_units?.[0]?.unit || inventoryUnit))}</small></span>`;
+                const unitButtons = (product.selling_units || []).length > 1
+                    ? `<div class="card-selling-units" aria-label="Sellable units">${product.selling_units.map(unit => {
+                        const left = unitAvailability(product, unit);
+                        const requires = `${unitFactor(unit)} ${canonicalUnitLabel(inventoryUnit, unitFactor(unit))}`;
+                        return `<button class="card-selling-unit" type="button" data-add-product="${escapeHtml(product.product_id)}" data-add-unit="${escapeHtml(unit.unit)}" ${unavailable || left < 1 ? 'disabled' : ''} title="${left < 1 ? `Requires ${escapeHtml(requires)}` : `${countFormat.format(left)} left`}"><span>${escapeHtml(canonicalUnitLabel(unit.unit))} — ${escapeHtml(peso.format(Number(unit.selling_price)))}</span><small>${left < 1 ? `Requires ${escapeHtml(requires)}` : `${countFormat.format(left)} left`}</small></button>`;
+                    }).join('')}</div>`
+                    : '';
                 return `
                 <article class="product-card" data-category-id="${escapeHtml(product.category_id || '')}" data-category-name="${escapeHtml(product.category_name || '')}" data-type-id="${escapeHtml(product.type_id || '')}" data-type-name="${escapeHtml(product.type_name || '')}">
                     <button class="barcode-mark" type="button" data-barcode-product="${escapeHtml(product.product_id)}" title="${escapeHtml(product.barcode || 'Barcode')}" aria-label="Open barcode"><i class="fa-solid fa-barcode"></i></button>
                     <button class="image-pick ${hasImage ? 'product-image-wrap' : ''}" type="button" ${hasImage ? `data-zoom-product="${escapeHtml(product.product_id)}"` : `data-image-product="${escapeHtml(product.product_id)}"`} aria-label="${hasImage ? 'Zoom product image' : 'Select product image'}">${productImageMarkup(product)}</button>
                     <div class="product-meta">
                         <span class="brand">${escapeHtml(product.brand_name || '-')}</span>
-                        <strong class="product-name">${escapeHtml(product.product_name || '-')}</strong>
+                        <strong class="product-name">${escapeHtml(product.product_name || '-')}${rxBadgeMarkup(product)}</strong>
                         <span class="spec" title="${escapeHtml(fullSpecification)}">${specificationMarkup || 'No specification available'}</span>
                     </div>
+                    ${unitButtons}
                     <div class="card-foot">
                         <div class="commerce-meta">
                             ${priceMarkup}
-                            <span class="stock"><strong>${countFormat.format(Number(product.available_stock || 0))}</strong><span>${escapeHtml(canonicalUnitLabel(inventoryUnit, Number(product.available_stock || 0)))} available</span></span>
+                            ${expiryBadge}
+                            <span class="stock"><strong>${countFormat.format(availableStock)}</strong><span>${escapeHtml(unavailable ? 'Unavailable' : `${canonicalUnitLabel(inventoryUnit, availableStock)} available`)}</span></span>
                         </div>
-                        <button class="cart-btn" type="button" data-add-product="${escapeHtml(product.product_id)}" aria-label="Add to order"><i class="fa-solid fa-cart-shopping"></i></button>
+                        <button class="cart-btn" type="button" data-add-product="${escapeHtml(product.product_id)}" aria-label="Add to order" ${unavailable ? 'disabled' : ''}><i class="fa-solid fa-cart-shopping"></i></button>
                     </div>
                 </article>
             `;
@@ -806,6 +893,7 @@
         function receiptProductName(item) {
             const brand = normalizeReceiptText(item.brand_name);
             let product = normalizeReceiptText(item.product_name);
+            if (brand) return brand;
             if (brand && product.toLowerCase().startsWith(brand.toLowerCase())) {
                 product = product.slice(brand.length).trim();
             }
@@ -813,14 +901,23 @@
         }
 
         function receiptShortSpec(item) {
+            const explicitParts = [item.strength, item.dosage_form].map(part => normalizeReceiptText(part)).filter(Boolean);
+            if (explicitParts.length) return explicitParts.join(' • ');
+            const generic = normalizeReceiptText(item.generic_name).toLowerCase();
             const parts = String(item.specification || '')
-                .split('/')
+                .split(/[•/]/)
                 .map(part => normalizeReceiptText(part))
-                .filter(Boolean);
+                .filter(Boolean)
+                .filter(part => part.toLowerCase() !== generic);
             const packageWords = /^(bottle|blister pack|sachet|box|pack|piece|tablet|capsule|solution|cream|ointment|syrup|suspension)$/i;
             const measurement = parts.find(part => /\b\d+(\.\d+)?\s?(mg|mcg|g|kg|ml|l)\b/i.test(part));
             if (measurement) return measurement.replace(/(\d)(mg|mcg|g|kg|ml|l)\b/i, '$1 $2');
             return parts.find(part => !packageWords.test(part) && !/%/.test(part)) || '';
+        }
+
+        function itemGenericLineMarkup(item) {
+            const generic = normalizeReceiptText(item.generic_name);
+            return generic ? `${escapeHtml(generic)}${orderRxBadgeMarkup(item)}` : '';
         }
 
         function renderSendConfirmSummary() {
@@ -861,27 +958,37 @@
         }
 
         function renderOrder() {
-            const items = Array.from(state.cart.values());
+            const items = Array.from(state.cart.entries());
             if (!items.length) {
                 orderList.innerHTML = '<div class="empty-state">Order summary is empty.</div>';
             } else {
-                orderList.innerHTML = items.map(item => {
+                orderList.innerHTML = items.map(([key, item]) => {
                     const amount = Number(item.quantity) * Number(item.price || 0);
                     const sellingUnits = Array.isArray(item.selling_units) ? item.selling_units : [];
+                    const unitMarkup = sellingUnits.length > 1
+                        ? `<select class="form-select order-unit-select" data-selling-unit-key="${escapeHtml(key)}" aria-label="Selling unit for ${escapeHtml(receiptProductName(item))}">${sellingUnits.map(unit => {
+                            const factor = Math.max(1, Number(unit.base_quantity || 1));
+                            const available = unitAvailability(item, unit, key);
+                            const unavailable = available < 1;
+                            const requirement = `${factor} ${canonicalUnitLabel(posInventoryUnit(item), factor)}`;
+                            return `<option value="${escapeHtml(unit.unit)}" data-factor="${factor}" data-price="${Number(unit.selling_price || 0)}" ${item.selected_unit === unit.unit ? 'selected' : ''} ${unavailable ? 'disabled' : ''}>${escapeHtml(canonicalUnitLabel(unit.unit, 1))} — ${escapeHtml(peso.format(Number(unit.selling_price || 0)))}${unavailable ? ` — Insufficient shelf stock; requires ${escapeHtml(requirement)}` : ''}</option>`;
+                        }).join('')}</select>`
+                        : `<span class="order-unit">${escapeHtml(canonicalUnitLabel(item.selected_unit || sellingUnits[0]?.unit || 'Unit', Number(item.quantity || 1)))}</span>`;
                     return `
                         <div class="order-row">
                             <div class="qty-stepper" aria-label="Quantity controls">
-                                <button type="button" data-dec-product="${escapeHtml(item.product_id)}">-</button>
+                                <button type="button" data-dec-key="${escapeHtml(key)}">-</button>
                                 <span>${Number(item.quantity || 1)}</span>
-                                <button type="button" data-inc-product="${escapeHtml(item.product_id)}">+</button>
+                                <button type="button" data-inc-key="${escapeHtml(key)}">+</button>
                             </div>
                             <div class="order-product">
                                 <strong>${escapeHtml(receiptProductName(item))}</strong>
-                                ${orderShortSpecification(item) ? `<span class="order-spec">${escapeHtml(orderShortSpecification(item))}</span>` : ''}
-                                <span class="order-unit">${escapeHtml(canonicalUnitLabel(item.selected_unit || sellingUnits[0]?.unit || 'Unit', Number(item.quantity || 1)))}</span>
+                                ${itemGenericLineMarkup(item) ? `<span class="order-generic-line">${itemGenericLineMarkup(item)}</span>` : ''}
+                                ${receiptShortSpec(item) ? `<span class="order-spec">${escapeHtml(receiptShortSpec(item))}</span>` : ''}
+                                ${unitMarkup}
                             </div>
                             <div class="order-action">
-                                <button class="remove-btn" type="button" data-remove-product="${escapeHtml(item.product_id)}" aria-label="Remove item"><i class="fa-solid fa-xmark"></i></button>
+                                <button class="remove-btn" type="button" data-remove-key="${escapeHtml(key)}" aria-label="Remove item"><i class="fa-solid fa-xmark"></i></button>
                             </div>
                             <div class="money-cell">${peso.format(Number(item.price || 0))}</div>
                             <div class="money-cell line-total-cell">${peso.format(amount)}</div>
@@ -899,6 +1006,7 @@
             document.getElementById('summaryTotal').textContent = peso.format(totals.total);
             currentOrderCount.textContent = countFormat.format(totals.totalQuantity);
             sendCashierBtn.disabled = !state.cart.size;
+            renderProducts();
         }
 
         function barcodeSvg(barcode) {
@@ -924,6 +1032,10 @@
         function openBarcodeModal(productId) {
             const product = state.products.find(item => item.product_id === productId);
             if (!product) return;
+            if (Number(product.available_stock || 0) <= 0 || product.first_expiry_status === 'Expired') {
+                toastr.warning('This product has no sellable shelf batch.');
+                return;
+            }
             const barcode = product.barcode || `AUTO-${product.product_id || ''}`;
             document.getElementById('barcodeProductLabel').textContent = `${product.brand_name || '-'} - ${product.product_name || '-'}`;
             document.getElementById('barcodeNumber').textContent = barcode;
@@ -948,7 +1060,42 @@
                 const nextProducts = await apiFetch(`sales/sales_products_search.php?${params.toString()}`);
                 const changed = JSON.stringify(nextProducts) !== JSON.stringify(state.products);
                 state.products = nextProducts;
+                let cartAvailabilityChanged = false;
+                const refreshedProducts = new Map(nextProducts.map(product => [product.product_id, product]));
+                const remainingByProduct = new Map();
+                state.cart.forEach((item, key) => {
+                    const refreshed = refreshedProducts.get(item.product_id);
+                    if (!refreshed) return;
+                    const oldStock = Number(item.available_stock || 0);
+                    const oldUnits = JSON.stringify(item.selling_units || []);
+                    const oldPrice = item.price;
+                    Object.assign(item, refreshed);
+                    const selectedUnit = item.selling_units.find(unit => unit.unit === item.selected_unit);
+                    if (selectedUnit) {
+                        item.price = Number(selectedUnit.selling_price);
+                        item.unit_base_quantity = unitFactor(selectedUnit);
+                        const remaining = remainingByProduct.has(item.product_id) ? remainingByProduct.get(item.product_id) : shelfQuantity(item);
+                        const maxQuantity = Math.floor(remaining / item.unit_base_quantity);
+                        if (Number(item.quantity || 0) > maxQuantity) {
+                            if (maxQuantity < 1) { state.cart.delete(key); item.quantity = 0; }
+                            else item.quantity = maxQuantity;
+                            toastr.info('Order quantity was adjusted to current shelf availability.');
+                            cartAvailabilityChanged = true;
+                        }
+                        remainingByProduct.set(item.product_id, Math.max(0, remaining - Number(item.quantity || 0) * item.unit_base_quantity));
+                    } else {
+                        state.cart.delete(key);
+                        toastr.warning('A selling unit was removed from POS and has been removed from the order.');
+                        cartAvailabilityChanged = true;
+                    }
+                    if (oldStock !== Number(item.available_stock || 0) || oldUnits !== JSON.stringify(item.selling_units || []) || oldPrice !== item.price) cartAvailabilityChanged = true;
+                });
                 if (changed || !silent) renderProducts();
+                if (cartAvailabilityChanged) renderOrder();
+                if (changed && document.getElementById('sellingUnitModal').classList.contains('show')) {
+                    const selectedProduct = refreshedProducts.get(state.pendingUnitProductId);
+                    if (selectedProduct) showSellingUnitSelector(selectedProduct);
+                }
             } catch (error) {
                 if (!silent) productsGrid.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
             }
@@ -964,39 +1111,67 @@
             });
             const product = state.products.find(item => item.product_id === productId);
             if (product) product.product_image = data.product_image;
-            const cartItem = state.cart.get(productId);
-            if (cartItem) cartItem.product_image = data.product_image;
+            state.cart.forEach(item => { if (item.product_id === productId) item.product_image = data.product_image; });
             toastr.success(data.message || 'Product image uploaded.');
             renderProducts();
         }
 
-        function addProduct(productId) {
-            const product = state.products.find(item => item.product_id === productId);
+        function showSellingUnitSelector(product) {
+            state.pendingUnitProductId = product.product_id;
+            state.pendingUnitProduct = product;
+            const baseUnit = canonicalUnitLabel(posInventoryUnit(product));
+            document.getElementById('sellingUnitChoices').innerHTML = product.selling_units.map(unit => {
+                const factor = unitFactor(unit);
+                const available = unitAvailability(product, unit);
+                const requirement = `${factor} ${canonicalUnitLabel(baseUnit, factor)}`;
+                return `<button class="selling-unit-choice" type="button" data-select-unit="${escapeHtml(unit.unit)}" ${available < 1 ? 'disabled' : ''}>
+                    <strong>${escapeHtml(canonicalUnitLabel(unit.unit))} — ${escapeHtml(peso.format(Number(unit.selling_price)))}</strong>
+                    <small>${escapeHtml(canonicalUnitLabel(unit.unit))} = ${escapeHtml(requirement)}</small>
+                    <span>${available > 0 ? `Available: ${countFormat.format(available)}` : `Unavailable — requires ${escapeHtml(requirement)}`}</span>
+                </button>`;
+            }).join('');
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('sellingUnitModal')).show();
+        }
+
+        function addProduct(productId, selectedUnitName = '') {
+            const product = state.products.find(item => item.product_id === productId)
+                || (state.pendingUnitProduct?.product_id === productId ? state.pendingUnitProduct : null);
             if (!product) return;
-            const existing = state.cart.get(productId);
-            const defaultUnit = existing || (Array.isArray(product.selling_units) ? product.selling_units.find(unit => Number(unit.is_default) === 1) || product.selling_units[0] : null);
-            if (!defaultUnit) {
-                toastr.warning('This product has no active POS Selling Option.');
+            if (Number(product.available_stock || 0) <= 0 || product.first_expiry_status === 'Expired') {
+                toastr.warning('This product has no sellable shelf batch.');
                 return;
             }
-            const factor = Number(existing?.unit_base_quantity || defaultUnit.base_quantity || 1);
-            const nextQty = Number(existing?.quantity || 0) + 1;
-            if (nextQty * factor > Number(product.available_stock || 0)) {
+            const sellingUnits = Array.isArray(product.selling_units) ? product.selling_units : [];
+            if (!selectedUnitName && sellingUnits.length > 1) {
+                showSellingUnitSelector(product);
+                return;
+            }
+            const selectedUnit = selectedUnitName
+                ? sellingUnits.find(unit => unit.unit === selectedUnitName)
+                : sellingUnits[0];
+            if (!selectedUnit) {
+                toastr.warning('No configured selling unit is available for the current shelf stock.');
+                return;
+            }
+            const key = cartKey(productId, selectedUnit.unit);
+            const existing = state.cart.get(key);
+            const factor = unitFactor(selectedUnit);
+            if (cartBaseQuantity(productId) + factor > shelfQuantity(product)) {
                 toastr.warning('Requested quantity is greater than available shelf stock.');
                 return;
             }
-            state.cart.set(productId, { ...product, quantity: nextQty, selected_unit: existing?.selected_unit || defaultUnit.unit, unit_base_quantity: factor, price: Number(existing?.price ?? defaultUnit.selling_price ?? product.price ?? 0) });
+            state.cart.set(key, { ...product, quantity: Number(existing?.quantity || 0) + 1, selected_unit: selectedUnit.unit, unit_base_quantity: factor, price: Number(selectedUnit.selling_price) });
             showItemAddedToast(product.product_name || product.brand_name || 'Selected product');
             renderOrder();
         }
 
-        function changeQty(productId, delta) {
-            const item = state.cart.get(productId);
+        function changeQty(key, delta) {
+            const item = state.cart.get(key);
             if (!item) return;
             const requested = Number(item.quantity || 1) + delta;
             if (requested <= 0) {
-                state.cart.delete(productId);
-            } else if (requested * Number(item.unit_base_quantity || 1) > Number(item.available_stock || 0)) {
+                state.cart.delete(key);
+            } else if (requested * Number(item.unit_base_quantity || 1) + cartBaseQuantity(item.product_id, key) > shelfQuantity(item)) {
                 toastr.warning('Quantity was limited to available shelf stock.');
             } else {
                 item.quantity = requested;
@@ -1015,7 +1190,13 @@
                 total_amount: totals.total,
                 cash_received: 0,
                 change_amount: 0,
-                items: Array.from(state.cart.values()).map(item => ({ product_id: item.product_id, quantity: Number(item.quantity || 0), unit: item.selected_unit }))
+                items: Array.from(state.cart.values()).map(item => ({
+                    product_id: item.product_id,
+                    quantity: Number(item.quantity || 0),
+                    unit: item.selected_unit,
+                    medicine_classification: item.medicine_classification || '',
+                    medicine_classification_badge: item.medicine_classification_badge || ''
+                }))
             };
         }
 
@@ -1044,6 +1225,7 @@
                     <span>${countFormat.format(Number(item.quantity || 0))}</span>
                     <div class="receipt-description">
                         <strong>${escapeHtml(receiptProductName(item))}</strong>
+                        ${itemGenericLineMarkup(item) ? `<small class="receipt-generic-line">${itemGenericLineMarkup(item)}</small>` : ''}
                         ${receiptShortSpec(item) ? `<small>${escapeHtml(receiptShortSpec(item))}</small>` : ''}
                     </div>
                     <span class="receipt-price">${plainMoney(item.unit_price)}</span>
@@ -1123,10 +1305,45 @@
             });
         }
 
+        function matchScannedBarcode(products, value) {
+            const barcode = String(value || '').trim().toLowerCase();
+            if (!barcode) return null;
+            const unitMatches = products.flatMap(product => (product.selling_units || [])
+                .filter(unit => String(unit.barcode || '').trim().toLowerCase() === barcode)
+                .map(unit => ({ product, unit })));
+            if (unitMatches.length > 1) return { ambiguous: true };
+            if (unitMatches.length === 1) return unitMatches[0];
+            const productMatches = products.filter(product => String(product.barcode || '').trim().toLowerCase() === barcode);
+            if (productMatches.length > 1) return { ambiguous: true };
+            return productMatches.length ? { product: productMatches[0], unit: null } : null;
+        }
         let searchTimer = null;
         searchInput.addEventListener('input', () => {
             clearTimeout(searchTimer);
             searchTimer = setTimeout(searchProducts, 250);
+        });
+        searchInput.addEventListener('keydown', async event => {
+            if (event.key !== 'Enter') return;
+            const barcode = searchInput.value.trim();
+            if (!barcode) return;
+            event.preventDefault();
+            clearTimeout(searchTimer);
+            try {
+                const matches = await apiFetch(`sales/sales_products_search.php?search=${encodeURIComponent(barcode)}`);
+                const scanned = matchScannedBarcode(matches, barcode);
+                if (scanned?.ambiguous) {
+                    toastr.warning('This barcode identifies more than one selling unit. Select the unit manually.');
+                    state.products = matches;
+                    renderProducts();
+                } else if (scanned) {
+                    state.products = matches;
+                    renderProducts();
+                    addProduct(scanned.product.product_id, scanned.unit?.unit || '');
+                    searchInput.value = '';
+                } else {
+                    await searchProducts();
+                }
+            } catch (error) { toastr.error(error.message); }
         });
         document.getElementById('typeFilter').addEventListener('click', event => {
             const button = event.target.closest('[data-category-name]');
@@ -1156,11 +1373,17 @@
                 openBarcodeModal(barcodeButton.dataset.barcodeProduct);
                 return;
             }
-            if (addButton) addProduct(addButton.dataset.addProduct);
+            if (addButton) addProduct(addButton.dataset.addProduct, addButton.dataset.addUnit || '');
             if (imageButton) {
                 state.pendingImageProductId = imageButton.dataset.imageProduct;
                 imagePicker.click();
             }
+        });
+        document.getElementById('sellingUnitChoices').addEventListener('click', event => {
+            const choice = event.target.closest('[data-select-unit]');
+            if (!choice || choice.disabled || !state.pendingUnitProductId) return;
+            addProduct(state.pendingUnitProductId, choice.dataset.selectUnit);
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('sellingUnitModal')).hide();
         });
         productsGrid.addEventListener('mousedown', activateImageZoom);
         productsGrid.addEventListener('dragstart', event => {
@@ -1188,29 +1411,44 @@
             imagePicker.value = '';
         });
         orderList.addEventListener('click', event => {
-            const inc = event.target.closest('[data-inc-product]');
-            const dec = event.target.closest('[data-dec-product]');
-            const remove = event.target.closest('[data-remove-product]');
-            if (inc) changeQty(inc.dataset.incProduct, 1);
-            if (dec) changeQty(dec.dataset.decProduct, -1);
+            const inc = event.target.closest('[data-inc-key]');
+            const dec = event.target.closest('[data-dec-key]');
+            const remove = event.target.closest('[data-remove-key]');
+            if (inc) changeQty(inc.dataset.incKey, 1);
+            if (dec) changeQty(dec.dataset.decKey, -1);
             if (remove) {
-                state.cart.delete(remove.dataset.removeProduct);
+                state.cart.delete(remove.dataset.removeKey);
                 renderOrder();
             }
         });
         orderList.addEventListener('change', event => {
-            const select = event.target.closest('[data-selling-unit-product]');
+            const select = event.target.closest('[data-selling-unit-key]');
             if (!select) return;
-            const item = state.cart.get(select.dataset.sellingUnitProduct);
+            const oldKey = select.dataset.sellingUnitKey;
+            const item = state.cart.get(oldKey);
             if (!item) return;
             const factor = Number(select.selectedOptions[0]?.dataset.factor || 1);
-            if (Number(item.quantity || 1) * factor > Number(item.available_stock || 0)) {
-                item.quantity = Math.max(1, Math.floor(Number(item.available_stock || 0) / factor));
+            const nextKey = cartKey(item.product_id, select.value);
+            const other = state.cart.get(nextKey);
+            const reservedElsewhere = cartBaseQuantity(item.product_id, oldKey) - (other ? Number(other.quantity) * Number(other.unit_base_quantity) : 0);
+            const maxQuantity = Math.floor(Math.max(0, shelfQuantity(item) - reservedElsewhere) / factor);
+            if (maxQuantity < 1) {
+                select.value = item.selected_unit;
+                toastr.warning('Unavailable — insufficient shelf stock for this selling unit.');
+                return;
+            }
+            if (Number(item.quantity || 1) > maxQuantity) {
+                item.quantity = maxQuantity;
                 toastr.info('Quantity adjusted to current shelf availability for the selected unit.');
             }
             item.selected_unit = select.value;
             item.unit_base_quantity = factor;
             item.price = Number(select.selectedOptions[0]?.dataset.price || 0);
+            if (nextKey !== oldKey) {
+                if (other) item.quantity = Math.min(maxQuantity, Number(item.quantity) + Number(other.quantity));
+                state.cart.delete(oldKey);
+                state.cart.set(nextKey, item);
+            }
             renderOrder();
         });
         discountType.addEventListener('change', renderOrder);
@@ -1227,7 +1465,7 @@
         document.getElementById('sendConfirmModal').addEventListener('hidden.bs.modal', () => setProceedButtonLoading(false));
         document.getElementById('viewMyOrdersBtn').addEventListener('click', () => {
             clearOrder();
-            window.location.href = 'sales_clerk_orders.html?tab=waiting_cashier';
+            window.location.href = 'sales_clerk_orders.html?status=waiting_cashier';
         });
         document.getElementById('createNewOrderBtn').addEventListener('click', () => {
             bootstrap.Modal.getOrCreateInstance(document.getElementById('orderSentModal')).hide();
@@ -1258,6 +1496,10 @@
         });
 
         await verifySession();
+        await loadStoreAddress().catch(error => {
+            document.getElementById('receiptStoreAddress').textContent = 'Store address unavailable';
+            console.error('Unable to load the store address for the sales-clerk receipt.', error);
+        });
         await loadProductFilters();
         renderOrder();
         updateClock();

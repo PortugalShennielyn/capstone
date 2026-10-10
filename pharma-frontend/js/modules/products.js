@@ -14,10 +14,11 @@ import {
     formatMeasurementText,
     formatMeasurementValue,
     formatProductCatalogSpecificationLines,
-    formatProductContainer,
+    formatProductForm,
     formatProductSpecification,
+    medicineCatalogSpecificationParts,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=14';
+} from './product_specification.js?v=16';
 import {
     loadMeasurementUnits,
     measurementUnitsForContext
@@ -103,7 +104,6 @@ let selectedPricingSubmissionActive = false;
 let addProductSubmissionActive = false;
 let productsLoadPromise = null;
 let productTypeCustomizerTarget = { mode: 'add', variationIndex: 0 };
-
 function formatPrice(value) {
     return `\u20b1${Number(value || 0).toLocaleString('en-PH', {
         minimumFractionDigits: 2,
@@ -475,8 +475,6 @@ function getVariationAttributeValue(variation, attribute) {
             return cleanCardText(ruleCombineValueUnit(formatMeasurementValue(variation?.weight_value), variation?.weight_unit));
         case 'size':
             return cleanCardText([formatMeasurementText(variation?.size_value), variation?.size_unit].filter(hasDisplayValue).join(' '));
-        case 'packContent':
-            return cleanCardText(ruleCombineValueUnit(formatMeasurementValue(variation?.pack_content_qty), variation?.pack_content_unit));
         default:
             return '';
     }
@@ -492,7 +490,6 @@ function variationAttributeDefinitions(product) {
     if (fields.has('volume')) definitions.push(['volume', 'Volume']);
     if (fields.has('weight')) definitions.push(['weight', 'Net Weight']);
     if (fields.has('size')) definitions.push(['size', cleanCardLabel(rule.sizeLabel || 'Size')]);
-    if (fields.has('packContent')) definitions.push(['packContent', 'Pack Content']);
 
     return definitions;
 }
@@ -571,7 +568,6 @@ function productSearchText(product) {
         product.variant,
         product.size,
         product.net_weight,
-        product.pack_content,
         product.barcode,
         product.category_name,
         product.type_name,
@@ -587,9 +583,7 @@ function productCardDetailRows(product) {
         return cleanCardRows([
             [rule.variantLabel || 'Variant', product.variant],
             ['Size', formatMeasurementText(product.size)],
-            ['Net Weight', formatMeasurementText(product.net_weight)],
-            ['Container Type', product.package_type],
-            ['Pack Content', formatMeasurementText(product.pack_content)]
+            ['Net Weight', formatMeasurementText(product.net_weight)]
         ]);
     }
 
@@ -598,14 +592,12 @@ function productCardDetailRows(product) {
             ['Generic Name', product.generic_name],
             ['Strength', product.strength],
             ['Dosage Form', product.dosage_form],
-            ['Container Type', product.package_type]
         ]);
     }
 
     return cleanCardRows([
         ['Type', product.type_name],
-        ['Size', formatMeasurementText(product.size)],
-        ['Pack Content', formatMeasurementText(product.pack_content)]
+        ['Size', formatMeasurementText(product.size)]
     ]);
 }
 
@@ -768,7 +760,39 @@ function medicineRxBadge(product) {
 }
 
 function productCatalogSpecification(product) {
-    const lines = formatProductCatalogSpecificationLines(product, '—');
+    const specifications = Array.isArray(product.specifications)
+        ? product.specifications.filter(specification => !['dosage form', 'form', 'product form', 'pack content', 'tablet count'].includes(
+            String(specification.specification_name || specification.display_name || '').trim().toLowerCase()
+        ))
+        : product.specifications;
+    const specificationProduct = {
+        ...product,
+        specifications,
+        dosage_form: '',
+        pack_content: '',
+        medical_pack_content: '',
+        packaging_size: ''
+    };
+    const medicineParts = medicineCatalogSpecificationParts(specificationProduct);
+    if (medicineParts) {
+        const { strength, details } = medicineParts;
+        const form = String(product.dosage_form || product.type_name || '').toLowerCase();
+        const icon = /powder/.test(form) ? 'fa-solid fa-flask'
+            : /suspension|syrup|solution|drops|liquid/.test(form) ? 'fa-solid fa-droplet'
+            : /supplement/.test(form) ? 'fa-solid fa-leaf'
+            : /capsule/.test(form) ? 'fa-solid fa-capsules'
+            : 'fa-regular fa-circle-dot';
+        const strengthParts = strength.split(/\s*\/\s*/);
+        const strengthHtml = strengthParts.length > 1
+            ? `<strong>${escapeHtml(strengthParts[0])}</strong><span class="catalog-specification-ratio"> / ${escapeHtml(strengthParts.slice(1).join(' / '))}</span>`
+            : `<strong>${escapeHtml(strength)}</strong>`;
+        return `<div class="catalog-specification catalog-specification-medicine">
+            ${strength ? `<span class="catalog-specification-strength">${strengthHtml}</span>` : ''}
+            ${details ? `<span class="catalog-specification-details">${escapeHtml(details)}</span>` : ''}
+            ${!strength && !details ? '<span>—</span>' : ''}
+        </div>`;
+    }
+    const lines = formatProductCatalogSpecificationLines(specificationProduct, '—');
     return `<div class="catalog-specification">${lines.map(line => `<span>${escapeHtml(line)}</span>`).join('')}</div>`;
 }
 
@@ -798,7 +822,7 @@ function renderProductCards() {
                 <td><span class="product-clamp">${escapeHtml(dash(product.brand_name))}</span></td>
                 <td class="product-column"><div class="medicine-product-identity"><span class="product-clamp">${escapeHtml(productCatalogName(product))}</span>${medicineRxBadge(product)}</div></td>
                 <td>${productCatalogSpecification(product)}</td>
-                <td class="product-container-cell">${escapeHtml(formatProductContainer(product, '—'))}</td>
+                <td class="product-container-cell">${escapeHtml(formatProductForm(product, '—'))}</td>
                 <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(product.price)}</span><span class="pricing-method-badge ${priceBadge.className}" title="${escapeHtml(priceBadge.title)}" aria-label="${escapeHtml(priceBadge.title)}">${priceBadge.code}</span></div></td>
                 <td><span class="badge ${isActive ? 'text-bg-success' : 'text-bg-secondary'}">${escapeHtml(status)}</span></td>
                 <td>
@@ -967,6 +991,7 @@ function renderProductDetails(payload) {
             productDetailPair('Medicine Classification', product.medicine_classification)
         ] : [productDetailPair('Product Name', product.product_name)]),
         productDetailPair('Category', product.category_name),
+        productDetailPair('Form', formatProductForm(product, '—')),
         ...(!isMedicine(product) ? [productDetailPair('Product Type', product.type_name)] : []),
         productDetailPair('Barcode', product.barcode),
         productDetailPair('Product Status', productStatus),
@@ -976,11 +1001,10 @@ function renderProductDetails(payload) {
     const specificationRows = [];
     if (isMedicine(product)) {
         specificationRows.push(productDetailPair('Strength / Concentration', product.strength || productDetailCombinedValue(product.strength_value, product.strength_unit)));
-        specificationRows.push(productDetailPair('Dosage Form', product.dosage_form || product.type_name));
         specificationRows.push(productDetailPair('Net Content', productDetailCombinedValue(product.net_content_value, product.net_content_unit)));
-        specificationRows.push(productDetailPair('Package / Container', product.package_type));
     } else if (Array.isArray(payload.specifications) && payload.specifications.length) {
         payload.specifications.forEach(specification => {
+            if (['package type', 'pack content', 'tablet count'].includes(String(specification.specification_name || '').trim().toLowerCase())) return;
             const value = specification.value_number !== null && specification.value_number !== ''
                 ? formatMeasurement(specification.value_number, specification.unit_symbol)
                 : specification.value_text;
@@ -990,28 +1014,22 @@ function renderProductDetails(payload) {
         specificationRows.push(productDetailPair(groceryVariantLabel(product.type_name), product.variant));
         if (product.type_name === 'Beverage') {
             specificationRows.push(productDetailPair('Liquid Content', productDetailCombinedValue(product.net_weight, product.unit)));
-            specificationRows.push(productDetailPair('Container Type', product.package_type));
-            if (product.pack_content) specificationRows.push(productDetailPair('Pack Content', formatMeasurementText(product.pack_content)));
         } else {
             specificationRows.push(productDetailPair('Size', formatMeasurementText(product.size)));
             specificationRows.push(productDetailPair('Net Weight', productDetailCombinedValue(product.net_weight, product.unit)));
-            specificationRows.push(productDetailPair('Container Type', product.package_type));
-            specificationRows.push(productDetailPair('Pack Content', formatMeasurementText(product.pack_content)));
         }
     } else if (['Medical Supply', 'Medical Supplies'].includes(product.category_name)) {
         specificationRows.push(productDetailPair('Variant / Description', product.medical_variant || product.variant));
         specificationRows.push(productDetailPair('Size', formatMeasurementText(product.medical_size || product.size)));
         specificationRows.push(productDetailPair('Material', product.material));
         specificationRows.push(productDetailPair('Sterile Status', product.sterile_status));
-        specificationRows.push(productDetailPair('Container Type', product.package_type));
-        specificationRows.push(productDetailPair('Pack Content', formatMeasurementText(product.pack_content)));
     }
 
     const inventoryUnit = product.inventory_unit_name || product.inventory_unit_symbol || pricing.inventory_unit || 'unit';
-    specificationRows.push(productDetailPair('Selling / Inventory Unit', inventoryUnit));
+    specificationRows.push(productDetailPair('Inventory Base Unit', inventoryUnit));
     const pricingMethodLabel = { category_markup: 'Category markup', custom_markup: 'Custom markup', manual: 'Fixed / Manual price' }[pricing.pricing_method] || 'Fixed / Manual price';
     const pricingRows = [
-        productDetailPair('Active Selling Price', `${formatPrice(pricing.active_selling_price ?? product.price)} per ${inventoryUnit}`),
+        productDetailPair('Default Base Price', `${formatPrice(pricing.active_selling_price ?? product.price)} per ${inventoryUnit}`),
         productDetailPair('Pricing Method', pricingMethodLabel)
     ];
 
@@ -1058,12 +1076,28 @@ function renderProductDetailsPreview(product) {
             ${productDetailSection('Product Identity', [
                 productDetailPair(isMedicine(product) ? 'Brand Name' : 'Brand', product.brand_name),
                 ...(isMedicine(product) ? [productDetailPair('Generic Name', product.generic_name), productDetailPair('Medicine Classification', product.medicine_classification)] : [productDetailPair('Product Name', product.product_name), productDetailPair('Product Type', product.type_name)]),
+                productDetailPair('Form', formatProductForm(product, '—')),
                 productDetailPair('Barcode', product.barcode),
                 productDetailPair('Product Status', status)
             ])}
             ${productDetailSection(isMedicine(product) ? 'Medicine Details' : 'Product Specification', [
-                productDetailPair('Specification', formatProductSpecification(product)),
-                productDetailPair('Selling / Inventory Unit', product.inventory_unit_name || product.inventory_unit_symbol)
+                productDetailPair('Specification', isMedicine(product)
+                    ? [product.strength || productDetailCombinedValue(product.strength_value, product.strength_unit), productDetailCombinedValue(product.net_content_value, product.net_content_unit)].filter(Boolean).join(' • ') || '—'
+                    : formatProductSpecification({
+                    ...product,
+                    specifications: Array.isArray(product.specifications)
+                        ? product.specifications.filter(specification => !['dosage form', 'form', 'product form', 'pack content', 'tablet count', 'package type'].includes(String(specification.specification_name || specification.display_name || '').trim().toLowerCase()))
+                        : product.specifications,
+                    dosage_form: '',
+                    package_type: '',
+                    medicine_package_type: '',
+                    grocery_package_type: '',
+                    medical_package_type: '',
+                    pack_content: '',
+                    medical_pack_content: '',
+                    packaging_size: ''
+                })),
+                productDetailPair('Inventory Base Unit', product.inventory_unit_name || product.inventory_unit_symbol)
             ])}
             <section class="product-details-section product-details-section-pending" aria-live="polite">
                 <h6>Verified Details</h6>
@@ -1264,7 +1298,7 @@ function setMedicineFields(mode, categoryName, { clear = true } = {}) {
     document.getElementById(mode === 'edit' ? 'editProductModal' : 'addProductModal')?.classList.toggle('medicine-product-mode', medicine);
     const selector = mode === 'edit' ? '.edit-medicine-basic-field' : '.medicine-basic-field';
     document.querySelectorAll(selector).forEach(field => field.classList.toggle('d-none', !medicine));
-    document.querySelectorAll(`${selector}.medicine-classification-basic-field`).forEach(field => field.classList.toggle('d-none', medicine));
+    document.querySelectorAll(`${selector}.medicine-classification-basic-field`).forEach(field => field.classList.toggle('d-none', !medicine));
     document.getElementById(mode === 'edit' ? 'editProductTypeField' : 'productTypeField')?.classList.toggle('d-none', medicine);
     const classification = document.getElementById(`${prefix}MedicineClassification`);
     const generic = document.getElementById(`${prefix}GenericName`);
@@ -1344,7 +1378,7 @@ function buildProductPayload() {
         barcode: firstVariation.barcode || '',
         generic_name: genericName,
         medicine_classification: firstVariation.medicine_classification || getValue('productMedicineClassification'),
-        status: getValue('productStatus') || 'Active',
+        status: 'Active',
         pricing_method: pricingMethod,
         variations
     };
@@ -1622,8 +1656,8 @@ function initAddProductForm() {
             });
             // The create endpoint commits the entire product/SKU transaction before
             // returning. Render only the authoritative joined catalog response so
-            // derived Medicine fields (including Package / Container) cannot be
-            // temporarily replaced by an incomplete optimistic object.
+            // derived product fields cannot be temporarily replaced by an incomplete
+            // optimistic object.
             if (productsLoadPromise) await productsLoadPromise;
             invalidateProductListCache();
             await loadProductsTable({ skipCache: true, throwOnError: true });
@@ -1872,7 +1906,7 @@ function inventoryUnitField(variation = {}) {
         unit_symbol: variation.inventory_unit_symbol || '',
         measurement_group: 'Count'
     };
-    return `<div class="col-md-6 permanent-inventory-unit"><label class="form-label">Selling / Inventory Unit <span class="text-danger">*</span></label><select class="form-select edit-var-inventory-unit" required>${dynamicUnitOptions('Count', variation.inventory_unit_id || '', savedUnit)}</select><div class="form-text">Base unit for stock and sales.</div></div>`;
+    return `<div class="col-md-6 permanent-inventory-unit"><label class="form-label">Inventory Base Unit <span class="text-danger">*</span></label><select class="form-select edit-var-inventory-unit" required>${dynamicUnitOptions('Count', variation.inventory_unit_id || '', savedUnit)}</select><div class="form-text">Smallest unit used to track Storage, Shelf, transfers, and POS inventory deductions.</div></div>`;
 }
 
 function specificationChoiceOptionList(selected = '', fallbackOptions = []) {
@@ -1895,6 +1929,13 @@ function selectedEditTypeName() {
 
 function specificationValue(variation, specificationId) {
     return (variation?.specifications || []).find(value => String(value.specification_id) === String(specificationId)) || {};
+}
+
+function specificationHasSavedValue(specification, variation) {
+    const value = specificationValue(variation, specification.specification_id);
+    return String(value.value_text ?? '').trim() !== ''
+        || String(value.value_number ?? '').trim() !== ''
+        || String(value.measurement_unit_id ?? '').trim() !== '';
 }
 
 function dynamicUnitOptions(group, selectedId = '', savedUnit = {}) {
@@ -2222,11 +2263,7 @@ function dynamicSpecificationField(specification, variation, rowId, mode = 'add'
         const choices = Array.from(new Map(choiceSource.filter(Boolean).map(choice => [String(choice).trim().toLowerCase(), String(choice).trim()])).values());
         const savedChoice = String(value.value_text || '').trim();
         if (savedChoice && !choices.some(choice => choice.toLowerCase() === savedChoice.toLowerCase())) choices.unshift(savedChoice);
-        if (specification.allow_custom_value) {
-            const listId = `${rowId}-${specification.specification_id}`;
-            return `<div class="specification-field${medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-text" list="${escapeHtml(listId)}" value="${escapeHtml(value.value_text ?? '')}" placeholder="Select or type"><datalist id="${escapeHtml(listId)}">${choices.map(choice => `<option value="${escapeHtml(choice)}"></option>`).join('')}<option value="${CUSTOMIZE_OPTION}" label="⚙ Customize / Add Specifications"></option></datalist></div>`;
-        }
-        return `<div class="specification-field${medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><select class="form-select dynamic-spec-text"><option value="">Select...</option>${choices.map(choice => `<option ${String(choice).toLowerCase() === String(value.value_text || '').toLowerCase() ? 'selected' : ''}>${escapeHtml(choice)}</option>`).join('')}<option disabled>──────────</option><option value="${CUSTOMIZE_OPTION}">⚙ Customize / Add Specifications</option></select></div>`;
+        return `<div class="specification-field${medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><select class="form-select dynamic-spec-text"><option value="">Select...</option>${choices.map(choice => `<option ${String(choice).toLowerCase() === String(value.value_text || '').toLowerCase() ? 'selected' : ''}>${escapeHtml(choice)}</option>`).join('')}<option disabled>──────────</option><option value="${CUSTOMIZE_OPTION}">⚙ Manage Choices</option></select></div>`;
     }
     return `<div class="specification-field${medicineSemanticClass}" ${attributes}><label class="form-label">${label}</label><input class="form-control dynamic-spec-text" value="${escapeHtml(value.value_text ?? '')}"></div>`;
 }
@@ -2263,7 +2300,13 @@ function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
     const visibleSpecifications = (configuration.specifications || [])
         .filter(specification => {
             const name = String(specification.specification_name || '').trim().toLowerCase();
-            return name !== 'medicine classification' && !name.startsWith('strength denominator');
+            const isOptionalSkuSpecification = name !== 'medicine classification'
+                && name !== 'package type'
+                && name !== 'pack content'
+                && name !== 'tablet count'
+                && !name.startsWith('strength denominator');
+            return isOptionalSkuSpecification
+                && (mode !== 'edit' || variation.show_all_specifications || specificationHasSavedValue(specification, variation));
         })
         .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0));
     if (medicine) {
@@ -2285,11 +2328,11 @@ function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
         ? `${inventoryUnitField(variation)}${sellingPriceField(variation)}${barcodeField}`
         : `${inventoryUnitField(variation)}${barcodeField}${sellingPriceField(variation)}`;
     const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div><div class="sku-classification-field"><label class="form-label">Medicine Classification <span class="text-danger">*</span></label><select class="form-select medicine-sku-classification" required>${medicineSkuClassificationOptions(variation.medicine_classification || getValue(mode === 'edit' ? 'editProductMedicineClassification' : 'productMedicineClassification'))}</select></div></div>` : '';
-    return `<div class="edit-variation-entry${medicine ? ' is-medicine-variation' : ''}"><div class="d-flex align-items-center justify-content-end gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div>${empty}<div class="dynamic-specification-grid">${skuIdentity}${fields}${skuTail}</div></div>`;
+    return `<div class="edit-variation-entry${medicine ? ' is-medicine-variation' : ''}" data-show-all-specifications="${variation.show_all_specifications ? '1' : '0'}"><div class="d-flex align-items-center justify-content-end gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div>${empty}<div class="dynamic-specification-grid">${skuIdentity}${fields}${skuTail}</div></div>`;
 }
 
 function sellingPriceField(variation = {}) {
-    return `<div class="col-md-6 sku-selling-price-field"><label class="form-label">Selling Price <span class="text-danger">*</span></label><div class="input-group"><span class="input-group-text">₱</span><input class="form-control edit-var-price" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(variation.price ?? '')}" required></div></div>`;
+    return `<div class="col-md-6 sku-selling-price-field"><label class="form-label">Default Base Price <span class="text-danger">*</span></label><div class="input-group"><span class="input-group-text">₱</span><input class="form-control edit-var-price" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(variation.price ?? '')}" required></div><div class="form-text">Starting price for the base unit. Actual POS prices are managed in Shelf Selling Prices.</div></div>`;
 }
 
 function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName = '', canDelete = true, mode = 'edit') {
@@ -2305,7 +2348,6 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-6"><label class="form-label">Strength</label><div class="variation-pair"><input class="form-control edit-var-strength-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.strength_value))}" placeholder="70"><select class="form-select edit-var-strength-unit">${measurementUnitOptionList('Weight', variation.strength_unit || '')}</select></div></div>
                 <div class="col-md-6"><label class="form-label">Dosage Form</label><input class="form-control edit-var-dosage-form" value="${escapeHtml(variation.dosage_form || '')}" placeholder="Solution"></div>
                 <div class="col-md-6"><label class="form-label">Net Content</label><div class="variation-pair"><input class="form-control edit-var-net-content-value" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.net_content_value))}" placeholder="500"><select class="form-select edit-var-net-content-unit">${measurementUnitOptionList('Volume', variation.net_content_unit || '')}</select></div></div>
-                <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'blister pack', 'sachet', 'tube', 'vial', 'ampule'])}</select></div>
                 ${inventoryUnitField(variation)}
                 ${sellingPriceField(variation)}
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
@@ -2315,7 +2357,6 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-6"><label class="form-label">Size</label><input class="form-control edit-var-size-value" value="${escapeHtml(formatMeasurementText(variation.size_value))}" placeholder="500 mL"></div>
                 <div class="col-md-6"><label class="form-label">Material</label><input class="form-control edit-var-material" value="${escapeHtml(variation.material || '')}"></div>
                 <div class="col-md-6"><label class="form-label">Sterile Status</label><select class="form-select edit-var-sterile-status"><option value="">-</option><option ${variation.sterile_status === 'Sterile' ? 'selected' : ''}>Sterile</option><option ${variation.sterile_status === 'Non-sterile' ? 'selected' : ''}>Non-sterile</option><option disabled>──────────</option><option value="${CUSTOMIZE_OPTION}">⚙ Customize / Add Specifications</option></select></div>
-                <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['bottle', 'box', 'pack', 'roll', 'tube'])}</select></div>
                 ${inventoryUnitField(variation)}
                 ${sellingPriceField(variation)}
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
@@ -2324,8 +2365,6 @@ function editVariationEntry(variation = {}, categoryName = 'Grocery', typeName =
                 <div class="col-md-6"><label class="form-label">${escapeHtml(groceryVariantLabel(typeName))}</label><input class="form-control edit-var-name" list="${rowId}-variant" value="${escapeHtml(variation.variant_name || '')}" placeholder="Select or type">${datalist(`${rowId}-variant`, rule.variantOptions)}</div>
                 <div class="col-md-6"><label class="form-label">Size</label><select class="form-select edit-var-size-value">${optionList(rule.sizeOptions, formatMeasurementText(variation.size_value))}</select></div>
                 <div class="col-md-6"><label class="form-label">Net Weight</label><div class="variation-pair"><input class="form-control edit-var-weight-value" list="${rowId}-weight" type="number" min="0" step="any" value="${escapeHtml(formatMeasurementValue(variation.weight_value))}" placeholder="155"><select class="form-select edit-var-weight-unit">${measurementUnitOptionList('Weight', variation.weight_unit || '')}</select></div>${datalist(`${rowId}-weight`, rule.weightValues)}</div>
-                <div class="col-md-6"><label class="form-label">Container Type</label><select class="form-select edit-var-package-type">${specificationChoiceOptionList(variation.package_type || '', ['can', 'bottle', 'box', 'pack', 'sachet', 'tube', 'jar', 'pouch'])}</select></div>
-                <div class="col-md-6"><label class="form-label">Pack Content</label><div class="variation-pair"><input class="form-control edit-var-pack-content-qty" list="${rowId}-pack-content" type="number" min="0" step="1" value="${escapeHtml(formatMeasurementValue(variation.pack_content_qty))}" placeholder="12"><select class="form-select edit-var-pack-content-unit">${measurementUnitOptionList('Count', variation.pack_content_unit || '')}</select></div>${datalist(`${rowId}-pack-content`, rule.packContentValues)}</div>
                 ${inventoryUnitField(variation)}
                 <div class="col-md-6"><label class="form-label">Barcode</label><input class="form-control edit-var-barcode" value="${escapeHtml(variation.barcode || '')}"></div>
                 ${sellingPriceField(variation)}
@@ -2379,13 +2418,16 @@ function renderAddVariations(product = { variations: [{}] }, categoryName = '') 
 
 function collectVariationEntries(containerSelector) {
     const categorySelectId = containerSelector === '#editVariationList' ? 'editProductCategory' : 'productCategory';
+    const typeSelectId = containerSelector === '#editVariationList' ? 'editProductType' : 'productType';
     const categoryName = document.getElementById(categorySelectId)?.selectedOptions?.[0]?.dataset.categoryName || '';
     const detailSchema = categoryName === 'Medicine'
         ? 'medicine'
         : (categoryName === 'Medical Supplies' || categoryName === 'Medical Supply' ? 'medical_supply' : 'grocery');
     return Array.from(document.querySelectorAll(`${containerSelector} .edit-variation-entry`)).map(entry => ({
         detail_schema: entry.querySelector('.specification-field') ? 'dynamic' : detailSchema,
-        type_id: entry.querySelector('.medicine-sku-type')?.value || '',
+        type_id: categoryName === 'Medicine'
+            ? (entry.querySelector('.medicine-sku-type')?.value || '')
+            : getValue(typeSelectId),
         medicine_classification: entry.querySelector('.medicine-sku-classification')?.value || '',
         variant_name: entry.querySelector('.edit-var-name')?.value.trim() || '',
         strength_value: entry.querySelector('.edit-var-strength-value')?.value.trim() || '',
@@ -2396,9 +2438,6 @@ function collectVariationEntries(containerSelector) {
         size_value: entry.querySelector('.edit-var-size-value')?.value || '',
         weight_value: entry.querySelector('.edit-var-weight-value')?.value.trim() || '',
         weight_unit: entry.querySelector('.edit-var-weight-unit')?.value || '',
-        package_type: entry.querySelector('.edit-var-package-type')?.value.trim() || '',
-        pack_content_qty: entry.querySelector('.edit-var-pack-content-qty')?.value || '',
-        pack_content_unit: entry.querySelector('.edit-var-pack-content-unit')?.value || '',
         material: entry.querySelector('.edit-var-material')?.value.trim() || '',
         sterile_status: entry.querySelector('.edit-var-sterile-status')?.value || '',
         inventory_unit_id: entry.querySelector('.edit-var-inventory-unit')?.value || '',
@@ -2406,6 +2445,7 @@ function collectVariationEntries(containerSelector) {
         barcode: entry.querySelector('.edit-var-barcode')?.value.trim() || '',
         is_default: entry.querySelector('.edit-var-default')?.checked ? 1 : 0,
         delete: entry.dataset.deleted === '1',
+        show_all_specifications: entry.dataset.showAllSpecifications === '1',
         specifications: Array.from(entry.querySelectorAll('.specification-field')).flatMap(field => {
             const packageUnitSelect = field.querySelector('.dynamic-package-unit');
             const packageUnitId = packageUnitSelect?.value === CUSTOMIZE_OPTION ? '' : (packageUnitSelect?.value || '');
@@ -2490,7 +2530,6 @@ function productToVariation(product) {
             dosage_form: product.dosage_form || '',
             net_content_value: formatMeasurementValue(product.net_content_value),
             net_content_unit: product.net_content_unit || '',
-            package_type: product.package_type || product.medicine_package_type || '',
             price: product.price || '',
             barcode: product.barcode || '',
             is_default: 1
@@ -2504,7 +2543,6 @@ function productToVariation(product) {
             size_value: formatMeasurementText(product.medical_size || product.size),
             material: product.material || '',
             sterile_status: product.sterile_status || '',
-            package_type: product.medical_package_type || product.package_type || '',
             price: product.price || '',
             barcode: product.barcode || '',
             is_default: 1
@@ -2512,16 +2550,12 @@ function productToVariation(product) {
     }
 
     const [weightValue = '', weightUnit = ''] = String(product.net_weight ?? '').split(/\s+/, 2);
-    const packMatch = String(product.pack_content || '').match(/^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(.*)$/);
     return {
         ...inventoryUnit,
         variant_name: product.variant || '',
         size_value: formatMeasurementText(product.size),
         weight_value: formatMeasurementValue(weightValue),
         weight_unit: weightUnit,
-        package_type: product.package_type || product.grocery_package_type || '',
-        pack_content_qty: formatMeasurementValue(packMatch?.[1]),
-        pack_content_unit: packMatch?.[2] || '',
         price: product.price || '',
         barcode: product.barcode || '',
         is_default: 1
@@ -2529,7 +2563,6 @@ function productToVariation(product) {
 }
 
 function legacySpecificationsForProduct(product) {
-    const packMatch = String(product.pack_content || product.packaging_size || '').match(/^([0-9.]+)\s*(.*)$/);
     const unitId = (group, symbol) => productState.units.find(unit => unit.measurement_group === group && [unit.unit_symbol, unit.unit_name].some(value => String(value || '').toLowerCase() === String(symbol || '').toLowerCase()))?.measurement_unit_id || '';
     return productState.specifications.map(specification => {
         const name = String(specification.specification_name || '').toLowerCase();
@@ -2541,18 +2574,17 @@ function legacySpecificationsForProduct(product) {
         if (name === 'material') valueText = product.material || '';
         if (name === 'sterile status') valueText = product.sterile_status || '';
         if (name === 'size') valueText = formatMeasurementText(product.size || product.medical_size);
-        if (name === 'package type') valueText = product.package_type || product.medicine_package_type || product.grocery_package_type || product.medical_package_type || '';
+        if (['package type', 'pack content', 'tablet count', 'dosage form', 'form', 'product form'].includes(name)) return null;
         if (name === 'strength') { valueNumber = formatMeasurementValue(product.medicine_strength_value ?? product.strength_value); symbol = product.strength_unit || ''; }
         if (name === 'volume') { valueNumber = formatMeasurementValue(product.net_content_value ?? product.net_weight ?? product.weight_volume_value); symbol = product.net_content_unit || product.grocery_unit || product.weight_volume_unit || ''; }
         if (name === 'net weight') { valueNumber = formatMeasurementValue(product.net_weight ?? product.weight_volume_value); symbol = product.grocery_unit || product.weight_volume_unit || ''; }
-        if (['pack content', 'tablet count'].includes(name)) { valueNumber = formatMeasurementValue(packMatch?.[1]); symbol = packMatch?.[2] || ''; }
         return {
             specification_id: specification.specification_id,
             value_text: valueText,
             value_number: valueNumber,
             measurement_unit_id: valueNumber ? unitId(specification.measurement_group, symbol) : ''
         };
-    }).filter(value => value.value_text || value.value_number);
+    }).filter(value => value && (value.value_text || value.value_number));
 }
 
 async function openCreateAnotherVariant(product) {
@@ -3094,6 +3126,7 @@ function initProductCards() {
             return;
         }
 
+
         if (viewButton) {
             event.stopPropagation();
             openProductDetailsModal(viewButton.dataset.productId);
@@ -3160,7 +3193,6 @@ function initProductCards() {
         detailsModal.addEventListener('hidden.bs.modal', () => openEditProduct(productId), { once: true });
         bootstrap.Modal.getOrCreateInstance(detailsModal).hide();
     });
-
     document.getElementById('productDetailsModal')?.addEventListener('shown.bs.modal', () => {
         document.getElementById('productDetailsModalTitle')?.focus({ preventScroll: true });
     });
@@ -3197,7 +3229,7 @@ function initProductCards() {
         const product = getProductById(getValue('editProductId'));
         if (!product) return;
         const variations = collectEditVariations().filter(variation => !variation.delete);
-        variations.push({ price: '', is_default: 0 });
+        variations.push({ price: '', is_default: 0, show_all_specifications: true });
         const categoryName = document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || product.category_name || '';
         renderEditVariations({ ...product, variations }, categoryName);
     });
@@ -3454,10 +3486,8 @@ function openSpecificationEditor(specificationId) {
     document.getElementById('editSpecificationStyle').value = pending.field_style || specification.field_style;
     document.getElementById('editSpecificationGroup').innerHTML = productState.measurementGroups.map(group => `<option ${group === (pending.measurement_group || specification.measurement_group) ? 'selected' : ''}>${escapeHtml(group)}</option>`).join('');
     renderSpecificationChoiceList('editSpecificationChoiceList', pending.choices || specification.choices || [], !canEditChoices);
-    document.getElementById('editSpecificationAllowCustom').checked = pending.allow_custom_value ?? specification.allow_custom_value ?? false;
     document.getElementById('editSpecificationStyle').disabled = !canEditStructure;
     document.getElementById('editSpecificationGroup').disabled = !canEditStructure;
-    document.getElementById('editSpecificationAllowCustom').disabled = !canEditChoices;
     document.querySelector('[data-target="editSpecificationChoiceList"]')?.toggleAttribute('disabled', !canEditChoices);
     document.getElementById('editSpecificationScope').textContent = Number(specification.usage_count) > 1
         ? 'This is shared. Display Name applies to this Product Type; selection choices are shared wherever this specification is used.'
@@ -3533,11 +3563,10 @@ async function openSpecificationCustomizer(editMode = false, target = {}) {
     document.getElementById('newSpecificationEditor').classList.add('d-none');
     document.getElementById('editSpecificationEditor').classList.add('d-none');
     document.getElementById('newSpecificationName').value = '';
-    document.getElementById('newSpecificationStyle').value = 'Text Entry';
+    document.getElementById('newSpecificationStyle').value = 'Selection List';
     document.getElementById('measurementGroupEditor').classList.add('d-none');
     document.getElementById('selectionChoiceEditor').classList.add('d-none');
     renderSpecificationChoiceList('newSpecificationChoiceList');
-    document.getElementById('newSpecificationAllowCustom').checked = true;
     showCustomizerError('customSpecificationError');
     showNestedModal('customizeSpecificationsModal');
 
@@ -3878,7 +3907,10 @@ function initProductCustomizers() {
     });
     document.getElementById('btnAddSpecification')?.addEventListener('click', () => {
         document.getElementById('editSpecificationEditor')?.classList.add('d-none');
-        document.getElementById('newSpecificationEditor').classList.toggle('d-none');
+        const editor = document.getElementById('newSpecificationEditor');
+        editor.classList.toggle('d-none');
+        document.getElementById('measurementGroupEditor')?.classList.add('d-none');
+        document.getElementById('selectionChoiceEditor')?.classList.toggle('d-none', editor.classList.contains('d-none'));
         renderSpecificationChoiceList('newSpecificationChoiceList');
     });
     document.getElementById('customizeSpecificationsModal')?.addEventListener('click', event => {
@@ -3922,7 +3954,6 @@ function initProductCustomizers() {
             field_style: getValue('editSpecificationStyle'),
             measurement_group: getValue('editSpecificationGroup'),
             choices: specificationChoiceValues('editSpecificationChoiceList'),
-            allow_custom_value: document.getElementById('editSpecificationAllowCustom').checked
         });
         document.getElementById('editSpecificationEditor')?.classList.add('d-none');
         renderSpecificationAssignments();
@@ -3939,7 +3970,7 @@ function initProductCustomizers() {
         const typeId = getValue(editMode ? 'editProductType' : 'productType');
         const assignments = Array.from(document.querySelectorAll('.specification-assignment:checked')).map(input => input.value);
         const adding = !document.getElementById('newSpecificationEditor').classList.contains('d-none') && getValue('newSpecificationName');
-        const newSpecification = adding ? { specification_name: getValue('newSpecificationName'), field_style: getValue('newSpecificationStyle'), measurement_group: getValue('newSpecificationGroup'), choices: specificationChoiceValues('newSpecificationChoiceList'), allow_custom_value: document.getElementById('newSpecificationAllowCustom').checked } : null;
+        const newSpecification = adding ? { specification_name: getValue('newSpecificationName'), field_style: getValue('newSpecificationStyle'), measurement_group: getValue('newSpecificationGroup'), choices: specificationChoiceValues('newSpecificationChoiceList'), allow_custom_value: false } : null;
         const preserved = editMode ? collectEditVariations() : collectAddVariations();
         try {
             const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/save_product_configuration.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type_id: typeId, assignments, new_specification: newSpecification, specification_edits: Array.from(pendingSpecificationEdits.values()) }) });

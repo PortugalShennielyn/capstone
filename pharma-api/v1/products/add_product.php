@@ -86,23 +86,23 @@ function normalizeSkuVariation(array $variation, string $categoryName, ?string $
         'dosage_form' => cleanSkuField($variation, 'dosage_form') ?? cleanSkuField($variation, 'product_unit') ?? cleanSkuField($variation, 'unit'),
         'net_content_value' => cleanSkuNumber($variation, 'net_content_value') ?? cleanSkuNumber($variation, 'volume_value'),
         'net_content_unit' => cleanSkuField($variation, 'net_content_unit') ?? cleanSkuField($variation, 'volume_unit'),
-        'medicine_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
+        'medicine_package_type' => null,
         'size' => cleanSkuField($variation, 'size_value') ?? cleanSkuField($variation, 'display_size'),
         'net_weight' => cleanSkuNumber($variation, 'net_weight') ?? cleanSkuNumber($variation, 'weight_value') ?? cleanSkuNumber($variation, 'weight_volume_value'),
         'grocery_unit' => cleanSkuField($variation, 'unit') ?? cleanSkuField($variation, 'weight_unit') ?? cleanSkuField($variation, 'weight_volume_unit'),
-        'grocery_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
+        'grocery_package_type' => null,
         'material' => cleanSkuField($variation, 'material'),
         'sterile_status' => cleanSkuField($variation, 'sterile_status'),
-        'medical_package_type' => cleanSkuField($variation, 'package_type') ?? cleanSkuField($variation, 'packaging'),
-        'pack_content' => cleanSkuField($variation, 'pack_content') ?? joinSkuParts(cleanSkuNumber($variation, 'pack_content_qty'), cleanSkuField($variation, 'pack_content_unit')),
+        'medical_package_type' => null,
+        'pack_content' => null,
         'barcode' => $barcode,
         'inventory_unit_id' => cleanId($variation['inventory_unit_id'] ?? null),
         'price' => $price,
         'is_empty_detail' => $categoryName === 'Grocery'
-            ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
+            ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuNumber($variation, 'net_weight') || cleanSkuNumber($variation, 'weight_value') || cleanSkuNumber($variation, 'weight_volume_value') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'weight_unit') || cleanSkuField($variation, 'weight_volume_unit'))
             : (in_array($categoryName, ['Medical Supply', 'Medical Supplies'], true)
-                ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuField($variation, 'material') || cleanSkuField($variation, 'sterile_status') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging') || cleanSkuField($variation, 'pack_content') || cleanSkuNumber($variation, 'pack_content_qty'))
-            : !(cleanSkuNumber($variation, 'strength_value') || cleanSkuField($variation, 'strength_unit') || cleanSkuField($variation, 'dosage_form') || cleanSkuNumber($variation, 'net_content_value') || cleanSkuNumber($variation, 'volume_value') || cleanSkuField($variation, 'net_content_unit') || cleanSkuField($variation, 'volume_unit') || cleanSkuField($variation, 'unit') || cleanSkuField($variation, 'package_type') || cleanSkuField($variation, 'packaging'))
+                ? !(cleanSkuField($variation, 'variant_name') || cleanSkuField($variation, 'variant_flavor') || cleanSkuField($variation, 'size_value') || cleanSkuField($variation, 'material') || cleanSkuField($variation, 'sterile_status'))
+            : !(cleanSkuNumber($variation, 'strength_value') || cleanSkuField($variation, 'strength_unit') || cleanSkuField($variation, 'dosage_form') || cleanSkuNumber($variation, 'net_content_value') || cleanSkuNumber($variation, 'volume_value') || cleanSkuField($variation, 'net_content_unit') || cleanSkuField($variation, 'volume_unit') || cleanSkuField($variation, 'unit'))
             )
     ];
 }
@@ -284,7 +284,10 @@ try {
             continue;
         }
         $sku = normalizeSkuVariation($variation, $categoryName, $fallbackPrice, $productStatus);
-        $skuTypeId = cleanId($variation['type_id'] ?? $typeId);
+        // A non-medicine SKU uses the Product Type selected for the product.
+        // Older clients sent an empty per-SKU type, which must not mask it.
+        $skuTypeId = cleanId($variation['type_id'] ?? null);
+        if ($skuTypeId === '' && $categoryName !== 'Medicine') $skuTypeId = $typeId;
         $skuTypeStatement->execute([':type_id' => $skuTypeId, ':category_id' => $categoryId]);
         $skuTypeName = trim((string) $skuTypeStatement->fetchColumn());
         if ($skuTypeId === '' || $skuTypeName === '') {
@@ -335,6 +338,10 @@ try {
     }
     $submittedBarcodes = [];
     $barcodeCheck = $pdo->prepare('SELECT product_id FROM product WHERE LOWER(TRIM(barcode)) = LOWER(TRIM(:barcode)) LIMIT 1');
+    $unitBarcodeColumn = productSellingOptionBarcodeColumn($pdo);
+    $unitBarcodeCheck = $unitBarcodeColumn
+        ? $pdo->prepare("SELECT product_id FROM product_selling_options WHERE LOWER(TRIM(`{$unitBarcodeColumn}`)) = LOWER(TRIM(:barcode)) LIMIT 1")
+        : null;
     foreach ($skuRows as $sku) {
         $normalizedBarcode = strtolower(trim((string) $sku['barcode']));
         if (isset($submittedBarcodes[$normalizedBarcode])) {
@@ -344,6 +351,12 @@ try {
         $barcodeCheck->execute([':barcode' => $sku['barcode']]);
         if ($barcodeCheck->fetchColumn()) {
             throw new InvalidArgumentException('This barcode already belongs to another product variant.');
+        }
+        if ($unitBarcodeCheck) {
+            $unitBarcodeCheck->execute([':barcode' => $sku['barcode']]);
+            if ($unitBarcodeCheck->fetchColumn()) {
+                throw new InvalidArgumentException('This barcode already belongs to a sellable unit.');
+            }
         }
     }
 

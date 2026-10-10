@@ -1,0 +1,5 @@
+ALTER TABLE inventory_batches
+    ADD COLUMN IF NOT EXISTS no_expiry TINYINT(1) NOT NULL DEFAULT 0;
+
+ALTER TABLE product_inventory
+    ADD COLUMN IF NOT EXISTS no_expiry TINYINT(1) NOT NULL DEFAULT 0;

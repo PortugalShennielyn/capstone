@@ -1,94 +1,40 @@
-
 <?php
 // pharma-api/config/mailer.php
 
-function sendVerificationEmail(
-    string $toEmail,
-    string $code,
-    string $displayName = 'User'
-): bool {
-    $subject = 'Dr. R Pharmacy - Password Reset Code';
+function sendVerificationEmail(string $toEmail, string $code, string $displayName = 'User'): bool
+{
+    $subject  = 'Dr. R Pharmacy – Password Reset Code';
     $bodyHtml = buildVerificationEmailBody($code, $displayName);
 
-    // Load PHPMailer manually
-    $phpMailerDir = dirname(__DIR__) . DIRECTORY_SEPARATOR
-    . 'lib' . DIRECTORY_SEPARATOR
-    . 'PHPMailer' . DIRECTORY_SEPARATOR
-    . 'src';
-
-    $phpMailerFile = $phpMailerDir . '/PHPMailer.php';
-    $smtpFile = $phpMailerDir . '/SMTP.php';
-    $exceptionFile = dirname($phpMailerDir) . DIRECTORY_SEPARATOR . 'Exception.php';
-    file_put_contents(
-    __DIR__ . '/mailer_debug.log',
-    date('Y-m-d H:i:s') .
-    ' | PHPMailer=' . (file_exists($phpMailerFile) ? 'YES' : 'NO') .
-    ' | SMTP=' . (file_exists($smtpFile) ? 'YES' : 'NO') .
-    ' | Exception=' . (file_exists($exceptionFile) ? 'YES' : 'NO') .
-    ' | Directory=' . $phpMailerDir . PHP_EOL,
-    FILE_APPEND
-);
-
-    // Check whether all PHPMailer files exist
-    if (
-        !file_exists($phpMailerFile) ||
-        !file_exists($smtpFile) ||
-        !file_exists($exceptionFile)
-    ) {
-        $message = 'PHPMailer files missing. Directory: ' . $phpMailerDir;
-
-        error_log('[MAILER] ' . $message);
-
-        file_put_contents(
-            __DIR__ . '/mailer_debug.log',
-            date('Y-m-d H:i:s') . ' | ' . $message . PHP_EOL,
-            FILE_APPEND
-        );
-
-        return false;
+    // A: Composer autoload
+    $composerAutoload = __DIR__ . '/../vendor/autoload.php';
+    if (file_exists($composerAutoload)) {
+        require_once $composerAutoload;
+        if (class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
+            return sendViaPhpMailer($toEmail, $subject, $bodyHtml);
+        }
     }
 
-    // Load PHPMailer classes
-    require_once $exceptionFile;
-    require_once $phpMailerFile;
-    require_once $smtpFile;
-
-    if (!class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
-        $message = 'PHPMailer class could not be loaded.';
-
-        error_log('[MAILER] ' . $message);
-
-        file_put_contents(
-            __DIR__ . '/mailer_debug.log',
-            date('Y-m-d H:i:s') . ' | ' . $message . PHP_EOL,
-            FILE_APPEND
-        );
-
-        return false;
+    // B: Manual drop-in
+    $manual = __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
+    if (file_exists($manual)) {
+        require_once __DIR__ . '/../lib/PHPMailer/src/PHPMailer.php';
+        require_once __DIR__ . '/../lib/PHPMailer/src/SMTP.php';
+        require_once __DIR__ . '/../lib/PHPMailer/Exception.php';
+        if (class_exists(\PHPMailer\PHPMailer\PHPMailer::class)) {
+            return sendViaPhpMailer($toEmail, $subject, $bodyHtml);
+        }
     }
 
-    return sendViaPhpMailer($toEmail, $subject, $bodyHtml);
+    // C: native mail()
+    return sendViaNativeMail($toEmail, $subject, $bodyHtml);
 }
 
-
-function buildVerificationEmailBody(
-    string $code,
-    string $displayName
-): string {
-    $safeName = htmlspecialchars(
-        $displayName,
-        ENT_QUOTES,
-        'UTF-8'
-    );
-
-    $safeCode = htmlspecialchars(
-        $code,
-        ENT_QUOTES,
-        'UTF-8'
-    );
-
+function buildVerificationEmailBody(string $code, string $displayName): string
+{
+    $safeName = htmlspecialchars($displayName, ENT_QUOTES, 'UTF-8');
+    $safeCode = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
     $year = date('Y');
-
     return <<<HTML
 <!DOCTYPE html>
 <html>
@@ -96,26 +42,18 @@ function buildVerificationEmailBody(
   <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:14px;
               box-shadow:0 22px 60px rgba(31,37,48,0.12);padding:34px;">
     <h2 style="margin:0 0 12px;color:#8A2BE2;font-size:22px;">Dr. R Pharmacy</h2>
-
     <p style="margin:0 0 18px;">Hi <strong>{$safeName}</strong>,</p>
-
-    <p style="margin:0 0 18px;">
-      Use the code below to reset your password.
-      It expires in <strong>10 minutes</strong>.
-    </p>
-
+    <p style="margin:0 0 18px;">Use the code below to reset your password.
+       It expires in <strong>10 minutes</strong>.</p>
     <div style="text-align:center;margin:26px 0;">
       <span style="display:inline-block;font-size:32px;letter-spacing:8px;
                    font-weight:800;color:#6b21a8;background:#f3e8ff;
                    padding:14px 26px;border-radius:10px;">{$safeCode}</span>
     </div>
-
     <p style="margin:0 0 8px;font-size:13px;color:#747d8c;">
       If you didn't request this, you can safely ignore this email.
     </p>
-
     <hr style="border:0;border-top:1px solid #e6eaf2;margin:22px 0;">
-
     <p style="font-size:12px;color:#9aa3b2;text-align:center;margin:0;">
       &copy; {$year} Dr. R Pharmacy — Capistrano cor. Cruz Taal St., Brgy. 08, CDO
     </p>
@@ -125,68 +63,44 @@ function buildVerificationEmailBody(
 HTML;
 }
 
-
-function sendViaPhpMailer(
-    string $toEmail,
-    string $subject,
-    string $html
-): bool {
+function sendViaPhpMailer(string $toEmail, string $subject, string $html): bool
+{
     $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
-
     try {
         $config = require __DIR__ . '/mail_credentials.php';
+        $username = getenv('MAIL_USERNAME') ?: (string) ($config['username'] ?? '');
+        $password = getenv('MAIL_PASSWORD') ?: (string) ($config['password'] ?? '');
+        if ($username === '' || $password === '') {
+            throw new RuntimeException('SMTP credentials are not configured.');
+        }
 
         $mail->isSMTP();
-        $mail->Host = 'smtp.gmail.com';
-        $mail->SMTPAuth = true;
-        $mail->Username = $config['username'];
+        $mail->Host       = getenv('MAIL_HOST')     ?: 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = $username;
+        $mail->Password   = str_replace(' ', '', trim($password));
+        $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = (int) (getenv('MAIL_PORT') ?: 587);
+        $mail->CharSet    = 'UTF-8';
 
-        // App Password should be stored without spaces
-        $mail->Password = str_replace(
-            ' ',
-            '',
-            trim($config['password'])
-        );
-
-        $mail->SMTPSecure =
-            \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-
-        $mail->Port = 587;
-        $mail->CharSet = 'UTF-8';
-
-        $mail->setFrom(
-            $config['username'],
-            'Dr. R Pharmacy'
-        );
-
+        $mail->setFrom(getenv('PHARMA_MAIL_FROM') ?: $username, getenv('PHARMA_MAIL_FROM_NAME') ?: 'Dr. R Pharmacy');
         $mail->addAddress($toEmail);
         $mail->isHTML(true);
         $mail->Subject = $subject;
-        $mail->Body = $html;
-
-        $mail->AltBody =
-            'Your Dr. R Pharmacy password reset code is in the email.';
-
+        $mail->Body    = $html;
+        $mail->AltBody = 'Your verification code is in the HTML version of this email.';
         $mail->send();
-
         return true;
-
     } catch (\Throwable $e) {
-        $message = date('Y-m-d H:i:s')
-            . ' | PHPMailer error: '
-            . $e->getMessage()
-            . ' | SMTP: '
-            . $mail->ErrorInfo
-            . PHP_EOL;
-
-        error_log('[MAILER] ' . $message);
-
-        file_put_contents(
-            __DIR__ . '/mailer_debug.log',
-            $message,
-            FILE_APPEND
-        );
-
+        error_log('[MAILER] PHPMailer error: ' . $e->getMessage());
         return false;
     }
+}
+
+function sendViaNativeMail(string $toEmail, string $subject, string $html): bool
+{
+    $headers  = "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+    $headers .= "From: Dr. R Pharmacy <docRpharmacy@gmail.com>\r\n";
+    return @mail($toEmail, $subject, $html, $headers);
 }

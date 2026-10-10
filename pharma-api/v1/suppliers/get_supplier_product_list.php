@@ -142,7 +142,18 @@ try {
         || currentSessionHasRbacRole('admin') || currentSessionHasRbacRole('ro_admin')
         || currentSessionHasRbacRole('supervisor') || currentSessionHasRbacRole('ro_supervisor');
     foreach ($products as &$product) {
-        $product['specifications'] = $specificationsByProduct[(string)$product['product_id']] ?? [];
+        $specifications = $specificationsByProduct[(string)$product['product_id']] ?? [];
+        $product['medicine_classification'] = null;
+        $product['medicine_classification_badge'] = null;
+        $product['specifications'] = array_values(array_filter($specifications, static function (array $specification) use (&$product): bool {
+            if (strcasecmp(trim((string)($specification['specification_name'] ?? '')), 'medicine classification') !== 0) {
+                return true;
+            }
+            $classification = trim((string)($specification['value_text'] ?? ''));
+            $product['medicine_classification'] = $classification;
+            $product['medicine_classification_badge'] = strcasecmp($classification, 'Prescription (Rx)') === 0 ? 'Rx' : null;
+            return false;
+        }));
         $normalizedHierarchy = $hierarchies[(string)$product['supplier_product_id']] ?? [];
         if (!empty($normalizedHierarchy['hierarchy_levels'])) {
             $product['hierarchy_levels'] = $normalizedHierarchy['hierarchy_levels'];

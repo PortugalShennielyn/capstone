@@ -71,7 +71,8 @@ try {
 
 $sellingOptionsSource = (string)file_get_contents(__DIR__ . '/../pharma-api/v1/products/product_selling_options.php');
 $saveSellingSource = (string)file_get_contents(__DIR__ . '/../pharma-api/v1/inventory/save_selling_options.php');
-stopRuleAssert(str_contains($sellingOptionsSource, 'pso.base_quantity = 1'), 'POS reads are not restricted to the canonical unit.');
-stopRuleAssert(str_contains($saveSellingSource, '$baseQuantity !== 1'), 'POS writes are not restricted to the canonical unit.');
+stopRuleAssert(str_contains($sellingOptionsSource, 'productSellableUnitCandidates'), 'POS selling candidates must be product-specific configured units.');
+stopRuleAssert(str_contains($saveSellingSource, '$candidateUnits'), 'POS writes must validate selling units against product-specific configured units.');
+stopRuleAssert(!str_contains($saveSellingSource, '$baseQuantity !== 1'), 'POS writes must no longer force only the canonical base unit.');
 
 echo "Inventory-unit conversion stopping-rule tests passed.\n";

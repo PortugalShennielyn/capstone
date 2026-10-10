@@ -25,9 +25,9 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
             rel="stylesheet"
         />
-        <link href="./css/navbar.css?v=36" rel="stylesheet" />
+        <link href="./css/navbar.css?v=39" rel="stylesheet" />
         <link href="./css/purchase_receiving.css?v=9" rel="stylesheet" />
-        <script src="./js/navbar.js?v=83" defer></script>
+        <script src="./js/navbar.js?v=89" defer></script>
         <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 
         <style>
@@ -1126,10 +1126,9 @@
                     );
             }
             .po-edit-item-row {
-                grid-template-columns: minmax(260px, 1.8fr) minmax(86px, 0.55fr) minmax(
-                        125px,
-                        0.75fr
-                    ) minmax(145px, 0.85fr) minmax(120px, 0.7fr) minmax(145px, 0.85fr);
+                grid-template-columns:
+                    minmax(260px, 1.8fr) minmax(86px, 0.55fr) minmax(125px, 0.75fr)
+                    minmax(145px, 0.85fr) minmax(120px, 0.7fr) minmax(145px, 0.85fr);
                 position: relative;
                 z-index: 1;
             }
@@ -2205,6 +2204,13 @@
             .payment-summary-credit strong {
                 color: #7a4d12;
             }
+            .po-payment-financial-summary .payment-summary-credit {
+                color: #92400e;
+                background: #fffbeb;
+            }
+            .po-payment-financial-summary .payment-summary-credit strong {
+                color: #b45309;
+            }
             .payment-summary-total {
                 margin-top: 4px;
                 padding-top: 10px;
@@ -2455,10 +2461,9 @@
                     grid-template-columns: repeat(2, minmax(180px, 1fr));
                 }
                 .po-edit-item-row {
-                    grid-template-columns: minmax(240px, 1.7fr) repeat(
-                            2,
-                            minmax(105px, 0.7fr)
-                        ) repeat(2, minmax(125px, 0.8fr)) minmax(135px, 0.8fr);
+                    grid-template-columns:
+                        minmax(240px, 1.7fr) repeat(2, minmax(105px, 0.7fr))
+                        repeat(2, minmax(125px, 0.8fr)) minmax(135px, 0.8fr);
                 }
             }
             @container (max-width: 1080px) {
@@ -3531,10 +3536,9 @@
             }
             .receive-batch-row {
                 display: grid;
-                grid-template-columns: minmax(130px, 1fr) minmax(100px, 0.6fr) minmax(
-                        150px,
-                        0.8fr
-                    ) auto;
+                grid-template-columns:
+                    minmax(130px, 1fr) minmax(100px, 0.6fr) minmax(150px, 0.8fr)
+                    auto;
                 gap: 8px;
                 align-items: end;
             }
@@ -3779,27 +3783,27 @@
             #table-purchase-orders[data-po-view="active"] col:nth-child(1),
             #table-purchase-orders[data-po-view="active"] th:nth-child(1),
             #table-purchase-orders[data-po-view="active"] td:nth-child(1) {
-                width: 13% !important;
+                width: 12% !important;
                 min-width: 0 !important;
             }
             #table-purchase-orders[data-po-view="active"] col:nth-child(2),
             #table-purchase-orders[data-po-view="active"] th:nth-child(2),
             #table-purchase-orders[data-po-view="active"] td:nth-child(2) {
-                width: 13% !important;
+                width: 12% !important;
                 min-width: 0 !important;
             }
             #table-purchase-orders[data-po-view="active"] col:nth-child(3),
             #table-purchase-orders[data-po-view="active"] th:nth-child(3),
             #table-purchase-orders[data-po-view="active"] td:nth-child(3) {
-                width: 14% !important;
+                width: 11% !important;
                 min-width: 0 !important;
             }
             #table-purchase-orders[data-po-view="active"] col:nth-child(4),
             #table-purchase-orders[data-po-view="active"] th:nth-child(4),
             #table-purchase-orders[data-po-view="active"] td:nth-child(4) {
-                width: 23% !important;
+                width: 20% !important;
                 min-width: 0 !important;
-                max-width: 23% !important;
+                max-width: 20% !important;
             }
             #table-purchase-orders[data-po-view="active"] col:nth-child(5),
             #table-purchase-orders[data-po-view="active"] th:nth-child(5),
@@ -3810,7 +3814,7 @@
             #table-purchase-orders[data-po-view="active"] col:nth-child(6),
             #table-purchase-orders[data-po-view="active"] th:nth-child(6),
             #table-purchase-orders[data-po-view="active"] td:nth-child(6) {
-                width: 11% !important;
+                width: 9% !important;
                 min-width: 0 !important;
             }
             #table-purchase-orders[data-po-view="active"] col:nth-child(7),
@@ -3823,15 +3827,15 @@
             #table-purchase-orders[data-po-view="active"] th:nth-child(8),
             #table-purchase-orders[data-po-view="active"] td:nth-child(8) {
                 width: 8% !important;
-                min-width: 104px !important;
+                min-width: 0 !important;
             }
             #table-purchase-orders[data-po-view="active"] th.col-actions,
             #table-purchase-orders[data-po-view="active"] td.po-actions-cell {
                 position: static !important;
                 right: auto !important;
-                width: 8% !important;
-                min-width: 104px !important;
-                max-width: 112px !important;
+                width: 10% !important;
+                min-width: 116px !important;
+                max-width: 136px !important;
                 padding-inline: 4px !important;
                 border-left: 0 !important;
                 box-shadow: none !important;
@@ -4766,7 +4770,7 @@
             }
             .supplier-invoice-lines {
                 width: 100%;
-                min-width: 900px;
+                min-width: 1050px;
                 table-layout: fixed;
                 margin: 0;
                 border-collapse: collapse;
@@ -4786,25 +4790,25 @@
                 vertical-align: middle;
             }
             .supplier-invoice-lines th:nth-child(1) {
-                width: 23%;
+                width: 17%;
             }
             .supplier-invoice-lines th:nth-child(2) {
-                width: 12%;
+                width: 15%;
             }
             .supplier-invoice-lines th:nth-child(3) {
-                width: 11%;
+                width: 10%;
             }
             .supplier-invoice-lines th:nth-child(4) {
-                width: 12%;
+                width: 10%;
             }
             .supplier-invoice-lines th:nth-child(5) {
-                width: 12%;
+                width: 10%;
             }
             .supplier-invoice-lines th:nth-child(6) {
-                width: 18%;
+                width: 20%;
             }
             .supplier-invoice-lines th:nth-child(7) {
-                width: 12%;
+                width: 18%;
             }
             .supplier-invoice-product {
                 font-size: 13px;
@@ -4814,9 +4818,7 @@
                 overflow-wrap: anywhere;
             }
             .supplier-invoice-spec {
-                display: block;
-                margin-top: 3px;
-                font-size: 11.5px;
+                font-size: 12px;
                 line-height: 1.35;
                 color: #64748b;
                 overflow-wrap: anywhere;
@@ -4925,6 +4927,28 @@
                 letter-spacing: 0.015em;
                 text-transform: uppercase;
             }
+            .supplier-invoice-total-row.payable {
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid #d7e8e3;
+            }
+            .supplier-invoice-total-row.payable > span,
+            .supplier-invoice-total-row.payable > strong {
+                color: #075e54;
+                font-weight: 800;
+            }
+            .supplier-invoice-credit-source {
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+                margin-top: 12px;
+                padding: 10px 12px;
+                border: 1px solid #d7e8e3;
+                border-radius: 7px;
+                background: #f0faf7;
+                color: #176b5d;
+                font-size: 12px;
+            }
             .supplier-invoice-total-input {
                 display: grid;
                 grid-template-columns: 34px 1fr;
@@ -5011,9 +5035,9 @@
             #table-purchase-orders.po-list-table td.po-actions-cell,
             #table-purchase-orders[data-po-view="active"] th.col-actions,
             #table-purchase-orders[data-po-view="active"] td.po-actions-cell {
-                width: 310px !important;
-                min-width: 310px !important;
-                max-width: 310px !important;
+                width: 150px !important;
+                min-width: 150px !important;
+                max-width: 150px !important;
             }
             #table-purchase-orders .po-actions,
             #table-purchase-orders[data-po-view="active"] .po-actions {
@@ -5498,6 +5522,756 @@
                     flex-wrap: wrap;
                 }
             }
+            #table-purchase-orders[data-po-view="active"] td.po-delivery-cell {
+                text-align: left !important;
+                white-space: nowrap !important;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-eta-date,
+            #table-purchase-orders[data-po-view="active"] .po-eta-relative {
+                display: block;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-eta-date {
+                color: #172033;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-eta-relative {
+                margin-top: 2px;
+                color: #667085;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-eta-relative.is-overdue {
+                color: #dc2626;
+            }
+            #table-purchase-orders[data-po-view="active"] td.po-status-cell {
+                text-align: left !important;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-stack {
+                align-items: flex-start;
+                gap: 4px;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                min-height: 22px;
+                padding: 4px 9px;
+                border-radius: 999px;
+                color: #475467;
+                background: #f2f4f7;
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1;
+                white-space: nowrap;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-dot {
+                width: 6px;
+                height: 6px;
+                flex: 0 0 6px;
+                border-radius: 50%;
+                background: #667085;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-pending {
+                color: #b54708;
+                background: #fff4e5;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-pending .po-status-dot {
+                background: #c45200;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-delivered {
+                color: #087443;
+                background: #e8f5ed;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-delivered .po-status-dot {
+                background: #16834b;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-arrived {
+                color: #6941c6;
+                background: #f2edff;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-arrived .po-status-dot {
+                background: #7f56d9;
+            }
+            #table-purchase-orders[data-po-view="active"] td.po-price-cell {
+                text-align: right !important;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-total-with-payment,
+            #table-purchase-orders[data-po-view="active"] .po-total-pending {
+                display: inline-flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 2px;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-total-with-payment .po-money {
+                color: #172033;
+                font-size: 13px;
+                font-weight: 700;
+                line-height: 1.2;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-payment-state,
+            #table-purchase-orders[data-po-view="active"] .po-total-pending small {
+                color: #667085;
+                font-size: 11px;
+                font-weight: 500;
+                line-height: 1.2;
+                text-align: right;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-payment-paid {
+                color: #087443;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-payment-unpaid,
+            #table-purchase-orders[data-po-view="active"] .po-payment-partially_paid {
+                color: #b42318;
+            }
+            #table-purchase-orders[data-po-view="active"] th.col-actions,
+            #table-purchase-orders[data-po-view="active"] td.po-actions-cell {
+                width: 175px !important;
+                min-width: 175px !important;
+                max-width: 175px !important;
+                padding-inline: 7px !important;
+            }
+            #table-purchase-orders[data-po-view="active"] td.po-actions-cell .po-actions {
+                justify-content: flex-start !important;
+                gap: 7px !important;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-actions .po-primary-action {
+                width: auto !important;
+                min-width: 0 !important;
+                max-width: none !important;
+                height: 34px !important;
+                min-height: 34px !important;
+                padding: 0 10px !important;
+                gap: 7px;
+                border-color: #dfe4ec;
+                border-radius: 7px;
+                color: #172033;
+                background: #fff;
+                font-size: 12px;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-actions .po-primary-action:hover {
+                border-color: #98a2b3;
+                background: #f8fafc;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-actions .status-po-btn {
+                width: 30px !important;
+                min-width: 30px !important;
+                height: 34px !important;
+                border: 0;
+                color: #667085;
+                background: transparent;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-actions .status-po-btn:hover {
+                color: #344054;
+                background: #f2f4f7;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-eta-date,
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-total-with-payment .po-money {
+                color: #e5e7eb;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-status-pill {
+                color: #cbd5e1;
+                background: #303b4d;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-status-pending {
+                color: #fdba74;
+                background: #432d1d;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-status-delivered {
+                color: #86efac;
+                background: #173b2b;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-status-arrived {
+                color: #c4b5fd;
+                background: #30264a;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-actions .po-primary-action {
+                border-color: #475467;
+                color: #e5e7eb;
+                background: #182131;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-items-summary {
+                text-align: left;
+            }
+            #table-purchase-orders[data-po-view="active"] td.po-items-summary-cell {
+                text-align: center !important;
+            }
+            #table-purchase-orders[data-po-view="active"] td.po-order-qty-cell {
+                text-align: center !important;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-quantity-summary {
+                display: grid;
+                justify-items: center;
+                gap: 0;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-order-qty-lines {
+                width: max-content;
+                max-width: 100%;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-quantity-summary .po-items-more {
+                margin-top: 7px;
+            }
+            #table-purchase-orders[data-po-view="active"] tbody tr.po-clickable-row {
+                cursor: pointer;
+            }
+            #table-purchase-orders[data-po-view="active"] tbody tr.po-clickable-row:focus-visible {
+                outline: 2px solid #7c3aed;
+                outline-offset: -2px;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-items-preview {
+                display: grid;
+                gap: 7px;
+                margin: 0;
+                padding: 0;
+                list-style: none;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-items-preview li {
+                min-width: 0;
+                color: #172033;
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.25;
+                text-align: center;
+                overflow-wrap: anywhere;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-items-preview li strong {
+                display: inline;
+                font-size: inherit;
+                font-weight: 700;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-items-preview li span {
+                display: inline;
+                margin: 0 0 0 4px;
+                color: #667085;
+                font-size: inherit;
+                font-weight: 500;
+                line-height: inherit;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-items-more {
+                display: block;
+                margin-top: 7px;
+                color: #087e8b;
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1.2;
+                text-align: center;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-items-preview li {
+                color: #e5e7eb;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-items-preview li span {
+                color: #aab4c3;
+            }
+            body.dark-mode #table-purchase-orders[data-po-view="active"] .po-items-more {
+                color: #67d4df;
+            }
+            #viewPurchaseOrderModal .modal-body {
+                background: #fff;
+            }
+            #viewPurchaseOrderModal #poOrderSummary {
+                width: 100%;
+                max-width: none;
+                margin: 0;
+                padding: 0;
+                border: 0;
+                border-radius: 0;
+                box-shadow: none;
+                background: #fff;
+            }
+            #viewPurchaseOrderModal #poOrderSummary > .po-receiving-documents-header {
+                display: none;
+            }
+            #viewPurchaseOrderModal #poOrderSummaryContent {
+                width: 100%;
+            }
+            .po-view-progress {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 8px;
+                padding: 20px 24px 18px;
+                border-bottom: 1px solid #e8ecf1;
+                background: #fff;
+            }
+            .po-view-progress-step {
+                position: relative;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-rows: 26px auto auto;
+                min-width: 0;
+                color: #667085;
+            }
+            .po-view-progress-step::before {
+                position: absolute;
+                top: 11px;
+                left: 31px;
+                right: -8px;
+                height: 1px;
+                background: #d8dee8;
+                content: "";
+            }
+            .po-view-progress-step.is-complete::before {
+                background: #13877c;
+            }
+            .po-view-progress-step.is-last::before {
+                display: none;
+            }
+            .po-view-progress-marker {
+                z-index: 1;
+                display: grid;
+                width: 24px;
+                height: 24px;
+                grid-row: 1;
+                place-items: center;
+                border: 1px solid #cbd5e1;
+                border-radius: 50%;
+                color: #fff;
+                background: #fff;
+                font-size: 11px;
+            }
+            .po-view-progress-step.is-complete .po-view-progress-marker {
+                border-color: #13877c;
+                background: #13877c;
+            }
+            .po-view-progress-step > strong {
+                grid-column: 1;
+                grid-row: 2;
+                margin-top: 8px;
+                color: #344054;
+                font-size: 13px;
+                font-weight: 650;
+            }
+            .po-view-progress-step > small {
+                grid-column: 1;
+                grid-row: 3;
+                color: #667085;
+                font-size: 12px;
+            }
+            .po-view-layout {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 340px;
+                align-items: stretch;
+            }
+            .po-view-items-panel {
+                min-width: 0;
+                padding: 20px 18px 24px;
+            }
+            .po-view-panel-heading,
+            .po-view-sidebar-heading {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 14px;
+            }
+            .po-view-panel-heading h3,
+            .po-view-sidebar-heading h3,
+            .po-view-details-section h3 {
+                margin: 0;
+                color: #273244;
+                font-size: 14px;
+                font-weight: 700;
+            }
+            .po-view-panel-heading > span {
+                color: #667085;
+                font-size: 12px;
+                white-space: nowrap;
+            }
+            .po-view-record-table-wrap {
+                overflow-x: auto;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+            }
+            .po-view-items-table {
+                min-width: 780px;
+                table-layout: fixed;
+            }
+            .po-view-items-table th,
+            .po-view-items-table td {
+                padding: 10px 8px;
+                border-bottom: 1px solid #edf0f5;
+                vertical-align: middle;
+                font-size: 12px;
+            }
+            .po-view-items-table th {
+                color: #667085;
+                background: transparent;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: none;
+                letter-spacing: 0;
+            }
+            .po-view-items-table th:first-child {
+                width: 24%;
+            }
+            .po-view-items-table th:nth-child(2) {
+                width: 20%;
+            }
+            .po-view-items-table th:nth-child(3),
+            .po-view-items-table th:nth-child(4),
+            .po-view-items-table th:nth-child(5) { width: 11%; }
+            .po-view-items-table th:nth-child(6),
+            .po-view-items-table th:nth-child(7) {
+                width: 11%;
+            }
+            .po-view-items-table td:first-child strong {
+                color: #273244;
+                font-size: 13px;
+                font-weight: 650;
+            }
+            .po-view-items-table td:first-child small {
+                color: #667085;
+                font-size: 11px;
+            }
+            .po-view-items-table .po-view-number {
+                text-align: center;
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+            .po-view-items-table .po-view-money {
+                text-align: right;
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+            .po-view-empty-cell {
+                color: #667085 !important;
+                text-align: center !important;
+            }
+            .po-view-sidebar {
+                min-width: 0;
+                padding: 20px 24px;
+                border-left: 1px solid #e8ecf1;
+                background: #fff;
+            }
+            .po-view-sidebar-section + .po-view-sidebar-section {
+                margin-top: 20px;
+                padding-top: 18px;
+                border-top: 1px solid #e8ecf1;
+            }
+            .po-view-sidebar-heading {
+                margin-bottom: 6px;
+            }
+            .po-view-sidebar-heading > strong {
+                color: #16834b;
+                font-size: 12px;
+                font-weight: 650;
+            }
+            .po-view-payment-amount {
+                display: block;
+                color: #172033;
+                font-size: 30px;
+                font-weight: 750;
+                line-height: 1.15;
+                font-variant-numeric: tabular-nums;
+            }
+            #poViewPaymentSummary > small {
+                display: block;
+                margin-top: 2px;
+                color: #667085;
+                font-size: 11px;
+            }
+            .po-view-payment-breakdown {
+                display: grid;
+                gap: 8px;
+                margin-top: 16px;
+                padding: 14px 0;
+                border-top: 1px solid #e8ecf1;
+                border-bottom: 1px solid #e8ecf1;
+            }
+            .po-view-payment-breakdown > div,
+            .po-view-latest-payment {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                color: #667085;
+                font-size: 12px;
+            }
+            .po-view-payment-breakdown strong,
+            .po-view-latest-payment strong {
+                color: #344054;
+                font-weight: 550;
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+            .po-view-latest-payment {
+                margin-top: 10px;
+                font-size: 11px;
+            }
+            .po-view-latest-payment > span {
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .po-view-details-list {
+                display: grid;
+                gap: 10px;
+                margin: 14px 0 0;
+            }
+            .po-view-details-list > div {
+                display: grid;
+                grid-template-columns: minmax(88px, 0.8fr) minmax(0, 1fr);
+                gap: 10px;
+                align-items: baseline;
+                font-size: 12px;
+            }
+            .po-view-details-list dt {
+                color: #7b8494;
+                font-weight: 450;
+            }
+            .po-view-details-list dd {
+                min-width: 0;
+                margin: 0;
+                color: #344054;
+                text-align: right;
+                overflow-wrap: anywhere;
+            }
+            .po-view-link-action {
+                display: inline-flex;
+                align-items: center;
+                margin-top: 10px;
+                padding: 0;
+                border: 0;
+                color: #087e8b;
+                background: transparent;
+                font-size: 11px;
+                font-weight: 650;
+                cursor: pointer;
+            }
+            .po-view-payment-link {
+                margin-right: 14px;
+            }
+            .po-view-disclosure {
+                margin-top: 14px;
+                border-top: 1px solid #edf0f5;
+                color: #475467;
+                font-size: 12px;
+            }
+            .po-view-disclosure > summary,
+            .po-view-nested-disclosure > summary {
+                padding: 10px 2px;
+                color: #475467;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+            }
+            .po-view-disclosure-content {
+                padding: 2px 0 10px;
+            }
+            .po-view-invoice-summary {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                color: #475467;
+                font-size: 12px;
+            }
+            .po-view-sidebar-loading,
+            .po-view-inline-empty,
+            .po-view-inline-error {
+                padding: 8px 0;
+                color: #667085;
+                font-size: 12px;
+            }
+            .po-view-inline-error {
+                color: #b42318;
+            }
+            .po-view-receiving-documents-list {
+                padding-top: 10px;
+            }
+            .po-view-nested-disclosure {
+                margin-top: 10px;
+                border-top: 1px solid #edf0f5;
+            }
+            body.dark-mode #viewPurchaseOrderModal #poOrderSummary,
+            body.dark-mode #viewPurchaseOrderModal .modal-body,
+            body.dark-mode .po-view-progress,
+            body.dark-mode .po-view-sidebar {
+                color: #e5e7eb;
+                background: #182131;
+            }
+            body.dark-mode .po-view-progress,
+            body.dark-mode .po-view-sidebar,
+            body.dark-mode .po-view-sidebar-section + .po-view-sidebar-section,
+            body.dark-mode .po-view-payment-breakdown,
+            body.dark-mode .po-view-disclosure,
+            body.dark-mode .po-view-nested-disclosure {
+                border-color: #334155;
+            }
+            body.dark-mode .po-view-progress-step > strong,
+            body.dark-mode .po-view-panel-heading h3,
+            body.dark-mode .po-view-sidebar-heading h3,
+            body.dark-mode .po-view-details-section h3,
+            body.dark-mode .po-view-payment-amount,
+            body.dark-mode .po-view-items-table td:first-child strong,
+            body.dark-mode .po-view-payment-breakdown strong,
+            body.dark-mode .po-view-latest-payment strong,
+            body.dark-mode .po-view-details-list dd {
+                color: #e5e7eb;
+            }
+            body.dark-mode .po-view-items-table th,
+            body.dark-mode .po-view-items-table td,
+            body.dark-mode .po-view-items-table td:first-child small,
+            body.dark-mode .po-view-details-list dt,
+            body.dark-mode .po-view-payment-breakdown > div,
+            body.dark-mode .po-view-latest-payment,
+            body.dark-mode .po-view-disclosure > summary,
+            body.dark-mode .po-view-nested-disclosure > summary {
+                color: #aab4c3;
+                border-color: #334155;
+            }
+            @media (max-width: 900px) {
+                .po-view-layout {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+                .po-view-sidebar {
+                    border-top: 1px solid #e8ecf1;
+                    border-left: 0;
+                }
+            }
+            @media (max-width: 560px) {
+                .po-view-progress {
+                    gap: 4px;
+                    padding: 16px 12px;
+                }
+                .po-view-progress-step {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+                .po-view-progress-step::before {
+                    left: 25px;
+                    right: -4px;
+                }
+                .po-view-progress-marker {
+                    width: 20px;
+                    height: 20px;
+                }
+                .po-view-progress-step > strong {
+                    font-size: 11px;
+                }
+                .po-view-progress-step > small {
+                    font-size: 10px;
+                }
+                .po-view-items-panel,
+                .po-view-sidebar {
+                    padding: 16px 12px;
+                }
+            }
+            @media (max-width: 900px) {
+                #table-purchase-orders[data-po-view="active"] col:nth-child(1),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(1),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(1) {
+                    width: 10% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] col:nth-child(2),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(2),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(2) {
+                    width: 8% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] col:nth-child(3),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(3),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(3) {
+                    width: 9% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] col:nth-child(4),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(4),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(4) {
+                    width: 18% !important;
+                    max-width: 18% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] col:nth-child(5),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(5),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(5) {
+                    width: 7% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] col:nth-child(6),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(6),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(6) {
+                    width: 9% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] col:nth-child(7),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(7),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(7) {
+                    width: 12% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] col:nth-child(8),
+                #table-purchase-orders[data-po-view="active"] th:nth-child(8),
+                #table-purchase-orders[data-po-view="active"] td:nth-child(8) {
+                    width: 9% !important;
+                }
+                #table-purchase-orders[data-po-view="active"] th.col-actions,
+                #table-purchase-orders[data-po-view="active"] td.po-actions-cell {
+                    width: 18% !important;
+                    min-width: 150px !important;
+                    max-width: 165px !important;
+                }
+                #table-purchase-orders[data-po-view="active"] td.po-actions-cell .po-actions {
+                    justify-content: flex-start !important;
+                }
+                #table-purchase-orders[data-po-view="active"] .po-actions .status-po-btn {
+                    margin-left: auto;
+                }
+                #table-purchase-orders[data-po-view="active"] td.po-price-cell {
+                    padding-inline: 8px !important;
+                }
+            }
+            #table-purchase-orders[data-po-view="active"] th.col-status,
+            #table-purchase-orders[data-po-view="active"] td.po-status-cell {
+                text-align: center !important;
+            }
+            #table-purchase-orders[data-po-view="active"] .po-status-stack {
+                align-items: center !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] td,
+            #table-purchase-orders[data-po-supervisor-view="true"] col {
+                position: static !important;
+                left: auto !important;
+                right: auto !important;
+                box-shadow: none !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] thead th {
+                position: sticky !important;
+                top: 0 !important;
+                left: auto !important;
+                right: auto !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] th,
+            #table-purchase-orders[data-po-supervisor-view="true"] td {
+                border-left: 0 !important;
+            }
+            .po-table-scroll.po-supervisor-view {
+                overflow-x: auto !important;
+            }
+            body.supervisor-read-only #table-purchase-orders .col-actions,
+            body.supervisor-read-only #table-purchase-orders .po-actions-cell {
+                display: none !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] .po-status-stack {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                justify-content: center !important;
+                gap: 4px !important;
+                width: max-content !important;
+                max-width: 100% !important;
+            }
+            #table-purchase-orders[data-po-supervisor-view="true"] .po-claim-badge {
+                display: inline-flex !important;
+                align-self: flex-start !important;
+                max-width: 100% !important;
+                white-space: normal !important;
+                text-align: left !important;
+            }
+            body.supervisor-read-only #table-purchase-orders .po-status-stack {
+                flex-direction: column !important;
+                align-items: flex-start !important;
+            }
+            body.supervisor-read-only #table-purchase-orders .po-claim-badge {
+                align-self: flex-start !important;
+                white-space: normal !important;
+            }
         </style>
     </head>
     <body data-page="purchase-orders">
@@ -5688,6 +6462,7 @@
                                             id="po-expected-delivery"
                                             type="date"
                                             class="form-control"
+                                            min=""
                                         />
                                     </div>
                                 </div>
@@ -6001,6 +6776,7 @@
                                             id="edit-po-expected-delivery"
                                             type="date"
                                             class="form-control"
+                                            min=""
                                         />
                                     </div>
                                 </div>
@@ -6312,7 +7088,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 
-        <script type="module" src="./js/modules/purchase_orders.js?v=122"></script>
+        <script type="module" src="./js/modules/purchase_orders.js?v=128"></script>
         <script type="module">
             import verifySession from "./js/modules/auth.js?v=8";
 

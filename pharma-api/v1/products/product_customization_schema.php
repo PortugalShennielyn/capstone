@@ -126,10 +126,83 @@ function ensureProductCustomizationSchema(PDO $pdo): void
     if ((int) $pdo->query('SELECT COUNT(*) FROM product_specifications')->fetchColumn() === 0) {
         seedProductSpecifications($pdo);
     }
+    migrateTextSpecificationsToSelectionLists($pdo);
     normalizeProductMeasurementUnits($pdo);
     ensureMedicineProductMasterConfiguration($pdo);
     repairLegacyBeverageContentMapping($pdo);
     migrateProductTypeSpecificationLabels($pdo);
+}
+
+/** Convert legacy free-text specifications to editable dropdowns once. */
+function migrateTextSpecificationsToSelectionLists(PDO $pdo): void
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS product_customization_migrations (
+            migration_key VARCHAR(100) NOT NULL PRIMARY KEY,
+            applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+    $migrationKey = 'text_specifications_selection_lists_v1';
+    $check = $pdo->prepare('SELECT migration_key FROM product_customization_migrations WHERE migration_key = :migration_key');
+    $check->execute([':migration_key' => $migrationKey]);
+    if ($check->fetchColumn()) return;
+
+    $specifications = $pdo->query(
+        "SELECT specification_id, specification_name
+         FROM product_specifications
+         WHERE field_style = 'Text Entry' OR LOWER(TRIM(specification_name)) = 'size'"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    if (!$specifications) return;
+
+    $pdo->beginTransaction();
+    try {
+        $update = $pdo->prepare(
+            "UPDATE product_specifications
+             SET field_style = 'Selection List', measurement_group = NULL, allow_custom_value = 0
+             WHERE specification_id = :specification_id"
+        );
+        $choiceInsert = $pdo->prepare(
+            'INSERT IGNORE INTO product_specification_choices
+                (choice_id, specification_id, choice_value, sort_order)
+             VALUES (:choice_id, :specification_id, :choice_value, :sort_order)'
+        );
+        $savedValues = $pdo->prepare(
+            "SELECT DISTINCT value_text FROM product_specification_values
+             WHERE specification_id = :specification_id
+               AND value_text IS NOT NULL AND TRIM(value_text) <> ''
+             ORDER BY value_text"
+        );
+        foreach ($specifications as $specification) {
+            $specificationId = $specification['specification_id'];
+            $update->execute([':specification_id' => $specificationId]);
+            $sortOrder = 1;
+            if (strcasecmp(trim($specification['specification_name']), 'Size') === 0) {
+                foreach (['Small', 'Medium', 'Large', 'XL'] as $choiceValue) {
+                    $choiceInsert->execute([
+                        ':choice_id' => newUuid($pdo),
+                        ':specification_id' => $specificationId,
+                        ':choice_value' => $choiceValue,
+                        ':sort_order' => $sortOrder++,
+                    ]);
+                }
+            }
+            $savedValues->execute([':specification_id' => $specificationId]);
+            foreach ($savedValues->fetchAll(PDO::FETCH_COLUMN) as $choiceValue) {
+                $choiceInsert->execute([
+                    ':choice_id' => newUuid($pdo),
+                    ':specification_id' => $specificationId,
+                    ':choice_value' => trim((string) $choiceValue),
+                    ':sort_order' => $sortOrder++,
+                ]);
+            }
+        }
+        $pdo->prepare('INSERT INTO product_customization_migrations (migration_key) VALUES (:migration_key)')
+            ->execute([':migration_key' => $migrationKey]);
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
 }
 
 function ensureMedicineProductMasterConfiguration(PDO $pdo): void
@@ -442,7 +515,7 @@ function seedMeasurementGroups(PDO $pdo): void
         'pint' => ['pt', 'Volume'], 'quart' => ['qt', 'Volume'], 'gallon' => ['gal', 'Volume'],
         'microgram' => ['mcg', 'Weight'],
         'mcg' => ['mcg', 'Weight'], '%' => ['%', 'General Size'], 'iu' => ['IU', 'General Size'],
-        'pcs' => ['pcs', 'Count'], 'tablet' => ['tablet', 'Count'], 'capsule' => ['capsule', 'Count'],
+        'pcs' => ['pcs', 'Count'], 'patch' => ['patch', 'Count'], 'tablet' => ['tablet', 'Count'], 'capsule' => ['capsule', 'Count'],
         'sachet' => ['sachet', 'Count'], 'strip' => ['strip', 'Count']
     ];
     $packaging = ['ampule', 'blister pack', 'bottle', 'box', 'can', 'carton', 'jar', 'pack', 'plastic pack', 'pouch', 'roll', 'tube', 'vial'];
@@ -625,16 +698,16 @@ function seedProductSpecifications(PDO $pdo): void
 {
     $definitions = [
         'Flavor' => ['Selection List', null, 1, ['Original', 'Orange', 'Lemon', 'Grape']],
-        'Variant' => ['Text Entry', null, 1, []],
+        'Variant' => ['Selection List', null, 0, []],
         'Volume' => ['Number with Unit', 'Volume', 1, []],
         'Net Weight' => ['Number with Unit', 'Weight', 1, []],
         'Strength' => ['Number with Unit', 'Weight', 1, []],
         'Tablet Count' => ['Number with Unit', 'Count', 1, []],
         'Pack Content' => ['Number with Unit', 'Count', 1, []],
         'Package Type' => ['Selection List', null, 1, []],
-        'Size' => ['Text Entry', null, 1, []],
-        'Model' => ['Text Entry', null, 1, []],
-        'Material' => ['Text Entry', null, 1, []],
+        'Size' => ['Selection List', null, 0, ['Small', 'Medium', 'Large', 'XL']],
+        'Model' => ['Selection List', null, 0, []],
+        'Material' => ['Selection List', null, 0, []],
         'Sterile Status' => ['Selection List', null, 0, ['Sterile', 'Non-sterile']],
         'Sugar Type' => ['Selection List', null, 1, ['Regular', 'Low Sugar', 'Sugar Free']]
     ];
@@ -938,6 +1011,9 @@ function validateAndNormalizeSpecificationValues(PDO $pdo, string $typeId, array
             throw new InvalidArgumentException('A submitted specification does not belong to the selected Product Type.');
         }
         $definition = $allowed[$specificationId];
+        if (in_array(strtolower(trim((string) ($definition['specification_name'] ?? ''))), ['package type', 'pack content', 'tablet count'], true)) {
+            continue;
+        }
         $text = trim((string) ($value['value_text'] ?? ''));
         $number = trim((string) ($value['value_number'] ?? ''));
         $unitId = cleanId($value['measurement_unit_id'] ?? null);

@@ -9,16 +9,16 @@ require_once 'sales_pos_helpers.php';
 try {
     $userId = salesCurrentUserId();
     $search = trim((string) ($_GET['search'] ?? ''));
-    $tab = trim((string) ($_GET['status'] ?? $_GET['tab'] ?? 'waiting_cashier'));
+    $tab = trim((string) ($_GET['status'] ?? $_GET['tab'] ?? 'all'));
     $statusGroups = [
-        'draft' => ['draft'],
+        'all' => ['waiting_cashier', 'accepted_by_cashier', 'processing_payment', 'processing', 'completed', 'paid', 'cancelled', 'rejected'],
         'waiting_cashier' => ['waiting_cashier'],
         'processing' => ['accepted_by_cashier', 'processing_payment', 'processing'],
         'completed' => ['completed', 'paid'],
         'cancelled' => ['cancelled', 'rejected'],
     ];
     if (!isset($statusGroups[$tab])) {
-        $tab = 'waiting_cashier';
+        $tab = 'all';
     }
 
     $params = [':sales_clerk_id' => $userId];
@@ -102,7 +102,6 @@ try {
 
     $summaryStmt = $pdo->prepare(
         "SELECT
-            SUM(status = 'draft') AS draft_count,
             SUM(status = 'waiting_cashier') AS waiting_cashier_count,
             SUM(status IN ('accepted_by_cashier', 'processing_payment', 'processing')) AS processing_count,
             SUM(status IN ('completed', 'paid')) AS completed_count,
@@ -119,7 +118,6 @@ try {
         'data' => [
             'orders' => $orders,
             'summary' => [
-                'draft' => (int) ($summaryRow['draft_count'] ?? 0),
                 'waiting_cashier' => (int) ($summaryRow['waiting_cashier_count'] ?? 0),
                 'processing' => (int) ($summaryRow['processing_count'] ?? 0),
                 'completed' => (int) ($summaryRow['completed_count'] ?? 0),

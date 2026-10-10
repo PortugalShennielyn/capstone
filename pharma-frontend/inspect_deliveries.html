@@ -24,10 +24,10 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
             rel="stylesheet"
         />
-        <link href="./css/navbar.css?v=36" rel="stylesheet" />
+        <link href="./css/navbar.css?v=39" rel="stylesheet" />
         <link href="./css/inspect_deliveries.css?v=8" rel="stylesheet" />
         <link href="./css/purchase_receiving.css?v=7" rel="stylesheet" />
-        <script src="./js/navbar.js?v=83" defer></script>
+        <script src="./js/navbar.js?v=89" defer></script>
         <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     </head>
     <body data-page="inspect-deliveries">
@@ -337,6 +337,12 @@
                                         <h2 id="receiveSummaryHeading">Final Receiving Review</h2>
                                     </div>
                                 </div>
+                                <div
+                                    id="receiveValidationSummary"
+                                    class="receive-validation"
+                                    role="status"
+                                    aria-live="polite"
+                                ></div>
                                 <div id="receiveSummaryItems" class="receiving-summary-list"></div>
                                 <div class="receive-final-remarks">
                                     <label for="receivePoRemarks">Receiving Remarks</label
@@ -347,10 +353,6 @@
                                     placeholder="Optional notes for the complete receiving transaction..."
                                 ></textarea>
                                 </div>
-                                <div
-                                    id="receiveValidationSummary"
-                                    class="receive-validation d-none"
-                                ></div>
                             </section>
                         </div>
 

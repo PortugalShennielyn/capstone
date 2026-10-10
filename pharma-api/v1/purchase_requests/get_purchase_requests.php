@@ -124,6 +124,9 @@ try {
         $request['total_ordered_qty'] = array_sum(array_map(static fn(array $item): float => (float) $item['ordered_qty'], $request['items']));
         $request['total_remaining_qty'] = array_sum(array_map(static fn(array $item): float => (float) $item['remaining_qty'], $request['items']));
         $request['workflow_status'] = $request['status'];
+        $request['rejection_reason'] = $request['status'] === 'Rejected'
+            ? trim((string) ($request['decision_reason'] ?? ''))
+            : null;
         if ($request['status'] === 'Approved' && (float) $request['total_ordered_qty'] > 0) {
             $request['workflow_status'] = (float) $request['total_remaining_qty'] > 0 ? 'Partially Ordered' : 'Ordered';
         }

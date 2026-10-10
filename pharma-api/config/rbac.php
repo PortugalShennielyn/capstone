@@ -43,6 +43,7 @@ function managerApiRequestAllowed(string $scriptName): bool
     }
 
     return in_array($relativePath, [
+        'settings/get_business_hours.php',
         'sales/get_sales_history.php',
         'cashier/get_cashier_shift_summary.php',
         'cashier/get_cashier_order.php',
@@ -68,9 +69,10 @@ function supervisorApiRequestAllowed(string $scriptName, string $requestMethod):
 
     if (str_starts_with($relativePath, 'auth/')) return true;
     if ($relativePath === 'purchase_requests/decide_purchase_request.php') return $method === 'POST';
+    if (in_array($relativePath, ['inventory/update_expiry_action.php', 'inventory/confirm_expiry_disposal.php', 'inventory/create_expiry_case.php', 'inventory/advance_expiry_case.php'], true)) return $method === 'POST';
     if ($relativePath === 'purchase_requests/get_purchase_requests.php') return $method === 'GET';
     if (in_array($relativePath, ['dashboard/get_dashboard_summary.php', 'dashboard/get_supervisor_dashboard.php'], true)) return $method === 'GET';
-    if ($relativePath === 'settings/get_admin_settings.php') return $method === 'GET';
+    if (in_array($relativePath, ['settings/get_admin_settings.php', 'settings/get_business_hours.php'], true)) return $method === 'GET';
     if (str_starts_with($relativePath, 'purchase_orders/get_')) return $method === 'GET';
     if (str_starts_with($relativePath, 'suppliers/get_')) return $method === 'GET';
     if (str_starts_with($relativePath, 'reports/get_')) return $method === 'GET';
@@ -99,6 +101,7 @@ function cashierApiRequestAllowed(string $scriptName): bool
 
     return str_starts_with($relativePath, 'auth/')
         || str_starts_with($relativePath, 'cashier/')
+        || $relativePath === 'settings/get_business_hours.php'
         || $relativePath === 'reports/get_report.php';
 }
 
@@ -111,15 +114,33 @@ function enforceCashierApiBoundary(): void
     }
 }
 
-function salesClerkApiRequestAllowed(string $scriptName): bool
+function salesClerkApiRequestAllowed(string $scriptName, string $requestMethod = 'GET'): bool
 {
     $relativePath = rbacRelativeApiPath($scriptName);
-    if (basename($scriptName) === 'check_session.php') {
-    return true;
-}
+    $method = strtoupper($requestMethod);
 
     if (str_starts_with($relativePath, 'auth/')) {
         return true;
+    }
+
+    if (in_array($relativePath, [
+        'inventory/get_inventory.php',
+        'inventory/get_shelf_inventory.php',
+        'inventory/get_transfer_options.php',
+        'inventory/get_stock_movements.php',
+    ], true)) {
+        return $method === 'GET';
+    }
+
+    if ($relativePath === 'inventory/transfer_stock.php') {
+        return $method === 'POST';
+    }
+
+    if ($relativePath === 'sales/get_sales_clerk_reports.php') {
+        return $method === 'GET';
+    }
+    if ($relativePath === 'settings/get_business_hours.php') {
+        return $method === 'GET';
     }
 
     return $relativePath === 'reports/get_report.php'
@@ -142,7 +163,7 @@ function salesClerkApiRequestAllowed(string $scriptName): bool
 function enforceSalesClerkApiBoundary(): void
 {
     if (currentSessionHasRbacRole('salesclerk') || currentSessionHasRbacRole('ro_sales_clerk')) {
-        if (!salesClerkApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '')) {
+        if (!salesClerkApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '', $_SERVER['REQUEST_METHOD'] ?? 'GET')) {
             sendForbiddenResponse('Access denied.');
         }
     }

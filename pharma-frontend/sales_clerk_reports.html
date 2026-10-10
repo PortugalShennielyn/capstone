@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <script src="./js/navbar_profile.js?v=1"></script>
-  <script src="./js/navbar_bootstrap.js?v=11"></script>
+  <script src="./js/navbar_bootstrap.js?v=12"></script>
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,10 +16,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <link href="./css/navbar.css?v=36" rel="stylesheet">
+  <link href="./css/navbar.css?v=39" rel="stylesheet">
 
-  <script src="./js/navbar.js?v=83" defer></script>
-  <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+  <script src="./js/navbar.js?v=89" defer></script>
+  <script type="module" src="./js/modules/auth_guard.js?v=28"></script>
   <style>
     :root{
       --purple:#6f42c1;
@@ -654,7 +654,7 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
   </style>
 </head>
 
-<body>
+<body class="navbar-state-booting role-loading">
 <div id="navbar-container"></div>
 
 <main id="mainWrapper" class="main-wrapper">
@@ -674,7 +674,6 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
                 <strong>Sales Clerk Reports</strong>
             </div>
         </div>
-
         <div class="topbar-right">
             <div class="text-end">
                 <div id="currentDate" style="font-size:11px;font-weight:800;"></div>
@@ -714,16 +713,16 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
             <option value="yesterday">Yesterday</option>
             <option value="week">This Week</option>
             <option value="month">This Month</option>
-            <option value="custom">Custom Date Range</option>
+            <option value="custom" selected>Custom Date Range</option>
           </select>
         </div>
 
-        <div class="col-md-3 custom-date-field d-none">
+        <div class="col-md-3 custom-date-field">
           <div class="filter-label">Start Date</div>
           <input type="date" class="form-control" id="startDate">
         </div>
 
-        <div class="col-md-3 custom-date-field d-none">
+        <div class="col-md-3 custom-date-field">
           <div class="filter-label">End Date</div>
           <input type="date" class="form-control" id="endDate">
         </div>
@@ -937,14 +936,10 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
     </div>
   </div>
 
-  <script src="./js/navbar_profile.js?v=1"></script>
-  <script src="./js/navbar_bootstrap.js?v=11"></script>
-  <script src="./js/navbar.js?v=83"></script>
-  <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
   <script type="module">
-    import verifySession from './js/modules/auth.js?v=8';
+    import { ensurePageTabSession } from './js/modules/auth_guard.js?v=28';
 
     const API_BASE = '../pharma-api/v1/';
     const REPORTS_API = API_BASE + 'sales/get_sales_clerk_reports.php';
@@ -999,9 +994,6 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
         params.set('end_date', end);
     }
 
-    console.log('Selected period:', period);
-    console.log('Request params:', params.toString());
-
     return params;
 }
 
@@ -1010,6 +1002,18 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
       document.querySelectorAll('.custom-date-field').forEach(el => {
         el.classList.toggle('d-none', !custom);
       });
+    }
+
+    function initializeDefaultDateRange() {
+      const today = new Date();
+      const targetMonth = new Date(today.getFullYear(), today.getMonth() - 4, 1);
+      const daysInTargetMonth = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
+      const start = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(today.getDate(), daysInTargetMonth));
+      const dateValue = date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+
+      document.getElementById('periodFilter').value = 'custom';
+      document.getElementById('startDate').value = dateValue(start);
+      document.getElementById('endDate').value = dateValue(today);
     }
 
     function statusBadge(status) {
@@ -1332,12 +1336,11 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
     document.addEventListener('DOMContentLoaded', async () => {
       transactionModal = new bootstrap.Modal(document.getElementById('transactionModal'));
+      initializeDefaultDateRange();
       updateCustomDateVisibility();
 
       try {
-        // Use the same authentication flow as Sales Clerk POS.
-        // This also establishes/refreshes the tab token used by the API.
-        await verifySession();
+        if (!await (window.__drpSessionReadyPromise || ensurePageTabSession())) return;
         await loadReports();
       } catch (error) {
         console.error('Sales Clerk Reports authentication error:', error);

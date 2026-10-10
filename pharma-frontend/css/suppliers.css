@@ -210,14 +210,29 @@
     background: #fff;
 }
 
+#table-supplier-products tbody tr,
+#table-supplier-products tbody td {
+    height: auto;
+    min-height: 0;
+}
+
+#table-supplier-products tbody td {
+    padding-block: 7px !important;
+    line-height: 1.24;
+    vertical-align: middle !important;
+}
+
+#table-supplier-products thead th {
+    padding-block: 9px !important;
+}
+
 .supplier-product-table tbody tr:hover td {
     background: #faf9ff;
 }
 
 .supplier-product-table .col-supplier { width: 145px; min-width: 135px; }
 .supplier-product-table .col-product { width: 170px; min-width: 160px; }
-.supplier-product-table .col-specification { width: 220px; min-width: 200px; }
-.supplier-product-table .col-type { width: 130px; min-width: 120px; }
+.supplier-product-table .col-specification { width: 350px; min-width: 300px; }
 .supplier-product-table .col-purchase-unit { width: 155px; min-width: 140px; }
 .supplier-product-table .col-supplier-cost {
     width: 150px;
@@ -237,8 +252,41 @@
 }
 
 .supplier-product-table .col-specification {
-    max-width: 220px;
+    max-width: none;
+    text-align: center;
 }
+
+#table-supplier-products thead th.col-specification,
+#table-supplier-products tbody td.col-specification {
+    text-align: center !important;
+}
+
+.supplier-catalog-specification {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    width: 100%;
+    text-align: center;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.supplier-catalog-specification-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    color: #0f827f;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.supplier-catalog-specification-form i { width: 13px; text-align: center; font-size: 11px; }
+.supplier-catalog-specification-strength { color: #172033; font-size: 15px; font-weight: 800; }
+.supplier-catalog-specification-details { color: #748094; font-size: 11px; font-weight: 600; }
+body.dark-mode .supplier-catalog-specification-form { color: #5ee0d4; }
+body.dark-mode .supplier-catalog-specification-strength { color: #f1f5f9; }
+body.dark-mode .supplier-catalog-specification-details { color: #a9b6c8; }
 
 .supplier-purchase-unit-display,
 .supplier-cost-display {
@@ -259,14 +307,60 @@
 }
 
 .supplier-product-table .col-supplier,
-.supplier-product-table .col-product,
-.supplier-product-table .col-specification,
-.supplier-product-table .col-type {
+.supplier-product-table .col-product {
     text-align: left;
 }
 
+#table-supplier-products thead th.col-product,
+#table-supplier-products tbody td.col-product {
+    text-align: right !important;
+}
+
+#table-supplier-products .supplier-product-name {
+    justify-items: end;
+    text-align: right;
+}
+
+#table-supplier-products .supplier-product-name strong {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    width: 100%;
+}
+
+#table-supplier-products .supplier-product-primary {
+    min-width: 0;
+    text-align: right;
+}
+
+#table-supplier-products .supplier-rx-badge {
+    flex: 0 0 auto;
+}
+
+#table-supplier-products thead th.col-purchase-unit,
+#table-supplier-products tbody td.col-purchase-unit {
+    text-align: center !important;
+}
+
+#table-supplier-products .supplier-purchase-unit-display {
+    justify-items: center;
+    text-align: center;
+}
+
 .supplier-product-table .col-actions .supplier-product-actions {
+    align-items: center;
     justify-content: center;
+}
+
+#table-supplier-products .supplier-product-name,
+#table-supplier-products .supplier-purchase-unit-display {
+    gap: 2px;
+    line-height: 1.2;
+}
+
+#table-supplier-products .multi-supplier-badge {
+    margin-top: 2px;
 }
 
 .supplier-product-name,
@@ -280,6 +374,35 @@
     color: #252b37;
     font-size: .82rem;
     font-weight: 850;
+}
+
+.supplier-product-name strong {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.supplier-rx-badge {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    width: max-content;
+    padding: 2px 7px;
+    border: 1px solid #fca5a5;
+    border-radius: 999px;
+    color: #b42318;
+    background: #fef3f2;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.35;
+    letter-spacing: .03em;
+}
+
+body.dark-mode .supplier-rx-badge {
+    color: #fecaca;
+    border-color: #991b1b;
+    background: rgba(127, 29, 29, .35);
 }
 
 .supplier-product-name small,

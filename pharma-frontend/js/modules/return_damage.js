@@ -4,6 +4,11 @@ const API_BASE_URL = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
     : '../pharma-api/v1';
 
+function localTodayDateString() {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
 const REASON_META = [
     { key:'all', label:'Total Return/Damage', color:'#7c3aed', aliases:[] },
     { key:'expired', label:'Expired', color:'#c2414b', aliases:['expired','expiry','expired product'] },
@@ -426,7 +431,7 @@ function replacementBatchRow(batch = {}) {
     return `<div class="replacement-batch-row">
         <div><label class="form-label small fw-semibold">Batch Identifier</label><input class="form-control form-control-sm replacement-batch-id" maxlength="50" value="${escapeHtml(batch.batch_identifier || '')}" placeholder="Optional"></div>
         <div><label class="form-label small fw-semibold">Good Qty</label><input class="form-control form-control-sm replacement-batch-qty" type="number" min="1" step="1" value="${escapeHtml(batch.quantity || '')}"></div>
-        <div><label class="form-label small fw-semibold">Expiry Date${requiresExpiry ? ' *' : ''}</label><input class="form-control form-control-sm replacement-batch-expiry" type="date" value="${escapeHtml(batch.expiry_date || '')}" ${noExpiry ? 'disabled' : ''}>${requiresExpiry ? '' : `<label class="small mt-1"><input class="form-check-input replacement-no-expiry" type="checkbox" ${noExpiry ? 'checked' : ''}> No Expiry</label>`}</div>
+        <div><label class="form-label small fw-semibold">Expiry Date${requiresExpiry ? ' *' : ''}</label><input class="form-control form-control-sm replacement-batch-expiry" type="date" min="${localTodayDateString()}" value="${escapeHtml(batch.expiry_date || '')}" ${noExpiry ? 'disabled' : ''}>${requiresExpiry ? '' : `<label class="small mt-1"><input class="form-check-input replacement-no-expiry" type="checkbox" ${noExpiry ? 'checked' : ''}> No Expiry</label>`}</div>
         <button class="btn btn-sm btn-outline-danger replacement-remove-batch" type="button" title="Remove batch"><i class="fa-solid fa-trash"></i></button>
     </div>`;
 }
@@ -470,6 +475,7 @@ function openReplacementArrival() {
 
 async function saveReplacementArrival() {
     const payload = replacementFormState();
+    if (payload.batches.some((batch) => batch.expiry_date && batch.expiry_date < localTodayDateString())) return PharmaUtils.toast.error('Expiry date cannot be earlier than today.');
     if (!Number.isInteger(payload.delivered_quantity) || payload.delivered_quantity <= 0 || payload.delivered_quantity > payload.outstanding) return PharmaUtils.toast.error('Replacement delivered quantity must be within the outstanding quantity.');
     if (!Number.isInteger(payload.damaged_quantity) || payload.damaged_quantity < 0 || payload.damaged_quantity > payload.delivered_quantity) return PharmaUtils.toast.error('Damaged quantity is invalid.');
     if (payload.allocated !== payload.good) return PharmaUtils.toast.error('Batch quantities must equal the accepted good quantity.');

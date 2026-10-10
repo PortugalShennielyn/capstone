@@ -10,9 +10,12 @@ function purchaseRequestProductDetails(PDO $pdo, array $productIds): array
 
     $placeholders = implode(',', array_fill(0, count($productIds), '?'));
     $productStatement = $pdo->prepare(
-        "SELECT p.product_id, p.product_name, p.brand_name, p.status AS product_status,
+        "SELECT p.product_id,
+                COALESCE(NULLIF(TRIM(md.generic_name), ''), p.product_name) AS product_name,
+                p.brand_name, p.status AS product_status,
                 pc.category_name, pt.type_name,
-                md.generic_name, md.strength,
+                COALESCE(NULLIF(TRIM(md.generic_name), ''), p.product_name) AS generic_name,
+                md.strength,
                 md.strength_value AS medicine_strength_value, md.strength_unit,
                 md.net_content_value, md.net_content_unit, md.dosage_form,
                 COALESCE(md.package_type, gd.package_type, msd.package_type) AS package_type,
@@ -120,7 +123,41 @@ function automaticPurchaseOrderNumber(): string
 
 function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, array $assignments, array $supplierEtas = []): array
 {
-    if (!$pdo->inTransaction()) ensureSupplierPurchasingConversionSchema($pdo);
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) {
+        ensureSupplierPurchasingConversionSchema($pdo);
+        $pdo->beginTransaction();
+    }
+    $pdo->exec('SAVEPOINT generate_purchase_orders');
+    try {
+        $prId = cleanId($request['pr_id'] ?? null);
+        $request = purchaseRequestById($pdo, $prId, true);
+        if (!$request || $request['status'] !== 'Approved') throw new InvalidArgumentException('Only Supervisor-approved requests can generate purchase orders.');
+        assertPurchaseRequestHasValidItems($pdo, $prId, 'Cannot generate Purchase Order because this Purchase Request has no products.');
+        $existing = array_values(array_filter(purchaseRequestPurchaseOrders($pdo, $prId), static fn($po) => !in_array($po['status'], ['Cancelled', 'Rejected'], true)));
+        if ($existing) {
+            $result = $existing;
+        } else {
+            $allocated = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items poi INNER JOIN purchase_request_items pri ON pri.pr_item_id=poi.pr_item_id INNER JOIN purchase_orders po ON po.po_id=poi.po_id WHERE pri.pr_id=? AND po.status NOT IN ('Cancelled','Rejected')");
+            $allocated->execute([$prId]);
+            if ((int)$allocated->fetchColumn() > 0) throw new InvalidArgumentException('Requested products have already been allocated to a purchase order.');
+            $result = insertPurchaseOrdersForApprovedRequest($pdo, $request, $assignments, $supplierEtas);
+        }
+        $pdo->exec('RELEASE SAVEPOINT generate_purchase_orders');
+        if ($ownsTransaction) $pdo->commit();
+        return $result;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) {
+            if ($ownsTransaction) $pdo->rollBack();
+            else $pdo->exec('ROLLBACK TO SAVEPOINT generate_purchase_orders');
+        }
+        throw $error;
+    }
+}
+
+function insertPurchaseOrdersForApprovedRequest(PDO $pdo, array $request, array $assignments, array $supplierEtas = []): array
+{
+    if (!$pdo->inTransaction()) throw new LogicException('PO insertion requires a transaction.');
     if (($request['status'] ?? '') !== 'Approved') throw new InvalidArgumentException('Only Supervisor-approved requests can generate purchase orders.');
     $prId = cleanId($request['pr_id'] ?? null);
     $requestItems = purchaseRequestItems($pdo, $prId);
@@ -177,6 +214,39 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
             throw new InvalidArgumentException('An approved product is missing or inactive.');
         }
         $supplierId = cleanId($setup['supplier_id']);
+        $priceAvailable = !empty($setup['supplier_price_available']);
+        $unitCost = $priceAvailable ? (float) ($setup['supplier_cost_per_inventory_unit'] ?? 0) : null;
+        if ($unitCost !== null && (!is_finite($unitCost) || $unitCost < 0)) {
+            throw new InvalidArgumentException('The selected supplier has an invalid purchase price. Update its quotation before generating the PO.');
+        }
+        if (array_key_exists('supplier_purchase_unit_price_seen', $assignment)) {
+            $seenPrice = $assignment['supplier_purchase_unit_price_seen'];
+            if ($priceAvailable && ($seenPrice === null || $seenPrice === '' || !is_numeric($seenPrice)
+                || !is_finite((float) $seenPrice)
+                || (int) round((float) $seenPrice * 100, 0, PHP_ROUND_HALF_UP) !== (int) round((float) $setup['supplier_price_per_purchase_unit'] * 100, 0, PHP_ROUND_HALF_UP))) {
+                throw new InvalidArgumentException('A supplier price changed after review. Refresh the Purchase Order preview and confirm the current price.');
+            }
+            if (!$priceAvailable && $seenPrice !== null && $seenPrice !== '') {
+                throw new InvalidArgumentException('A supplier quotation changed after review. Refresh the Purchase Order preview.');
+            }
+        }
+        $expectedBaseQty = inventoryQuantityForPurchaseQuantity($orderQty, $conversion);
+        $lineTotalCents = null;
+        if ($unitCost !== null) {
+            $supplierPurchaseUnitPriceCents = (int) round((float) $setup['supplier_price_per_purchase_unit'] * 100, 0, PHP_ROUND_HALF_UP);
+            if ($supplierPurchaseUnitPriceCents > 0 && $orderQty > intdiv(PHP_INT_MAX, $supplierPurchaseUnitPriceCents)) {
+                throw new InvalidArgumentException('The estimated supplier line total is too large.');
+            }
+            $lineTotalCents = $supplierPurchaseUnitPriceCents * $orderQty;
+        }
+        if (!isset($groups[$supplierId])) {
+            $groups[$supplierId] = [
+                'supplier_name' => $setup['supplier_name'],
+                'items' => [],
+                'estimated_total_cents' => 0,
+                'has_unpriced_items' => false,
+            ];
+        }
         $groups[$supplierId]['supplier_name'] = $setup['supplier_name'];
         $groups[$supplierId]['items'][] = [
             'request_item' => $requestItem,
@@ -184,10 +254,15 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
             'inventory_unit' => $inventoryUnit,
             'conversion' => $conversion,
             'order_qty' => $orderQty,
-            'expected_base_qty' => inventoryQuantityForPurchaseQuantity($orderQty, $conversion),
+            'expected_base_qty' => $expectedBaseQty,
+            'unit_cost' => $unitCost,
+            'line_total' => $lineTotalCents === null ? null : $lineTotalCents / 100,
+            'line_total_cents' => $lineTotalCents,
             'approved_qty' => $approvedQty,
             'snapshot' => $snapshot,
         ];
+        if ($lineTotalCents === null) $groups[$supplierId]['has_unpriced_items'] = true;
+        else $groups[$supplierId]['estimated_total_cents'] += $lineTotalCents;
     }
 
     if (count($assignmentByItem) !== count($requestItems)) {
@@ -217,8 +292,7 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
         $eta = trim((string) ($supplierEtas[$supplierId] ?? ''));
         $paymentTerms = 'Cash';
         if ($eta === '') throw new InvalidArgumentException('ETA is required for every supplier purchase order.');
-        $date = DateTime::createFromFormat('Y-m-d', $eta);
-        if (!$date || $date->format('Y-m-d') !== $eta) throw new InvalidArgumentException('ETA must be a valid date.');
+        $eta = validateDateNotBeforeToday($eta, 'ETA must be a valid date.', 'ETA cannot be earlier than today.');
         $insertPo->execute([
             ':po_id' => $poId, ':pr_id' => $prId, ':supplier_id' => $supplierId,
             ':po_number' => $poNumber, ':payment_terms' => $paymentTerms, ':eta' => $eta,
@@ -232,12 +306,20 @@ function generatePurchaseOrdersForApprovedRequest(PDO $pdo, array $request, arra
                 ':purchase_qty' => $item['order_qty'], ':purchase_unit' => $item['purchase_unit'],
                 ':conversion' => $item['conversion'], ':inventory_qty_ordered' => $item['expected_base_qty'],
                 ':unit' => $item['inventory_unit'],
-                ':unit_cost' => null, ':line_total' => null,
+                ':unit_cost' => $item['unit_cost'], ':line_total' => $item['line_total'],
             ]);
+        }
+        $countItems = $pdo->prepare('SELECT COUNT(*) FROM purchase_order_items WHERE po_id=?');
+        $countItems->execute([$poId]);
+        if ((int)$countItems->fetchColumn() !== count($group['items']) || !$group['items']) throw new RuntimeException('Purchase order item insertion failed.');
+        $supplierPoTotal = $group['has_unpriced_items'] ? null : $group['estimated_total_cents'] / 100;
+        if ($supplierPoTotal !== null) {
+            $pdo->prepare('UPDATE purchase_orders SET total_amount=:total_amount WHERE po_id=:po_id')
+                ->execute([':total_amount' => $supplierPoTotal, ':po_id' => $poId]);
         }
         $generated[] = [
             'po_id' => $poId, 'po_number' => $poNumber, 'supplier_id' => $supplierId,
-            'supplier_name' => $group['supplier_name'], 'item_count' => count($group['items']), 'total_amount' => null,
+            'supplier_name' => $group['supplier_name'], 'item_count' => count($group['items']), 'total_amount' => $supplierPoTotal,
             'payment_terms' => $paymentTerms, 'expected_delivery_date' => $eta,
         ];
     }

@@ -2,9 +2,12 @@ import API_BASE_URL from "../config/config.js";
 import { ensurePageTabSession, tabToken } from "./auth_guard.js?v=27";
 import { primaryAccessRole } from "./rbac.js";
 import { formatProductSpecification as productSpecification } from "./product_specification.js?v=8";
+import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=1";
+import { loadMeasurementUnits } from "./measurement_units.js?v=2";
 
 let products = [];
 let requests = [];
+let quantityUnits = [];
 let inventoryRows = [];
 let actorRole = "";
 let sessionUser = null;
@@ -24,13 +27,14 @@ const selectedItems = new Map();
 const inventoryByProduct = new Map();
 const productById = new Map();
 const activeRequestStatuses = new Set([
-    "Draft",
-    "Pending Supervisor Approval",
-    "Approved",
-    "Revision Requested",
-    "Partially Ordered",
+    "draft",
+    "pending supervisor approval",
+    "approved",
+    "revision requested",
+    "partially ordered",
 ]);
 const creatorRoles = new Set(["super_admin", "admin", "manager"]);
+let MAX_PURCHASE_REQUEST_QTY = 50;
 const esc = (value) =>
     String(value ?? "").replace(
         /[&<>"']/g,
@@ -38,6 +42,15 @@ const esc = (value) =>
     );
 const peso = (value) =>
     Number(value || 0).toLocaleString("en-PH", { style: "currency", currency: "PHP" });
+const compactPeso = (value) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return "Price not set";
+    const rounded = Math.round((amount + Number.EPSILON) * 100) / 100;
+    const number = Number.isInteger(rounded)
+        ? String(rounded)
+        : rounded.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    return `₱${number}`;
+};
 
 function canCreatePurchaseRequests() {
     return creatorRoles.has(actorRole);
@@ -105,23 +118,52 @@ function replenishmentType(productId) {
     return "";
 }
 
-function activeConflict(productId, excludePrId = "") {
-    return (
-        requests.find((request) => {
-            if (
-                String(request.pr_id) === String(excludePrId) ||
-                !activeRequestStatuses.has(request.status)
-            )
-                return false;
-            const item = (request.items || []).find(
+function normalizedRequestStatus(request) {
+    return String(request?.workflow_status || request?.status || "").trim().toLowerCase();
+}
+
+function requestSortTime(request) {
+    const value = request?.created_at || request?.submitted_at || request?.request_date || "";
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? time : 0;
+}
+
+function productRequestHistory(productId, excludePrId = "") {
+    return requests
+        .filter((request) => {
+            if (String(request.pr_id) === String(excludePrId)) return false;
+            return (request.items || []).some(
                 (candidate) => String(candidate.product_id) === String(productId),
             );
-            return (
-                Boolean(item) &&
-                (request.status !== "Approved" || Number(item.remaining_qty || 0) > 0)
-            );
-        }) || null
+        })
+        .sort((a, b) => requestSortTime(b) - requestSortTime(a));
+}
+
+function activeConflict(productId, excludePrId = "") {
+    const latest = productRequestHistory(productId, excludePrId)[0] || null;
+    if (!latest) return null;
+
+    const status = normalizedRequestStatus(latest);
+    if (!activeRequestStatuses.has(status)) return null;
+
+    const item = (latest.items || []).find(
+        (candidate) => String(candidate.product_id) === String(productId),
     );
+    if (!item) return null;
+    return status !== "approved" || Number(item.remaining_qty || 0) > 0 ? latest : null;
+}
+
+function conflictBadgeLabel(request) {
+    const status = normalizedRequestStatus(request);
+    if (status === "pending supervisor approval") return "Pending";
+    if (status === "revision requested") return "Revision";
+    if (status === "draft") return "Draft";
+    if (status === "partially ordered") return "Partial";
+    return "Active";
+}
+
+function isHiddenApprovedConflict(productId) {
+    return normalizedRequestStatus(activeConflict(productId, currentRequestId())) === "approved";
 }
 
 function currentRequestId() {
@@ -129,7 +171,36 @@ function currentRequestId() {
 }
 
 function defaultRequestedQuantity(productId) {
-    return 1;
+    return 0;
+}
+
+function suggestedRequestQuantity(product, item = null) {
+    const context = inventoryContext(product?.product_id);
+    const unit = requestUnit(item, product);
+    const unitLevel = (product?.packaging_units || []).find(
+        (level) => String(level.unit).toLowerCase() === String(unit).toLowerCase(),
+    );
+    const baseUnit = baseInventoryUnit(product);
+    const baseLevel = (product?.packaging_units || []).find(
+        (level) => String(level.unit).toLowerCase() === baseUnit.toLowerCase(),
+    );
+    const unitFactor = Number(unitLevel?.base_quantity || 0) / Number(baseLevel?.base_quantity || 1);
+    if (!Number.isFinite(unitFactor) || unitFactor <= 0) return 0;
+
+    const shortage = Math.max(0, context.reorderLevel - context.onHand);
+    if (!shortage) return 0;
+    let quantity = Math.max(1, Math.ceil(shortage / unitFactor));
+    while (
+        quantity <= MAX_PURCHASE_REQUEST_QTY &&
+        packageError(product, quantity, unit)
+    ) quantity += 1;
+    return quantity <= MAX_PURCHASE_REQUEST_QTY ? quantity : 0;
+}
+
+function suggestedQuantityLabel(product, item = null) {
+    const quantity = suggestedRequestQuantity(product, item);
+    const unit = requestUnit(item, product);
+    return quantity && unit ? `Suggested: ${quantity} ${quantityUnitLabel(unit, quantity)}` : "";
 }
 
 function hasActiveSupplierAssignment(product) {
@@ -149,6 +220,36 @@ function baseUnitAllowsDecimal(product) {
 
 function requestUnit(item, product) {
     return item?.unit || product?.purchase_unit || "";
+}
+
+function requestUnitOptions(product, item = null) {
+    const levels = product?.packaging_units || [];
+    const catalogTokens = new Set();
+    quantityUnits
+        .filter((unit) => Number(unit.is_active ?? 1) === 1)
+        .forEach((unit) => {
+            [unit.unit_name, unit.unit_symbol].forEach((label) => {
+                const token = String(label || "").trim().toLowerCase();
+                if (token) catalogTokens.add(token);
+            });
+        });
+    let options = levels.filter((level) => catalogTokens.has(String(level.unit || "").trim().toLowerCase()));
+    if (!options.length) options = levels;
+    const selectedUnit = requestUnit(item, product);
+    if (selectedUnit && !options.some((level) => String(level.unit).toLowerCase() === selectedUnit.toLowerCase())) {
+        const selectedLevel = levels.find((level) => String(level.unit).toLowerCase() === selectedUnit.toLowerCase());
+        if (selectedLevel) options = [...options, selectedLevel];
+    }
+    return options;
+}
+
+function requestUnitSelector(product, item = null, disabled = false) {
+    const options = requestUnitOptions(product, item);
+    if (!options.length) return "";
+    const selectedUnit = requestUnit(item, product);
+    return `<select class="form-select request-unit-select" data-request-unit="${esc(product.product_id)}" aria-label="Requested unit for ${esc(product.product_name || "product")}" ${disabled ? "disabled" : ""}>${options
+        .map((level) => `<option value="${esc(level.unit)}" ${String(level.unit).toLowerCase() === String(selectedUnit).toLowerCase() ? "selected" : ""}>${esc(level.unit)}</option>`)
+        .join("")}</select>`;
 }
 
 function packageUnits(product) {
@@ -245,14 +346,11 @@ function totalEquivalent(product, item) {
     return `${quantity.toLocaleString()} ${quantityUnitLabel(baseUnit, quantity)}`;
 }
 
-function packageSelector(product, item) {
-    const unit = requestUnit(item, product);
-    return `<span class="requested-unit-label" aria-label="Configured purchase unit">${esc(unit ? quantityUnitLabel(unit, 1) : "Unit not configured")}</span>`;
-}
-
 function validRequestedQuantity(product, value) {
     const item = selectedItems.get(String(product?.product_id));
-    return !packageError(product, value, requestUnit(item, product));
+    const quantity = Number(value);
+    return Number.isFinite(quantity) && quantity <= MAX_PURCHASE_REQUEST_QTY &&
+        !packageError(product, value, requestUnit(item, product));
 }
 
 function hasConfiguredBaseUnit(product) {
@@ -339,6 +437,11 @@ function selectedBaseUnitMessages() {
     });
     selectedItems.forEach((item) => {
         const product = productById.get(item.product_id);
+        if (Number(item.requested_qty) > MAX_PURCHASE_REQUEST_QTY) {
+            messages.push(
+                `${product?.product_name || "This product"} quantity cannot exceed ${MAX_PURCHASE_REQUEST_QTY} per product line.`,
+            );
+        }
         const error = packageError(product, item.requested_qty, requestUnit(item, product));
         if (error) messages.push(`${product?.product_name}: ${error}`);
     });
@@ -376,6 +479,7 @@ function visibleEligibleProducts(requiredType = "") {
                 "active",
         )
         .filter(hasActiveSupplierAssignment)
+        .filter((product) => !isHiddenApprovedConflict(product.product_id))
         .filter((product) => {
             const type = replenishmentType(product.product_id);
             return (
@@ -428,7 +532,7 @@ function renderProductCatalog() {
     const rows = visibleEligibleProducts();
     if (!rows.length) {
         body.innerHTML =
-            '<tr><td colspan="10" class="product-selector-empty">No eligible replenishment items match these filters.</td></tr>';
+            '<tr><td colspan="11" class="product-selector-empty">No eligible replenishment items match these filters.</td></tr>';
         syncVisibleSelectionCheckbox();
         return;
     }
@@ -447,9 +551,13 @@ function renderProductCatalog() {
                   : "";
             const unit = baseInventoryUnit(product);
             const step = "1";
-            const checkbox = `<input class="catalog-checkbox" type="checkbox" data-product-select="${esc(productId)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} aria-label="Select ${esc(product.product_name || "product")}" title="${esc(disabledReason || "Select product")}">`;
-            const quantityInput = `<input class="form-control catalog-qty" type="number" min="${step}" step="${step}" inputmode="decimal" value="${selected ? esc(selected.requested_qty) : ""}" data-selected-qty="${esc(productId)}" ${selected ? "" : "disabled"} aria-label="Requested quantity for ${esc(product.product_name || "product")}">`;
-            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${checkbox}</td><td class="catalog-product"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span></td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control">${quantityInput}${packageSelector(product, selected)}</div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
+            const selectControl =
+                conflict && !selected
+                    ? `<span class="catalog-pending-badge" title="${esc(disabledReason)}">${esc(conflictBadgeLabel(conflict))}<small>${esc(conflict.pr_number || "Submitted PR")}</small></span>`
+                    : `<input class="catalog-checkbox" type="checkbox" data-product-select="${esc(productId)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} aria-label="Select ${esc(product.product_name || "product")}" title="${esc(disabledReason || "Select product")}">`;
+            const quantityInput = `<input class="form-control catalog-qty" type="number" min="0" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="decimal" value="${selected ? esc(selected.requested_qty) : "0"}" data-selected-qty="${esc(productId)}" ${disabled ? "disabled" : ""} aria-label="Requested quantity for ${esc(product.product_name || "product")}">`;
+            const unitItem = selected || { unit: requestUnit(null, product) };
+            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${selectControl}</td><td class="catalog-product"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span></td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control">${quantityInput}${requestUnitSelector(product, unitItem, disabled)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, unitItem))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
         })
         .join("");
     syncVisibleSelectionCheckbox();
@@ -507,7 +615,7 @@ function renderFinalizeItems() {
             const context = inventoryContext(item.product_id);
             const unit = baseInventoryUnit(product);
             const step = "1";
-            return `<tr data-finalize-product-id="${esc(item.product_id)}"><td>${index + 1}</td><td class="finalize-product-description"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span><small>${esc(productSpecification(product))}</small></td><td>${esc(unit || "Unit not configured")}</td><td>${esc(context.shelf)}</td><td>${esc(context.storage)}</td><td><strong>${esc(context.onHand)} ${esc(unit)}</strong></td><td><div class="requested-qty-control"><input class="form-control finalize-qty" type="number" min="${step}" step="${step}" inputmode="decimal" value="${esc(item.requested_qty)}" data-finalize-qty="${esc(item.product_id)}" aria-label="Requested quantity for ${esc(product.product_name || "product")}">${packageSelector(product, item)}</div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(item.product_id)}">${esc(totalEquivalent(product, item))}</td><td><button class="btn btn-sm btn-outline-danger remove-finalize-product" type="button" data-product-id="${esc(item.product_id)}" aria-label="Remove ${esc(product.product_name || "product")}"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
+            return `<tr data-finalize-product-id="${esc(item.product_id)}"><td>${index + 1}</td><td class="finalize-product-description"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span><small>${esc(productSpecification(product))}</small></td><td>${esc(unit || "Unit not configured")}</td><td>${esc(context.shelf)}</td><td>${esc(context.storage)}</td><td><strong>${esc(context.onHand)} ${esc(unit)}</strong></td><td><div class="requested-qty-control"><input class="form-control finalize-qty" type="number" min="0" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="decimal" value="${esc(item.requested_qty)}" data-finalize-qty="${esc(item.product_id)}" aria-label="Requested quantity for ${esc(product.product_name || "product")}">${requestUnitSelector(product, item)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, item))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(item.product_id)}">${esc(totalEquivalent(product, item))}</td><td><button class="btn btn-sm btn-outline-danger remove-finalize-product" type="button" data-product-id="${esc(item.product_id)}" aria-label="Remove ${esc(product.product_name || "product")}"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
         })
         .join("");
 }
@@ -600,6 +708,24 @@ function renderSummary() {
     document.getElementById("rejectedPrCount").textContent = count("Rejected");
 }
 
+function requestItemDisplayName(item = {}) {
+    const isMedicine = String(item.category_name || "").trim().toLowerCase() === "medicine";
+    return String((isMedicine ? item.generic_name : "") || item.product_name || "").trim();
+}
+
+function productIdentityLines(item = {}) {
+    const brand = String(item.brand_name || "").trim();
+    const product = requestItemDisplayName(item);
+    const primary = product || brand || "-";
+    const secondary = brand && brand.toLowerCase() !== primary.toLowerCase() ? brand : "";
+    return { primary, secondary };
+}
+
+function productIdentityMarkup(item = {}, supplierSetup = false) {
+    const identity = productIdentityLines(item);
+    return `<strong>${esc(identity.primary)}</strong>${identity.secondary ? `<span${supplierSetup ? ' style="font-size:11px"' : ""}>${esc(identity.secondary)}</span>` : ""}`;
+}
+
 function filteredRequests() {
     const search = String(document.getElementById("prSearch")?.value || "")
         .trim()
@@ -611,7 +737,12 @@ function filteredRequests() {
         const haystack = [
             request.pr_number,
             request.requested_by_name,
-            ...(request.items || []).flatMap((item) => [item.product_name, item.brand_name]),
+            ...(request.items || []).flatMap((item) => [
+                requestItemDisplayName(item),
+                item.product_name,
+                item.generic_name,
+                item.brand_name,
+            ]),
         ]
             .join(" ")
             .toLowerCase();
@@ -784,7 +915,21 @@ function procurementCalculation(item) {
     const minimum = conversion > 0 ? (approvedRequirement(item) * factor) / conversion : 0;
     const orderQty = minimum;
     const expected = orderQty * conversion;
-    return { option, conversion, orderQty, minimum, expected, excess: 0 };
+    const hasPrice = Boolean(option?.supplier_price_available);
+    const unitPrice = hasPrice ? Number(option.supplier_cost_per_inventory_unit || 0) : null;
+    const estimatedLineTotal = hasPrice
+        ? Math.round((orderQty * Number(option.supplier_price_per_purchase_unit || 0) + Number.EPSILON) * 100) / 100
+        : null;
+    return { option, conversion, orderQty, minimum, expected, excess: 0, hasPrice, unitPrice, estimatedLineTotal };
+}
+
+function cheapestSupplierProductId(options) {
+    const priced = (options || []).filter((option) => option.supplier_price_available);
+    if (!priced.length) return "";
+    return String(priced.reduce((cheapest, option) =>
+        Number(option.supplier_cost_per_inventory_unit) < Number(cheapest.supplier_cost_per_inventory_unit)
+            ? option : cheapest,
+    ).supplier_product_id);
 }
 
 function initializePoGeneration(request) {
@@ -831,15 +976,30 @@ function renderManagerPurchasingSetup(request) {
         .map((item) => {
             const calc = procurementCalculation(item);
             const options = item.supplier_options || [];
+            const recommendedId = cheapestSupplierProductId(options);
             const optionMarkup = options
                 .map((option) => {
-                    const summary =
-                        option.summary ||
-                        `${option.units_per_purchase_unit || 0} ${option.inventory_unit || "units"} per ${option.purchase_unit || "Unit"}`;
-                    return `<option value="${esc(option.supplier_product_id)}" ${String(option.supplier_product_id) === String(calc.option?.supplier_product_id) ? "selected" : ""}>${esc(option.supplier_name)}</option>`;
+                    const isRecommended = String(option.supplier_product_id) === String(recommendedId);
+                    const isSelected = String(option.supplier_product_id) === String(calc.option?.supplier_product_id);
+                    const priceLabel = option.supplier_price_available
+                        ? `${compactPeso(option.supplier_price_per_purchase_unit)} / ${option.purchase_unit || "purchase unit"}`
+                        : "Price not set";
+                    const recommendation = isRecommended
+                        ? '<small style="display:block;margin:3px 0 0 23px"><span style="color:#198754;font-weight:700">Lowest price</span> <span style="color:#0d6efd;font-weight:700">Recommended</span></small>'
+                        : "";
+                    return `<label style="display:block;padding:9px 10px;border-bottom:1px solid #e9ecef;cursor:pointer;background:${isSelected ? "#f7f3ff" : "#fff"}"><span style="display:flex;align-items:center;gap:7px"><input type="radio" name="supplier-${esc(item.pr_item_id)}" data-manager-supplier value="${esc(option.supplier_product_id)}" ${isSelected ? "checked" : ""}><strong>${esc(option.supplier_name)}</strong><span style="margin-left:auto;font-size:14px;font-weight:600">${esc(priceLabel)}</span></span>${recommendation}</label>`;
                 })
                 .join("");
-            return `<tr data-manager-pr-item="${esc(item.pr_item_id)}"><td class="setup-product"><strong>${esc(item.product_name || "-")}</strong><span>${esc(poProductSpecification(item))}</span></td><td><strong>${approvedRequirement(item).toLocaleString()} ${esc(item.unit || "units")}</strong></td><td><select class="form-select form-select-sm" data-manager-supplier ${options.length ? "" : "disabled"}><option value="">${options.length ? "Select supplier" : "No active supplier setup"}</option>${optionMarkup}</select></td><td><strong>${esc(calc.option?.purchase_unit || "-")}</strong></td><td>${calc.option ? esc(calc.option.summary || `${calc.conversion} ${calc.option.inventory_unit} per ${calc.option.purchase_unit}`) : "-"}</td><td><strong>${calc.option ? `${calc.orderQty.toLocaleString()} ${esc(purchaseUnitLabel(calc.option.purchase_unit, calc.orderQty))}` : "-"}</strong></td><td class="expected-qty"><strong>${calc.option ? `${calc.expected.toLocaleString()} ${esc(calc.option.inventory_unit)}` : "-"}</strong><small>${calc.option ? `PR Approved: ${approvedRequirement(item).toLocaleString()} ${esc(item.unit)}` : ""}</small></td></tr>`;
+            const selectedSupplierLabel = calc.option
+                ? `<strong>${esc(calc.option.supplier_name)}</strong> <span style="font-size:14px;font-weight:600">— ${esc(calc.option.supplier_price_available ? `${compactPeso(calc.option.supplier_price_per_purchase_unit)} / ${calc.option.purchase_unit || "purchase unit"}` : "Price not set")}</span>`
+                : "Choose a supplier";
+            const quote = calc.option?.supplier_price_available
+                ? compactPeso(calc.option.supplier_price_per_purchase_unit)
+                : calc.option ? '<span class="text-muted">Price not set</span>' : "-";
+            const supplierPicker = options.length
+                ? `<details style="position:relative"><summary style="cursor:pointer;list-style:none;border:1px solid #ced4da;border-radius:6px;padding:8px 10px;background:#fff">${selectedSupplierLabel} <span aria-hidden="true" style="float:right">▾</span></summary><div style="position:absolute;z-index:20;top:calc(100% + 3px);left:0;right:0;min-width:270px;max-height:240px;overflow:auto;border:1px solid #ced4da;border-radius:6px;background:#fff;box-shadow:0 4px 12px #0002">${optionMarkup}</div></details>`
+                : '<span class="text-muted">No active supplier setup</span>';
+            return `<tr data-manager-pr-item="${esc(item.pr_item_id)}"><td class="setup-product">${productIdentityMarkup(item, true)}<small style="font-size:10px">${esc(poProductSpecification(item))}</small></td><td>${supplierPicker}</td><td>${quote}</td><td>${calc.option ? esc(calc.option.summary || `${calc.conversion} ${calc.option.inventory_unit} per ${calc.option.purchase_unit}`) : "-"}</td><td><strong>${calc.option ? calc.orderQty.toLocaleString() : "-"}</strong></td><td><strong>${esc(calc.option?.purchase_unit || "-")}</strong></td><td class="expected-qty"><strong>${calc.option ? `${calc.expected.toLocaleString()} ${esc(calc.option.inventory_unit)}` : "-"}</strong></td><td class="text-end"><strong>${calc.estimatedLineTotal === null ? "—" : compactPeso(calc.estimatedLineTotal)}</strong></td></tr>`;
         })
         .join("");
     const errors = procurementErrors(request);
@@ -864,11 +1024,22 @@ function managerSupplierGroups(request) {
                 phone: calc.option.supplier_phone || "",
                 email: calc.option.supplier_email || "",
                 items: [],
+                estimatedTotal: 0,
+                hasUnpricedItems: false,
             });
         const group = groups.get(id);
         group.items.push({ item, ...calc });
+        if (calc.estimatedLineTotal === null) group.hasUnpricedItems = true;
+        else group.estimatedTotal = Math.round((group.estimatedTotal + calc.estimatedLineTotal + Number.EPSILON) * 100) / 100;
     });
     return [...groups.values()];
+}
+
+function compactSpecificationNumbers(value) {
+    return String(value || "").replace(/\b(\d+)\.(\d+)\b/g, (_, whole, fraction) => {
+        const trimmedFraction = fraction.replace(/0+$/, "");
+        return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
+    });
 }
 
 function poProductSpecification(item) {
@@ -877,16 +1048,21 @@ function poProductSpecification(item) {
             .trim()
             .toLowerCase() === "medicine"
     ) {
-        const medicine = [item.generic_name, item.strength]
+        const displayName = requestItemDisplayName(item).toLowerCase();
+        const genericName = String(item.generic_name || "").trim();
+        const medicine = [
+            genericName && genericName.toLowerCase() !== displayName ? genericName : "",
+            item.strength,
+        ]
             .filter((value) => String(value || "").trim())
             .join(" ");
-        return (
+        return compactSpecificationNumbers(
             [medicine, item.dosage_form]
                 .filter((value) => String(value || "").trim())
-                .join(" • ") || "No specification"
+                .join(" • ") || "No specification",
         );
     }
-    return productSpecification(item, "No specification");
+    return compactSpecificationNumbers(productSpecification(item, "No specification"));
 }
 
 function pluralPackagingUnit(unit, quantity) {
@@ -921,11 +1097,25 @@ function supplierContactMarkup(group) {
     return `${group.address ? `<address>${esc(group.address)}</address>` : ""}${contact.length ? `<p>${contact.map(esc).join('<span aria-hidden="true">•</span>')}</p>` : ""}`;
 }
 
+function localTodayDateString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function isPastLocalDate(value) {
+    return Boolean(value) && value < localTodayDateString();
+}
+
 function previewErrors(request) {
     const errors = [];
     managerSupplierGroups(request).forEach((group) => {
         if (!supplierEtas[group.id])
             errors.push(`${group.name}: enter the expected delivery date.`);
+        else if (isPastLocalDate(supplierEtas[group.id]))
+            errors.push(`${group.name}: ETA cannot be earlier than today.`);
     });
     return errors;
 }
@@ -935,17 +1125,18 @@ function renderManagerPoPreview(request) {
     document.getElementById("managerPoPreviewCount").textContent =
         `${groups.length} ${groups.length === 1 ? "PO" : "POs"} to generate`;
     document.getElementById("managerPoPreviewSummary").innerHTML =
-        `<div><span>Suppliers</span><strong>${groups.length}</strong></div><div><span>Products</span><strong>${(request.items || []).length}</strong></div><div><span>Purchase Orders</span><strong>${groups.length}</strong></div>`;
+        `<div><span>Suppliers</span><strong>${groups.length}</strong></div><div><span>Products</span><strong>${(request.items || []).length}</strong></div><div><span>Purchase Orders</span><strong>${groups.length}</strong></div><div><span>Estimated Total</span><strong>${groups.some((group) => group.hasUnpricedItems) ? "Some prices not set" : compactPeso(groups.reduce((total, group) => total + group.estimatedTotal, 0))}</strong></div>`;
     document.getElementById("managerSupplierPoPreview").innerHTML = groups
         .map(
             (group, index) =>
-                `<article class="supplier-po-card"><header><div class="supplier-po-order"><span>Purchase Order ${index + 1}</span></div><div class="supplier-po-identity"><h4>${esc(group.name)}</h4>${supplierContactMarkup(group)}</div><div class="supplier-po-fields"><label><span>ETA</span><input class="form-control form-control-sm" type="date" data-manager-eta="${esc(group.id)}" value="${esc(supplierEtas[group.id] || "")}"></label></div></header><div class="supplier-po-table-wrap"><table><thead><tr><th>Product / Description</th><th>Approved Requirement</th><th>PO Qty</th><th>Purchase Unit</th><th>Contents / Packaging</th></tr></thead><tbody>${group.items
+                `<article class="supplier-po-card"><header><div class="supplier-po-order"><span>Purchase Order ${index + 1}</span></div><div class="supplier-po-identity"><div style="margin-bottom:2px;color:#6f42c1;font-size:17px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">DOC R PHARMACY</div><h4>${esc(group.name)}</h4>${supplierContactMarkup(group)}</div><div class="supplier-po-fields"><label><span>ETA</span><input class="form-control form-control-sm" type="date" min="${localTodayDateString()}" data-manager-eta="${esc(group.id)}" value="${esc(supplierEtas[group.id] || "")}"></label></div></header><div class="supplier-po-table-wrap"><table><thead><tr><th>Product / Description</th><th>Contents / Packaging</th><th style="text-align:center!important">PO Qty</th><th style="text-align:center!important">Purchase Unit</th><th>Unit Price</th><th style="text-align:center!important">Estimated Line Total</th></tr></thead><tbody>${group.items
                     .map((row) => {
                         const packaging =
                             row.option.summary ||
                             supplierPackagingDescription(row.option) ||
                             `${row.conversion.toLocaleString()} ${row.option.inventory_unit} per ${row.option.purchase_unit}`;
-                        return `<tr><td><strong>${esc(row.item.product_name)}</strong><span>${esc(poProductSpecification(row.item))}</span></td><td>${approvedRequirement(row.item).toLocaleString()} ${esc(row.item.unit || row.option.inventory_unit)}</td><td>${row.orderQty.toLocaleString()}</td><td>${esc(row.option.purchase_unit)}</td><td>${esc(packaging)}</td></tr>`;
+                        const quote = row.hasPrice ? `${compactPeso(row.option.supplier_price_per_purchase_unit)} / ${esc(row.option.purchase_unit)}` : "Price not set";
+                        return `<tr><td>${productIdentityMarkup(row.item)}<small>${esc(poProductSpecification(row.item))}</small></td><td>${esc(packaging)}</td><td style="text-align:center!important">${row.orderQty.toLocaleString()}</td><td style="text-align:center!important">${esc(row.option.purchase_unit)}</td><td>${quote}</td><td style="text-align:center!important">${row.estimatedLineTotal === null ? "—" : compactPeso(row.estimatedLineTotal)}</td></tr>`;
                     })
                     .join("")}</tbody></table></div></article>`,
         )
@@ -1023,6 +1214,9 @@ async function generatePurchaseOrders() {
             items: (generatingRequest.items || []).map((item) => ({
                 pr_item_id: item.pr_item_id,
                 supplier_product_id: selectedProcurementOption(item).supplier_product_id,
+                supplier_purchase_unit_price_seen: selectedProcurementOption(item)?.supplier_price_available
+                    ? Number(selectedProcurementOption(item).supplier_price_per_purchase_unit)
+                    : null,
             })),
             supplier_etas: supplierEtas,
         };
@@ -1048,9 +1242,7 @@ async function generatePurchaseOrders() {
 }
 
 function actionButtons(request) {
-    const buttons = [
-        `<button type="button" class="btn btn-outline-secondary pr-view-btn" data-pr-action="view" data-pr-id="${esc(request.pr_id)}" title="View" aria-label="View ${esc(request.pr_number)}"><i class="fa-regular fa-eye"></i></button>`,
-    ];
+    const buttons = [];
     if (request.status === "Approved")
         buttons.push(
             `<button type="button" class="btn btn-outline-dark pr-print-btn" data-pr-action="print" data-pr-id="${esc(request.pr_id)}" title="Print" aria-label="Print ${esc(request.pr_number)}"><i class="fa-solid fa-print"></i></button>`,
@@ -1080,7 +1272,7 @@ function actionButtons(request) {
                 `<button class="btn btn-success pr-labeled-action" data-pr-action="generate-po" data-pr-id="${esc(request.pr_id)}" title="Generate PO"><i class="fa-solid fa-file-circle-plus"></i> Generate PO</button>`,
             );
     }
-    return `<div class="pr-actions">${buttons.join("")}</div>`;
+    return buttons.length ? `<div class="pr-actions">${buttons.join("")}</div>` : "";
 }
 
 function renderTable() {
@@ -1088,23 +1280,18 @@ function renderTable() {
     if (!body) return;
     const rows = filteredRequests();
     if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="7" class="pr-empty">No purchase requests yet.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="pr-empty">No purchase requests yet.</td></tr>';
         return;
     }
     body.innerHTML = rows
         .map((request) => {
             const items = request.items || [];
-            const names = items
-                .slice(0, 2)
-                .map((item) => item.product_name)
-                .join(", ");
-            const overflow = items.length > 2 ? ` +${items.length - 2} more` : "";
             const poCount = Math.max(0, Number(request.po_generated_count || 0));
             const poCountMarkup =
                 poCount > 0
                     ? `<button type="button" class="pr-po-generated" data-pr-action="related-pos" data-pr-id="${esc(request.pr_id)}" title="View ${poCount} related Purchase Order${poCount === 1 ? "" : "s"}" aria-label="View ${poCount} related Purchase Order${poCount === 1 ? "" : "s"} for ${esc(request.pr_number)}">${poCount}</button>`
                     : '<span class="pr-po-generated-zero">0</span>';
-            return `<tr><td><strong class="pr-number-value">${prNumberMarkup(request.pr_number)}</strong></td><td><span class="requested-by-value">${esc(request.requested_by_name || "Unknown")}</span></td><td>${esc(formatSubmittedDate(request.submitted_at || request.created_at || request.request_date))}</td><td><div class="pr-item-summary"><strong>${items.length} ${items.length === 1 ? "item" : "items"}</strong><span title="${esc(names + overflow)}">${esc(names + overflow || "No items")}</span></div></td><td>${poCountMarkup}</td><td><span class="pr-status ${statusClass(request.status)}">${esc(visiblePrStatus(request.status))}</span></td><td>${actionButtons(request)}</td></tr>`;
+            return `<tr class="pr-clickable-row" data-pr-id="${esc(request.pr_id)}" tabindex="0" aria-label="View details for ${esc(request.pr_number)}"><td><strong class="pr-number-value">${prNumberMarkup(request.pr_number)}</strong></td><td>${esc(formatSubmittedDate(request.submitted_at || request.created_at || request.request_date))}</td><td>${purchaseRequestItemsSummary(items)}</td><td>${poCountMarkup}</td><td><span class="pr-status ${statusClass(request.status)}">${esc(visiblePrStatus(request.status))}</span></td><td>${actionButtons(request)}</td></tr>`;
         })
         .join("");
 }
@@ -1189,6 +1376,12 @@ function showDetails(request) {
     document.getElementById("detailsPrintButton").dataset.prId = request.pr_id;
     document.getElementById("detailsPrStatus").innerHTML =
         `<span class="pr-status ${statusClass(request.status)}">${esc(visiblePrStatus(request.status))}</span>`;
+    const rejectionInfo = document.getElementById("detailsRejectionInfo");
+    const rejectionReason = String(request.rejection_reason || request.decision_reason || "").trim();
+    const showRejectionReason = request.status === "Rejected" && Boolean(rejectionReason);
+    if (rejectionInfo) rejectionInfo.hidden = !showRejectionReason;
+    const rejectionReasonElement = document.getElementById("detailsRejectionReason");
+    if (rejectionReasonElement) rejectionReasonElement.textContent = showRejectionReason ? rejectionReason : "";
     const frame = document.getElementById("requestPreviewFrame");
     frame.dataset.contentHeight = "1123";
     frame.src = `purchase_request_print.html?pr_id=${encodeURIComponent(request.pr_id)}&embed=1&ui=final2`;
@@ -1408,12 +1601,17 @@ function maybeOpenInventoryShortcut() {
 
 async function load() {
     try {
-        const [prData, candidateData] = await Promise.all([
+        const [prData, candidateData, measurementUnitData, settingsData] = await Promise.all([
             json(`${API_BASE_URL}/purchase_requests/get_purchase_requests.php?t=${Date.now()}`),
             json(`${API_BASE_URL}/purchase_requests/get_pr_candidates.php?t=${Date.now()}`),
+            loadMeasurementUnits({ forceRefresh: true }),
+            json(`${API_BASE_URL}/settings/get_admin_settings.php?t=${Date.now()}`).catch(() => ({ prQuantityLimit: 50 })),
         ]);
+        const configuredLimit = Number(settingsData?.prQuantityLimit);
+        MAX_PURCHASE_REQUEST_QTY = Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 50;
         products = candidateData.data || [];
         requests = prData.data?.requests || [];
+        quantityUnits = measurementUnitData.units || [];
         inventoryRows = products;
         productById.clear();
         inventoryByProduct.clear();
@@ -1425,7 +1623,7 @@ async function load() {
         maybeOpenInventoryShortcut();
     } catch (error) {
         document.getElementById("requestRows").innerHTML =
-            `<tr><td colspan="7" class="pr-empty text-danger">${esc(error.message)}</td></tr>`;
+            `<tr><td colspan="6" class="pr-empty text-danger">${esc(error.message)}</td></tr>`;
         toastr.error(error.message);
     }
 }
@@ -1463,8 +1661,52 @@ document.getElementById("selectAllVisibleProducts")?.addEventListener("change", 
     setVisibleProductsSelected(event.target.checked);
 });
 document.getElementById("productSelectorRows")?.addEventListener("input", (event) => {
-    if (event.target.matches("[data-selected-qty]"))
-        setRequestedQuantity(event.target.dataset.selectedQty, event.target.value);
+    const input = event.target.closest("[data-selected-qty]");
+    if (!input) return;
+    const productId = String(input.dataset.selectedQty);
+    if (selectedItems.has(productId)) {
+        setRequestedQuantity(productId, input.value);
+        return;
+    }
+    const product = productById.get(productId);
+    const total = document.querySelector(`[data-total-equivalent="${productId}"]`);
+    const unit = input.closest("tr")?.querySelector("[data-request-unit]")?.value || product?.purchase_unit || "";
+    if (product && total)
+        total.textContent = totalEquivalent(product, {
+            requested_qty: Number(input.value),
+            unit,
+        });
+});
+document.getElementById("productSelectorRows")?.addEventListener("change", (event) => {
+    const unitSelect = event.target.closest("[data-request-unit]");
+    if (unitSelect) {
+        const productId = String(unitSelect.dataset.requestUnit);
+        if (!selectedItems.has(productId)) selectProduct(productId, 0);
+        const item = selectedItems.get(productId);
+        if (item) {
+            item.unit = unitSelect.value;
+            renderSelectionState();
+        }
+        return;
+    }
+    const input = event.target.closest("[data-selected-qty]");
+    if (!input || selectedItems.has(String(input.dataset.selectedQty))) return;
+    const quantity = Number(input.value);
+    if (Number.isFinite(quantity) && quantity > 0)
+        selectProduct(input.dataset.selectedQty, quantity);
+});
+document.addEventListener("focusin", (event) => {
+    const input = event.target.closest("[data-selected-qty], [data-finalize-qty]");
+    if (input?.value === "0") input.value = "";
+});
+document.addEventListener("focusout", (event) => {
+    const input = event.target.closest("[data-selected-qty], [data-finalize-qty]");
+    if (!input || input.value !== "") return;
+    input.value = "0";
+    if (input.matches("[data-selected-qty]") && selectedItems.has(input.dataset.selectedQty))
+        setRequestedQuantity(input.dataset.selectedQty, "0");
+    if (input.matches("[data-finalize-qty]"))
+        setRequestedQuantity(input.dataset.finalizeQty, "0");
 });
 document.getElementById("reviewRequestButton")?.addEventListener("click", () => {
     try {
@@ -1488,6 +1730,14 @@ document.getElementById("finalizeRequestItems")?.addEventListener("click", (even
 document.getElementById("finalizeRequestItems")?.addEventListener("input", (event) => {
     if (event.target.matches("[data-finalize-qty]"))
         setRequestedQuantity(event.target.dataset.finalizeQty, event.target.value);
+});
+document.getElementById("finalizeRequestItems")?.addEventListener("change", (event) => {
+    const unitSelect = event.target.closest("[data-request-unit]");
+    if (!unitSelect) return;
+    const item = selectedItems.get(String(unitSelect.dataset.requestUnit));
+    if (!item) return;
+    item.unit = unitSelect.value;
+    renderSelectionState();
 });
 document
     .getElementById("saveDraftButton")
@@ -1572,8 +1822,14 @@ document.getElementById("managerProcurementAssignments")?.addEventListener("chan
     renderGenerationActions();
 });
 document.getElementById("managerSupplierPoPreview")?.addEventListener("change", (event) => {
-    if (event.target.matches("[data-manager-eta]"))
+    if (event.target.matches("[data-manager-eta]")) {
+        event.target.min = localTodayDateString();
+        if (isPastLocalDate(event.target.value)) {
+            event.target.value = "";
+            toastr.error("ETA cannot be earlier than today.");
+        }
         supplierEtas[event.target.dataset.managerEta] = event.target.value;
+    }
     renderManagerPoPreview(generatingRequest);
     renderGenerationActions();
 });
@@ -1609,12 +1865,16 @@ window.addEventListener("message", (event) => {
 });
 document.getElementById("requestRows")?.addEventListener("click", (event) => {
     const control = event.target.closest("[data-pr-action]");
-    if (!control) return;
+    if (!control) {
+        const row = event.target.closest("tr[data-pr-id]");
+        const request = requests.find((item) => String(item.pr_id) === row?.dataset.prId);
+        if (request) showDetails(request);
+        return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const request = requests.find((item) => item.pr_id === control.dataset.prId);
     if (!request) return;
-    if (control.dataset.prAction === "view") showDetails(request);
     if (control.dataset.prAction === "print") {
         try {
             openPurchaseRequestPrint(request.pr_id);
@@ -1628,6 +1888,14 @@ document.getElementById("requestRows")?.addEventListener("click", (event) => {
     if (control.dataset.prAction === "generate-po") openPoGeneration(request);
     if (control.dataset.prAction === "related-pos")
         showRelatedPurchaseOrders(request.pr_id).catch((error) => toastr.error(error.message));
+});
+document.getElementById("requestRows")?.addEventListener("keydown", (event) => {
+    const row = event.target.closest("tr[data-pr-id]");
+    if (event.target !== row || !["Enter", " "].includes(event.key)) return;
+    const request = requests.find((item) => String(item.pr_id) === row.dataset.prId);
+    if (!request) return;
+    event.preventDefault();
+    showDetails(request);
 });
 ["prSearch", "prStatusFilter", "prStartDate", "prEndDate"].forEach((id) => {
     document

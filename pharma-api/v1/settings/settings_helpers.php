@@ -256,12 +256,14 @@ function deleteBusinessHourException(PDO $pdo, string $date): void
 
 function fetchSystemSettings(PDO $pdo): array
 {
+    ensurePurchaseRequestQuantityLimitColumn($pdo);
     $desiredColumns = [
         'pharmacy_name', 'pharmacy_email', 'contact_number', 'tin_license_number',
         'pharmacy_address', 'website', 'timezone', 'logo_path',
         'grn_received_by_name', 'grn_approved_by_name',
         'pr_prepared_name', 'pr_prepared_role', 'pr_reviewed_name', 'pr_reviewed_role',
         'po_prepared_name', 'po_prepared_role', 'po_approved_name', 'po_approved_role',
+        'pr_quantity_limit',
     ];
     $availableColumns = array_column($pdo->query('SHOW COLUMNS FROM system_settings')->fetchAll(PDO::FETCH_ASSOC), 'Field');
     $selectedColumns = array_values(array_intersect($desiredColumns, $availableColumns));
@@ -293,7 +295,28 @@ function fetchSystemSettings(PDO $pdo): array
         'poPreparedRole' => trim((string) ($row['po_prepared_role'] ?? '')) ?: 'Manager',
         'poApprovedName' => (string) ($row['po_approved_name'] ?? ''),
         'poApprovedRole' => trim((string) ($row['po_approved_role'] ?? '')) ?: 'Supervisor',
+        'prQuantityLimit' => max(1, (int) ($row['pr_quantity_limit'] ?? 50)),
     ];
+}
+
+function ensurePurchaseRequestQuantityLimitColumn(PDO $pdo): void
+{
+    $check = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'system_settings'
+           AND COLUMN_NAME = 'pr_quantity_limit'"
+    );
+    if ((int) $check->fetchColumn() === 0) {
+        $pdo->exec('ALTER TABLE system_settings ADD COLUMN pr_quantity_limit INT NOT NULL DEFAULT 50 AFTER po_approved_role');
+    }
+}
+
+function fetchPurchaseRequestQuantityLimit(PDO $pdo): int
+{
+    ensurePurchaseRequestQuantityLimitColumn($pdo);
+    $limit = (int) ($pdo->query('SELECT pr_quantity_limit FROM system_settings ORDER BY setting_id ASC LIMIT 1')->fetchColumn() ?: 50);
+    return max(1, $limit);
 }
 
 ?>

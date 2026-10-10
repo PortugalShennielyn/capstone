@@ -45,6 +45,25 @@ const purchaseOrderPaymentRequests = new Map();
 let lastPurchaseOrderError = { message: "", shownAt: 0 };
 window.__purchaseOrderPreviewCache = window.__purchaseOrderPreviewCache || new Map();
 
+function localTodayDateString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function setPoEtaMinimums() {
+    ["po-expected-delivery", "edit-po-expected-delivery"].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.min = localTodayDateString();
+    });
+}
+
+function isPastLocalDate(value) {
+    return Boolean(value) && value < localTodayDateString();
+}
+
 function escapeHtml(value) {
     return String(value ?? "")
         .replaceAll("&", "&amp;")
@@ -123,15 +142,19 @@ function getPoPaymentStatus(order = {}) {
     const apiState = String(order.payment_state || "")
         .trim()
         .toLowerCase();
-    if (["awaiting_invoice", "unpaid", "partially_paid", "paid"].includes(apiState))
-        return apiState;
     const total = Number(order.total_amount ?? order.invoice_total ?? order.final_payment);
     if (!Number.isFinite(total) || total <= 0) return "awaiting_invoice";
-    const remaining = Number(order.remaining_balance);
+    const hasRemainingBalance =
+        order.remaining_balance !== null &&
+        order.remaining_balance !== undefined &&
+        order.remaining_balance !== "";
+    const remaining = hasRemainingBalance ? Number(order.remaining_balance) : NaN;
     if (Number.isFinite(remaining)) {
         if (remaining <= 0.005) return "paid";
         return Number(order.total_paid || 0) > 0 ? "partially_paid" : "unpaid";
     }
+    if (["awaiting_invoice", "unpaid", "partially_paid", "paid"].includes(apiState))
+        return apiState;
     const paid = Number(order.total_paid || 0);
     if (Number.isFinite(paid) && paid + 0.005 >= total) return "paid";
     return Number.isFinite(paid) && paid > 0 ? "partially_paid" : "unpaid";
@@ -140,9 +163,47 @@ function getPoPaymentStatus(order = {}) {
 function purchaseOrderTotalDisplay(order = {}) {
     const paymentState = getPoPaymentStatus(order);
     if (paymentState !== "awaiting_invoice") {
-        return `<span class="po-total-with-payment"><span class="po-money">${peso(order.total_amount)}</span>${paymentStatusBadge(paymentState)}</span>`;
+        const paymentLabel =
+            paymentState === "paid"
+                ? "Paid"
+                : paymentState === "partially_paid"
+                  ? "Partially paid"
+                  : "Unpaid";
+        const creditUsed = Number(order.supplier_credit_applied || 0) > 0;
+        return `<span class="po-total-with-payment"><strong class="po-money">${peso(order.total_amount)}</strong><small class="po-payment-state po-payment-${paymentState}">${paymentLabel}${creditUsed ? " · credit used" : ""}</small></span>`;
     }
-    return '<span class="po-total-pending"><strong>—</strong><small>Awaiting Invoice</small></span>';
+    return '<span class="po-total-pending"><strong>—</strong><small>Awaiting invoice</small></span>';
+}
+
+function purchaseOrderEtaDisplay(value, status) {
+    if (!value) return '<span class="po-eta-date">Not set</span>';
+    const text = String(value);
+    const dateParts = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const eta = dateParts
+        ? new Date(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]))
+        : new Date(text.replace(" ", "T"));
+    if (Number.isNaN(eta.getTime())) return `<span class="po-eta-date">${escapeHtml(value)}</span>`;
+
+    const dateLabel = eta.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
+    if (status !== "Pending") return `<span class="po-eta-date">${dateLabel}</span>`;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    eta.setHours(0, 0, 0, 0);
+    const daysUntilEta = Math.round((eta.getTime() - today.getTime()) / 86400000);
+    const relativeDate =
+        daysUntilEta === 0
+            ? "Today"
+            : daysUntilEta === 1
+              ? "Tomorrow"
+              : daysUntilEta > 1
+                ? `In ${daysUntilEta} days`
+                : `${Math.abs(daysUntilEta)}d overdue`;
+    return `<span class="po-eta-date">${dateLabel}</span><small class="po-eta-relative${daysUntilEta < 0 ? " is-overdue" : ""}">${relativeDate}</small>`;
 }
 
 const REASON_OPTIONS = [
@@ -701,6 +762,7 @@ function productSpecification(item) {
         category === "medicine"
             ? [generic, strength, volume, form || packaging]
             : [variant, netWeight, packaging];
+    parts.push(...cleanText(item.specification).split(/\s*[•·]\s*/));
     const seen = new Set();
 
     return parts
@@ -785,14 +847,40 @@ function specificationTableCellList(items) {
 function purchaseOrderItemsSummary(items = [], fallbackNames = []) {
     if (!items.length && !fallbackNames.length)
         return '<div class="po-items-summary"><strong>No products</strong></div>';
-    return productTableCellList(items, fallbackNames);
+    const sourceItems =
+        Array.isArray(items) && items.length
+            ? items
+            : fallbackNames.map((name) => ({ product_name: name }));
+    const previewItems = sourceItems.slice(0, 2);
+    const remainingCount = sourceItems.length - previewItems.length;
+    return `
+        <div class="po-items-summary">
+            <ul class="po-items-preview">
+                ${previewItems
+                    .map((item) => {
+                        const brand = productTableBrand(item);
+                        const product = cleanText(item.generic_name) || productTableProductName(item);
+                        return `<li><strong>${escapeHtml(brand || product || "-")}</strong>${product && !sameText(product, brand) ? `<span>${escapeHtml(product)}</span>` : ""}</li>`;
+                    })
+                    .join("")}
+            </ul>
+            ${remainingCount > 0 ? `<small class="po-items-more">+${remainingCount} more items</small>` : ""}
+        </div>
+    `;
 }
 
 function purchaseOrderQuantitySummary(items = []) {
     if (!items.length) return '<span class="text-muted">-</span>';
-    return productTableValueList(items, purchaseUnitQuantityLabel, [], {
-        className: "po-order-qty-lines",
-    });
+    const previewItems = items.slice(0, 2);
+    const remainingCount = items.length - previewItems.length;
+    return `
+        <div class="po-quantity-summary">
+            ${productTableValueList(previewItems, purchaseUnitQuantityLabel, [], {
+                className: "po-order-qty-lines",
+            })}
+            ${remainingCount > 0 ? `<small class="po-items-more">+${remainingCount} more items</small>` : ""}
+        </div>
+    `;
 }
 
 function unitDisplayFromDetails(item) {
@@ -844,7 +932,9 @@ function statusBadge(status) {
 
 function purchaseOrderStatusStack(order) {
     const claimBadge = cleanText(order.open_claim_badge);
-    return `<div class="po-status-stack">${statusBadge(order.status)}${claimBadge ? `<span class="po-claim-badge">${escapeHtml(claimBadge)}</span>` : ""}</div>`;
+    const status = String(order.status || "Draft");
+    const statusClass = status.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-");
+    return `<div class="po-status-stack"><span class="po-status-pill po-status-${escapeHtml(statusClass)}"><span class="po-status-dot" aria-hidden="true"></span>${escapeHtml(STATUS_LABELS[status] || status)}</span>${claimBadge ? `<span class="po-claim-badge">${escapeHtml(claimBadge)}</span>` : ""}</div>`;
 }
 
 function paymentStatusBadge(status = "Unpaid") {
@@ -858,22 +948,29 @@ function paymentStatusBadge(status = "Unpaid") {
             : state === "unpaid"
               ? "Unpaid"
               : state === "partially paid"
-                ? "Partially Paid"
+                ? "Partially paid"
                 : state === "awaiting invoice"
                   ? "Awaiting Invoice"
                   : status === "Fully Paid"
                     ? "Paid"
                     : status;
-    const normalized = ["Awaiting Invoice", "Unpaid", "Partially Paid", "Paid"].includes(current)
+    const normalized = ["Awaiting Invoice", "Unpaid", "Partially paid", "Paid"].includes(current)
         ? current
         : "Unpaid";
-    return `<span class="po-payment-badge ${normalized.toLowerCase().replaceAll(" ", "-")}">${escapeHtml(normalized)}</span>`;
+    const className = normalized === "Partially paid" ? "partially-paid" : normalized.toLowerCase().replaceAll(" ", "-");
+    return `<span class="po-payment-badge ${className}">${escapeHtml(normalized)}</span>`;
 }
 
 function isPurchaseOrderPaid(status, remainingBalance) {
-    return (
-        ["Paid", "Fully Paid"].includes(String(status || "")) || Number(remainingBalance || 0) <= 0
-    );
+    if (
+        remainingBalance !== null &&
+        remainingBalance !== undefined &&
+        remainingBalance !== "" &&
+        Number.isFinite(Number(remainingBalance))
+    ) {
+        return Number(remainingBalance) <= 0.005;
+    }
+    return ["Paid", "Fully Paid"].includes(String(status || ""));
 }
 
 function validNextStatuses(order) {
@@ -895,7 +992,40 @@ function canEditMajorFields(order) {
     return !isOperationallyLocked(order) && ["Pending", "Revision Requested"].includes(approval);
 }
 
+function isSupervisorPoViewer() {
+    const role = String(
+        document.body.dataset.sessionRole ||
+            window.__drpSession?.access_role ||
+            window.__drpSession?.role ||
+            "",
+    )
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
+    return role === "supervisor" || role === "ro_supervisor";
+}
+
+function activeMoreActionsButton(order) {
+    if (isSupervisorPoViewer()) return "";
+    const nextStatus = validNextStatuses(order)[0] || "";
+    const canRecordInvoice = ["Draft", "Pending", "Arrived", "Delivered"].includes(
+        order.status || "",
+    );
+    const canManagePayment =
+        ["Pending", "Arrived", "Delivered"].includes(order.status || "") &&
+        order.invoice_recorded &&
+        order.payment_available !== false &&
+        Number(order.invoice_total ?? order.total_amount ?? 0) > 0;
+    const paid = getPoPaymentStatus(order) === "paid";
+    return `
+        <button class="btn btn-sm btn-outline-secondary status-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" data-next-status="${escapeHtml(nextStatus)}" data-can-invoice="${canRecordInvoice}" data-has-invoice="${Boolean(order.invoice_recorded)}" data-can-payment="${canManagePayment}" data-payment-paid="${paid}" title="More actions" aria-label="More actions for ${escapeHtml(order.po_number || "")}" aria-haspopup="menu" aria-expanded="false">
+            <i class="fa-solid fa-ellipsis-vertical"></i>
+        </button>
+    `;
+}
+
 function statusActionButton(order) {
+    if (isSupervisorPoViewer()) return "";
     const nextStatuses = validNextStatuses(order);
     if (!nextStatuses.length) return "";
     const nextStatus = nextStatuses[0];
@@ -904,6 +1034,35 @@ function statusActionButton(order) {
             <i class="fa-solid fa-ellipsis-vertical"></i>
         </button>
     `;
+}
+
+function activePurchaseOrderPrimaryAction(order) {
+    const status = order.status || "Draft";
+    const poId = escapeHtml(order.po_id || "");
+    const poNumber = escapeHtml(order.po_number || "");
+    const nextStatus = validNextStatuses(order)[0];
+
+    if (status === "Draft" && nextStatus === "Pending") {
+        return `<button class="btn btn-sm btn-outline-primary po-primary-action po-primary-status-btn" type="button" data-po-id="${poId}" aria-label="Submit ${poNumber}"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>Submit</span></button>`;
+    }
+    if (status === "Pending" && nextStatus === "Arrived") {
+        return `<button class="btn btn-sm btn-outline-primary po-primary-action po-primary-status-btn" type="button" data-po-id="${poId}" aria-label="Receive ${poNumber}"><i class="fa-solid fa-box" aria-hidden="true"></i><span>Receive</span></button>`;
+    }
+    if (status === "Arrived") {
+        return `<button class="btn btn-sm btn-outline-primary po-primary-action po-receive-btn" type="button" data-po-id="${poId}" aria-label="Receive ${poNumber}"><i class="fa-solid fa-box" aria-hidden="true"></i><span>Receive</span></button>`;
+    }
+    if (status === "Delivered" && getPoPaymentStatus(order) !== "paid") {
+        if (!order.invoice_recorded) {
+            return `<button class="btn btn-sm btn-outline-primary po-primary-action record-invoice-btn" type="button" data-po-id="${poId}" aria-label="Record invoice for ${poNumber}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>Record invoice</span></button>`;
+        }
+        if (
+            order.payment_available !== false &&
+            Number(order.invoice_total ?? order.total_amount ?? 0) > 0
+        ) {
+            return `<button class="btn btn-sm btn-outline-primary po-primary-action manage-payment-btn" type="button" data-po-id="${poId}" aria-label="Record payment for ${poNumber}"><i class="fa-regular fa-credit-card" aria-hidden="true"></i><span>Record payment</span></button>`;
+        }
+    }
+    return "";
 }
 
 let activeStatusActionMenu = null;
@@ -946,16 +1105,45 @@ function toggleStatusActionMenu(toggle) {
     }
     closeStatusActionMenu();
     const nextStatus = toggle.dataset.nextStatus || "";
-    const label = nextStatus === "Arrived" ? "Mark PO as Arrived" : "Mark PO as Pending";
+    if (!toggle.hasAttribute("data-can-invoice")) {
+        const label = nextStatus === "Arrived" ? "Mark PO as Arrived" : "Mark PO as Pending";
+        const menu = document.createElement("div");
+        menu.className = "po-action-popover";
+        menu.setAttribute("role", "menu");
+        menu.innerHTML = `<button class="po-action-popover-item status-po-menu-item" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || "")}"><i class="fa-solid ${nextStatus === "Arrived" ? "fa-truck-ramp-box" : "fa-paper-plane"}" aria-hidden="true"></i><span>${escapeHtml(label)}</span></button>`;
+        document.body.appendChild(menu);
+        toggle.setAttribute("aria-expanded", "true");
+        activeStatusActionMenu = { toggle, menu };
+        positionStatusActionMenu();
+        menu.querySelector(".status-po-menu-item")?.focus({ preventScroll: true });
+        return;
+    }
+    const actions = [];
+    if (toggle.dataset.canInvoice === "true") {
+        actions.push(
+            `<button class="po-action-popover-item po-action-popover-invoice" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || "")}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>${toggle.dataset.hasInvoice === "true" ? "View supplier invoice" : "Record supplier invoice"}</span></button>`,
+        );
+    }
+    if (toggle.dataset.canPayment === "true") {
+        actions.push(
+            `<button class="po-action-popover-item po-action-popover-payment" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || "")}"><i class="fa-regular fa-credit-card" aria-hidden="true"></i><span>${toggle.dataset.paymentPaid === "true" ? "View payment history" : "Record payment"}</span></button>`,
+        );
+    }
+    if (nextStatus) {
+        const label = nextStatus === "Arrived" ? "Mark PO as Arrived" : "Mark PO as Pending";
+        actions.push(
+            `<button class="po-action-popover-item status-po-menu-item" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || "")}"><i class="fa-solid ${nextStatus === "Arrived" ? "fa-truck-ramp-box" : "fa-paper-plane"}" aria-hidden="true"></i><span>${escapeHtml(label)}</span></button>`,
+        );
+    }
     const menu = document.createElement("div");
     menu.className = "po-action-popover";
     menu.setAttribute("role", "menu");
-    menu.innerHTML = `<button class="po-action-popover-item status-po-menu-item" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || "")}"><i class="fa-solid ${nextStatus === "Arrived" ? "fa-truck-ramp-box" : "fa-paper-plane"}" aria-hidden="true"></i><span>${escapeHtml(label)}</span></button>`;
+    menu.innerHTML = actions.join("");
     document.body.appendChild(menu);
     toggle.setAttribute("aria-expanded", "true");
     activeStatusActionMenu = { toggle, menu };
     positionStatusActionMenu();
-    menu.querySelector(".status-po-menu-item")?.focus({ preventScroll: true });
+    menu.querySelector(".po-action-popover-item")?.focus({ preventScroll: true });
 }
 
 function invoiceActionButton(order) {
@@ -1260,6 +1448,7 @@ function updateCreatePoSubmitState() {
         document.getElementById("po-supplier-select")?.value &&
         document.getElementById("po-payment-terms")?.value &&
         document.getElementById("po-expected-delivery")?.value &&
+        !isPastLocalDate(document.getElementById("po-expected-delivery")?.value) &&
         createDraftItems.length,
     );
     button.disabled = !ready;
@@ -2838,7 +3027,9 @@ function renderTableHead(view = currentPoView) {
     const table = document.getElementById("table-purchase-orders");
     if (table) {
         table.dataset.poView = view;
+        table.dataset.poSupervisorView = String(isSupervisorPoViewer());
         table.closest(".po-table-scroll")?.classList.toggle("po-active-fit", view === "active");
+        table.closest(".po-table-scroll")?.classList.toggle("po-supervisor-view", isSupervisorPoViewer());
         const minWidth =
             view === "delivered"
                 ? "1810px"
@@ -2850,15 +3041,15 @@ function renderTableHead(view = currentPoView) {
         table.style.setProperty("min-width", minWidth, "important");
 
         const activeColumnWidths = [
-            ["col-po-number", "13%"],
-            ["col-pr-number", "10%"],
-            ["col-supplier", "9%"],
-            ["col-items-summary", "21%"],
-            ["col-order-qty", "7%"],
-            ["col-delivery", "7%"],
+            ["col-po-number", "12%"],
+            ["col-pr-number", "12%"],
+            ["col-supplier", "11%"],
+            ["col-items-summary", "20%"],
+            ["col-order-qty", "10%"],
+            ["col-delivery", "9%"],
             ["col-money", "8%"],
-            ["col-status", "9%"],
-            ["col-actions", "16%"],
+            ["col-status", "8%"],
+            ...(!isSupervisorPoViewer() ? [["col-actions", "10%"]] : []),
         ];
         const columnLayouts = {
             active: activeColumnWidths.map(([columnClass]) => columnClass),
@@ -2874,7 +3065,7 @@ function renderTableHead(view = currentPoView) {
                 "col-terms",
                 "col-delivery",
                 "col-status",
-                "col-actions",
+                ...(!isSupervisorPoViewer() ? ["col-actions"] : []),
             ],
             delivered: [
                 "col-po-number",
@@ -2890,7 +3081,7 @@ function renderTableHead(view = currentPoView) {
                 "col-money",
                 "col-payment-status",
                 "col-date",
-                "col-actions",
+                ...(!isSupervisorPoViewer() ? ["col-actions"] : []),
             ],
             archived: [
                 "col-po-number",
@@ -2904,7 +3095,7 @@ function renderTableHead(view = currentPoView) {
                 "col-supplier",
                 "col-reason",
                 "col-status",
-                "col-actions",
+                ...(!isSupervisorPoViewer() ? ["col-actions"] : []),
             ],
         };
         const colgroup = document.getElementById("purchase-orders-colgroup");
@@ -2937,7 +3128,7 @@ function renderTableHead(view = currentPoView) {
                 <th class="col-terms">Payment Mode</th>
                 <th class="col-delivery">ETA</th>
                 <th class="col-status">Status</th>
-                <th class="col-actions">Actions</th>
+                ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
             </tr>
         `;
         if (currentRenderedTableHead !== nextHead) {
@@ -2963,7 +3154,7 @@ function renderTableHead(view = currentPoView) {
                 <th class="col-money">Balance</th>
                 <th class="col-payment-status">Payment Status</th>
                 <th class="col-date">Received Date</th>
-                <th class="col-actions">Actions</th>
+                ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
             </tr>
         `;
         if (currentRenderedTableHead !== nextHead) {
@@ -2987,7 +3178,7 @@ function renderTableHead(view = currentPoView) {
                 <th class="col-supplier">Cancelled By</th>
                 <th class="col-reason">Cancel Reason</th>
                 <th class="col-status">Status</th>
-                <th class="col-actions">Actions</th>
+                ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
             </tr>
         `;
         if (currentRenderedTableHead !== nextHead) {
@@ -3005,9 +3196,9 @@ function renderTableHead(view = currentPoView) {
             <th class="col-items-summary">Items</th>
             <th class="col-order-qty">Order Qty</th>
             <th class="col-delivery">ETA</th>
-            <th class="col-money">PO Total</th>
+            <th class="col-money">Total</th>
             <th class="col-status">Status</th>
-            <th class="col-actions">Action</th>
+            ${isSupervisorPoViewer() ? "" : '<th class="col-actions">Actions</th>'}
         </tr>
     `;
     if (currentRenderedTableHead !== nextHead) {
@@ -3036,7 +3227,7 @@ function commitPurchaseOrderTable(view, bodyHtml) {
 
 function renderActivePurchaseOrders(orders) {
     if (orders.length === 0) {
-        commitPurchaseOrderTable("active", tableEmpty(9, "No visible purchase orders found."));
+        commitPurchaseOrderTable("active", tableEmpty(isSupervisorPoViewer() ? 8 : 9, "No visible purchase orders found."));
         return;
     }
 
@@ -3049,25 +3240,21 @@ function activePurchaseOrderRow(order) {
     const items = order.items || [];
     const itemNames = order.item_names || [];
     return `
-        <tr>
+        <tr class="po-clickable-row" data-po-id="${escapeHtml(order.po_id)}" tabindex="0" aria-label="Open purchase order ${escapeHtml(order.po_number || `PO-${order.po_id}`)}">
             <td class="po-number-cell"><strong class="po-number-text">${escapeHtml(order.po_number || `PO-${order.po_id}`)}</strong></td>
             <td class="po-reference-cell"><strong>${escapeHtml(order.pr_number || "—")}</strong></td>
             <td class="po-supplier-cell">${escapeHtml(order.supplier_name)}</td>
             <td class="po-items-summary-cell">${purchaseOrderItemsSummary(items, itemNames)}</td>
             <td class="po-order-qty-cell">${purchaseOrderQuantitySummary(items)}</td>
-            <td class="po-delivery-cell">${formatDate(order.expected_delivery_date)}</td>
+            <td class="po-delivery-cell">${purchaseOrderEtaDisplay(order.expected_delivery_date, order.status)}</td>
             <td class="po-price-cell">${purchaseOrderTotalDisplay(order)}</td>
             <td class="po-status-cell">${purchaseOrderStatusStack(order)}</td>
-            <td class="po-actions-cell">
+            ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                 <div class="po-actions">
-                    <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number)}" title="View Purchase Order">
-                        <i class="fa-regular fa-eye"></i>
-                    </button>
-                    ${invoiceActionButton(order)}
-                    ${paymentActionButton(order)}
-                    ${statusActionButton(order)}
+                    ${activePurchaseOrderPrimaryAction(order)}
+                    ${activeMoreActionsButton(order)}
                 </div>
-            </td>
+            </td>`}
         </tr>
     `;
 }
@@ -3086,7 +3273,7 @@ function renderArrivedPurchaseOrders(orders) {
     if (orders.length === 0) {
         commitPurchaseOrderTable(
             "arrived",
-            tableEmpty(12, "No arrived purchase orders ready for receiving."),
+            tableEmpty(isSupervisorPoViewer() ? 11 : 12, "No arrived purchase orders ready for receiving."),
         );
         return;
     }
@@ -3110,14 +3297,14 @@ function renderArrivedPurchaseOrders(orders) {
                 <td>${escapeHtml(order.payment_terms || "Not set")}</td>
                 <td class="po-delivery-cell">${formatDate(order.expected_delivery_date)}</td>
                 <td class="po-status-cell">${statusBadge(order.status || "Arrived")}${order.inspection_in_progress ? '<span class="badge bg-info text-dark d-block mt-1">Inspection in Progress</span>' : ""}</td>
-                <td class="po-actions-cell">
+                ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || "")}" title="View PO"><i class="fa-regular fa-eye"></i></button>
                         ${invoiceActionButton(order)}
                         ${paymentActionButton(order)}
                         ${statusActionButton(order)}
                     </div>
-                </td>
+                </td>`}
             </tr>
         `;
         })
@@ -3130,7 +3317,7 @@ function renderDeliveredPurchaseOrders(orders) {
     if (orders.length === 0) {
         commitPurchaseOrderTable(
             "delivered",
-            tableEmpty(14, "No delivered purchase orders found."),
+            tableEmpty(isSupervisorPoViewer() ? 13 : 14, "No delivered purchase orders found."),
         );
         return;
     }
@@ -3184,13 +3371,13 @@ function renderDeliveredPurchaseOrders(orders) {
                 <td class="po-price-cell"><span class="po-money">${peso(order.remaining_balance ?? order.final_payment)}</span></td>
                 <td>${paymentStatusBadge(order.payment_status || "Unpaid")}</td>
                 <td>${formatDate(deliveryDate)}</td>
-                <td class="po-actions-cell">
+                ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || "")}" title="View PO"><i class="fa-regular fa-eye"></i></button>
                         ${invoiceActionButton(order)}
                         ${paymentActionButton(order)}
                     </div>
-                </td>
+                </td>`}
             </tr>
         `;
         })
@@ -3201,10 +3388,13 @@ function renderDeliveredPurchaseOrders(orders) {
 
 async function loadPurchaseOrders(options = {}) {
     const { updateSummary = false } = options;
-    const loadToken = ++purchaseOrdersLoadToken;
-    const viewAtRequest = currentPoView;
+    let loadToken = 0;
+    let viewAtRequest = currentPoView;
 
     try {
+        if (window.__drpSessionReadyPromise) await window.__drpSessionReadyPromise;
+        loadToken = ++purchaseOrdersLoadToken;
+        viewAtRequest = currentPoView;
         const statusFilter = document.getElementById("po-status-filter")?.value || "";
         const paymentStatusFilter =
             document.getElementById("po-payment-status-filter")?.value || "";
@@ -3370,7 +3560,7 @@ function renderArchivedPurchaseOrders(orders) {
     if (orders.length === 0) {
         commitPurchaseOrderTable(
             "archived",
-            tableEmpty(12, "No cancelled or archived purchase orders found."),
+            tableEmpty(isSupervisorPoViewer() ? 11 : 12, "No cancelled or archived purchase orders found."),
         );
         return;
     }
@@ -3401,13 +3591,13 @@ function renderArchivedPurchaseOrders(orders) {
                 <td class="po-supplier-cell">${escapeHtml(archivedBy)}</td>
                 <td class="po-spec-cell">${escapeHtml(reason)}</td>
                 <td class="po-status-cell">${statusBadge(order.status || "Cancelled")}</td>
-                <td class="po-actions-cell">
+                ${isSupervisorPoViewer() ? "" : `<td class="po-actions-cell">
                     <div class="po-actions">
                         <button class="btn btn-sm btn-outline-primary view-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" aria-label="View ${escapeHtml(order.po_number || "")}" title="View PO">
                             <i class="fa-regular fa-eye"></i>
                         </button>
                     </div>
-                </td>
+                </td>`}
             </tr>
         `;
         })
@@ -3497,6 +3687,9 @@ function purchaseOrderPayload(prefix, items, poId = null) {
         throw new Error(
             "Select a supplier, payment terms, delivery date, and at least one product.",
         );
+    }
+    if (isPastLocalDate(expectedDeliveryDate)) {
+        throw new Error("ETA cannot be earlier than today.");
     }
 
     const calculatedItems = items.map((item) => ({
@@ -3711,51 +3904,177 @@ function renderPoOrderSummary(order) {
     const section = document.getElementById("poOrderSummary");
     const content = document.getElementById("poOrderSummaryContent");
     if (!section || !content || !order) return;
+    section.hidden = false;
     const items = Array.isArray(order.items) ? order.items : [];
+    const rows = items
+        .map((item) => {
+            const brand = productTableBrand(item);
+            const product = cleanText(item.generic_name) || productTableProductName(item);
+            const title = product || brand || "Product";
+            const specification = productSpecification(item);
+            const unitsPerPurchaseUnit = Math.max(
+                1,
+                Number(item.units_per_purchase_unit || item.units_per_purchase_unit_snapshot || 1),
+            );
+            const receivedBaseQuantity = Number(item.received_quantity || 0);
+            const receivedPurchaseQuantity = receivedBaseQuantity / unitsPerPurchaseUnit;
+            const orderedQuantity = Number(item.purchase_qty || item.quantity || 0);
+            const unitCost =
+                Number(item.line_total) > 0 && orderedQuantity > 0
+                    ? Number(item.line_total) / orderedQuantity
+                    : Number(item.price || 0) * unitsPerPurchaseUnit;
+            return `<tr data-po-item-id="${escapeHtml(item.po_item_id || "")}">
+                <td><strong>${escapeHtml(title)}</strong>${brand && !sameText(brand, title) ? `<small>${escapeHtml(brand)}</small>` : ""}</td>
+                <td>${escapeHtml(specification || "—")}</td>
+                <td class="po-view-number">${escapeHtml(purchaseUnitQuantityLabel(item))}</td>
+                <td class="po-view-number" data-po-invoiced-qty>—</td>
+                <td class="po-view-number">${receivedBaseQuantity > 0 ? `${escapeHtml(formatPoViewNumber(receivedPurchaseQuantity))} ${escapeHtml(item.purchase_unit || "pcs")}` : "—"}</td>
+                <td class="po-view-money">${unitCost > 0 ? peso(unitCost) : "—"}</td>
+                <td class="po-view-money">${Number(item.line_total) > 0 ? peso(item.line_total) : "—"}</td>
+            </tr>`;
+        })
+        .join("");
     section.hidden = false;
     content.innerHTML = `
-        <div class="po-view-order-meta">
-            <div><span>PO Number</span><strong>${escapeHtml(order.po_number || "—")}</strong></div>
-            <div><span>Supplier</span><strong>${escapeHtml(order.supplier_name || "—")}</strong></div>
-            <div><span>Order Date</span><strong>${escapeHtml(formatDate(order.order_date || order.created_at))}</strong></div>
-            <div><span>Delivery Status</span>${statusBadge(order.status || "Draft")}</div>
-        </div>
-        ${
-            items.length
-                ? `<div class="po-view-record-table-wrap"><table class="po-view-record-table"><thead><tr><th>Product / Specification</th><th>Brand</th><th>Purchase Unit</th><th>Ordered Qty</th></tr></thead><tbody>${items
-                      .map(
-                          (item) => `<tr>
-            <td><strong>${escapeHtml(item.product_name || "Product")}</strong><small>${escapeHtml(productSpecification(item) || "No specification recorded")}</small></td>
-            <td>${escapeHtml(item.brand_name || "No brand")}</td>
-            <td>${escapeHtml(item.purchase_unit || "pcs")}</td>
-            <td>${escapeHtml(purchaseUnitQuantityLabel(item))}</td>
-        </tr>`,
-                      )
-                      .join("")}</tbody></table></div>`
-                : '<div class="po-record-empty"><span>No original purchase-order items are available.</span></div>'
-        }`;
+        <div class="po-view-progress" id="poViewProgress" aria-label="Purchase order progress"></div>
+        <div class="po-view-layout">
+            <section class="po-view-items-panel" aria-labelledby="poViewItemsTitle">
+                <header class="po-view-panel-heading"><h3 id="poViewItemsTitle">Items</h3><span>${items.length} ${items.length === 1 ? "product" : "products"} · ${items.reduce((sum, item) => sum + Number(item.purchase_qty || item.quantity || 0), 0)} units</span></header>
+                <div class="po-view-record-table-wrap">
+                    <table class="po-view-record-table po-view-items-table" id="poViewItemsTable">
+                        <thead><tr><th>Product</th><th>Specification</th><th>Ordered</th><th>Invoiced</th><th>Received</th><th>Unit cost</th><th>Line total</th></tr></thead>
+                        <tbody>${rows || '<tr><td colspan="7" class="po-view-empty-cell">No original purchase-order items are available.</td></tr>'}</tbody>
+                    </table>
+                </div>
+                <details class="po-view-disclosure"><summary>Supplier invoice details</summary><div id="poViewInvoiceDetails" class="po-view-disclosure-content"></div></details>
+                <details class="po-view-disclosure"><summary>Receiving records and documents</summary><div id="poViewReceivingDetails" class="po-view-disclosure-content"></div></details>
+            </section>
+            <aside class="po-view-sidebar">
+                <section class="po-view-sidebar-section" aria-labelledby="poViewPaymentTitle">
+                    <div class="po-view-sidebar-heading"><h3 id="poViewPaymentTitle">Payment</h3><strong id="poViewPaymentStatus"></strong></div>
+                    <div id="poViewPaymentSummary"><div class="po-view-sidebar-loading">Loading payment details...</div></div>
+                </section>
+                <section class="po-view-sidebar-section po-view-details-section" aria-labelledby="poViewDetailsTitle">
+                    <h3 id="poViewDetailsTitle">Details</h3>
+                    <dl class="po-view-details-list">
+                        <div><dt>PO number</dt><dd>${escapeHtml(order.po_number || "—")}</dd></div>
+                        <div><dt>Purchase request</dt><dd title="${escapeHtml(order.pr_number || "—")}">${escapeHtml(order.pr_number || "—")}</dd></div>
+                        <div><dt>Order date</dt><dd>${escapeHtml(poViewDate(order.order_date || order.created_at))}</dd></div>
+                        <div id="poViewInvoiceMeta"><dt>Supplier invoice</dt><dd>Not recorded</dd></div>
+                    </dl>
+                </section>
+            </aside>
+        </div>`;
+    document.getElementById("poViewProgress").innerHTML = purchaseOrderProgressMarkup(order);
+    const title = document.getElementById("viewPurchaseOrderModalLabel");
+    if (title) {
+        title.innerHTML = `Purchase order ${escapeHtml(order.po_number || "—")} ${statusBadge(order.status || "Draft")}`;
+    }
+    const supplier = document.getElementById("viewPoNumber");
+    if (supplier) supplier.textContent = order.supplier_name || "—";
+}
+
+function formatPoViewNumber(value) {
+    return Number(value || 0).toLocaleString("en-US", {
+        maximumFractionDigits: 2,
+    });
+}
+
+function poViewDate(value) {
+    if (!value) return "—";
+    const text = String(value);
+    const dateParts = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const date = dateParts
+        ? new Date(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]))
+        : new Date(text.replace(" ", "T"));
+    return Number.isNaN(date.getTime())
+        ? escapeHtml(value)
+        : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function purchaseOrderProgressMarkup(order, invoice = null, payment = null, receivedDate = "") {
+    const paid = payment
+        ? isPurchaseOrderPaid(payment.payment_status, payment.remaining_balance)
+        : getPoPaymentStatus(order) === "paid";
+    const received =
+        order.status === "Delivered" ||
+        Boolean(order.received_date || receivedDate) ||
+        (order.items || []).some((item) => Number(item.received_quantity || 0) > 0);
+    const stages = [
+        { label: "Ordered", complete: true, date: order.order_date || order.created_at },
+        {
+            label: "Invoiced",
+            complete: Boolean(invoice?.invoice_id || order.invoice_recorded),
+            date: invoice?.invoice_date || order.view_invoice_date,
+        },
+        {
+            label: "Received",
+            complete: received,
+            date: receivedDate || order.view_received_date || order.received_date,
+        },
+        {
+            label: "Paid",
+            complete: paid || order.view_payment_details?.payment_status === "Paid",
+            date:
+                payment?.payments?.[0]?.payment_date ||
+                order.view_payment_details?.payments?.[0]?.payment_date,
+        },
+    ];
+    return stages
+        .map(
+            (stage, index) => `
+            <div class="po-view-progress-step${stage.complete ? " is-complete" : ""}${index === stages.length - 1 ? " is-last" : ""}">
+                <span class="po-view-progress-marker">${stage.complete ? '<i class="fa-solid fa-check" aria-hidden="true"></i>' : ""}</span>
+                <strong>${stage.label}</strong>
+                <small>${stage.complete ? escapeHtml(poViewDate(stage.date)) : "Pending"}</small>
+            </div>`,
+        )
+        .join("");
 }
 
 async function renderPoPaymentSummary(order) {
     const section = document.getElementById("poPaymentSummary");
     const content = document.getElementById("poPaymentSummaryContent");
+    const summary = document.getElementById("poViewPaymentSummary");
+    const status = document.getElementById("poViewPaymentStatus");
     const poId = String(order?.po_id || "");
-    if (!section || !content || !poId) return;
-    section.hidden = false;
+    if (!section || !content || !summary || !status || !poId) return;
+    section.hidden = true;
     if (!order.invoice_recorded || Number(order.invoice_total ?? order.total_amount ?? 0) <= 0) {
         content.innerHTML =
             '<div class="po-record-empty"><span>Awaiting Supplier Invoice. Payment is unavailable until a valid supplier invoice is recorded.</span></div>';
+        status.textContent = "Awaiting invoice";
+        summary.innerHTML =
+            '<strong class="po-view-payment-amount">—</strong><small>Payment details appear after the supplier invoice is recorded.</small>';
+        const progress = document.getElementById("poViewProgress");
+        if (progress) progress.innerHTML = purchaseOrderProgressMarkup(order);
         return;
     }
+    if (order.status === "Draft") {
+        status.textContent = "Available after submission";
+        summary.innerHTML = `
+            <strong class="po-view-payment-amount">${peso(order.invoice_total ?? order.total_amount)}</strong>
+            <small>Invoice total · payment tracking becomes available after this draft is submitted.</small>
+            <button class="po-view-link-action po-view-invoice-link" type="button" data-po-payment-action="invoice" data-po-id="${escapeHtml(poId)}">View supplier invoice</button>`;
+        content.innerHTML =
+            '<div class="po-record-empty"><span>Payment history and balance are available after this purchase order is submitted.</span></div>';
+        const progress = document.getElementById("poViewProgress");
+        if (progress) progress.innerHTML = purchaseOrderProgressMarkup(order);
+        return;
+    }
+    summary.innerHTML = '<div class="po-view-sidebar-loading">Loading payment details...</div>';
     content.innerHTML =
         '<div class="po-receiving-documents-loading"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Loading payment summary...</span></div>';
     try {
         const details = await fetchPurchaseOrderPaymentDetails(poId);
         if (String(activeViewOrder?.po_id || "") !== poId) return;
         const payment = details.payment || {};
+        order.view_payment_details = payment;
         const invoiceTotal = Number(details.total_amount || 0);
         const currentDiscount = Number(payment.current_po_discount || 0);
-        const creditApplied = Number(payment.future_supplier_credit_applied || 0);
+        const creditApplied = Number(
+            payment.supplier_credit_applied ?? payment.future_supplier_credit_applied ?? 0,
+        );
         const netAmountDue = Number(
             payment.adjusted_payable ?? Math.max(0, invoiceTotal - currentDiscount - creditApplied),
         );
@@ -3764,11 +4083,30 @@ async function renderPoPaymentSummary(order) {
             payment.remaining_balance ?? Math.max(0, netAmountDue - previousPayments),
         );
         const fullyPaid = isPurchaseOrderPaid(payment.payment_status, remainingBalance);
+        const paymentState = fullyPaid
+            ? "Paid"
+            : previousPayments > 0
+              ? "Partially paid"
+              : "Unpaid";
+        const latestPayment = payment.payments?.[0];
+        status.textContent = paymentState;
+        summary.innerHTML = `
+            <strong class="po-view-payment-amount">${peso(fullyPaid ? previousPayments : remainingBalance)}</strong>
+            <small>${fullyPaid ? "total paid" : `remaining of ${peso(netAmountDue)} net due`}</small>
+            <div class="po-view-payment-breakdown">
+                <div><span>Invoice total</span><strong>${peso(invoiceTotal)}</strong></div>
+                ${creditApplied > 0 ? `<div><span>Supplier credit</span><strong>−${peso(creditApplied)}</strong></div>` : ""}
+                <div><span>Paid</span><strong>−${peso(previousPayments)}</strong></div>
+            </div>
+            ${latestPayment ? `<div class="po-view-latest-payment"><span>${escapeHtml(poViewDate(latestPayment.payment_date))} · ${escapeHtml(paymentMethodLabel(latestPayment.payment_method))}${latestPayment.reference_number ? ` · ${escapeHtml(latestPayment.reference_number)}` : ""}</span><strong>${peso(latestPayment.amount)}</strong></div>` : ""}
+            <button class="po-view-link-action po-view-payment-link" type="button" data-po-payment-action="payment" data-po-id="${escapeHtml(poId)}">${fullyPaid ? "View payments" : "Record payment"}</button>
+            <button class="po-view-link-action po-view-invoice-link" type="button" data-po-payment-action="invoice" data-po-id="${escapeHtml(poId)}">View supplier invoice</button>
+            ${payment.payments?.length ? `<details class="po-view-nested-disclosure"><summary>Payment history (${payment.payments.length})</summary>${renderPaymentHistory(payment.payments)}</details>` : ""}`;
         content.innerHTML = `
             <div class="po-view-payment-reference">
                 <div><span>Supplier Invoice</span><strong>#${escapeHtml(details.invoice_number || "—")}</strong></div>
                 <div class="po-view-payment-reference-actions">
-                    ${paymentStatusBadge(payment.payment_status || "Unpaid")}
+                    ${paymentStatusBadge(paymentState)}
                     <button class="po-view-invoice-action" type="button" data-po-payment-action="invoice" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>View Supplier Invoice</span></button>
                     <button class="po-view-invoice-action" type="button" data-po-payment-action="payment" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-wallet" aria-hidden="true"></i><span>${fullyPaid ? "View Payments" : "Record Payment"}</span></button>
                 </div>
@@ -3780,9 +4118,13 @@ async function renderPoPaymentSummary(order) {
                 <div><span>Previous Payments</span><strong>${peso(previousPayments)}</strong></div>
                 <div class="balance"><span>Remaining Balance</span><strong>${peso(remainingBalance)}</strong></div>
             </div>`;
+        const progress = document.getElementById("poViewProgress");
+        if (progress) progress.innerHTML = purchaseOrderProgressMarkup(order, null, payment);
     } catch (error) {
         if (String(activeViewOrder?.po_id || "") !== poId) return;
         content.innerHTML = `<div class="po-receiving-documents-loading po-receiving-documents-error"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(error.message || "Unable to load payment details.")}</span></div>`;
+        status.textContent = "Unavailable";
+        summary.innerHTML = `<div class="po-view-inline-error">${escapeHtml(error.message || "Unable to load payment details.")}</div>`;
     }
 }
 
@@ -3997,6 +4339,28 @@ function supplierInvoiceQuantityLabel(item = {}) {
     return `${quantity} ${unit}s`;
 }
 
+function supplierInvoicePaymentSummaryMarkup(poId, invoice = {}, payment = {}) {
+    const invoiceTotal = Number(invoice.supplier_invoice_total || 0);
+    const amountPaid = Number(payment.total_paid || 0);
+    const balanceDue = Number(payment.remaining_balance ?? Math.max(0, invoiceTotal - amountPaid));
+    const status = payment.payment_status || (balanceDue <= 0 && invoiceTotal > 0 ? "Paid" : "Unpaid");
+    const paid = isPurchaseOrderPaid(status, balanceDue);
+    return `
+        <div class="supplier-invoice-payment-summary">
+            <h3 class="supplier-invoice-section-title">Invoice Summary</h3>
+            <div class="po-payment-financial-summary">
+                <div><span>Invoice Total</span><strong>${peso(invoiceTotal)}</strong></div>
+                <div><span>Amount Paid</span><strong>${peso(amountPaid)}</strong></div>
+                <div class="balance"><span>Balance Due</span><strong>${peso(balanceDue)}</strong></div>
+                <div><span>Payment Status</span>${paymentStatusBadge(status)}</div>
+            </div>
+            <div class="po-view-invoice-actions">
+                <button class="po-view-invoice-action" type="button" data-po-invoice-action="close"><span>Close</span></button>
+                <button class="po-view-invoice-action" type="button" data-po-invoice-action="payment" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-wallet" aria-hidden="true"></i><span>${paid ? "View Payment" : "Record Payment"}</span></button>
+            </div>
+        </div>`;
+}
+
 async function openSupplierInvoice(poId, options = {}) {
     try {
         const [order, invoicePayload] = await Promise.all([
@@ -4007,6 +4371,15 @@ async function openSupplierInvoice(poId, options = {}) {
         ]);
         const invoice = invoicePayload.invoice || {};
         if (invoice.invoice_id && !options.edit) {
+            let paymentSummary = {};
+            try {
+                const paymentPayload = await fetchJson(
+                    `${API_BASE_URL}/purchase_orders/get_purchase_order_payment_details.php?po_id=${encodeURIComponent(poId)}`,
+                );
+                paymentSummary = paymentPayload.payment_details?.payment || {};
+            } catch (_) {
+                paymentSummary = {};
+            }
             const result = await Swal.fire({
                 title: "Supplier Invoice",
                 html: `<div class="supplier-invoice-view">
@@ -4021,19 +4394,34 @@ async function openSupplierInvoice(poId, options = {}) {
                     <h3 class="supplier-invoice-section-title">Supplier Invoice Items</h3>
                     ${supplierInvoiceItemsMarkup(invoice.items || [])}
                     <div class="supplier-invoice-view-total"><span>Supplier Invoice Total</span><strong>${peso(invoice.supplier_invoice_total || 0)}</strong></div>
+                    ${supplierInvoicePaymentSummaryMarkup(poId, invoice, paymentSummary)}
                 </div>`,
                 showCloseButton: true,
-                showDenyButton: ["Pending", "Arrived"].includes(order.status || ""),
-                confirmButtonText: "Close",
+                showConfirmButton: false,
+                showDenyButton:
+                    ["Pending", "Arrived"].includes(order.status || "") &&
+                    getPoPaymentStatus(order) !== "paid",
                 denyButtonText: "Edit Supplier Invoice",
-                confirmButtonColor: "#4f46e5",
                 denyButtonColor: "#64748b",
                 width: 1080,
                 customClass: {
                     popup: "supplier-invoice-modal supplier-invoice-view-modal",
                     htmlContainer: "supplier-invoice-modal-body",
                 },
+                didOpen: () => {
+                    document
+                        .querySelector(".supplier-invoice-view")
+                        ?.addEventListener("click", (event) => {
+                            const button = event.target.closest("[data-po-invoice-action]");
+                            if (!button) return;
+                            const action = button.dataset.poInvoiceAction;
+                            if (action === "close") Swal.close();
+                            if (action === "payment") Swal.clickConfirm();
+                        });
+                },
+                preConfirm: () => "payment",
             });
+            if (result.isConfirmed && result.value === "payment") await openSupplierPayment(poId);
             if (result.isDenied) await openSupplierInvoice(poId, { edit: true });
             return;
         }
@@ -4049,10 +4437,8 @@ async function openSupplierInvoice(poId, options = {}) {
                 const unitCost = saved.unit_cost ?? "";
                 return `
                 <tr data-po-item-id="${escapeHtml(item.po_item_id)}" data-order-qty="${qty}">
-                    <td>
-                        <div class="supplier-invoice-product">${escapeHtml(item.generic_name || item.product_name || "Product")}</div>
-                        <span class="supplier-invoice-spec">${escapeHtml(productSpecification({ ...item, generic_name: "" }) || "")}</span>
-                    </td>
+                    <td><div class="supplier-invoice-product">${escapeHtml(item.generic_name || item.product_name || "Product")}</div></td>
+                    <td class="supplier-invoice-spec">${escapeHtml(productSpecification({ ...item, generic_name: "" }) || "—")}</td>
                     <td class="supplier-invoice-brand">${escapeHtml(item.brand_name || "No brand")}</td>
                     <td class="supplier-invoice-unit">${escapeHtml(unit)}</td>
                     <td class="supplier-invoice-ordered">${escapeHtml(supplierInvoiceQuantityLabel({ order_qty: qty, purchase_unit: unit }))}</td>
@@ -4089,7 +4475,7 @@ async function openSupplierInvoice(poId, options = {}) {
                     <h3 class="supplier-invoice-section-title">Invoice Line Breakdown</h3>
                     <div class="supplier-invoice-lines-wrap">
                         <table class="supplier-invoice-lines">
-                            <thead><tr><th>Product / Specification</th><th>Brand</th><th>Purchase Unit</th><th>Ordered Qty</th><th>Invoice Qty</th><th>Cost / Purchase Unit</th><th class="text-end">Line Total</th></tr></thead>
+                            <thead><tr><th>Product</th><th>Specification</th><th>Brand</th><th>Purchase Unit</th><th>Ordered Qty</th><th>Invoice Qty</th><th>Cost / Purchase Unit</th><th class="text-end">Line Total</th></tr></thead>
                             <tbody id="supplierInvoiceLines">${rows}</tbody>
                         </table>
                     </div>
@@ -4336,16 +4722,14 @@ async function openSupplierInvoice(poId, options = {}) {
 }
 
 function receiveBatchRow(batch = {}, requiresExpiry = false, autoAllocate = false) {
-    const noExpiry =
-        !requiresExpiry &&
-        (batch.no_expiry === true || (!batch.expiry_date && batch.no_expiry !== false));
+    const noExpiry = batch.no_expiry === true;
     return `
         <div class="receive-batch-row" data-auto-allocation="${autoAllocate ? "1" : "0"}">
             <div class="receive-field"><label>Batch Identifier <span class="text-muted">(optional)</span></label><input class="form-control form-control-sm receive-batch-id" maxlength="50" value="${escapeHtml(batch.batch_identifier || "")}" placeholder="Supplier batch or auto-generated"></div>
             <div class="receive-field"><label>Batch Quantity</label><input class="form-control form-control-sm receive-batch-qty" type="number" min="1" step="1" value="${escapeHtml(batch.quantity ?? "")}"></div>
-            <div class="receive-field"><label>Expiry Date${requiresExpiry ? " *" : ""}</label><input class="form-control form-control-sm receive-batch-expiry" type="date" value="${escapeHtml(batch.expiry_date || "")}" ${noExpiry ? "disabled" : ""}></div>
+            <div class="receive-field receive-expiry-field"><label>Expiry Date <span class="text-muted">(optional)</span></label><input class="form-control form-control-sm receive-batch-expiry" type="date" min="${localTodayDateString()}" value="${escapeHtml(batch.expiry_date || "")}" ${noExpiry ? "disabled" : ""}><span class="receive-no-expiry-display" ${noExpiry ? "" : "hidden"}>N/A — No Expiry</span></div>
             <div>
-                ${requiresExpiry ? "" : `<label class="receive-no-expiry"><input class="form-check-input receive-batch-no-expiry" type="checkbox" ${noExpiry ? "checked" : ""}> No Expiry</label>`}
+                <label class="receive-no-expiry"><input class="form-check-input receive-batch-no-expiry" type="checkbox" ${noExpiry ? "checked" : ""}> No Expiry Date</label>
                 <button class="btn btn-sm btn-outline-danger receive-remove-batch" type="button" title="Remove batch" aria-label="Remove batch"><i class="fa-solid fa-trash"></i></button>
             </div>
         </div>`;
@@ -4695,7 +5079,7 @@ function renderReceiveItems(order) {
                             {
                                 quantity: accepted,
                                 expiry_date: "",
-                                no_expiry: !requiresExpiry,
+                                no_expiry: false,
                                 auto_allocate: true,
                             },
                         ]
@@ -4825,6 +5209,21 @@ function setReceiveCardLocked(card, locked) {
     });
 }
 
+function setReceiveControlValidation(control, invalid, message = "") {
+    if (!control) return;
+    control.classList.toggle("receive-invalid-control", invalid);
+    control.setAttribute("aria-invalid", invalid ? "true" : "false");
+    const field = control.closest(".receive-field");
+    if (!field) return;
+    let helper = field.querySelector(":scope > .receive-required-message");
+    if (!helper) {
+        helper = document.createElement("small");
+        helper.className = "receive-required-message";
+        field.appendChild(helper);
+    }
+    helper.textContent = invalid ? message : "";
+}
+
 function receiveFormState(strict = true) {
     const state = {
         ordered: 0,
@@ -4841,15 +5240,33 @@ function receiveFormState(strict = true) {
         applicable: { inspection: true, batches: true, confirmation: true },
     };
 
+    const deliveredByControl = document.getElementById("receiveDeliveredByName");
+    const receiptControl = document.getElementById("receiveDeliveryReceiptNo");
+    const showDeliveryErrors = strict && receiveValidationAttempted;
+    const driverMissing = showDeliveryErrors && !String(deliveredByControl?.value || "").trim();
+    const receiptMissing = showDeliveryErrors && !String(receiptControl?.value || "").trim();
+    setReceiveControlValidation(deliveredByControl, driverMissing, "Driver name is required.");
+    setReceiveControlValidation(
+        receiptControl,
+        receiptMissing,
+        "Supplier delivery receipt no. is required.",
+    );
+    if (driverMissing) state.errors.push("Delivery Information: Driver name is missing.");
+    if (receiptMissing)
+        state.errors.push("Delivery Information: Supplier Delivery Receipt No. is missing.");
     document
         .querySelectorAll("#receiveInspectionCards .receive-item-card")
         .forEach((card, cardIndex) => {
+            const productValidationAttempted =
+                receiveValidationAttempted || card.dataset.validationAttempted === "1";
             const orderItem = activeReceiveOrder?.items.find(
                 (item) => String(item.po_item_id) === String(card.dataset.poItemId),
             );
             syncReceiveDamageBatchSelectors(card);
             syncReceivePackageSequenceSelectors(card);
-            const deliveredPurchase = Number(card.querySelector(".receive-qty-input")?.value || 0);
+            const deliveredQuantityControl = card.querySelector(".receive-qty-input");
+            const deliveredQuantityRaw = String(deliveredQuantityControl?.value ?? "").trim();
+            const deliveredPurchase = Number(deliveredQuantityRaw || 0);
             const purchaseSetup = purchasingConversion(orderItem || {});
             const purchaseConversion =
                 (orderItem?.package_conversions || []).find(
@@ -4904,21 +5321,42 @@ function receiveFormState(strict = true) {
                         ? `${purchaseSetup.purchaseUnit} ${packageSequence} is already selected.`
                         : damagedBaseQuantity > affectedUnitBaseQuantity
                           ? `Damage cannot exceed ${affectedUnitBaseQuantity} ${orderItem?.unit || "units"} in one ${purchaseSetup.purchaseUnit}.`
-                          : receiveValidationAttempted && !rowValid
+                          : productValidationAttempted && !rowValid
                             ? "Select a physical package and enter a positive damaged quantity using a configured unit."
                             : "";
                 row.querySelector(".damage-package-sequence")?.classList.toggle(
                     "is-invalid",
-                    !Number.isInteger(packageSequence) ||
-                        packageSequence < 1 ||
-                        packageSequence > deliveredPurchase ||
-                        duplicatePackage,
+                    productValidationAttempted &&
+                        (!Number.isInteger(packageSequence) ||
+                            packageSequence < 1 ||
+                            packageSequence > deliveredPurchase ||
+                            duplicatePackage),
                 );
                 row.querySelector(".damage-line-qty")?.classList.toggle(
                     "is-invalid",
-                    !Number.isInteger(damagedQuantity) ||
-                        damagedQuantity <= 0 ||
-                        damagedBaseQuantity > affectedUnitBaseQuantity,
+                    productValidationAttempted &&
+                        (!Number.isInteger(damagedQuantity) ||
+                            damagedQuantity <= 0 ||
+                            damagedBaseQuantity > affectedUnitBaseQuantity),
+                );
+                setReceiveControlValidation(
+                    row.querySelector(".damage-package-sequence"),
+                    strict &&
+                        productValidationAttempted &&
+                        (!Number.isInteger(packageSequence) ||
+                            packageSequence < 1 ||
+                            packageSequence > deliveredPurchase ||
+                            duplicatePackage),
+                    "Select a valid affected package.",
+                );
+                setReceiveControlValidation(
+                    row.querySelector(".damage-line-qty"),
+                    strict &&
+                        productValidationAttempted &&
+                        (!Number.isInteger(damagedQuantity) ||
+                            damagedQuantity <= 0 ||
+                            damagedBaseQuantity > affectedUnitBaseQuantity),
+                    "Enter a valid damaged quantity.",
                 );
                 const lineQuantityInput = row.querySelector(".damage-line-qty");
                 if (lineQuantityInput)
@@ -5016,6 +5454,7 @@ function receiveFormState(strict = true) {
                 : [];
             const itemRemarks = card.querySelector(".receive-remarks-input")?.value.trim() || "";
             const quantitiesComplete =
+                deliveredQuantityRaw !== "" &&
                 Number.isInteger(deliveredPurchase) &&
                 deliveredPurchase >= 0 &&
                 deliveredPurchase <= orderedPurchase &&
@@ -5026,7 +5465,8 @@ function receiveFormState(strict = true) {
                 action <= delivered;
             const itemErrors = [];
 
-            if (!Number.isInteger(deliveredPurchase) || deliveredPurchase < 0)
+            if (deliveredQuantityRaw === "") itemErrors.push("Received quantity is required.");
+            else if (!Number.isInteger(deliveredPurchase) || deliveredPurchase < 0)
                 itemErrors.push(
                     "Delivered Purchase Unit quantity must be a non-negative whole number.",
                 );
@@ -5128,8 +5568,10 @@ function receiveFormState(strict = true) {
                 const expiryDate = row.querySelector(".receive-batch-expiry")?.value || "";
                 if (strict && (!Number.isInteger(quantity) || quantity <= 0))
                     itemErrors.push("Every batch needs a positive whole quantity.");
-                if (strict && accepted > 0 && card.dataset.requiresExpiry === "1" && !expiryDate)
-                    itemErrors.push("An expiry date is required for every medicine batch.");
+                if (strict && !noExpiry && isPastLocalDate(expiryDate))
+                    itemErrors.push(
+                        `Batch ${batchRows.indexOf(row) + 1}: Expiry date cannot be earlier than today.`,
+                    );
                 allocated += Number.isFinite(quantity) ? Math.max(0, quantity) : 0;
                 batches.push({
                     batch_identifier: row.querySelector(".receive-batch-id")?.value.trim() || "",
@@ -5145,10 +5587,36 @@ function receiveFormState(strict = true) {
             );
             const batchesComplete =
                 batchRowsValid && allocated === accepted && (accepted === 0 || batches.length > 0);
-            const expiryComplete =
-                accepted === 0 ||
-                card.dataset.requiresExpiry !== "1" ||
-                (batches.length > 0 && batches.every((batch) => Boolean(batch.expiry_date)));
+            const expiryComplete = accepted === 0 || batches.length > 0;
+            batchRows.forEach((row) => {
+                const quantityControl = row.querySelector(".receive-batch-qty");
+                const quantity = Number(quantityControl?.value || 0);
+                setReceiveControlValidation(
+                    quantityControl,
+                    strict &&
+                        productValidationAttempted &&
+                        accepted > 0 &&
+                        (!Number.isInteger(quantity) || quantity <= 0),
+                    "A positive whole batch quantity is required.",
+                );
+                const expiryControl = row.querySelector(".receive-batch-expiry");
+                const noExpirySelected =
+                    row.querySelector(".receive-batch-no-expiry")?.checked === true;
+                expiryControl?.toggleAttribute("disabled", noExpirySelected);
+                if (expiryControl) expiryControl.min = localTodayDateString();
+                setReceiveControlValidation(
+                    expiryControl,
+                    strict &&
+                        productValidationAttempted &&
+                        accepted > 0 &&
+                        !noExpirySelected &&
+                        Boolean(expiryControl?.value) &&
+                        isPastLocalDate(expiryControl.value),
+                    "Expiry date cannot be earlier than today.",
+                );
+                const noExpiryDisplay = row.querySelector(".receive-no-expiry-display");
+                if (noExpiryDisplay) noExpiryDisplay.hidden = !noExpirySelected;
+            });
             const damageBatchesComplete = damageLines.every(
                 (line) =>
                     batches.length <= 1 ||
@@ -5217,7 +5685,11 @@ function receiveFormState(strict = true) {
             state.checks.batches = state.checks.batches && batchesComplete && expiryComplete;
             state.checks.confirmation =
                 state.checks.confirmation && inspected && batchesComplete && expiryComplete;
-            state.errors.push(...itemErrors.map((error) => `Product ${cardIndex + 1}: ${error}`));
+            const productName =
+                [productTableBrand(orderItem || {}), productTableProductName(orderItem || {})]
+                    .filter(Boolean)
+                    .join(" — ") || `Product ${cardIndex + 1}`;
+            state.errors.push(...itemErrors.map((error) => `${productName}: ${error}`));
             state.items.push({
                 po_item_id: card.dataset.poItemId,
                 delivered_purchase_quantity: deliveredPurchase,
@@ -5265,12 +5737,39 @@ function receiveFormState(strict = true) {
             card.dataset.checkResolution = issueComplete ? "1" : "0";
             card.dataset.checkRemarks = issueComplete ? "1" : "0";
             card.dataset.checkFinalInspection = inspected ? "1" : "0";
+            card.dataset.validationState = productValidationAttempted
+                ? !expiryComplete
+                    ? "Missing Expiry Date"
+                    : !batchesComplete
+                      ? "Missing Batch Info"
+                      : issueSelected && !issueComplete
+                        ? "Incomplete"
+                        : inspected && issueSelected
+                          ? "Has Issue"
+                          : inspected
+                            ? "Complete"
+                            : "Incomplete"
+                : inspected
+                  ? issueSelected
+                      ? "Has Issue"
+                      : "Complete"
+                  : card.dataset.touched === "1"
+                    ? "In Progress"
+                    : "Not Started";
+            setReceiveControlValidation(
+                deliveredQuantityControl,
+                strict && productValidationAttempted && !quantitiesComplete,
+                deliveredQuantityRaw === ""
+                    ? "Received quantity is required."
+                    : "Enter a valid received quantity.",
+            );
             card.classList.toggle(
                 "has-error",
-                deliveredPurchase > orderedPurchase ||
-                    damaged > delivered ||
-                    action > delivered ||
-                    (physicalAction && action < damaged),
+                productValidationAttempted &&
+                    (deliveredPurchase > orderedPurchase ||
+                        damaged > delivered ||
+                        action > delivered ||
+                        (physicalAction && action < damaged)),
             );
             const missingQuantity = card.querySelector(".receive-missing-qty");
             if (missingQuantity) missingQuantity.textContent = String(missing);
@@ -5355,7 +5854,7 @@ function receiveFormState(strict = true) {
                           ? "Confirmed Refund Due *"
                           : "Confirmed Current Discount *";
 
-            const showFieldErrors = strict && receiveValidationAttempted;
+            const showFieldErrors = strict && productValidationAttempted;
             const fieldErrors = [
                 [
                     ".receive-qty-error",
@@ -5409,6 +5908,37 @@ function receiveFormState(strict = true) {
                 const error = card.querySelector(selector);
                 if (error) error.textContent = showFieldErrors && invalid ? message : "";
             });
+            [
+                [".receive-issue-type", issueSelected && !issueType, "Issue type is required."],
+                [
+                    ".receive-issue-other",
+                    issueSelected && issueType === "Other" && !issueDetail,
+                    "Issue details are required.",
+                ],
+                [
+                    ".receive-disposition",
+                    issueSelected && !disposition,
+                    "Affected goods action is required.",
+                ],
+                [
+                    ".receive-resolution",
+                    issueSelected && resolution === "none",
+                    "Supplier resolution is required.",
+                ],
+                [
+                    ".receive-confirmed-adjustment",
+                    issueSelected &&
+                        ["supplier_credit", "next_po_credit", "refund"].includes(resolution) &&
+                        (!Number.isFinite(confirmedAdjustment) || confirmedAdjustment <= 0),
+                    "Confirmed adjustment amount is required.",
+                ],
+            ].forEach(([selector, invalid, message]) =>
+                setReceiveControlValidation(
+                    card.querySelector(selector),
+                    strict && productValidationAttempted && invalid,
+                    message,
+                ),
+            );
             const addDamage = card.querySelector(".receive-add-damage-line");
             if (addDamage) addDamage.disabled = damageLines.length >= deliveredPurchase;
             const shortageNote = card.querySelector(".receive-shortage-note");
@@ -5441,7 +5971,10 @@ function receiveFormState(strict = true) {
                         ? `Over allocated by ${Math.abs(allocationDifference)} unit${Math.abs(allocationDifference) === 1 ? "" : "s"}.`
                         : "Complete the remaining batch details.";
             allocationSummary?.classList.toggle("is-complete", allocationComplete);
-            allocationSummary?.classList.toggle("has-error", !allocationComplete);
+            allocationSummary?.classList.toggle(
+                "has-error",
+                productValidationAttempted && !allocationComplete,
+            );
             card.querySelector(".receive-header-ordered").textContent =
                 `${orderedPurchase} ${quantities.conversion.purchaseUnit}`;
             card.querySelector(".receive-header-accepted").textContent =
@@ -5466,7 +5999,7 @@ function receiveFormState(strict = true) {
             card.classList.add(
                 inspected
                     ? "state-complete"
-                    : affected > 0
+                    : affected > 0 && productValidationAttempted
                       ? "state-issue"
                       : readyForInspection || card.dataset.touched === "1"
                         ? "state-active"
@@ -5477,7 +6010,7 @@ function receiveFormState(strict = true) {
             const completedAction = card.querySelector(".receive-completed-action");
             const reopenButton = card.querySelector(".receive-reopen-inspection");
             if (completeButton) {
-                completeButton.disabled = !readyForInspection || inspected;
+                completeButton.disabled = inspected;
                 completeButton.classList.toggle("d-none", inspected);
             }
             completedAction?.classList.toggle("d-none", !inspected);
@@ -5568,12 +6101,19 @@ function renderReceivePaymentSummary() {
                 const issueReview = item.has_issue
                     ? `<span class="receiving-issue-state">Issue recorded</span>`
                     : `<span class="receiving-no-issues">No issues</span>`;
+                const batchExpiryReview = (item.batches || [])
+                    .map(
+                        (batch, batchIndex) =>
+                            `Batch ${batchIndex + 1}: ${batch.no_expiry ? "No Expiry" : batch.expiry_date || "Missing"}`,
+                    )
+                    .join(" · ");
                 return `<article class="receiving-summary-item"><header><strong>${escapeHtml([productTableBrand(orderItem), productTableProductName(orderItem)].filter(Boolean).join(" — ") || `Product ${index + 1}`)}</strong>${issueReview}</header>${damageBreakdown ? `<div class="receiving-damage-breakdown"><span>Affected Goods Breakdown</span><ul>${damageBreakdown}</ul></div>` : ""}<dl>
             <div><dt>PO Ordered</dt><dd>${Number(orderItem.purchase_qty || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(orderItem.inventory_qty_ordered || orderItem.quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
             <div><dt>Actual Received</dt><dd>${Number(item.delivered_purchase_quantity || 0)} ${escapeHtml(conversion.purchaseUnit)} / ${Number(item.received_quantity || 0)} ${escapeHtml(conversion.inventoryUnit)}</dd></div>
             <div><dt>Physically Damaged</dt><dd>${escapeHtml(damagedLabel)}</dd></div>
             <div><dt>${escapeHtml(actionVerb)}</dt><dd>${escapeHtml(actionLabel)}</dd></div>
             <div><dt>Accepted to Inventory</dt><dd>${Number(item.accepted_quantity || 0)} ${escapeHtml(conversion.inventoryUnit)} total</dd></div>
+            <div><dt>Batch &amp; Expiry</dt><dd>${escapeHtml(batchExpiryReview || "Not set")}</dd></div>
             <div><dt>Issue</dt><dd>${escapeHtml(item.issue_type || "No issue")}</dd></div>
             <div><dt>Affected Goods Action</dt><dd>${escapeHtml(dispositionLabel)}</dd></div>
             <div><dt>Supplier Resolution</dt><dd>${escapeHtml(resolutionLabel)}</dd></div>
@@ -5600,13 +6140,23 @@ function renderReceivePaymentSummary() {
         step.classList.toggle("is-active", active);
     });
     const validation = document.getElementById("receiveValidationSummary");
-    const showValidation = receiveValidationAttempted && summary.errors.length > 0;
-    validation.classList.toggle("d-none", !showValidation);
-    validation.innerHTML = showValidation
-        ? "<strong>Please correct the highlighted fields before confirming.</strong>"
-        : "";
+    const showValidationSummary =
+        receiveValidationAttempted ||
+        (summary.errors.length > 0 &&
+            Boolean(
+                document.querySelector(
+                    '#receiveInspectionCards .receive-item-card[data-validation-attempted="1"]',
+                ),
+            ));
+    validation.classList.toggle("d-none", !showValidationSummary);
+    validation.classList.toggle("is-complete", showValidationSummary && summary.valid);
+    validation.innerHTML = !showValidationSummary
+        ? ""
+        : summary.valid
+          ? '<strong><i class="fa-solid fa-circle-check me-1" aria-hidden="true"></i>All required receiving details are complete. You can now confirm receiving.</strong>'
+          : `<strong><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>Please complete ${summary.errors.length} required field${summary.errors.length === 1 ? "" : "s"} before confirming receiving:</strong><ul>${summary.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>`;
     const confirmButton = document.getElementById("btnConfirmReceivePo");
-    if (confirmButton) confirmButton.disabled = !summary.valid || receiveSubmitting;
+    if (confirmButton) confirmButton.disabled = receiveSubmitting;
     const footer = document.getElementById("receiveFooterStatus");
     if (footer)
         footer.textContent = summary.valid
@@ -5627,10 +6177,13 @@ function renderReceivePaymentSummary() {
         );
         if (!navItem) return;
         const complete = card.querySelector(".receive-inspected-input")?.value === "1";
-        const issue = !card.querySelector(".receive-issue-flag")?.classList.contains("d-none");
+        const attempted = receiveValidationAttempted || card.dataset.validationAttempted === "1";
+        const issue =
+            attempted && !card.querySelector(".receive-issue-flag")?.classList.contains("d-none");
         navItem.classList.toggle("is-complete", complete);
         navItem.classList.toggle("has-issue", issue);
-        const status = card.querySelector(".receive-inspection-badge")?.textContent || "Waiting";
+        navItem.classList.toggle("is-incomplete", attempted && !complete);
+        const status = card.dataset.validationState || "Incomplete";
         const copy = navItem.querySelector("small");
         if (copy) copy.textContent = status;
         const icon = navItem.querySelector(".product-nav-state");
@@ -5704,6 +6257,22 @@ function scrollReceiveModalTo(target, focusTarget = null) {
     if (focusTarget && !focusTarget.disabled) {
         window.setTimeout(() => focusTarget.focus({ preventScroll: true }), 450);
     }
+}
+
+function scrollToFirstInvalidReceivingField() {
+    let control = document.querySelector(".receive-invalid-control");
+    const hiddenCard = control?.closest(".receive-item-card[hidden]");
+    if (hiddenCard) {
+        showReceiveProduct(Number(hiddenCard.dataset.productIndex || 0), false);
+        control = hiddenCard.querySelector(".receive-invalid-control") || control;
+    }
+    const target =
+        control ||
+        document.querySelector(
+            "#receiveInspectionCards .receive-item-card:not(.state-complete) .receive-complete-inspection",
+        ) ||
+        document.querySelector(".receive-delivery-information");
+    window.requestAnimationFrame(() => scrollReceiveModalTo(target, control));
 }
 
 function navigateReceiveChecklistStep(checkKey) {
@@ -6573,6 +7142,15 @@ async function submitReceivePurchaseOrder() {
     try {
         receiveValidationAttempted = true;
         renderReceivePaymentSummary();
+        const validation = receiveFormState(true);
+        if (!validation.valid) {
+            renderReceivePaymentSummary();
+            scrollToFirstInvalidReceivingField();
+            PharmaUtils.toast.error(
+                "Please complete the highlighted required fields before confirming receiving.",
+            );
+            return;
+        }
         const payload = receivePayload();
         receiveSubmitting = true;
         const button = document.getElementById("btnConfirmReceivePo");
@@ -6771,16 +7349,14 @@ function ensureReceivingUi() {
             return;
         closeReceivingUi();
     });
-    document
-        .getElementById("btnDrawerPrintGrn")
-        ?.addEventListener(
-            "click",
-            () =>
-                activeReceivingDetails &&
-                openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
-                    autoPrint: true,
-                }),
-        );
+    document.getElementById("btnDrawerPrintGrn")?.addEventListener(
+        "click",
+        () =>
+            activeReceivingDetails &&
+            openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
+                autoPrint: true,
+            }),
+    );
     document
         .getElementById("btnDrawerSupplierDiscrepancy")
         ?.addEventListener(
@@ -6795,16 +7371,14 @@ function ensureReceivingUi() {
             "click",
             () => activeReceivingDetails && openSupplierPayment(activeReceivingDetails.po_id),
         );
-    document
-        .getElementById("btnGrnPreviewPrint")
-        ?.addEventListener(
-            "click",
-            () =>
-                activeReceivingDetails &&
-                openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
-                    autoPrint: true,
-                }),
-        );
+    document.getElementById("btnGrnPreviewPrint")?.addEventListener(
+        "click",
+        () =>
+            activeReceivingDetails &&
+            openReceiptPreview(receiptReportFromReceiving(activeReceivingDetails), {
+                autoPrint: true,
+            }),
+    );
     document
         .getElementById("btnGrnPreviewSupplier")
         ?.addEventListener(
@@ -6813,16 +7387,14 @@ function ensureReceivingUi() {
                 activeReceivingDetails &&
                 openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails)),
         );
-    document
-        .getElementById("btnGrnPreviewPrintSupplier")
-        ?.addEventListener(
-            "click",
-            () =>
-                activeReceivingDetails &&
-                openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails), {
-                    autoPrint: true,
-                }),
-        );
+    document.getElementById("btnGrnPreviewPrintSupplier")?.addEventListener(
+        "click",
+        () =>
+            activeReceivingDetails &&
+            openSupplierDiscrepancyPreview(receiptReportFromReceiving(activeReceivingDetails), {
+                autoPrint: true,
+            }),
+    );
     document.getElementById("btnCancelGrnEdit")?.addEventListener("click", closeGrnEditForm);
     document.getElementById("btnSaveGrnEdit")?.addEventListener("click", saveGrnEdit);
     document
@@ -6831,7 +7403,7 @@ function ensureReceivingUi() {
     document.getElementById("supplierPaymentBody")?.addEventListener("click", (event) => {
         const invoiceButton = event.target.closest("[data-payment-view-invoice]");
         if (invoiceButton) {
-            openSupplierInvoiceDocument(invoiceButton.dataset.poId || "");
+            openSupplierInvoice(invoiceButton.dataset.poId || "");
             return;
         }
         const creditButton = event.target.closest(".apply-supplier-credit-btn");
@@ -6948,9 +7520,12 @@ async function fetchReceivingHistory(poId) {
 async function renderPoSupplierInvoice(order) {
     const section = document.getElementById("poSupplierInvoice");
     const content = document.getElementById("poSupplierInvoiceContent");
+    const invoiceSummary = document.getElementById("poViewInvoiceDetails");
     const poId = String(order?.po_id || "");
-    if (!section || !content || !poId) return;
-    section.hidden = false;
+    if (!section || !content || !invoiceSummary || !poId) return;
+    section.hidden = true;
+    invoiceSummary.innerHTML =
+        '<div class="po-view-sidebar-loading">Loading supplier invoice...</div>';
     content.innerHTML =
         '<div class="po-receiving-documents-loading"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Loading supplier invoice...</span></div>';
     try {
@@ -6965,7 +7540,23 @@ async function renderPoSupplierInvoice(order) {
                 order.status || "",
             );
             content.innerHTML = `<div class="po-view-invoice-empty"><p><strong>Awaiting Supplier Invoice</strong><br><span>No supplier invoice has been recorded for this purchase order.</span></p>${canRecord ? `<button class="po-view-invoice-action" type="button" data-po-invoice-action="record" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i><span>Record Supplier Invoice</span></button>` : ""}</div>`;
+            invoiceSummary.innerHTML = `<div class="po-view-invoice-summary"><span>Not recorded</span>${canRecord ? `<button class="po-view-link-action" type="button" data-po-invoice-action="record" data-po-id="${escapeHtml(poId)}">Record invoice</button>` : ""}</div>`;
+            const invoiceMeta = document.getElementById("poViewInvoiceMeta");
+            if (invoiceMeta) invoiceMeta.innerHTML = "<dt>Supplier invoice</dt><dd>Not recorded</dd>";
+            const progress = document.getElementById("poViewProgress");
+            if (progress) progress.innerHTML = purchaseOrderProgressMarkup(order);
             return;
+        }
+        order.view_invoice_date = invoice.invoice_date;
+        let paymentSummary = {};
+        try {
+            const paymentPayload = await fetchJson(
+                `${API_BASE_URL}/purchase_orders/get_purchase_order_payment_details.php?po_id=${encodeURIComponent(poId)}&t=${Date.now()}`,
+                { retryGet: false },
+            );
+            paymentSummary = paymentPayload.payment_details?.payment || {};
+        } catch (_) {
+            paymentSummary = {};
         }
         content.innerHTML = `
             <div class="po-view-invoice-meta">
@@ -6982,10 +7573,36 @@ async function renderPoSupplierInvoice(order) {
                 <div><span>Other Charges</span><strong>${peso(invoice.other_charges)}</strong></div>
                 <div class="final"><span>Final Invoice Total</span><strong>${peso(invoice.supplier_invoice_total)}</strong></div>
             </div>
-            <div class="po-view-invoice-actions"><span class="supplier-invoice-status">Recorded</span><button class="po-view-invoice-action" type="button" data-po-invoice-action="print" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>View / Print Supplier Invoice</span></button><button class="po-view-invoice-action" type="button" data-po-invoice-action="edit" data-po-id="${escapeHtml(poId)}">Edit Invoice</button></div>`;
+            ${supplierInvoicePaymentSummaryMarkup(poId, invoice, paymentSummary)}
+            <div class="po-view-invoice-actions"><span class="supplier-invoice-status">Recorded</span><button class="po-view-invoice-action" type="button" data-po-invoice-action="print" data-po-id="${escapeHtml(poId)}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>View / Print Supplier Invoice</span></button>${getPoPaymentStatus({ ...order, payment_status: paymentSummary.payment_status || order.payment_status }) === "paid" ? "" : `<button class="po-view-invoice-action" type="button" data-po-invoice-action="edit" data-po-id="${escapeHtml(poId)}">Edit Invoice</button>`}</div>`;
+        const invoiceByItem = new Map(
+            (invoice.items || []).map((item) => [String(item.po_item_id), item]),
+        );
+        document.querySelectorAll("#poViewItemsTable tbody tr[data-po-item-id]").forEach((row) => {
+            const invoiceItem = invoiceByItem.get(String(row.dataset.poItemId));
+            const cells = row.querySelectorAll("td");
+            if (!invoiceItem || cells.length < 6) return;
+            cells[2].textContent =
+                `${formatPoViewNumber(invoiceItem.invoice_qty)} ${invoiceItem.purchase_unit || "pcs"}`;
+            cells[4].textContent = peso(invoiceItem.unit_cost);
+            cells[5].textContent = peso(invoiceItem.line_total);
+        });
+        const invoiceMeta = document.getElementById("poViewInvoiceMeta");
+        if (invoiceMeta) {
+            invoiceMeta.innerHTML = `<dt>Supplier invoice</dt><dd>${escapeHtml(invoice.invoice_number || "—")} · ${escapeHtml(poViewDate(invoice.invoice_date))}</dd>`;
+        }
+        invoiceSummary.innerHTML = `
+            <div class="po-view-invoice-summary">
+                <span>#${escapeHtml(invoice.invoice_number || "—")} · ${escapeHtml(poViewDate(invoice.invoice_date))}</span>
+                <button class="po-view-link-action" type="button" data-po-invoice-action="print" data-po-id="${escapeHtml(poId)}">View invoice</button>
+            </div>
+            <details class="po-view-nested-disclosure"><summary>Full invoice breakdown</summary>${content.innerHTML}</details>`;
+        const progress = document.getElementById("poViewProgress");
+        if (progress) progress.innerHTML = purchaseOrderProgressMarkup(order, invoice);
     } catch (error) {
         if (String(activeViewOrder?.po_id || "") !== poId) return;
         content.innerHTML = `<div class="po-receiving-documents-loading po-receiving-documents-error"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(error.message || "Unable to load the supplier invoice.")}</span></div>`;
+        invoiceSummary.innerHTML = `<div class="po-view-inline-error">${escapeHtml(error.message || "Unable to load the supplier invoice.")}</div>`;
     }
 }
 
@@ -7030,13 +7647,15 @@ async function renderPoReceivingDocuments(poId) {
     const summaryContent = document.getElementById("poReceivingSummaryContent");
     const section = document.getElementById("poReceivingDocuments");
     const list = document.getElementById("poReceivingDocumentsList");
-    if (!summarySection || !summaryContent || !section || !list) return;
-    summarySection.hidden = false;
-    section.hidden = false;
+    const receivingDetails = document.getElementById("poViewReceivingDetails");
+    if (!summarySection || !summaryContent || !section || !list || !receivingDetails) return;
+    summarySection.hidden = true;
+    section.hidden = true;
     summaryContent.innerHTML =
         '<div class="po-receiving-documents-loading"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Loading receiving summary...</span></div>';
     list.innerHTML =
         '<div class="po-receiving-documents-loading"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Loading receiving documents...</span></div>';
+    receivingDetails.innerHTML = '<div class="po-view-sidebar-loading">Loading receiving records...</div>';
     try {
         const history = await fetchReceivingHistory(poId);
         if (String(activeViewOrder?.po_id || "") !== String(poId)) return;
@@ -7045,6 +7664,9 @@ async function renderPoReceivingDocuments(poId) {
                 '<div class="po-record-empty"><span>No completed receiving or inspection record yet.</span></div>';
             list.innerHTML =
                 '<div class="po-record-empty"><span>No receiving documents are available yet.</span></div>';
+            receivingDetails.innerHTML = '<div class="po-view-inline-empty">No receiving records yet.</div>';
+            const progress = document.getElementById("poViewProgress");
+            if (progress) progress.innerHTML = purchaseOrderProgressMarkup(activeViewOrder);
             return;
         }
         const eventDetails = (
@@ -7064,6 +7686,7 @@ async function renderPoReceivingDocuments(poId) {
                 '<div class="po-record-empty"><span>No completed receiving or inspection record yet.</span></div>';
             list.innerHTML =
                 '<div class="po-record-empty"><span>No receiving documents are available yet.</span></div>';
+            receivingDetails.innerHTML = '<div class="po-view-inline-empty">No receiving records yet.</div>';
             return;
         }
         summaryContent.innerHTML = eventDetails
@@ -7154,11 +7777,29 @@ async function renderPoReceivingDocuments(poId) {
             </article>`;
             })
             .join("");
+        const latestReceivingDate = eventDetails[0]?.received_date || "";
+        if (activeViewOrder) activeViewOrder.view_received_date = latestReceivingDate;
+        receivingDetails.innerHTML = `
+            <details class="po-view-nested-disclosure">
+                <summary>Receiving summary (${eventDetails.length} ${eventDetails.length === 1 ? "event" : "events"})</summary>
+                ${summaryContent.innerHTML}
+            </details>
+            <div class="po-view-receiving-documents-list">${list.innerHTML}</div>`;
+        const progress = document.getElementById("poViewProgress");
+        if (progress) {
+            progress.innerHTML = purchaseOrderProgressMarkup(
+                activeViewOrder,
+                null,
+                null,
+                latestReceivingDate,
+            );
+        }
     } catch (error) {
-        summarySection.hidden = false;
-        section.hidden = false;
+        summarySection.hidden = true;
+        section.hidden = true;
         summaryContent.innerHTML = `<div class="po-receiving-documents-loading po-receiving-documents-error"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(error.message || "Unable to load the receiving summary.")}</span></div>`;
         list.innerHTML = `<div class="po-receiving-documents-loading po-receiving-documents-error"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${escapeHtml(error.message || "Unable to load receiving documents.")}</span></div>`;
+        receivingDetails.innerHTML = `<div class="po-view-inline-error">${escapeHtml(error.message || "Unable to load receiving records.")}</div>`;
     }
 }
 
@@ -7171,9 +7812,10 @@ async function fetchPurchaseOrderPaymentDetails(poId) {
 }
 
 function receivingItemDisplayName(item) {
-    return [
+    const mainName = String(item.generic_name || item.product_name || "Product").trim();
+    const parts = [
+        mainName,
         item.brand_name,
-        item.product_name,
         item.generic_or_variant,
         item.strength,
         item.size_value,
@@ -7181,6 +7823,11 @@ function receivingItemDisplayName(item) {
         item.packaging,
     ]
         .filter((value) => String(value || "").trim())
+        .filter((value, index, values) => {
+            const normalized = String(value).trim().toLowerCase();
+            return values.findIndex((candidate) => String(candidate).trim().toLowerCase() === normalized) === index;
+        });
+    return parts
         .join(" · ");
 }
 
@@ -7214,14 +7861,14 @@ function receivingSupplierResolution(details) {
 function renderPaymentHistory(payments = []) {
     if (!payments.length)
         return '<div class="payment-history-card"><div class="text-muted small">No supplier payments recorded.</div></div>';
-    return `<div class="payment-history-card"><table class="payment-history-table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Reference</th><th>Recorded By</th><th>Remarks</th></tr></thead><tbody>${payments
+    return `<div class="payment-history-card"><table class="payment-history-table"><thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Payment Type</th><th>Reference</th><th>Recorded By</th><th>Remarks</th></tr></thead><tbody>${payments
         .map((payment) => {
             const method = payment.display_method || paymentMethodLabel(payment.payment_method);
             const reference = payment.display_reference || payment.reference_number || "—";
             const remarks = payment.display_remarks || payment.remarks || "—";
             const dateNote =
                 payment.date_note || `Entered ${receiptDisplayDate(payment.created_at)}`;
-            return `<tr><td>${escapeHtml(formatDate(payment.payment_date))}<span class="payment-date-note" title="${escapeHtml(receiptDisplayDate(payment.created_at))}">${escapeHtml(dateNote)}</span></td><td><strong>${peso(payment.amount)}</strong></td><td>${escapeHtml(method)}</td><td>${escapeHtml(reference)}</td><td>${escapeHtml(payment.recorded_by_name || "System")}</td><td><span class="payment-remarks" title="${escapeHtml(remarks)}">${escapeHtml(remarks)}</span></td></tr>`;
+            return `<tr><td>${escapeHtml(formatDate(payment.payment_date))}<span class="payment-date-note" title="${escapeHtml(receiptDisplayDate(payment.created_at))}">${escapeHtml(dateNote)}</span></td><td><strong>${peso(payment.amount)}</strong></td><td>${escapeHtml(method)}</td><td>${escapeHtml(payment.payment_type || "Advance Payment")}</td><td>${escapeHtml(reference)}</td><td>${escapeHtml(payment.recorded_by_name || "System")}</td><td><span class="payment-remarks" title="${escapeHtml(remarks)}">${escapeHtml(remarks)}</span></td></tr>`;
         })
         .join("")}</tbody></table></div>`;
 }
@@ -7250,7 +7897,7 @@ function renderReceivingDetails(details) {
         ${items
             .map(
                 (item, index) => `
-            <article class="receiving-item-detail"><div class="receiving-item-head"><div class="receiving-product-name"><strong>${index + 1}. ${escapeHtml(item.product_name || "Product")}</strong>${item.brand_name ? `<span>${escapeHtml(item.brand_name)}</span>` : ""}</div><span class="receiving-result-badge">${escapeHtml(receivingResolutionLabel(item.resolution))}</span></div>
+                    <article class="receiving-item-detail"><div class="receiving-item-head"><div class="receiving-product-name"><strong>${index + 1}. ${escapeHtml(item.generic_name || item.product_name || "Product")}</strong>${item.brand_name && String(item.brand_name).trim().toLowerCase() !== String(item.generic_name || item.product_name || "").trim().toLowerCase() ? `<span>${escapeHtml(item.brand_name)}</span>` : ""}</div><span class="receiving-result-badge">${escapeHtml(receivingResolutionLabel(item.resolution))}</span></div>
                 <div class="receiving-qty-grid">
                     ${[
                         ["Ordered", receivingQuantityLabel(item.ordered_quantity, item.unit)],
@@ -7503,7 +8150,7 @@ function renderGrnEditForm(details) {
                     <label data-grn-confirmed-adjustment-wrap class="${["supplier_credit", "next_po_credit", "refund"].includes(grnResolutionValue(item.resolution)) ? "" : "d-none"}"><span>Supplier-Confirmed Amount</span><input data-field="confirmed_adjustment" type="number" min="0.01" step="0.01" value="${Number(item.supplier_adjustment || 0) > 0 ? Number(item.supplier_adjustment).toFixed(2) : ""}" placeholder="0.00"><small>Entered explicitly; never calculated from damaged quantity.</small></label>
                 </div>
                 <section class="grn-edit-damage"><div class="grn-edit-subhead"><strong>Affected Goods Breakdown</strong><button class="btn btn-sm btn-outline-primary" type="button" data-add-grn-damage><i class="fa-solid fa-plus me-1"></i>Add Another Affected Package</button></div><div data-damage-list>${(item.damage_breakdown || []).map((line, lineIndex) => grnEditDamageRow(item, line, lineIndex)).join("")}</div></section>
-                <section class="grn-edit-batches"><strong>Batch &amp; Expiry</strong>${(item.batches || []).map((batch) => `<div class="grn-edit-batch" data-batch-id="${escapeHtml(batch.batch_id)}"><span>${escapeHtml(batch.batch_identifier)}</span><label>Quantity<input data-field="batch_quantity" type="number" min="1" step="1" value="${Number(batch.batch_quantity || 0)}"></label><label>Expiry Date<input data-field="batch_expiry" type="date" value="${escapeHtml(batch.expiry_date || "")}"></label></div>`).join("")}</section>
+                <section class="grn-edit-batches"><strong>Batch &amp; Expiry</strong>${(item.batches || []).map((batch) => `<div class="grn-edit-batch" data-batch-id="${escapeHtml(batch.batch_id)}"><span>${escapeHtml(batch.batch_identifier)}</span><label>Quantity<input data-field="batch_quantity" type="number" min="1" step="1" value="${Number(batch.batch_quantity || 0)}"></label><label>Expiry Date<input data-field="batch_expiry" type="date" min="${localTodayDateString()}" value="${escapeHtml(batch.expiry_date || "")}"></label></div>`).join("")}</section>
                 <label class="grn-edit-remarks"><span>Item Remarks</span><textarea data-field="item_remarks" rows="2">${escapeHtml(item.item_remarks || "")}</textarea></label>
             </article>`,
             )
@@ -7609,6 +8256,12 @@ function closeGrnEditForm() {
 }
 
 function grnEditPayload() {
+    const pastExpiry = [...document.querySelectorAll('.grn-edit-batch [data-field="batch_expiry"]')]
+        .find((input) => {
+            input.min = localTodayDateString();
+            return isPastLocalDate(input.value);
+        });
+    if (pastExpiry) throw new Error("Expiry date cannot be earlier than today.");
     return {
         receiving_id: activeReceivingDetails.receiving_id,
         edit_reason: document.getElementById("grnEditReasonInput")?.value.trim() || "",
@@ -7697,6 +8350,8 @@ function renderSupplierPayment(details) {
     const remainingBalance = Number(
         payment.remaining_balance ?? Math.max(netAmountDue - previousPayments, 0),
     );
+    const receiving = details.receiving || {};
+    const paymentType = details.payment_type || "Advance Payment";
     const fullyPaid = isPurchaseOrderPaid(payment.payment_status, remainingBalance);
     const replacementQuantity = Number(details.claim_summary?.replacement_pending_quantity || 0);
     const quantityUnit = "units";
@@ -7708,20 +8363,33 @@ function renderSupplierPayment(details) {
                 `<div class="supplier-credit-apply-row"><div><strong>${peso(credit.available_amount)}</strong><span>From ${escapeHtml(credit.source_po_number || "previous supplier claim")}</span></div><div class="input-group input-group-sm"><span class="input-group-text">₱</span><input class="form-control supplier-credit-apply-amount" type="number" min="0.01" step="0.01" max="${Number(credit.available_amount)}" value="${Number(Math.min(credit.available_amount, remainingBalance)).toFixed(2)}"></div><button class="btn btn-outline-primary apply-supplier-credit-btn" type="button" data-credit-id="${escapeHtml(credit.credit_id)}">Apply Credit</button></div>`,
         )
         .join("");
+    const adjustmentRows = [
+        currentDiscount > 0
+            ? `<div class="payment-summary-credit"><span>Supplier Discount / Current PO Credit</span><strong>-${peso(currentDiscount)}</strong></div>`
+            : "",
+        futureCreditApplied > 0
+            ? `<div class="payment-summary-credit"><span>Previous Supplier Credit Applied</span><strong>-${peso(futureCreditApplied)}</strong></div>`
+            : "",
+        currentDiscount + futureCreditApplied > 0
+            ? `<div><span>Net Amount Due</span><strong>${peso(netAmountDue)}</strong></div>`
+            : "",
+    ].join("");
     return `
-        <div class="po-payment-section-heading"><i class="fa-solid fa-file-invoice-dollar"></i><span>Supplier Invoice Reference</span></div>
-        <div class="supplier-payment-invoice-reference">
-            <div><span>Supplier Invoice</span><strong>#${escapeHtml(details.invoice_number || "—")}</strong><small>${escapeHtml(details.po_number || "—")} · ${escapeHtml(details.supplier_name || "—")}</small></div>
-            <div class="supplier-payment-invoice-reference-actions">${paymentStatusBadge(payment.payment_status || "Unpaid")}<button class="btn btn-sm btn-outline-primary" type="button" data-payment-view-invoice data-po-id="${escapeHtml(details.po_id || "")}"><i class="fa-solid fa-file-invoice-dollar me-1"></i>View Supplier Invoice</button></div>
+        <div class="supplier-payment-status-strip">
+            <span>PO Status: <strong>${escapeHtml(details.status || "Pending")}</strong></span>
+            <span>Payment Status: <strong>${escapeHtml(payment.payment_status || "Unpaid")}</strong></span>
         </div>
         <div class="po-payment-section-heading"><i class="fa-solid fa-receipt"></i><span>Payment Summary</span></div>
         <div class="po-payment-financial-summary">
+            <div><span>PO Number</span><strong>${escapeHtml(details.po_number || "—")}</strong></div>
+            <div><span>Supplier</span><strong>${escapeHtml(details.supplier_name || "—")}</strong></div>
+            <div><span>Invoice Number</span><strong>${escapeHtml(details.invoice_number || "—")}</strong></div>
             <div><span>Invoice Total</span><strong>${peso(originalTotal)}</strong></div>
-            <div><span>Credit Applied</span><strong>-${peso(futureCreditApplied)}</strong></div>
-            <div class="net"><span>Net Amount Due${currentDiscount > 0 ? `<small class="supplier-payment-adjustment-note">Includes approved current-invoice discount of ${peso(currentDiscount)}</small>` : ""}</span><strong>${peso(netAmountDue)}</strong></div>
-            <div><span>Previous Payments</span><strong>${peso(previousPayments)}</strong></div>
-            <div class="balance"><span>Remaining Balance</span><strong>${peso(remainingBalance)}</strong></div>
+            ${adjustmentRows}
+            <div><span>Amount Paid</span><strong>${peso(previousPayments)}</strong></div>
+            <div class="balance"><span>Balance Due</span><strong>${peso(remainingBalance)}</strong></div>
         </div>
+        ${currentDiscount + futureCreditApplied > 0 ? `<div class="payment-mode-note">Balance due reflects supplier credits or approved invoice adjustments already applied to this PO.</div>` : ""}
         ${replacementQuantity > 0 ? `<div class="alert alert-warning mt-3 mb-0"><strong>Replacement Pending — ${escapeHtml(receivingQuantityLabel(replacementQuantity, quantityUnit))}</strong><div>This claim does not reduce the current PO amount due.</div></div>` : ""}
         ${futureCreditCreated > 0 ? `<div class="alert alert-info mt-3 mb-0"><strong>Future Supplier Credit: ${peso(futureCreditCreated)}</strong><div>Available for a future PO from this supplier.</div></div>` : ""}
         ${availableCreditRows && remainingBalance > 0 ? `<div class="po-payment-section-heading"><i class="fa-solid fa-ticket"></i><span>Available Supplier Credit</span></div><p class="payment-mode-note">Confirm how much credit from previous supplier claims should be applied to this PO.</p><div class="supplier-credit-apply-list">${availableCreditRows}</div>` : ""}
@@ -7732,9 +8400,9 @@ function renderSupplierPayment(details) {
         <div class="po-payment-section-heading"><i class="fa-solid fa-money-bill-wave"></i><span>Payment Details</span></div>
         <form class="supplier-payment-form" id="supplierPaymentForm" novalidate>
             <div class="form-field"><label for="supplierPaymentDate">Payment Date</label><input class="form-control" id="supplierPaymentDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
-            <div class="form-field"><label for="supplierPaymentMode">Payment Mode</label><input class="form-control" id="supplierPaymentMode" type="text" value="Cash" readonly></div>
-            <div class="form-field full"><label for="supplierPaymentReference">Reference / Receipt No. <span class="text-muted">(optional)</span></label><input class="form-control" id="supplierPaymentReference" maxlength="100" placeholder="Receipt or acknowledgment number"></div>
+            <div class="form-field"><label for="supplierPaymentMode">Payment Method</label><input class="form-control" id="supplierPaymentMode" type="text" value="Cash" readonly></div>
             <div class="form-field full"><label for="supplierPaymentAmount">Amount to Pay</label><div class="payment-amount-control"><span class="payment-currency-prefix">₱</span><input id="supplierPaymentAmount" type="number" min="0.01" step="0.01" max="${remainingBalance}" value="${remainingBalance.toFixed(2)}" inputmode="decimal" autocomplete="off" aria-describedby="supplierPaymentValidation"></div><div class="payment-validation" id="supplierPaymentValidation" aria-live="polite"></div></div>
+            <div class="form-field full"><label for="supplierPaymentReference">Payment Reference / Receipt No. <span class="text-muted">(optional)</span></label><input class="form-control" id="supplierPaymentReference" maxlength="100" placeholder="Receipt or acknowledgment number"></div>
             <div class="form-field full"><label for="supplierPaymentRemarks">Remarks <span class="text-muted">(optional)</span></label><textarea class="form-control" id="supplierPaymentRemarks" maxlength="500" placeholder="Payment notes"></textarea></div>
             <div class="payment-calculation-card full">
                 <div><span>Amount to Pay Now</span><strong id="supplierPaymentAmountSummary">${peso(0)}</strong></div>
@@ -7808,7 +8476,10 @@ function captureSupplierPaymentState() {
     return {
         poId: activeReceivingDetails?.po_id || "",
         poNumber: activeReceivingDetails?.po_number || "",
+        poStatus: activeReceivingDetails?.status || "Pending",
         supplier: activeReceivingDetails?.supplier_name || "",
+        invoiceNumber: activeReceivingDetails?.invoice_number || "",
+        paymentType: activeReceivingDetails?.payment_type || "Advance Payment",
         amount: Math.round(amount * 100) / 100,
         amountInput: document.getElementById("supplierPaymentAmount")?.value || "",
         paymentMethod: "cash",
@@ -7821,7 +8492,7 @@ function captureSupplierPaymentState() {
         previouslyPaid: values.previouslyPaid,
         remainingBalance: values.remainingBalance,
         balanceAfter: Math.max(0, Math.round((values.remainingBalance - amount) * 100) / 100),
-        resultingStatus: amount >= values.remainingBalance - 0.005 ? "Paid" : "Partially Paid",
+        resultingStatus: amount >= values.remainingBalance - 0.005 ? "Paid" : "Unpaid",
         idempotencyKey: supplierPaymentSubmissionKey,
     };
 }
@@ -7906,8 +8577,10 @@ function renderSupplierPaymentConfirmation(state) {
         summary.innerHTML = `
         <div><span>Supplier</span><strong>${escapeHtml(state.supplier)}</strong></div>
         <div><span>Purchase Order</span><strong>${escapeHtml(state.poNumber)}</strong></div>
+        <div><span>Supplier Invoice Number</span><strong>${escapeHtml(state.invoiceNumber || "—")}</strong></div>
         <div class="primary-value"><span>Payment Amount</span><strong>${peso(state.amount)}</strong></div>
         <div><span>Payment Method</span><strong>${escapeHtml(paymentMethodLabel(state.paymentMethod))}</strong></div>
+        <div><span>Payment Type</span><strong>${escapeHtml(state.paymentType)}</strong></div>
         <div><span>Payment Date</span><strong>${escapeHtml(supplierPaymentLongDate(state.paymentDate))}</strong></div>
         ${referenceRow}
         ${remarksRow}
@@ -7917,9 +8590,13 @@ function renderSupplierPaymentConfirmation(state) {
     const message = document.getElementById("supplierPaymentConfirmMessage");
     if (message)
         message.textContent =
-            state.resultingStatus === "Paid"
-                ? "This payment will settle the remaining balance and mark this purchase order as Paid."
-                : `This payment will be recorded as a partial supplier payment. A remaining balance of ${peso(state.balanceAfter)} will remain.`;
+            state.paymentType === "Advance Payment"
+                ? state.poStatus === "Pending"
+                    ? "This payment will be applied to the supplier invoice, but the purchase order will remain Pending until the delivery is received."
+                    : `This payment will be applied to the supplier invoice, but the purchase order will remain ${state.poStatus} until inspection is completed.`
+                : state.resultingStatus === "Paid"
+                  ? "This payment will settle the remaining payable balance after receiving and inspection."
+                  : `This post-inspection payment will leave a remaining balance of ${peso(state.balanceAfter)}.`;
 }
 
 async function openSupplierPaymentConfirmation(state) {
@@ -8090,6 +8767,9 @@ async function openSupplierPayment(poId, options = {}) {
                         details.payment?.remaining_balance,
                     ),
                 );
+            if (save && !save.classList.contains("d-none")) {
+                save.innerHTML = '<i class="fa-solid fa-money-check-dollar me-1"></i>Record Payment';
+            }
             document
                 .getElementById("supplierPaymentAmount")
                 ?.addEventListener("input", updateSupplierPaymentValidation);
@@ -8207,7 +8887,7 @@ async function confirmSupplierPayment() {
             title: "Payment Recorded",
             poId: state.poId,
             message: fullyPaid
-                ? `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. This purchase order is now Paid.`
+                ? `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. Payment status is now Paid; the PO remains ${activeReceivingDetails?.status || "unchanged"}.`
                 : `Supplier payment of ${peso(data.payment_recorded)} was recorded successfully. Remaining balance: ${peso(data.remaining_balance)}.`,
         });
     } catch (error) {
@@ -8433,10 +9113,7 @@ function inspectionQueueSnapshot(order) {
             batches.every(
                 (batch) => Number.isInteger(Number(batch.quantity)) && Number(batch.quantity) > 0,
             );
-        const expiryComplete =
-            quantity.accepted === 0 ||
-            !isMedicineItem(orderItem) ||
-            (batches.length > 0 && batches.every((batch) => Boolean(batch.expiry_date)));
+        const expiryComplete = quantity.accepted === 0 || batches.length > 0;
         const physicalAction = ["return_to_supplier", "hold_quarantine", "dispose"].includes(
             quantity.disposition,
         );
@@ -8527,10 +9204,13 @@ function inspectionQueueProductSummary(order) {
     const items = Array.isArray(order.items) ? order.items : [];
     const first = items[0] || order;
     const count = order.receiving_completed === true ? Number(order.products || 0) : items.length;
-    const product = first.product_name_snapshot || first.product_name || "Product";
+    const product = first.generic_name || first.generic_name_snapshot || first.product_name || first.product_name_snapshot || "Product";
     const brand = first.brand_name_snapshot || first.brand_name || "";
     const more = Math.max(0, count - 1);
-    const secondary = [brand, more > 0 ? `+${more} more` : ""].filter(Boolean).join(" • ");
+    const secondary = [
+        brand && brand.trim().toLowerCase() !== product.trim().toLowerCase() ? brand : "",
+        more > 0 ? `+${more} more` : "",
+    ].filter(Boolean).join(" • ");
     return `<div class="queue-product-summary"><strong>${escapeHtml(product)}</strong>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ""}</div>`;
 }
 
@@ -8540,6 +9220,18 @@ function renderInspectionQueue() {
         .toLowerCase();
     const from = document.getElementById("inspectionDateFrom")?.value || "";
     const to = document.getElementById("inspectionDateTo")?.value || "";
+    if (from && from < localTodayDateString()) {
+        PharmaUtils.toast.error("ETA cannot be earlier than today.");
+        return;
+    }
+    if (to && to < localTodayDateString()) {
+        PharmaUtils.toast.error("ETA cannot be earlier than today.");
+        return;
+    }
+    if (from && to && from > to) {
+        PharmaUtils.toast.error("From Date cannot be later than To Date.");
+        return;
+    }
     const inspectionStatus = document.getElementById("inspectionStatusFilter")?.value || "";
     const filtered = inspectionQueueOrders.filter((order) => {
         const snapshot =
@@ -8552,7 +9244,7 @@ function renderInspectionQueue() {
                 : order.inspection_snapshot || inspectionQueueSnapshot(order);
         const firstItem = Array.isArray(order.items) ? order.items[0] || {} : order;
         const haystack =
-            `${order.po_number || ""} ${order.grn_number || ""} ${order.supplier_name || ""} ${firstItem.product_name_snapshot || firstItem.product_name || ""} ${firstItem.brand_name_snapshot || firstItem.brand_name || ""}`.toLowerCase();
+            `${order.po_number || ""} ${order.grn_number || ""} ${order.supplier_name || ""} ${firstItem.generic_name || firstItem.generic_name_snapshot || firstItem.product_name_snapshot || firstItem.product_name || ""} ${firstItem.brand_name_snapshot || firstItem.brand_name || ""}`.toLowerCase();
         const arrival = String(
             order.received_date ||
                 order.arrival_date ||
@@ -8607,7 +9299,7 @@ function renderInspectionQueue() {
             const actionLabel =
                 snapshot.key === "awaiting" ? "Start Inspection" : "Continue Inspection";
             const actions = completed
-                ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Goods Received Note" aria-label="View Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-primary queue-action-icon queue-edit-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Edit Goods Received Note" aria-label="Edit Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-outline-secondary queue-action-icon queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Print Goods Received Note" aria-label="Print Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-print"></i></button>`
+                ? `<button class="btn btn-sm btn-outline-primary queue-action-icon queue-view-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="View Goods Received Note" aria-label="View Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-primary queue-action-icon queue-edit-receiving" type="button" data-po-id="${escapeHtml(order.po_id)}" title="Edit Goods Received Note" aria-label="Edit Goods Received Note for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-pen"></i></button><button class="btn btn-sm btn-outline-secondary queue-document-button queue-print-grn" type="button" data-po-id="${escapeHtml(order.po_id)}" data-receiving-id="${escapeHtml(order.receiving_id || "")}" title="Goods Received Note" aria-label="Open Goods Received Note for ${escapeHtml(order.po_number || "")}">GRN</button>${order.has_discrepancy || Number(order.affected_units || 0) > 0 ? `<button class="btn btn-sm btn-outline-secondary queue-document-button queue-discrepancy" type="button" data-po-id="${escapeHtml(order.po_id)}" data-receiving-id="${escapeHtml(order.receiving_id || "")}" title="Delivery Discrepancy & Replacement Acknowledgement" aria-label="Open Delivery Discrepancy & Replacement Acknowledgement for ${escapeHtml(order.po_number || "")}">Discrepancy</button>` : ""}`
                 : `<button class="btn btn-sm ${snapshot.key === "awaiting" ? "btn-outline-primary" : "btn-primary"} queue-action-icon inspect-queue-action" type="button" data-po-id="${escapeHtml(order.po_id)}" title="${actionLabel}" aria-label="${actionLabel} for ${escapeHtml(order.po_number || "")}"><i class="fa-solid fa-clipboard-check"></i></button>`;
             return `<tr class="queue-row" data-po-id="${escapeHtml(order.po_id)}">
             <td><span class="queue-po" title="${escapeHtml(order.po_number || "-")}">${escapeHtml(order.po_number || "-")}</span><span class="queue-secondary" title="${escapeHtml(completed ? order.grn_number : "No GRN yet")}">${escapeHtml(completed ? order.grn_number : "No GRN yet")}</span></td>
@@ -8700,6 +9392,13 @@ function updateInspectionDateSummary() {
               : to
                 ? `Through ${formatDate(to)}`
                 : "All arrival dates";
+}
+
+function setInspectionDateMinimums() {
+    ["inspectionDateFrom", "inspectionDateTo"].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.min = localTodayDateString();
+    });
 }
 
 function showInspectionQueue(options = {}) {
@@ -8883,7 +9582,14 @@ function bindReceiveWorkspaceEvents() {
         const complete = event.target.closest(".receive-complete-inspection");
         if (complete) {
             const card = complete.closest(".receive-item-card");
-            if (!card || card.dataset.ready !== "1") return;
+            if (!card) return;
+            card.dataset.validationAttempted = "1";
+            renderReceivePaymentSummary();
+            if (card.dataset.ready !== "1") {
+                const invalid = card.querySelector(".receive-invalid-control");
+                if (invalid) scrollReceiveModalTo(invalid, invalid);
+                return;
+            }
             const input = card.querySelector(".receive-inspected-input");
             if (input) input.value = "1";
             renderReceivePaymentSummary();
@@ -8926,6 +9632,7 @@ function initInspectDeliveries() {
         );
     bindReceiveWorkspaceEvents();
     ensureReceivingUi();
+    setInspectionDateMinimums();
     document
         .querySelectorAll("[data-inspection-back]")
         .forEach((button) =>
@@ -8966,10 +9673,17 @@ function initInspectDeliveries() {
         const view = event.target.closest(".queue-view-receiving");
         const edit = event.target.closest(".queue-edit-receiving");
         const print = event.target.closest(".queue-print-grn");
+        const discrepancy = event.target.closest(".queue-discrepancy");
         if (inspect) openInspectionWorkspace(inspect.dataset.poId, { pushHistory: true });
         else if (view) openReceivingDetails(view.dataset.poId);
         else if (edit) openGrnEditor(edit.dataset.poId);
-        else if (print) openDeliveredReceipt(print.dataset.poId, true);
+        else if (print) openDeliveredReceipt(print.dataset.poId, false, print.dataset.receivingId || "");
+        else if (discrepancy)
+            openSupplierDiscrepancyForPo(
+                discrepancy.dataset.poId,
+                false,
+                discrepancy.dataset.receivingId || "",
+            );
     });
     window.addEventListener("popstate", () => {
         const nextParams = new URLSearchParams(window.location.search);
@@ -8992,6 +9706,7 @@ function initPurchaseOrders() {
     if (purchaseOrdersInitialized) return;
     purchaseOrdersInitialized = true;
     ensureReceivingUi();
+    setPoEtaMinimums();
 
     setTheme(localStorage.getItem("drpTheme") || "light");
     initEditPoModalLayoutControls();
@@ -9206,8 +9921,42 @@ function initPurchaseOrders() {
     document
         .getElementById("createPurchaseOrderModal")
         ?.addEventListener("hidden.bs.modal", resetCreateDraft);
+    ["createPurchaseOrderModal", "editPurchaseOrderModal"].forEach((id) =>
+        document.getElementById(id)?.addEventListener("shown.bs.modal", setPoEtaMinimums),
+    );
     document.getElementById("viewPurchaseOrderModal")?.addEventListener("hidden.bs.modal", () => {
         activeViewOrder = null;
+    });
+    document.getElementById("viewPurchaseOrderModal")?.addEventListener("click", async (event) => {
+        const invoiceButton = event.target.closest("[data-po-invoice-action]");
+        if (invoiceButton) {
+            const poId = invoiceButton.dataset.poId || "";
+            const action = invoiceButton.dataset.poInvoiceAction;
+            if (action === "print") openSupplierInvoiceDocument(poId);
+            else if (action === "payment") await openSupplierPayment(poId);
+            else if (["record", "edit"].includes(action)) {
+                await openSupplierInvoice(poId, { edit: action === "edit" });
+            }
+            return;
+        }
+        const paymentButton = event.target.closest("[data-po-payment-action]");
+        if (paymentButton) {
+            const poId = paymentButton.dataset.poId || "";
+            if (paymentButton.dataset.poPaymentAction === "invoice")
+                openSupplierInvoiceDocument(poId);
+            else if (paymentButton.dataset.poPaymentAction === "payment")
+                openSupplierPayment(poId);
+            return;
+        }
+        const receivingButton = event.target.closest("[data-receiving-document]");
+        if (receivingButton) {
+            const poId = receivingButton.dataset.poId || "";
+            const receivingId = receivingButton.dataset.receivingId || "";
+            if (receivingButton.dataset.receivingDocument === "grn")
+                openDeliveredReceipt(poId, false, receivingId);
+            else if (receivingButton.dataset.receivingDocument === "discrepancy")
+                openSupplierDiscrepancyForPo(poId, false, receivingId);
+        }
     });
     document.getElementById("printPurchaseOrderButton")?.addEventListener("click", () => {
         try {
@@ -9224,6 +9973,14 @@ function initPurchaseOrders() {
             const poId = button.dataset.poId || "";
             if (button.dataset.poInvoiceAction === "print") {
                 openSupplierInvoiceDocument(poId);
+                return;
+            }
+            if (button.dataset.poInvoiceAction === "payment") {
+                await openSupplierPayment(poId);
+                return;
+            }
+            if (button.dataset.poInvoiceAction === "close") {
+                document.querySelector("[data-close-po-view]")?.click();
                 return;
             }
             if (["record", "edit"].includes(button.dataset.poInvoiceAction)) {
@@ -9372,23 +10129,51 @@ function initPurchaseOrders() {
         if (item) showEditProductEditor(item, row.dataset.itemKey || "");
     });
     document.getElementById("table-purchase-orders")?.addEventListener("click", (event) => {
+        const row = event.target.closest("tr.po-clickable-row");
         const viewButton = event.target.closest(".view-po-btn");
         const statusButton = event.target.closest(".status-po-btn");
+        const primaryStatusButton = event.target.closest(".po-primary-status-btn");
+        const receiveButton = event.target.closest(".po-receive-btn");
         const managePaymentButton = event.target.closest(
             ".manage-payment-btn, .view-payment-history-btn",
         );
         const invoiceButton = event.target.closest(".record-invoice-btn");
-        if (viewButton) openViewPurchaseOrder(viewButton.dataset.poId);
+        if (primaryStatusButton) updatePurchaseOrderStatusFromTable(primaryStatusButton.dataset.poId);
+        else if (receiveButton) openReceivePurchaseOrder(receiveButton.dataset.poId);
+        else if (viewButton) openViewPurchaseOrder(viewButton.dataset.poId);
         else if (statusButton) toggleStatusActionMenu(statusButton);
         else if (invoiceButton) openSupplierInvoice(invoiceButton.dataset.poId);
         else if (managePaymentButton) openSupplierPayment(managePaymentButton.dataset.poId);
+        else if (row && !event.target.closest("button, a, input, select, textarea, [role='menuitem']"))
+            openViewPurchaseOrder(row.dataset.poId);
+    });
+    document.getElementById("table-purchase-orders")?.addEventListener("keydown", (event) => {
+        const row = event.target.closest("tr.po-clickable-row");
+        if (
+            !row ||
+            !["Enter", " "].includes(event.key) ||
+            event.target !== row ||
+            event.target.closest("button, a, input, select, textarea, [role='menuitem']")
+        )
+            return;
+        event.preventDefault();
+        openViewPurchaseOrder(row.dataset.poId);
     });
     document.addEventListener("click", (event) => {
         const menuItem = event.target.closest(".status-po-menu-item");
+        const invoiceItem = event.target.closest(".po-action-popover-invoice");
+        const paymentItem = event.target.closest(".po-action-popover-payment");
         if (menuItem) {
             const poId = menuItem.dataset.poId;
             closeStatusActionMenu();
             updatePurchaseOrderStatusFromTable(poId);
+            return;
+        }
+        if (invoiceItem || paymentItem) {
+            const poId = (invoiceItem || paymentItem).dataset.poId;
+            closeStatusActionMenu();
+            if (invoiceItem) openSupplierInvoice(poId);
+            else openSupplierPayment(poId);
             return;
         }
         if (!event.target.closest(".status-po-btn, .po-action-popover")) closeStatusActionMenu();

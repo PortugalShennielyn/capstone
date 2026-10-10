@@ -7,7 +7,7 @@ requireValidSession($pdo);
 ensureUserManagementSchema($pdo);
 
 $stmt = $pdo->prepare(
-    'SELECT username, email, contact_number, full_name, first_name, last_name, role, status
+    'SELECT username, email, contact_number, full_name, first_name, last_name, role, status, created_at
      FROM users
      WHERE user_id = :user_id
        AND status = "Active"
@@ -25,6 +25,7 @@ if ($user) {
     $_SESSION['last_name'] = $user['last_name'];
     $_SESSION['role'] = $user['role'];
     $_SESSION['user_status'] = $user['status'];
+    $_SESSION['user_created_at'] = $user['created_at'];
 
     $accountContext = loadPrimaryAccountContext($pdo, $_SESSION['user_id'], $user['role']);
     $_SESSION['roles'] = $accountContext['roles'];

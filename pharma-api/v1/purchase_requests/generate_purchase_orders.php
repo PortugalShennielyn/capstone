@@ -30,7 +30,8 @@ try {
 
     // The locked PR row serializes concurrent clicks. Recheck related records
     // after acquiring the lock so repeated calls can never create another set.
-    $existing = purchaseRequestPurchaseOrders($pdo, $prId);
+    assertPurchaseRequestHasValidItems($pdo, $prId, 'Cannot generate Purchase Order because this Purchase Request has no products.');
+    $existing = array_values(array_filter(purchaseRequestPurchaseOrders($pdo, $prId), static fn($po) => !in_array($po['status'], ['Cancelled', 'Rejected'], true)));
     if ($existing) {
         $pdo->commit();
         sendPurchaseRequestJson(true, 'Purchase orders were already generated for this request.', [

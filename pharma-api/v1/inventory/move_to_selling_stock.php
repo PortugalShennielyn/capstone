@@ -81,10 +81,11 @@ try {
             ib.legacy_inventory_id AS inventory_id,
             ib.product_id,
             COALESCE(pi.batch_number, po.po_number, ib.legacy_inventory_id, ib.batch_id) AS batch_number,
-            ib.storage_qty,
+            ib.storage_qty - ib.expiry_quarantined_storage_qty AS storage_qty,
             ib.shelf_qty,
             ib.expiry_date,
-            ib.batch_status
+            ib.batch_status,
+            ib.expiry_action_status
          FROM inventory_batches ib
          LEFT JOIN purchase_order_items source_item ON source_item.po_item_id = ib.po_item_id
          LEFT JOIN purchase_orders po ON po.po_id = COALESCE(ib.po_id, source_item.po_id)
@@ -100,11 +101,13 @@ try {
         "UPDATE inventory_batches
          SET storage_qty = storage_qty - :quantity,
              batch_status = CASE
-                WHEN expiry_date IS NOT NULL AND expiry_date < CURDATE() THEN 'expired'
+                WHEN expiry_date IS NOT NULL AND expiry_date <= CURDATE() THEN 'expired'
                 ELSE 'active'
              END
          WHERE batch_id = :batch_id
-           AND storage_qty >= :quantity_for_guard"
+           AND storage_qty - expiry_quarantined_storage_qty >= :quantity_for_guard
+           AND expiry_action_status NOT IN ('For Disposal', 'Disposed')
+           AND (expiry_date IS NULL OR expiry_date > CURDATE())"
     );
 
     $updateLegacyInventory = $pdo->prepare(
@@ -156,6 +159,10 @@ try {
 
         if (!$batch) {
             throw new InvalidArgumentException('Selected inventory batch was not found.');
+        }
+        if (in_array((string) $batch['expiry_action_status'], ['For Disposal', 'Disposed'], true)
+            || (!empty($batch['expiry_date']) && $batch['expiry_date'] <= date('Y-m-d'))) {
+            throw new InvalidArgumentException('Stock marked For Disposal or past its expiry date cannot be moved to the shelf.');
         }
 
         $batchAvailable = (int) ($batch['storage_qty'] ?? 0);

@@ -602,7 +602,7 @@ try {
     $expiryRows = dashboardRows(
         $pdo,
         "SELECT ib.batch_id, p.product_name, p.brand_name, ib.expiry_date,
-                COALESCE(pi.expiry_alert_days, 30) AS expiry_alert_days,
+                COALESCE(ib.expiry_alert_days, pi.expiry_alert_days, 30) AS expiry_alert_days,
                 DATEDIFF(ib.expiry_date, CURDATE()) AS days_left,
                 ib.storage_qty + COALESCE(selling.shelf_qty, 0) AS on_hand
          FROM inventory_batches ib

@@ -2,16 +2,182 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <script src="./js/navbar_bootstrap.js?v=12"></script>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dr. R Pharmacy | Profile Settings</title>
+    <title>Doc R Pharmacy | Cashier Profile</title>
+    <script>location.replace('profile.html');</script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=36" rel="stylesheet"><link href="./css/cashier_workspace.css?v=3" rel="stylesheet">
-    <script src="./js/navbar.js?v=83" defer></script><script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <link href="./css/navbar.css?v=36" rel="stylesheet">
+    <link href="./css/cashier_workspace.css?v=11" rel="stylesheet">
+    <script src="./js/navbar.js?v=89" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 </head>
-<body data-cashier-page="profile"><div id="navbar-container"></div><main class="main-wrapper" id="mainWrapper">
-    <header class="cashier-topbar"><button class="icon-btn" id="sidebarToggle" type="button"><i class="fa-solid fa-bars"></i></button><span class="brand-tile"><i class="fa-solid fa-user-gear"></i></span><div class="title-wrap"><strong>Profile Settings</strong><span>Cashier account details</span></div></header>
-    <section class="cashier-page"><section class="panel profile-card"><div class="panel-head"><div><h1>My Profile</h1><p>Role and permission editing is managed by Admin.</p></div></div><div style="padding: 0 18px 18px;"><div class="profile-row"><span>Full Name</span><strong id="profileName">-</strong></div><div class="profile-row"><span>Username</span><strong id="profileUsername">-</strong></div><div class="profile-row"><span>Role</span><strong id="profileRole">Cashier</strong></div><a class="action-link mt-3" href="login.html" data-auth-action="logout"><i class="fa-solid fa-right-from-bracket"></i>Logout</a></div></section></section>
-</main><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script><script type="module" src="./js/modules/cashier_workspace.js?v=7"></script></body></html>
+<body data-cashier-page="profile">
+<div id="navbar-container"></div>
+<main class="main-wrapper" id="mainWrapper">
+    <header class="cashier-topbar">
+        <button class="icon-btn" id="sidebarToggle" type="button"><i class="fa-solid fa-bars"></i></button>
+        <span class="brand-tile"><i class="fa-solid fa-user"></i></span>
+      <div class="title-wrap"><strong>Cashier Profile</strong><span>Manage your cashier account</span></div>
+      <div class="topbar-meta">
+        <span class="topbar-status"><i class="fa-solid fa-circle"></i> Closed</span>
+        <button class="topbar-icon" type="button" aria-label="Notifications"><i class="fa-regular fa-bell"></i></button>
+        <time class="topbar-clock" id="profileDateTime"></time>
+      </div>
+    </header>
+
+    <section class="cashier-page fb-profile-page">
+        <div class="fb-profile-cover" id="profileCover">
+            <div class="fb-cover-pattern"></div>
+            <div class="fb-profile-avatar" id="profileAvatar">C</div>
+            <button class="fb-cover-edit" type="button" id="changeCoverBtn" title="Change cover photo">
+                <i class="fa-solid fa-camera"></i> Change Cover Photo
+            </button>
+            <input type="file" id="coverPhotoInput" accept="image/*" hidden>
+        </div>
+
+        <div class="fb-profile-header">
+            <div class="fb-profile-main">
+                <div class="fb-profile-name-row">
+                    <div>
+                        <h1 id="profileName">Cashier</h1>
+                        <p><span id="profileUsername">@username</span><span class="profile-role-label">Cashier</span></p>
+                    </div>
+                    <span class="fb-role-badge"><i class="fa-solid fa-cash-register"></i> Cashier</span>
+                </div>
+            </div>
+            <div class="fb-profile-actions">
+                <button class="fb-photo-btn" type="button" id="changeProfilePhotoBtn"><i class="fa-solid fa-camera"></i> Change Profile Photo</button>
+                <button class="fb-edit-btn" type="button" data-bs-toggle="modal" data-bs-target="#editProfileModal">
+                    <i class="fa-solid fa-pen"></i> Edit Profile
+                </button>
+                <input type="file" id="profilePhotoInput" accept="image/*" hidden>
+            </div>
+        </div>
+
+        <nav class="fb-profile-tabs" aria-label="Profile sections">
+            <button class="fb-tab active" type="button" data-profile-tab="account">Account</button>
+            <button class="fb-tab" type="button" data-profile-tab="security">Password & Security</button>
+        </nav>
+
+        <div class="fb-settings-layout">
+            <section class="fb-settings-card" data-profile-section="account">
+                <div class="fb-settings-title">
+                    <div class="fb-settings-icon"><i class="fa-solid fa-user"></i></div>
+                    <div><h2>Account information</h2><p>Your basic cashier account details.</p></div>
+                </div>
+                <div class="fb-info-list">
+                    <div class="fb-info-row"><span>Full Name</span><strong id="profileNameDetail">-</strong></div>
+                    <div class="fb-info-row"><span>Username</span><strong id="profileUsernameDetail">-</strong></div>
+                    <div class="fb-info-row"><span>Role</span><strong>Cashier</strong></div>
+                    <div class="fb-info-row"><span>Account Type</span><strong>Staff Account</strong></div>
+                </div>
+                <button class="fb-secondary-btn" type="button" data-bs-toggle="modal" data-bs-target="#editProfileModal"><i class="fa-solid fa-pen"></i> Edit account information</button>
+            </section>
+
+            <section class="fb-settings-card" data-profile-section="security" hidden>
+                <div class="fb-settings-title">
+                    <div class="fb-settings-icon"><i class="fa-solid fa-lock"></i></div>
+                    <div><h2>Password & Security</h2><p>Keep your cashier account secure.</p></div>
+                </div>
+                <form id="cashierPasswordForm" class="fb-password-form" novalidate>
+                    <label>Current Password<input class="profile-input" name="current_password" type="password" autocomplete="current-password" required></label>
+                    <label>New Password<input class="profile-input" name="new_password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required><small>Use at least 8 characters.</small></label>
+                    <label>Confirm New Password<input class="profile-input" name="confirm_password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></label>
+                    <button class="fb-primary-btn" type="submit"><i class="fa-solid fa-key"></i> Update Password</button>
+                    <button class="fb-forgot-link" type="button" id="openOtpResetBtn">Forgot password? Reset with OTP</button>
+                    <div id="passwordMessage" class="profile-message" role="status" aria-live="polite"></div>
+                </form>
+            </section>
+
+            <aside class="fb-side-card">
+                <h3>Profile Settings</h3>
+                <p><i class="fa-solid fa-circle-info"></i> You can change your full name and password. Your username and cashier role are fixed by the administrator.</p>
+                <div class="fb-side-line"><i class="fa-solid fa-shield-halved"></i><span>Role protected</span></div>
+                <div class="fb-side-line"><i class="fa-solid fa-user-lock"></i><span>Secure account</span></div>
+            </aside>
+        </div>
+
+        <a class="fb-logout" href="login.html" data-auth-action="logout"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
+    </section>
+</main>
+
+<div class="modal fade" id="editProfileModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content fb-modal">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Profile</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="cashierProfileForm" novalidate>
+        <div class="modal-body">
+          <div class="fb-modal-avatar" id="modalAvatar">C</div>
+          <div class="fb-photo-help">Profile and cover photos are saved on this browser.</div>
+          <label>Full Name<input class="profile-input" id="profileNameInput" name="full_name" type="text" maxlength="100" required></label>
+          <label>Username<input class="profile-input readonly-input" id="profileUsernameInput" type="text" readonly></label>
+          <label>Role<input class="profile-input readonly-input" id="profileRoleInput" type="text" value="Cashier" readonly></label>
+          <div id="profileMessage" class="profile-message" role="status" aria-live="polite"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="fb-cancel-btn" data-bs-dismiss="modal">Cancel</button>
+          <button class="fb-primary-btn" type="submit">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="otpResetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content fb-modal otp-reset-modal">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title"><i class="fa-solid fa-shield-halved"></i> Reset Password</h5>
+          <small class="text-muted">Verify your account with a one-time password (OTP).</small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="otp-steps"><span class="active" data-otp-step="1">1</span><i></i><span data-otp-step="2">2</span><i></i><span data-otp-step="3">3</span></div>
+        <section data-otp-panel="1">
+          <h6>Send OTP</h6>
+          <p class="otp-help">We'll send a 6-digit OTP to the email registered to your cashier account.</p>
+          <label>Username or Email<input class="profile-input" id="otpIdentifier" type="text" autocomplete="username" placeholder="Enter username or email"></label>
+          <button class="fb-primary-btn otp-action" type="button" id="sendOtpBtn"><i class="fa-solid fa-paper-plane"></i> Send OTP</button>
+        </section>
+        <section data-otp-panel="2" hidden>
+          <h6>Enter OTP</h6>
+          <p class="otp-help" id="otpSentText">Enter the 6-digit code sent to your email.</p>
+          <input class="otp-code-input" id="otpCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+          <button class="fb-primary-btn otp-action" type="button" id="verifyOtpBtn"><i class="fa-solid fa-check"></i> Verify OTP</button>
+          <button class="fb-forgot-link" type="button" id="resendOtpBtn">Resend OTP</button>
+        </section>
+        <section data-otp-panel="3" hidden>
+          <h6>Create New Password</h6>
+          <p class="otp-help">Choose a new password with at least 8 characters.</p>
+          <label>New Password<input class="profile-input" id="otpNewPassword" type="password" minlength="8" maxlength="72" autocomplete="new-password"></label>
+          <label>Confirm Password<input class="profile-input" id="otpConfirmPassword" type="password" minlength="8" maxlength="72" autocomplete="new-password"></label>
+          <button class="fb-primary-btn otp-action" type="button" id="resetWithOtpBtn"><i class="fa-solid fa-lock"></i> Reset Password</button>
+        </section>
+        <div id="otpResetMessage" class="profile-message" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module" src="./js/modules/cashier_workspace.js?v=12"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-profile-tab]').forEach(tab => tab.addEventListener('click', () => {
+        document.querySelectorAll('[data-profile-tab]').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('[data-profile-section]').forEach(x => x.hidden = true);
+        tab.classList.add('active');
+        const section = document.querySelector(`[data-profile-section="${tab.dataset.profileTab}"]`);
+        if (section) section.hidden = false;
+    }));
+});
+</script>
+</body>
+</html>

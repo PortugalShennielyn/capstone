@@ -39,6 +39,10 @@ function ensurePurchaseRequestSchema(PDO $pdo): void
     if ((int) $approvedQtyCheck->fetchColumn() === 0) {
         $pdo->exec('ALTER TABLE purchase_request_items ADD COLUMN approved_qty DECIMAL(12,2) NULL AFTER requested_qty');
     }
+    $decisionReasonCheck = $pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_requests' AND COLUMN_NAME = 'decision_reason'");
+    if ((int) $decisionReasonCheck->fetchColumn() === 0) {
+        $pdo->exec('ALTER TABLE purchase_requests ADD COLUMN decision_reason TEXT NULL AFTER decided_at');
+    }
     $pdo->exec(
         "UPDATE purchase_request_items pri
          INNER JOIN purchase_requests pr ON pr.pr_id = pri.pr_id
@@ -88,6 +92,21 @@ function sendPurchaseRequestJson(bool $success, string $message, $data = null, i
     exit();
 }
 
+function assertPurchaseRequestHasValidItems(PDO $pdo, string $prId, string $message): void
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM purchase_request_items
+         WHERE pr_id = :pr_id
+           AND product_id IS NOT NULL
+           AND requested_qty > 0'
+    );
+    $stmt->execute([':pr_id' => $prId]);
+    if ((int)$stmt->fetchColumn() <= 0) {
+        throw new InvalidArgumentException($message);
+    }
+}
+
 function readPurchaseRequestPayload(): array
 {
     $payload = json_decode(file_get_contents('php://input'), true);
@@ -119,6 +138,15 @@ function positivePurchaseRequestQuantity($value, string $baseInventoryUnit = '')
         throw new InvalidArgumentException('Requested quantities for ' . ($baseInventoryUnit ?: 'countable units') . ' must be whole numbers.');
     }
     return purchaseRequestUnitAllowsDecimals($baseInventoryUnit) ? round($quantity, 2) : (int) $quantity;
+}
+
+function assertPurchaseRequestQuantityLimit($quantity, PDO $pdo): void
+{
+    require_once __DIR__ . '/../settings/settings_helpers.php';
+    $limit = fetchPurchaseRequestQuantityLimit($pdo);
+    if ((float) $quantity > $limit) {
+        throw new InvalidArgumentException('Requested quantity cannot exceed ' . number_format($limit) . ' per product line.');
+    }
 }
 
 function purchaseRequestBaseInventoryUnit(PDO $pdo, string $productId): ?string
@@ -205,7 +233,7 @@ function purchaseRequestItemsForRequests(PDO $pdo, array $prIds): array
         'SELECT pri.*,
                 pri.stock_qty_at_request AS current_stock_snapshot,
                 pri.unit_label_at_request AS unit_snapshot,
-                p.product_name, p.brand_name, pmu.unit_name AS base_inventory_unit,
+                p.product_name, p.brand_name, md.generic_name, pmu.unit_name AS base_inventory_unit,
                 TRIM(CONCAT_WS(" · ",
                     NULLIF(CONCAT_WS(" ", NULLIF(md.generic_name,""), COALESCE(NULLIF(md.strength,""),NULLIF(CONCAT_WS(" ",md.strength_value,md.strength_unit),""))), ""),
                     NULLIF(CONCAT_WS(" ",gd.variant,gd.size,gd.net_weight,gd.unit),""),
@@ -301,19 +329,28 @@ function nextPurchaseRequestNumber(): string
 
 function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
 {
+    require_once __DIR__ . '/../purchase_orders/purchase_order_invoice_helpers.php';
+    ensurePurchaseOrderInvoiceSchema($pdo);
     $stmt = $pdo->prepare(
         'SELECT pr.pr_id, pr.pr_number,
-                po.po_id, po.po_number, po.supplier_id, po.total_amount,
+                po.po_id, po.po_number, po.supplier_id,
+                po.total_amount AS legacy_total_amount,
+                invoice.supplier_invoice_total AS invoice_total,
                 po.expected_delivery_date, po.status, po.created_at AS order_date,
                 s.supplier_name,
                 COUNT(DISTINCT poi.product_id) AS product_count,
                 GROUP_CONCAT(
                     DISTINCT COALESCE(
-                        NULLIF(TRIM(poi.product_name_snapshot), ""),
+                        NULLIF(TRIM(poi.generic_name_snapshot), ""),
+                        NULLIF(TRIM(md.generic_name), ""),
                         NULLIF(TRIM(p.product_name), ""),
                         "Unnamed product"
                     )
-                    ORDER BY COALESCE(NULLIF(TRIM(poi.product_name_snapshot), ""), NULLIF(TRIM(p.product_name), ""))
+                    ORDER BY COALESCE(
+                        NULLIF(TRIM(poi.generic_name_snapshot), ""),
+                        NULLIF(TRIM(md.generic_name), ""),
+                        NULLIF(TRIM(p.product_name), "")
+                    )
                     SEPARATOR ", "
                 ) AS item_names
          FROM purchase_requests pr
@@ -321,9 +358,12 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
          LEFT JOIN suppliers s ON s.supplier_id = po.supplier_id
          LEFT JOIN purchase_order_items poi ON poi.po_id = po.po_id
          LEFT JOIN product p ON p.product_id = poi.product_id
+         LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         LEFT JOIN purchase_order_invoices invoice ON invoice.po_id = po.po_id
          WHERE pr.pr_id = :pr_id
          GROUP BY pr.pr_id, pr.pr_number, po.po_id, po.po_number, po.supplier_id,
-                  po.total_amount, po.expected_delivery_date, po.status, po.created_at,
+                  po.total_amount, invoice.supplier_invoice_total,
+                  po.expected_delivery_date, po.status, po.created_at,
                   s.supplier_name
          ORDER BY po.created_at, po.po_number'
     );
@@ -332,6 +372,14 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
     if (!$rows) return null;
 
     $orders = array_values(array_filter($rows, static fn(array $row): bool => !empty($row['po_id'])));
+    foreach ($orders as &$order) {
+        $invoiceTotal = $order['invoice_total'] === null ? null : round((float) $order['invoice_total'], 2);
+        $legacyTotal = $order['legacy_total_amount'] === null ? null : round((float) $order['legacy_total_amount'], 2);
+        $order['invoice_total'] = $invoiceTotal;
+        $order['total_amount'] = $invoiceTotal ?? $legacyTotal;
+        $order['total_source'] = $invoiceTotal !== null ? 'supplier_invoice' : ($legacyTotal !== null ? 'legacy_po' : null);
+    }
+    unset($order);
     return [
         'pr_id' => (string) $rows[0]['pr_id'],
         'pr_number' => (string) $rows[0]['pr_number'],
@@ -348,42 +396,35 @@ function activePurchaseRequestStatuses(): array
 
 function activePurchaseRequestConflict(PDO $pdo, string $productId, ?string $excludePrId = null): ?array
 {
-    $statuses = activePurchaseRequestStatuses();
-    $statusPlaceholders = implode(',', array_fill(0, count($statuses), '?'));
     $sql = "SELECT pr.pr_id, pr.pr_number, pr.status, pri.requested_qty
             FROM purchase_request_items pri
             INNER JOIN purchase_requests pr ON pr.pr_id = pri.pr_id
             WHERE pri.product_id = ?
-              AND pr.status IN ({$statusPlaceholders})
-              AND (
-                pr.status <> 'Approved'
-                OR 0 = COALESCE((
-                    SELECT SUM(poi.inventory_qty_ordered)
-                    FROM purchase_order_items poi
-                    INNER JOIN purchase_orders po ON po.po_id = poi.po_id
-                    WHERE poi.pr_item_id = pri.pr_item_id
-                      AND po.status NOT IN ('Cancelled', 'Rejected')
-                ), 0)
-              )";
-    $params = array_merge([$productId], $statuses);
+              AND pr.status IS NOT NULL";
+    $params = [$productId];
     if ($excludePrId !== null && $excludePrId !== '') {
         $sql .= ' AND pr.pr_id <> ?';
         $params[] = $excludePrId;
     }
-    $sql .= " ORDER BY
-                CASE pr.status
-                    WHEN 'Approved' THEN 1
-                    WHEN 'Pending Supervisor Approval' THEN 2
-                    WHEN 'Revision Requested' THEN 3
-                    WHEN 'Draft' THEN 4
-                    ELSE 5
-                END,
-                pr.created_at DESC
+    $sql .= " ORDER BY pr.created_at DESC, pr.request_date DESC
               LIMIT 1";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row ?: null;
+    if (!$row || !in_array((string) $row['status'], activePurchaseRequestStatuses(), true)) return null;
+    if ((string) $row['status'] !== 'Approved') return $row;
+
+    $ordered = $pdo->prepare(
+        "SELECT COALESCE(SUM(poi.inventory_qty_ordered), 0)
+         FROM purchase_order_items poi
+         INNER JOIN purchase_orders po ON po.po_id = poi.po_id
+         INNER JOIN purchase_request_items pri ON pri.pr_item_id = poi.pr_item_id
+         WHERE pri.pr_id = :pr_id
+           AND pri.product_id = :product_id
+           AND po.status NOT IN ('Cancelled', 'Rejected')"
+    );
+    $ordered->execute([':pr_id' => $row['pr_id'], ':product_id' => $productId]);
+    return (float) $ordered->fetchColumn() > 0 ? null : $row;
 }
 
 function assertNoActivePurchaseRequestConflict(PDO $pdo, string $productId, string $productName, ?string $excludePrId = null): void
@@ -498,6 +539,7 @@ function purchaseRequestSupplierOptions(PDO $pdo, array $productIds, bool $forUp
     $stmt = $pdo->prepare(
         "SELECT sp.supplier_product_id, sp.product_id, sp.supplier_id, s.supplier_name,
                 s.address AS supplier_address, s.phone AS supplier_phone, s.email AS supplier_email,
+                sp.supplier_cost_price, sp.supplier_cost_input, sp.supplier_cost_basis,
                 sp.purchase_unit, sp.purchase_unit_contains, sp.inner_unit, sp.units_per_inner_unit,
                 sp.inventory_unit, sp.units_per_purchase_unit
          FROM supplier_products sp
@@ -512,7 +554,14 @@ function purchaseRequestSupplierOptions(PDO $pdo, array $productIds, bool $forUp
     $hierarchies = supplierProductPurchasingHierarchies($pdo, array_column($rows, 'supplier_product_id'));
     foreach ($rows as $row) {
         $row = array_replace($row, $hierarchies[$row['supplier_product_id']] ?? []);
-        $options[(string) $row['product_id']][] = enrichSupplierPurchasingSetup($row);
+        $enriched = enrichSupplierPurchasingSetup($row);
+        $enriched['supplier_price_available'] = $row['supplier_cost_input'] !== null
+            || $row['supplier_cost_price'] !== null;
+        $enriched['supplier_price_per_purchase_unit'] = strtolower((string) ($enriched['supplier_cost_basis'] ?? 'inventory')) === 'purchase'
+            && $row['supplier_cost_input'] !== null
+                ? round((float) $row['supplier_cost_input'], 2)
+                : (float) ($enriched['estimated_purchase_unit_cost'] ?? 0);
+        $options[(string) $row['product_id']][] = $enriched;
     }
     return $options;
 }
@@ -565,9 +614,6 @@ function validatePurchaseRequestPackage(array $options, $quantity, string $unit)
     $configuredUnit = purchaseRequestConfiguredUnit($options);
     if ($configuredUnit === null) {
         throw new InvalidArgumentException('The selected product does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
-    }
-    if (strcasecmp(trim($unit), $configuredUnit) !== 0) {
-        throw new InvalidArgumentException('The requested unit is controlled by Supplier Product Setup and must be ' . $configuredUnit . '.');
     }
     $canonical = null;
     foreach (purchaseRequestPackagingUnits($options) as $level) {

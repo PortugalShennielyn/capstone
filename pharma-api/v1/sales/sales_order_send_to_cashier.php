@@ -209,10 +209,30 @@ try {
     $detail = $detailStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
     $summaryItemsStmt = $pdo->prepare(
-        "SELECT product_name, brand_name, specification, quantity, unit_price, line_total
-         FROM sales_order_items
-         WHERE order_id = :order_id
-         ORDER BY order_item_id ASC"
+        "SELECT
+            i.product_name,
+            i.brand_name,
+            i.specification,
+            i.quantity,
+            i.unit_price,
+            i.line_total,
+            md.generic_name,
+            classification_values.medicine_classification,
+            classification_values.medicine_classification_badge,
+            COALESCE(NULLIF(md.strength, ''), TRIM(CONCAT(COALESCE(md.strength_value, ''), CASE WHEN md.strength_unit IS NULL OR md.strength_unit = '' THEN '' ELSE CONCAT(' ', md.strength_unit) END))) AS medicine_strength,
+            md.dosage_form
+         FROM sales_order_items i
+         LEFT JOIN medicine_details md ON md.product_id = i.product_id
+         LEFT JOIN (
+            SELECT psv.product_id,
+                   psv.value_text AS medicine_classification,
+                   CASE WHEN LOWER(TRIM(psv.value_text)) = 'prescription (rx)' THEN 'Rx' ELSE NULL END AS medicine_classification_badge
+            FROM product_specification_values psv
+            INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+            WHERE LOWER(TRIM(ps.specification_name)) = 'medicine classification'
+         ) classification_values ON classification_values.product_id = i.product_id
+         WHERE i.order_id = :order_id
+         ORDER BY i.order_item_id ASC"
     );
     $summaryItemsStmt->execute([':order_id' => $orderId]);
     $summaryItems = array_map(static function (array $item): array {
@@ -220,6 +240,11 @@ try {
             'product_name' => $item['product_name'],
             'brand_name' => $item['brand_name'],
             'specification' => $item['specification'],
+            'generic_name' => trim((string) ($item['generic_name'] ?? '')),
+            'medicine_classification' => trim((string) ($item['medicine_classification'] ?? '')),
+            'medicine_classification_badge' => trim((string) ($item['medicine_classification_badge'] ?? '')),
+            'strength' => trim((string) ($item['medicine_strength'] ?? '')),
+            'dosage_form' => trim((string) ($item['dosage_form'] ?? '')),
             'quantity' => (int) $item['quantity'],
             'unit_price' => round((float) $item['unit_price'], 2),
             'line_total' => round((float) $item['line_total'], 2),

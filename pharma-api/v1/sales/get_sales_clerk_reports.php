@@ -475,8 +475,7 @@ try {
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'Unable to load Sales Clerk reports.',
-        'error' => $e->getMessage()
+        'message' => 'Unable to load Sales Clerk reports.'
     ]);
 }
 ?>

@@ -149,6 +149,14 @@
 .supplier-payment-invoice-reference strong { display:block; margin-top:3px; color:#273142; font-size:.84rem; overflow-wrap:break-word; }
 .supplier-payment-invoice-reference small { margin-top:3px; font-weight:600; }
 .supplier-payment-invoice-reference-actions { display:flex; flex:0 0 auto; align-items:center; gap:8px; white-space:nowrap; }
+.supplier-payment-status-strip { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.supplier-payment-status-strip span { padding:6px 10px; border:1px solid #e2e7ef; border-radius:999px; background:#f8fafc; color:#64748b; font-size:.7rem; }
+.supplier-payment-status-strip strong { color:#273142; }
+.supplier-payment-receiving-status { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:hidden; border:1px solid #e2e7ef; border-radius:10px; background:#fff; }
+.supplier-payment-receiving-status div { display:flex; flex-direction:column; gap:3px; padding:10px 12px; border-right:1px solid #edf0f5; }
+.supplier-payment-receiving-status div:last-child { border-right:0; }
+.supplier-payment-receiving-status span { color:#697386; font-size:.68rem; font-weight:700; }
+.supplier-payment-receiving-status strong { color:#273142; font-size:.78rem; }
 .supplier-payment-adjustment-note { display:block; margin-top:3px; color:#7c5a13; font-size:.62rem; font-weight:650; }
 .po-payment-summary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); overflow: hidden; border: 1px solid #e2e7ef; border-radius: 10px; background: #fff; }
 .po-payment-summary-grid > div { min-width: 0; min-height: 48px; padding: 8px 10px; border-bottom: 1px solid #edf0f5; }
@@ -220,8 +228,9 @@
 .po-payment-actions .btn:focus-visible { outline: 3px solid rgba(124,58,237,.28); outline-offset: 2px; }
 body.dark-mode .receiving-drawer-header, body.dark-mode .receiving-drawer-footer, body.dark-mode .receiving-info-box, body.dark-mode .receiving-financial-card, body.dark-mode .receiving-item-detail, body.dark-mode .payment-history-card, body.dark-mode .supplier-payment-dialog-card { color: #e5e7eb; background: #182131; border-color: #2b3546; }
 body.dark-mode .po-payment-summary-grid,body.dark-mode .po-payment-financial-summary,body.dark-mode .supplier-credit-apply-row,body.dark-mode .payment-calculation-card,body.dark-mode .supplier-invoice-items-table-wrap { color:#e5e7eb;background:#182131;border-color:#344054; }
-body.dark-mode .supplier-payment-invoice-reference { color:#e5e7eb;background:#182131;border-color:#344054; }
+body.dark-mode .supplier-payment-invoice-reference,body.dark-mode .supplier-payment-receiving-status,body.dark-mode .supplier-payment-status-strip span { color:#e5e7eb;background:#182131;border-color:#344054; }
 body.dark-mode .supplier-payment-invoice-reference strong { color:#f1f5f9; }
+body.dark-mode .supplier-payment-receiving-status strong,body.dark-mode .supplier-payment-status-strip strong { color:#f1f5f9; }
 body.dark-mode .supplier-invoice-items-table th { color:#cbd5e1;background:#202b3d; } body.dark-mode .supplier-invoice-items-table td strong { color:#f1f5f9; }
 body.dark-mode .po-payment-summary-grid strong { color:#e5e7eb; }
 @media (max-width: 760px) { .receiving-info-grid { grid-template-columns: 1fr 1fr; } .receiving-qty-grid { grid-template-columns: 1fr 1fr; } .supplier-payment-form { grid-template-columns: 1fr; } .supplier-payment-form .form-field.full { grid-column: auto; } .supplier-payment-dialog { padding: 14px; } .supplier-payment-dialog-card { max-height: calc(100vh - 28px); } .supplier-payment-invoice-reference { align-items:flex-start; flex-direction:column; } .supplier-payment-invoice-reference-actions { width:100%; flex-wrap:wrap; } .grn-modal { padding: 8px; } .grn-preview-shell { height: calc(100vh - 16px); max-height: calc(100vh - 16px); } .grn-preview-toolbar { align-items: stretch; flex-direction: column; } .grn-toolbar-left { align-items: flex-start; flex-direction: column; } .grn-preview-actions { display: grid; grid-template-columns: repeat(2,1fr); } .grn-edit-identity, .grn-edit-grid { grid-template-columns: 1fr 1fr; } .grn-edit-damage-row { grid-template-columns: 100px 1fr 70px 1fr; } .grn-edit-damage-row select[data-field="inventory_batch_id"] { grid-column: 2 / -1; } .grn-edit-damage-row button { grid-column: -2 / -1; justify-self: end; } .grn-edit-batch { grid-template-columns: 1fr 100px 140px; } }

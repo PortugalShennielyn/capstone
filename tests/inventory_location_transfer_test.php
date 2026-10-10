@@ -55,7 +55,9 @@ try {
 
     $invalid = postTransfer($token, ['product_id'=>$ids['product'],'movement_type'=>'STORAGE_TO_SHELF','quantity'=>5,'unit'=>'BOX']);
     assertSameValue('error', $invalid['status'] ?? null, 'over-transfer is rejected');
+    assertSameValue('Only 0 BOXes can be transferred from the current 40 PCS.', $invalid['message'] ?? null, 'over-transfer returns max transfer guidance');
     assertSameValue(40, (int) $pdo->query("SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id='{$ids['product']}'")->fetchColumn(), 'invalid transfer leaves storage unchanged');
+    assertSameValue(1, (int) $pdo->query("SELECT COUNT(*) FROM inventory_transfers WHERE product_id='{$ids['product']}'")->fetchColumn(), 'invalid transfer does not create transfer history');
 
     $reverse = postTransfer($token, ['product_id'=>$ids['product'],'movement_type'=>'SHELF_TO_STORAGE','quantity'=>5,'unit'=>'PCS']);
     assertSameValue('success', $reverse['status'] ?? null, 'shelf return succeeds');

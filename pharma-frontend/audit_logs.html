@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Audit Logs</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=39" rel="stylesheet">
+    <script src="./js/navbar.js?v=89" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <style>
+        :root{--purple:#7c3aed;--body-bg:#f4f6fb;--topbar-height:70px;--border-soft:#e8ecf3;--text-main:#252b37;--transition:all .3s ease}
+        *{box-sizing:border-box}
+        body{margin:0;min-height:100vh;color:var(--text-main);background:var(--body-bg);font-family:"Inter",sans-serif}
+        body.dark-mode{--body-bg:#111827;--border-soft:#263244;--text-main:#e5e7eb}
+        a{text-decoration:none}
+        .main-wrapper{min-height:100vh;margin-left:var(--sidebar-width);transition:var(--transition)}
+        .main-wrapper.collapsed{margin-left:var(--sidebar-collapsed-width)}
+        .topbar{position:sticky;top:0;z-index:1020;height:var(--topbar-height);display:flex;align-items:center;justify-content:space-between;padding:0 26px;background:#fff;border-bottom:1px solid var(--border-soft)}
+        body.dark-mode .topbar,body.dark-mode .audit-panel{background:#182131;color:var(--text-main)}
+        .topbar-left,.topbar-right{display:flex;align-items:center;gap:14px}
+        .icon-btn{width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:8px;color:#4b5563;background:#f4f6fb}
+        .page-title-mini{display:flex;flex-direction:column;line-height:1.2}
+        .page-title-mini strong{font-size:15px;font-weight:800}
+        .page-title-mini span{margin-top:3px;color:#7b8494;font-size:12px;font-weight:600}
+        .page-body{padding:clamp(20px,1.55vw,24px)}
+        .page-header h1{margin:0;font-size:1.8rem;font-weight:900;letter-spacing:0}
+        .page-header p{margin:7px 0 0;color:#6b7280;font-size:14px;font-weight:600}
+        .audit-panel{margin-top:18px;border:1px solid var(--border-soft);border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.05)}
+        .audit-filter-grid{display:grid;grid-template-columns:minmax(220px,1.6fr) repeat(6,minmax(130px,1fr)) auto auto;gap:12px;align-items:end;padding:18px}
+        .audit-filter-grid .form-label{margin-bottom:6px;color:#596274;font-size:12px;font-weight:800}
+        .audit-filter-grid .form-control,.audit-filter-grid .form-select{height:38px;font-size:13px}
+        .audit-filter-grid .btn{height:38px;white-space:nowrap;font-weight:800}
+        .btn-purple{--bs-btn-color:#fff;--bs-btn-bg:var(--purple);--bs-btn-border-color:var(--purple);--bs-btn-hover-color:#fff;--bs-btn-hover-bg:#6328d6;--bs-btn-hover-border-color:#6328d6}
+        .audit-table-wrap{padding:0 18px 18px;overflow-x:auto}
+        .audit-table{width:100%;min-width:980px;margin:0;border-collapse:separate;border-spacing:0}
+        .audit-table th{position:sticky;top:0;background:#f8f9fc;color:#596274;font-size:12px;font-weight:900;text-transform:none}
+        .audit-table th,.audit-table td{padding:13px 12px;border-bottom:1px solid #edf0f5;vertical-align:middle;font-size:13px;line-height:1.35}
+        .audit-table td{font-weight:650}
+        .user-cell strong{display:block;font-weight:850}
+        .user-cell small{display:block;margin-top:2px;color:#7b8494;font-size:11px;font-weight:750}
+        .description-cell{max-width:360px;overflow-wrap:anywhere}
+        .badge-action{display:inline-flex;align-items:center;justify-content:center;min-width:fit-content;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:900;line-height:1}
+        .badge-green{color:#047857;background:#d1fae5}.badge-red{color:#b42318;background:#fee2e2}.badge-gray{color:#4b5563;background:#edf0f2}.badge-blue{color:#1d4ed8;background:#dbeafe}.badge-yellow{color:#92400e;background:#fef3c7}
+        .event-status{display:block;width:max-content;margin-top:5px;padding:3px 7px;border-radius:999px;font-size:10px;font-weight:850;text-transform:uppercase}.event-success{color:#047857;background:#d1fae5}.event-failure{color:#b42318;background:#fee2e2}
+        .source-cell small{display:block;margin-top:3px;color:#7b8494;font-size:10px;font-weight:700}
+        .audit-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-top:1px solid var(--border-soft)}
+        .audit-footer span{color:#64748b;font-size:12px;font-weight:800}
+        .empty-row{text-align:center;color:#64748b;font-weight:800}
+        @media (max-width:1200px){.audit-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.audit-filter-grid .btn{width:100%}}
+        @media (max-width:760px){.main-wrapper,.main-wrapper.collapsed{margin-left:0}.topbar{padding:0 16px}.audit-filter-grid{grid-template-columns:1fr}.audit-table{min-width:820px}.page-body{padding:16px}}
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+    <div class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
+                <div class="page-title-mini"><strong>Audit Logs</strong><span>Administration</span></div>
+            </div>
+            <div class="topbar-right"><div class="avatar-initials" data-navbar-initials></div></div>
+        </header>
+        <main class="page-body">
+            <section class="page-header">
+                <h1>Audit Logs</h1>
+                <p>Review who did what, when, the result, the affected record, and the source device.</p>
+            </section>
+            <section class="audit-panel" aria-label="Audit log filters and results">
+                <form class="audit-filter-grid" id="auditFilters">
+                    <div>
+                        <label class="form-label" for="auditSearch">Search</label>
+                        <input class="form-control" id="auditSearch" name="search" placeholder="Search event, target, user, or IP">
+                    </div>
+                    <div>
+                        <label class="form-label" for="auditUser">User</label>
+                        <select class="form-select" id="auditUser" name="user"><option value="">All Users</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="auditAction">Action</label>
+                        <select class="form-select" id="auditAction" name="action"><option value="">All Actions</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="auditModule">Module</label>
+                        <select class="form-select" id="auditModule" name="module"><option value="">All Modules</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="auditOutcome">Outcome</label>
+                        <select class="form-select" id="auditOutcome" name="event_status"><option value="">All Outcomes</option><option value="Success">Success</option><option value="Failure">Failure</option></select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="auditDateFrom">Date From</label>
+                        <input class="form-control" id="auditDateFrom" name="date_from" type="date">
+                    </div>
+                    <div>
+                        <label class="form-label" for="auditDateTo">Date To</label>
+                        <input class="form-control" id="auditDateTo" name="date_to" type="date">
+                    </div>
+                    <button class="btn btn-purple" type="submit"><i class="fa-solid fa-filter me-1"></i>Filter</button>
+                    <button class="btn btn-light" id="auditClear" type="button"><i class="fa-solid fa-rotate-left me-1"></i>Clear</button>
+                </form>
+                <div class="audit-table-wrap">
+                    <table class="audit-table">
+                        <thead><tr><th>Date &amp; Time</th><th>User / Role</th><th>Action / Outcome</th><th>Module</th><th>Event Description</th><th>Affected Record</th><th>Source</th></tr></thead>
+                        <tbody id="auditRows"><tr><td class="empty-row" colspan="7">Loading audit logs...</td></tr></tbody>
+                    </table>
+                </div>
+                <div class="audit-footer">
+                    <span id="auditStatus">Page 1 of 1</span>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-secondary btn-sm" id="auditPrev" type="button">Previous</button>
+                        <button class="btn btn-outline-secondary btn-sm" id="auditNext" type="button">Next</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script type="module" src="./js/modules/audit_logs.js?v=2"></script>
+</body>
+</html>

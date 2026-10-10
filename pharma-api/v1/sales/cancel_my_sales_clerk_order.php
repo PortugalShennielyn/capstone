@@ -40,9 +40,16 @@ try {
     if (!$order) {
         throw new RuntimeException('Order not found.');
     }
-    if (!in_array($order['status'], ['draft', 'waiting_cashier'], true)) {
-        throw new RuntimeException('Only draft or waiting-for-cashier orders can be cancelled.');
+    if (!in_array($order['status'], ['draft', 'waiting_cashier', 'accepted_by_cashier', 'processing_payment', 'processing'], true)) {
+        throw new RuntimeException('Only unpaid waiting or processing orders can be cancelled.');
     }
+    $paid = $pdo->prepare("SELECT 1 FROM sales_payments WHERE order_id = :order_id AND payment_status = 'paid' LIMIT 1");
+    $paid->execute([':order_id' => $orderId]);
+    if ($paid->fetchColumn()) throw new RuntimeException('This order has already been paid and cannot be cancelled.');
+
+    $reason = trim((string) ($payload['reason'] ?? ''));
+    if ($reason === '') $reason = 'Cancelled by sales clerk.';
+    if (mb_strlen($reason) > 255) throw new InvalidArgumentException('Cancellation reason must be 255 characters or fewer.');
 
     $update = $pdo->prepare(
         "UPDATE sales_orders
@@ -53,7 +60,7 @@ try {
          WHERE order_id = :order_id"
     );
     $update->execute([
-        ':reason' => trim((string) ($payload['reason'] ?? 'Cancelled by sales clerk.')),
+        ':reason' => $reason,
         ':cancelled_by' => salesCurrentUserId(),
         ':order_id' => $orderId,
     ]);
@@ -65,7 +72,7 @@ try {
     );
     $queue->execute([':order_id' => $orderId]);
 
-    salesRecordStatusChange($pdo, $orderId, (string) $order['status'], 'cancelled', salesCurrentUserId(), 'Order cancelled by sales clerk.');
+    salesRecordStatusChange($pdo, $orderId, (string) $order['status'], 'cancelled', salesCurrentUserId(), $reason);
 
     $pdo->commit();
 
@@ -81,7 +88,7 @@ try {
         $pdo->rollBack();
     }
 
-    http_response_code(500);
+    http_response_code($e instanceof InvalidArgumentException || $e instanceof RuntimeException ? 400 : 500);
     echo json_encode([
         'status' => 'error',
         'message' => $e->getMessage() ?: 'Unable to cancel order.',

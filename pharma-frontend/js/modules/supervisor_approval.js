@@ -1,4 +1,5 @@
 import API_BASE_URL from "../config/config.js";
+import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=1";
 
 let requests = [];
 let activeRequest = null;
@@ -112,21 +113,16 @@ function renderTable() {
         : "All purchase requests and recorded decision history.";
     if (!rows.length) {
         $("#requestRows").innerHTML =
-            '<tr class="empty-row"><td colspan="7">No purchase requests match the selected filters.</td></tr>';
+            '<tr class="empty-row"><td colspan="6">No purchase requests match the selected filters.</td></tr>';
         return;
     }
     $("#requestRows").innerHTML = rows
         .map((request) => {
             const risk = stockRisk(request);
-            const names = (request.items || [])
-                .slice(0, 2)
-                .map((item) => item.product_name)
-                .join(", ");
-            const overflow =
-                (request.items || []).length > 2 ? ` +${request.items.length - 2} more` : "";
+            const items = request.items || [];
             const pending = request.status === "Pending Supervisor Approval";
             const actions = `<div class="approval-action-group${pending ? "" : " view-only"}"><button class="review-btn" type="button" data-review-id="${escapeHtml(request.pr_id)}"><i class="fa-regular fa-eye"></i> View</button>${pending ? `<button class="quick-action-toggle" type="button" data-action-toggle-id="${escapeHtml(request.pr_id)}" aria-label="Open PR decision actions" aria-expanded="false"><i class="fa-solid fa-caret-down"></i></button>` : ""}</div>`;
-            return `<tr><td class="primary-cell"><strong>${escapeHtml(request.pr_number)}</strong></td><td>${escapeHtml(request.requested_by_name || "Unknown")}</td><td>${escapeHtml(formatDateTime(request.submitted_at || request.request_date))}</td><td class="primary-cell"><strong>${Number(request.item_count || (request.items || []).length)}</strong><span>${escapeHtml(names + overflow || "No items")}</span></td><td><span class="risk-badge risk-${risk.toLowerCase().replaceAll(" ", "-")}">${escapeHtml(risk)}</span></td><td><span class="status-badge ${statusClass(request.status)}">${escapeHtml(request.status)}</span></td><td>${actions}</td></tr>`;
+            return `<tr><td class="primary-cell"><strong>${escapeHtml(request.pr_number)}</strong></td><td>${escapeHtml(formatDateTime(request.submitted_at || request.request_date))}</td><td>${purchaseRequestItemsSummary(items)}</td><td><span class="risk-badge risk-${risk.toLowerCase().replaceAll(" ", "-")}">${escapeHtml(risk)}</span></td><td><span class="status-badge ${statusClass(request.status)}">${escapeHtml(request.status)}</span></td><td>${actions}</td></tr>`;
         })
         .join("");
 }
@@ -243,6 +239,26 @@ function openPurchaseRequestPrint(request) {
     );
 }
 
+function reviewModalIsOpen() {
+    return modalElement?.classList.contains("show");
+}
+
+function waitForReviewModalHidden() {
+    if (!reviewModalIsOpen()) return Promise.resolve();
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            modalElement?.removeEventListener("hidden.bs.modal", finish);
+            resolve();
+        };
+        modalElement?.addEventListener("hidden.bs.modal", finish, { once: true });
+        modal?.hide();
+        window.setTimeout(finish, 300);
+    });
+}
+
 async function decide(request, decision, { openReview = false } = {}) {
     if (request.status !== "Pending Supervisor Approval")
         throw new Error("This purchase request has already been processed.");
@@ -264,21 +280,49 @@ async function decide(request, decision, { openReview = false } = {}) {
         )
     )
         throw new Error("Enter a positive approved quantity for every product.");
-    const title = { approve: "Approve Purchase Request?", reject: "Reject Purchase Request" }[
-        decision
-    ];
-    const result = await Swal.fire({
-        title,
-        text:
-            decision === "approve"
-                ? "Save these approved quantities and approve the request? The quantities are locked after approval."
-                : undefined,
-        icon: decision === "approve" ? "question" : "warning",
-        showCancelButton: true,
-        confirmButtonColor: { approve: "#16a34a", reject: "#dc2626" }[decision],
-        confirmButtonText: { approve: "Approve Quantities & PR", reject: "Reject" }[decision],
-    });
-    if (!result.isConfirmed) return;
+    const reopenReviewOnCancel = decision === "reject" && reviewModalIsOpen();
+    if (decision === "reject") await waitForReviewModalHidden();
+    const result =
+        decision === "reject"
+            ? await Swal.fire({
+                  title: "Reject Purchase Request",
+                  html: `
+                    <div class="text-start">
+                        <label class="form-label fw-bold" for="rejectPrReason">Reason for Rejection <span class="text-danger">*</span></label>
+                        <textarea id="rejectPrReason" class="form-control" rows="5" maxlength="1000" placeholder="Enter the reason why this purchase request is being rejected..."></textarea>
+                    </div>
+                  `,
+                  icon: "warning",
+                  showCancelButton: true,
+                  confirmButtonColor: "#dc2626",
+                  confirmButtonText: "Reject PR",
+                  cancelButtonText: "Cancel",
+                  focusConfirm: false,
+                  didOpen: (popup) => {
+                      requestAnimationFrame(() => popup.querySelector("#rejectPrReason")?.focus());
+                  },
+                  preConfirm: () => {
+                      const reason = String(Swal.getPopup()?.querySelector("#rejectPrReason")?.value || "").trim();
+                      if (!reason) {
+                          Swal.showValidationMessage("Please enter a reason for rejection.");
+                          return false;
+                      }
+                      return reason;
+                  },
+              })
+            : await Swal.fire({
+                  title: "Approve Purchase Request?",
+                  text: "Save these approved quantities and approve the request? The quantities are locked after approval.",
+                  icon: "question",
+                  showCancelButton: true,
+                  confirmButtonColor: "#16a34a",
+                  confirmButtonText: "Approve Quantities & PR",
+              });
+    if (!result.isConfirmed) {
+        if (reopenReviewOnCancel) showRequest(request);
+        return;
+    }
+    const rejectionReason = decision === "reject" ? String(result.value || "").trim() : "";
     const response = await requestJson("decide_purchase_request.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -286,6 +330,7 @@ async function decide(request, decision, { openReview = false } = {}) {
             pr_id: request.pr_id,
             decision,
             approved_quantities: approvedQuantities,
+            rejection_reason: rejectionReason,
         }),
     });
     await loadRequests(false);
@@ -309,7 +354,7 @@ async function loadRequests(openLinked = true) {
         }
     } catch (error) {
         $("#requestRows").innerHTML =
-            `<tr class="empty-row"><td colspan="7" class="text-danger">${escapeHtml(error.message)}</td></tr>`;
+            `<tr class="empty-row"><td colspan="6" class="text-danger">${escapeHtml(error.message)}</td></tr>`;
         toastr.error(error.message);
     }
 }

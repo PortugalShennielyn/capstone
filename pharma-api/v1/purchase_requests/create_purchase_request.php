@@ -14,7 +14,7 @@ $payload = readPurchaseRequestPayload();
 $items = is_array($payload['items'] ?? null) ? $payload['items'] : [];
 $submit = ($payload['submit'] ?? true) !== false;
 
-if (!$items) sendPurchaseRequestJson(false, 'At least one requested item is required.', null, 422);
+if (!$items) sendPurchaseRequestJson(false, 'Purchase Request must contain at least one product.', null, 422);
 
 try {
     ensurePurchaseRequestSchema($pdo);
@@ -62,8 +62,10 @@ try {
         if ($requestUnit === null) {
             throw new InvalidArgumentException($product['product_name'] . ' does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
         }
-        $requestUnit = validatePurchaseRequestPackage($packageOptions[$productId] ?? [], $item['requested_qty'] ?? null, $requestUnit);
+        $requestedUnit = trim((string)($item['unit'] ?? $item['requested_unit'] ?? '')) ?: $requestUnit;
+        $requestUnit = validatePurchaseRequestPackage($packageOptions[$productId] ?? [], $item['requested_qty'] ?? null, $requestedUnit);
         $qty = positivePurchaseRequestQuantity($item['requested_qty'] ?? null, $requestUnit);
+        assertPurchaseRequestQuantityLimit($qty, $pdo);
         assertNoActivePurchaseRequestConflict($pdo, $productId, (string) $product['product_name']);
         $stockStmt->execute([':product_id' => $productId]);
         $itemStmt->execute([
@@ -72,6 +74,7 @@ try {
             ':unit' => $requestUnit,
         ]);
     }
+    assertPurchaseRequestHasValidItems($pdo, $prId, 'Purchase Request must contain at least one product.');
     $pdo->commit();
     recordActivityLog($pdo, 'Purchase Request', $status, $prNumber . ' created by ' . ($_SESSION['full_name'] ?? 'Authorized user'), $prId);
     sendPurchaseRequestJson(true, $submit ? 'Purchase Request submitted for Supervisor approval.' : 'Purchase Request saved as Draft.', ['pr_id' => $prId, 'pr_number' => $prNumber, 'status' => $status], 201);
@@ -80,6 +83,7 @@ try {
     sendPurchaseRequestJson(false, $e->getMessage(), null, 422);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    sendPurchaseRequestJson(false, 'Unable to create purchase request.', null, 500);
+    error_log('Purchase Request create failed: ' . $e->getMessage());
+    sendPurchaseRequestJson(false, 'Unable to create purchase request: ' . $e->getMessage(), null, 500);
 }
 ?>

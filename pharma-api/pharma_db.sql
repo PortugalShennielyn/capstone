@@ -3352,6 +3352,7 @@ CREATE TABLE `system_settings` (
   `po_prepared_role` varchar(100) NOT NULL DEFAULT 'Manager',
   `po_approved_name` varchar(150) DEFAULT NULL,
   `po_approved_role` varchar(100) NOT NULL DEFAULT 'Supervisor',
+  `pr_quantity_limit` int(11) NOT NULL DEFAULT 50,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

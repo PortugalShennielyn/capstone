@@ -29,9 +29,7 @@ function grnEditDate($value, bool $required): ?string
         if ($required) throw new InvalidArgumentException('Expiry date is required for medicine batches.');
         return null;
     }
-    $parsed = DateTime::createFromFormat('Y-m-d', $date);
-    if (!$parsed || $parsed->format('Y-m-d') !== $date) throw new InvalidArgumentException('Enter a valid batch expiry date.');
-    return $date;
+    return validateDateNotBeforeToday($date, 'Enter a valid batch expiry date.', 'Expiry date cannot be earlier than today.');
 }
 
 function grnEditDisposition(string $value): ?string

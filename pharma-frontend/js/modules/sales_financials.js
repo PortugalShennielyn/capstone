@@ -26,6 +26,23 @@ export function vatInclusiveBreakdown(subtotalValue, discountValue = 0) {
 export function vatInclusivePaymentTotals(order, discountType = 'none', customAmount = 0) {
     const subtotal = moneyRound(order?.subtotal);
     const salesClerkDiscount = moneyRound(Math.min(subtotal, Number(order?.sales_clerk_discount ?? order?.discount ?? 0)));
+    if (discountType === 'senior' || discountType === 'pwd') {
+        const eligibleGross = moneyRound(Math.min(subtotal, (order?.items || []).reduce(
+            (sum, item) => sum + (item.discount_eligible ? Number(item.line_total || 0) : 0), 0
+        )));
+        const vatExemptSales = moneyRound(eligibleGross / VAT_DIVISOR);
+        const vatExemption = moneyRound(eligibleGross - vatExemptSales);
+        const cashierDiscount = moneyRound(vatExemptSales * 0.20);
+        const taxableGross = moneyRound(subtotal - eligibleGross);
+        const vatableSales = moneyRound(taxableGross / VAT_DIVISOR);
+        return {
+            subtotal, salesClerkDiscount: 0, cashierDiscount, discountType,
+            discount: moneyRound(cashierDiscount + vatExemption),
+            vatExemptSales, vatExemption, vatableSales,
+            vat: moneyRound(taxableGross - vatableSales),
+            totalAmount: moneyRound(taxableGross + vatExemptSales - cashierDiscount),
+        };
+    }
     const remaining = moneyRound(subtotal - salesClerkDiscount);
     const cashierDiscount = transactionDiscount(discountType, customAmount, remaining);
     const totalDiscount = moneyRound(Math.min(subtotal, salesClerkDiscount + cashierDiscount));
@@ -34,6 +51,8 @@ export function vatInclusivePaymentTotals(order, discountType = 'none', customAm
         salesClerkDiscount,
         cashierDiscount,
         discountType,
+        vatExemptSales: 0,
+        vatExemption: 0,
     };
 }
 
@@ -45,7 +64,9 @@ export function savedTransactionTotals(order = {}) {
     const subtotal = moneyRound(order.subtotal);
     const salesClerkDiscount = moneyRound(order.sales_clerk_discount ?? order.discount ?? 0);
     const cashierDiscount = moneyRound(order.cashier_discount_amount ?? 0);
-    const discount = moneyRound(Math.min(subtotal, salesClerkDiscount + cashierDiscount));
+    const vatExemption = moneyRound(order.vat_exemption_amount ?? 0);
+    const vatExemptSales = moneyRound(order.vat_exempt_sales ?? 0);
+    const discount = moneyRound(Math.min(subtotal, salesClerkDiscount + cashierDiscount + vatExemption));
     const fallback = vatInclusiveBreakdown(subtotal, discount);
     const finalAmount = moneyRound(
         hasSavedValue(order.final_amount)
@@ -56,7 +77,7 @@ export function savedTransactionTotals(order = {}) {
     const vatableSales = moneyRound(
         hasSavedValue(order.vatable_sales)
             ? order.vatable_sales
-            : Math.max(0, finalAmount - vat)
+            : Math.max(0, finalAmount - vat - vatExemptSales + cashierDiscount)
     );
     const cashReceived = moneyRound(order.amount_paid ?? order.cash_received ?? 0);
     const change = moneyRound(
@@ -69,6 +90,8 @@ export function savedTransactionTotals(order = {}) {
         subtotal,
         salesClerkDiscount,
         cashierDiscount,
+        vatExemptSales,
+        vatExemption,
         discount,
         vatableSales,
         vat,
