@@ -33,7 +33,7 @@
         .page-title-mini { display:flex; flex-direction:column; line-height:1.2; }
         .page-title-mini strong { color:var(--text-main); font-size:15px; font-weight:800; }
         .page-title-mini span { margin-top:3px; color:#7b8494; font-size:12px; font-weight:600; }
-        .page-body { padding:clamp(20px, 1.55vw, 24px); }
+        .page-body { padding:clamp(20px, 1.55vw, 24px); max-width:100%; overflow-x:hidden; }
         .products-workspace { width:100%; max-width:none; margin:0; padding:0; container-name:products-workspace; container-type:inline-size; }
         .card { border:1px solid var(--border-soft); border-radius:10px; box-shadow:0 10px 28px rgba(15,23,42,.05); }
         .product-master-container { width:100%; overflow:visible; border:1px solid #e5e7eb; border-radius:14px; background:#fff; box-shadow:0 4px 18px rgba(15,23,42,.05); container-name:product-master; container-type:inline-size; }
@@ -41,7 +41,7 @@
         .panel-heading { min-width:0; }
         .panel-heading h2 { margin:0; font-size:1.18rem; font-weight:800; line-height:1.3; }
         .panel-heading p { margin:3px 0 0; color:#6b7280; font-size:13px; font-weight:500; line-height:1.4; }
-        .product-add-button { flex:0 0 auto; min-height:40px; padding-inline:15px; white-space:nowrap; }
+        .product-add-button { flex:0 0 auto; white-space:nowrap; }
         .btn-purple { --bs-btn-color:#fff; --bs-btn-bg:var(--purple); --bs-btn-border-color:var(--purple); --bs-btn-hover-color:#fff; --bs-btn-hover-bg:var(--purple-dark); --bs-btn-hover-border-color:var(--purple-dark); }
         .product-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:8px; padding:0 0 10px; background:transparent; }
         .product-toolbar-field { min-width:0; }
@@ -189,12 +189,28 @@
         .pricing-selection-status.is-eligible { color:#166534; border-color:#bbf7d0; background:#f0fdf4; }
         .pricing-selection-status.is-outdated { color:#92400e; border-color:#fde68a; background:#fffbeb; }
         .pricing-selection-status.is-blocked { color:#667085; border-color:#e4e7ec; background:#f9fafb; }
-        .products-table.pricing-selection-mode th:nth-child(1),.products-table.pricing-selection-mode td:nth-child(1) { width:44px; min-width:44px; max-width:44px; }
+        .products-workspace,.product-master-container { min-width:0; max-width:100%; }
+        #table-products.pricing-selection-mode { cursor:default; }
+        #table-products.pricing-selection-mode tbody tr[data-markup-eligible="1"] { cursor:pointer; }
+        #table-products.pricing-selection-mode th.pricing-selection-column,
+        #table-products.pricing-selection-mode td.pricing-selection-column { width:44px; min-width:44px; max-width:44px; text-align:center!important; }
+        #table-products.products-table td.markup-difference { font-weight:800; font-variant-numeric:tabular-nums; white-space:nowrap!important; }
+        #table-products .markup-difference.is-decrease { color:#b42318; }
+        #table-products .markup-difference.is-increase { color:#047857; }
+        #table-products .markup-difference.is-zero { color:#667085; }
+        #table-products.pricing-selection-mode .markup-money-stack { display:inline-flex; flex-direction:column; align-items:flex-end; gap:2px; max-width:100%; white-space:nowrap; font-variant-numeric:tabular-nums; }
+        #table-products.pricing-selection-mode .markup-money-stack strong { font-size:13px; font-weight:800; }
+        #table-products.pricing-selection-mode .markup-money-stack small { color:#72809a; font-size:10px; font-weight:550; }
+        #table-products.pricing-selection-mode .markup-percent-cell { font-weight:800; font-variant-numeric:tabular-nums; }
+        #table-products.pricing-selection-mode .pricing-method-badge { max-width:100%; padding:4px 6px; border-radius:999px; font-size:10px; line-height:1.2; white-space:normal; text-align:center; }
+        #table-products.pricing-selection-mode .pricing-method-manual { color:#92400e; border-color:#fde68a; background:#fef3c7; }
         .product-pricing-toolbar,.markup-selection-bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px 12px; margin:0 0 10px; padding:10px 12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
-        .product-pricing-toolbar-label { display:flex; align-items:center; gap:10px; min-width:0; margin-right:auto; }
-        .product-pricing-toolbar-label strong { color:#253047; font-size:13px; font-weight:800; }
-        .product-pricing-toolbar-actions,.markup-selection-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
-        .product-pricing-toolbar .btn,.markup-selection-actions .btn { height:36px; min-height:36px; padding:0 12px; white-space:nowrap; font-size:13px; }
+        .product-pricing-toolbar { justify-content:flex-start; }
+        .product-pricing-toolbar > .product-refresh-indicator:not(.d-none) { margin-right:auto; }
+        .product-pricing-toolbar-actions,.markup-selection-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; min-width:0; }
+        .product-pricing-toolbar-actions { flex:1 1 100%; justify-content:flex-start; }
+        .product-pricing-toolbar-actions .product-add-button { margin-left:auto; }
+        .product-pricing-toolbar .btn,.markup-selection-actions .btn { display:inline-flex; align-items:center; justify-content:center; height:38px; min-height:38px; padding:0 14px; white-space:nowrap; font-size:13px; font-weight:650; }
         .markup-selection-bar { background:#f5f3ff; border-color:#ddd6fe; }
         .markup-selection-indicator { display:grid; gap:2px; min-width:min(100%,220px); margin-right:auto; }
         .markup-selection-indicator strong { color:#4c1d95; font-size:13px; font-weight:800; }
@@ -207,18 +223,34 @@
         #table-products.pricing-selection-mode tbody tr.is-markup-disabled { cursor:not-allowed; }
         #table-products.pricing-selection-mode tbody tr.is-markup-disabled td,
         #table-products.pricing-selection-mode tbody tr.is-markup-disabled td:last-child { color:#98a2b3; background:#f8fafc!important; }
+        #table-products.pricing-selection-mode tbody tr.is-markup-manual td { background:#fffbeb!important; }
+        #table-products.pricing-selection-mode tbody tr.is-markup-large-drop td { background:#fff1f2!important; }
+        #table-products.pricing-selection-mode tbody tr.is-markup-selected td:first-child { box-shadow:inset 3px 0 #6d5df5; }
         .markup-row-state { display:inline-flex; max-width:110px; padding:3px 6px; border-radius:999px; font-size:10px; font-weight:800; line-height:1.2; white-space:normal; }
         .markup-row-state.is-eligible,.markup-row-state.is-outdated { color:#166534; background:#dcfce7; }
         .markup-row-state.is-blocked { color:#667085; background:#f2f4f7; }
         body.dark-mode .product-pricing-toolbar,body.dark-mode .markup-selection-bar { border-color:#334155; background:#182131; }
         body.dark-mode .markup-selection-bar { background:#241b3a; border-color:#5b21b6; }
-        body.dark-mode .product-pricing-toolbar-label strong,body.dark-mode .markup-selected-count { color:#f8fafc; }
+        body.dark-mode .markup-selected-count { color:#f8fafc; }
         body.dark-mode .markup-selection-indicator strong { color:#ddd6fe; }
         body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-selected td,
         body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-selected td:last-child { background:#2e2150!important; }
         body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-disabled td,
         body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-disabled td:last-child { color:#94a3b8; background:#141b27!important; }
-        .bulk-pricing-table { width:100%; min-width:720px; margin:0; table-layout:fixed; font-size:.72rem; }
+        body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-manual td { background:#38291d!important; }
+        body.dark-mode #table-products.pricing-selection-mode tbody tr.is-markup-large-drop td { background:#44202a!important; }
+        .bulk-pricing-table { width:100%; min-width:1120px; margin:0; table-layout:auto; font-size:.76rem; }
+        .bulk-pricing-table th:nth-child(2) { min-width:150px; }
+        .bulk-pricing-table th:nth-child(10) { min-width:125px; }
+        .bulk-pricing-table th:last-child { min-width:175px; }
+        .bulk-pricing-table tr.has-price-warning td { background:#fffbeb; }
+        .bulk-pricing-table tr.has-manual-price-drop td { background:#fff1f2; }
+        .bulk-pricing-table .price-change strong,.bulk-pricing-table .price-change small { display:block; }
+        .bulk-pricing-table .price-change small { margin-top:2px; }
+        .bulk-pricing-table .price-change.is-decrease { color:#b42318; }
+        .bulk-pricing-table .price-change.is-increase { color:#047857; }
+        .manual-overwrite-note { display:block; margin-top:4px; color:#b42318; font-weight:700; }
+        .manual-confirmation { padding:9px 12px; border:1px solid #fda29b; border-radius:8px; background:#fff4f2; }
         .product-refresh-indicator { display:inline-flex; align-items:center; gap:5px; margin-top:4px; color:#667085; font-size:11px; font-weight:700; }
         body.dark-mode .selling-price-value { color:#f8fafc; }
         body.dark-mode .pricing-method-category,body.dark-mode .manage-prices-count { color:#bfdbfe; border-color:#1d4ed8; background:#172554; }
@@ -260,7 +292,8 @@
         .bulk-pricing-metric strong { margin-top:2px; color:#253047; font-size:.92rem; font-weight:800; }
         .bulk-pricing-search { justify-self:end; width:min(100%,360px); }
         .bulk-pricing-table-wrap { min-height:0; flex:1 1 auto; overflow:auto; border:1px solid var(--border-soft); border-radius:9px; overscroll-behavior:contain; }
-        @media (max-width:767px) { .product-pricing-toolbar,.markup-selection-bar { align-items:stretch; } .product-pricing-toolbar-label,.markup-selection-indicator { margin-right:0; } .product-pricing-toolbar-actions,.markup-selection-actions { width:100%; } .topbar-right .product-add-button { width:auto; min-height:36px; padding-inline:10px; } }
+        @media (max-width:900px) { .markup-selection-indicator { width:100%; } .markup-selection-actions { width:100%; justify-content:flex-start; } }
+        @media (max-width:767px) { .product-pricing-toolbar,.markup-selection-bar { align-items:stretch; } .markup-selection-indicator { margin-right:0; } .product-pricing-toolbar-actions,.markup-selection-actions { width:100%; justify-content:flex-start; } .product-pricing-toolbar-actions .product-add-button { margin-left:0; } .product-pricing-toolbar .btn,.markup-selection-actions .btn { flex:1 1 auto; } }
         .bulk-pricing-table th { position:sticky; top:0; z-index:3; padding:10px 8px; color:#596274; background:#f5f7fb; font-size:.67rem; font-weight:800; line-height:1.2; vertical-align:middle; }
         .bulk-pricing-table td { padding:9px 8px; vertical-align:middle; line-height:1.25; overflow-wrap:anywhere; }
         .bulk-pricing-table .text-column { text-align:left; }
@@ -591,7 +624,6 @@
             body #mainWrapper.main-wrapper { width:100%!important; margin-left:0!important; }
             .page-body { padding:14px 12px; overflow-x:hidden; }
             .topbar { height:auto; min-height:var(--topbar-height); flex-wrap:wrap; row-gap:8px; padding:10px 12px; }
-            .topbar-right .product-add-button { width:auto; }
             .product-toolbar { gap:10px; padding:14px 16px; }
             .product-search-field,.product-toolbar-field:nth-child(n),.product-master-actions { flex:1 1 100%; min-width:0; }
             .product-master-actions { flex-wrap:wrap; }
@@ -629,16 +661,24 @@
         #table-products.products-table th:nth-child(8) { width:13%; }
         #table-products.products-table th:nth-child(9) { width:9%; }
         #table-products.products-table th:nth-child(10) { width:6%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(1) { width:6%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(2) { width:9%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(3) { width:18%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(4) { width:18%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(5) { width:13%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(6) { width:10%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(7) { width:9%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(8) { width:9%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(9) { width:5%; }
-        #table-products.products-table.pricing-selection-mode th:nth-child(10) { width:3%; }
+        #table-products.products-table.pricing-selection-mode { min-width:1220px; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(1) { width:4%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(2) { width:6%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(3) { width:13%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(4) { width:14%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(5) { width:11%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(6) { width:8%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(7) { width:6%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(8) { width:8%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(9) { width:8%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(10) { width:8%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(11) { width:6%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(12) { width:8%; }
+        #table-products.products-table.pricing-selection-mode th:nth-child(n+6):nth-child(-n+10),
+        #table-products.products-table.pricing-selection-mode td:nth-child(n+6):nth-child(-n+10) { text-align:right!important; }
+        #table-products.products-table.pricing-selection-mode td.selling-price-cell { text-align:right!important; }
+        #table-products.products-table.pricing-selection-mode td.selling-price-cell .selling-price-stack { align-items:flex-end; }
+        #table-products.products-table.pricing-selection-mode td:nth-child(n+6):nth-child(-n+10) { font-variant-numeric:tabular-nums; }
         #table-products .medicine-product-identity { justify-content:flex-start; }
         #table-products .product-clamp { display:block; overflow:visible; text-overflow:clip; -webkit-line-clamp:unset; font-weight:500; }
         #table-products .product-column .product-clamp { color:#18233a; font-weight:800; }
@@ -687,7 +727,6 @@
                 </div>
             </div>
             <div class="topbar-right">
-                <button class="btn btn-purple product-add-button" type="button" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
                 <button class="icon-btn"><i class="fa-regular fa-bell"></i></button>
             </div>
         </header>
@@ -726,14 +765,12 @@
                         <div class="product-toolbar-field product-pricing-filter d-none" id="productPricingFilterWrap"><label class="form-label" for="productPricingFilter">Pricing</label><select class="form-select" id="productPricingFilter"><option value="all">All pricing</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option><option value="manual">Manual</option><option value="needs_update">Needs update</option><option value="no_cost">No accepted cost</option></select></div>
                 </div>
                 <div class="product-pricing-toolbar" id="productPricingToolbar">
-                    <div class="product-pricing-toolbar-label">
-                        <strong>Product Pricing</strong>
-                        <span class="product-refresh-indicator d-none" id="productRefreshIndicator"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Refreshing...</span></span>
-                    </div>
+                    <span class="product-refresh-indicator d-none" id="productRefreshIndicator"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Refreshing...</span></span>
                     <div class="product-pricing-toolbar-actions">
                         <button class="btn btn-outline-secondary" id="btnCategorySpecifications" type="button"><i class="fa-solid fa-sliders me-2"></i>Specifications</button>
                         <button class="btn btn-outline-secondary" id="btnManageCategoryMarkup" type="button"><i class="fa-solid fa-percent me-2"></i>Manage Markup Rates</button>
                         <button class="btn btn-outline-primary" id="btnEnterMarkupMode" type="button"><i class="fa-solid fa-tags me-2"></i>Apply Category Markup</button>
+                        <button class="btn btn-purple product-add-button" type="button" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="fa-solid fa-plus me-2"></i>Add Product</button>
                     </div>
                 </div>
                 <div class="markup-selection-bar d-none" id="markupSelectionBar">
@@ -763,19 +800,21 @@
                                     <th class="product-column">Product</th>
                                     <th><strong>Specification</strong></th>
                                     <th><strong>Form</strong></th>
-                                    <th class="markup-column d-none"><strong>Unit cost</strong></th>
-                                    <th class="markup-column d-none"><strong>Markup</strong></th>
-                                    <th><strong>Price</strong></th>
+                                    <th class="markup-column d-none"><strong>Unit Cost</strong></th>
+                                    <th class="markup-column d-none"><strong>Markup (%)</strong></th>
+                                    <th class="current-price-header">Price</th>
+                                    <th class="markup-column d-none"><strong>New Price</strong></th>
+                                    <th class="markup-column d-none" title="New Price minus Current Price"><strong>Difference</strong></th>
                                     <th><strong>Status</strong></th>
                                     <th><strong>Edit</strong></th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
-                                <tr class="product-skeleton-row"><td colspan="10"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="12"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="12"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="12"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="12"><span class="placeholder col-12"></span></td></tr>
+                                <tr class="product-skeleton-row"><td colspan="12"><span class="placeholder col-12"></span></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -1074,10 +1113,10 @@
                 <div class="modal-header"><div><h5 class="modal-title fw-bold">Apply Category Markup</h5><small class="text-muted">Each sellable unit uses its converted unit cost. Prices change only after you confirm.</small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <div class="modal-body">
                     <div class="bulk-pricing-toolbar"><div class="bulk-pricing-metric"><span>Selected</span><strong id="selectedPricingSelectedCount">0</strong></div><div class="bulk-pricing-metric"><span>Eligible</span><strong id="selectedPricingEligibleCount">0</strong></div><div class="bulk-pricing-metric"><span>Excluded</span><strong id="selectedPricingBlockedCount">0</strong></div><div class="bulk-pricing-metric"><span>Price warnings</span><strong id="selectedPricingWarningCount">0</strong></div><div class="bulk-pricing-search"><label class="visually-hidden" for="selectedPricingSearch">Search selected products</label><input class="form-control form-control-sm" id="selectedPricingSearch" type="search" placeholder="Search product, category, or unit"></div></div>
-                    <div class="form-check mb-2"><input class="form-check-input" id="selectedPricingReplaceManual" type="checkbox"><label class="form-check-label" for="selectedPricingReplaceManual">Replace manual prices. Leave this off to keep manual overrides.</label></div>
-                    <div class="bulk-pricing-table-wrap"><table class="table table-hover bulk-pricing-table"><thead><tr><th class="center-column">Select</th><th class="text-column">Product</th><th class="text-column">Category</th><th class="text-column">Sellable Unit</th><th class="numeric-column">Accepted Unit Cost</th><th class="numeric-column">Current Price</th><th class="numeric-column">Markup %</th><th class="numeric-column">Proposed Price</th><th class="center-column">Status</th></tr></thead><tbody id="selectedPricingPreviewBody"></tbody></table></div>
+                    <div class="form-check manual-confirmation"><input class="form-check-input" id="selectedPricingReplaceManual" type="checkbox"><label class="form-check-label" for="selectedPricingReplaceManual">I confirm that applying markup will replace the selected manual prices.</label></div>
+                    <div class="bulk-pricing-table-wrap"><table class="table table-hover bulk-pricing-table"><thead><tr><th class="center-column">Select</th><th class="text-column">Product</th><th class="text-column">Category</th><th class="text-column">Sellable Unit</th><th class="numeric-column">Accepted Unit Cost</th><th class="numeric-column">Current Price</th><th class="numeric-column">Category Markup %</th><th class="numeric-column">New Price</th><th class="numeric-column">Difference</th><th class="text-column">Pricing Method</th><th class="center-column">Status</th></tr></thead><tbody id="selectedPricingPreviewBody"></tbody></table></div>
                 </div>
-                <div class="modal-footer"><div class="bulk-pricing-footer-summary" id="selectedPricingPreviewSummary"></div><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-purple" id="btnConfirmSelectedPricing" type="button">Apply to Selected Products</button></div>
+                <div class="modal-footer"><div class="bulk-pricing-footer-summary" id="selectedPricingPreviewSummary"></div><button class="btn btn-light" type="button" data-bs-dismiss="modal">Back</button><button class="btn btn-purple" id="btnConfirmSelectedPricing" type="button">Apply to Selected Products</button></div>
             </div>
         </div>
     </div>
@@ -1088,7 +1127,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js?v=8';
-        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=97';
+        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=103';
 
         verifySession().then((user) => {
             if (!user) return;

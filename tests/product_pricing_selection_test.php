@@ -51,6 +51,12 @@ try {
     $before = pricingSelectionSnapshot($pdo, (string) $pricedId);
     $pdo->prepare("UPDATE product SET pricing_method = 'manual', price = 80 WHERE product_id = :product_id")
         ->execute([':product_id' => $pricedId]);
+    $manualPreview = selectedCategoryPricingPreview($pdo, [$pricedId], false, true)[0];
+    pricingSelectionAssert(!empty($manualPreview['eligible_for_apply']) && $manualPreview['existing_pricing_method'] === 'manual', 'Manual-priced product with accepted cost is selectable in preview');
+    pricingSelectionAssert(
+        abs((float) $manualPreview['difference'] - ((float) $manualPreview['calculated_selling_price'] - 80.0)) < 0.001,
+        'Preview shows the difference from the current manual price'
+    );
     try {
         applyCategoryMarkupToSelectedProducts($pdo, [(string) $pricedId]);
         throw new RuntimeException('Manual price was replaced without confirmation.');
@@ -59,9 +65,14 @@ try {
     }
     $kept = $pdo->query('SELECT price, pricing_method FROM product WHERE product_id = ' . $pdo->quote((string) $pricedId))->fetch(PDO::FETCH_ASSOC);
     pricingSelectionAssert($kept && $kept['pricing_method'] === 'manual' && (float) $kept['price'] === 80.0, 'Unconfirmed apply leaves the manual price in place');
-    $result = applyCategoryMarkupToSelectedProducts($pdo, [(string) $pricedId], true, null, true, true);
+    $result = applyCategoryMarkupToSelectedProducts($pdo, [(string) $pricedId], true, [$pricedId => $manualPreview['preview_token']], true, true);
     $after = pricingSelectionSnapshot($pdo, (string) $pricedId);
     pricingSelectionAssert(($result['applied_products'] ?? 0) === 1, 'Confirmed manual product converts to category markup');
+    pricingSelectionAssert(
+        $after['product']['pricing_method'] === 'category_markup'
+        && abs((float) $after['product']['price'] - (float) $manualPreview['calculated_selling_price']) < 0.001,
+        'Only the confirmed calculated price replaces the manual price'
+    );
     pricingSelectionAssert(
         $before['product']['brand_name'] === $after['product']['brand_name']
         && $before['product']['product_name'] === $after['product']['product_name']

@@ -101,6 +101,9 @@ let editPricingApplyRequested = false;
 let selectedPricingPreviewRows = [];
 let selectedPricingEligibleProductIds = new Set();
 let selectedPricingSubmissionActive = false;
+let markupSelectionPreviewById = new Map();
+let markupSelectionPreviewReady = false;
+let markupSelectionPreviewRequest = 0;
 let addProductSubmissionActive = false;
 let productsLoadPromise = null;
 let productTypeCustomizerTarget = { mode: 'add', variationIndex: 0 };
@@ -816,10 +819,12 @@ function renderProductCards() {
     document.getElementById('productPricingFilterWrap')?.classList.toggle('d-none', !productState.pricingSelectionMode);
     const editHeader = document.querySelector('#table-products thead th:last-child');
     if (editHeader) editHeader.textContent = productState.pricingSelectionMode ? 'Pricing' : 'Edit';
+    const priceHeader = document.querySelector('#table-products thead .current-price-header');
+    if (priceHeader) priceHeader.textContent = productState.pricingSelectionMode ? 'Current Price' : 'Price';
     syncMarkupCategorySelect();
 
     if (!products.length) {
-        tableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">No products found.</td></tr>';
+        tableBody.innerHTML = `<tr><td colspan="${productState.pricingSelectionMode ? 12 : 7}" class="text-center text-muted py-4">No products found.</td></tr>`;
         syncSelectedPricingControls();
         return;
     }
@@ -829,31 +834,50 @@ function renderProductCards() {
         const isActive = status === 'Active';
         const selectionStatus = productPricingSelectionStatus(product);
         const pricing = product.pricing || {};
-        const cost = pricing.latest_cost_basis?.unit_cost;
         const method = product.pricing_method || pricing.pricing_method || 'manual';
-        const costValue = Number(cost);
-        const markup = method === 'manual' && costValue > 0
-            ? (Number(product.price) / costValue - 1) * 100
-            : (method === 'custom_markup' ? pricing.custom_markup_percentage : pricing.applied_markup_percentage);
+        const pricingMethod = pricingMethodDisplay(method);
+        const pricingMethodClass = method === 'manual' ? 'pricing-method-manual' : method === 'custom_markup' ? 'pricing-method-custom' : 'pricing-method-category';
+        const selectionPreview = productState.pricingSelectionMode ? markupSelectionPreviewById.get(String(product.product_id)) : null;
+        const unitLabel = escapeHtml(selectionPreview?.inventory_unit || pricing.inventory_unit || product.inventory_unit_name || product.inventory_unit_symbol || 'unit');
+        const cost = selectionPreview?.current_cost_basis ?? pricing.latest_cost_basis?.unit_cost;
+        const markupValue = selectionPreview?.applied_markup_percentage ?? pricing.category_markup_percentage;
+        const markup = Number(markupValue);
+        const validCost = Number(cost) > 0 && (!productState.pricingSelectionMode || Number(selectionPreview?.calculated_selling_price) > 0);
+        const validMarkup = markupValue !== null && markupValue !== undefined && Number.isFinite(markup);
+        const currentPrice = Number(selectionPreview?.current_selling_price ?? product.price);
+        const proposedPrice = productState.pricingSelectionMode && validCost && validMarkup
+            ? Number(selectionPreview.calculated_selling_price) : null;
+        const priceDifference = proposedPrice !== null && selectionPreview?.difference !== null && selectionPreview?.difference !== undefined
+            ? Number(selectionPreview.difference) : null;
+        const differenceClass = priceDifference === null || priceDifference === 0 ? 'is-zero' : priceDifference < 0 ? 'is-decrease' : 'is-increase';
+        const largeDecrease = priceDifference !== null && currentPrice > 0 && priceDifference / currentPrice <= -0.3;
+        const manualOverwrite = method === 'manual' && selectionStatus.eligible;
+        const costUnavailableText = !markupSelectionPreviewReady ? 'Checking cost…'
+            : !selectionPreview ? 'Pricing unavailable' : 'No valid accepted cost';
 
         const selected = productState.selectedPricingProductIds.has(String(product.product_id));
         const rowState = productState.pricingSelectionMode
-            ? `${selectionStatus.eligible ? '' : 'is-markup-disabled'} ${selected ? 'is-markup-selected' : ''}`
+            ? `${selectionStatus.eligible ? '' : 'is-markup-disabled'} ${selected ? 'is-markup-selected' : ''} ${largeDecrease && selectionStatus.eligible ? 'is-markup-large-drop' : ''} ${manualOverwrite ? 'is-markup-manual' : ''}`
+            : '';
+        const markupAttrs = productState.pricingSelectionMode
+            ? `aria-selected="${selected ? 'true' : 'false'}"${selectionStatus.eligible ? '' : ' aria-disabled="true"'} title="${escapeHtml(selectionStatus.label)}"`
             : '';
         return `
-            <tr class="product-row ${rowState}" data-product-id="${escapeHtml(product.product_id)}" data-markup-eligible="${selectionStatus.eligible ? '1' : '0'}">
+            <tr class="product-row ${rowState}" data-product-id="${escapeHtml(product.product_id)}" data-markup-eligible="${selectionStatus.eligible ? '1' : '0'}" ${markupAttrs}>
                 <td class="text-center pricing-selection-column ${productState.pricingSelectionMode ? '' : 'd-none'}"><div class="pricing-selection-cell">${selectionStatus.eligible ? `<input class="form-check-input product-pricing-select" type="checkbox" value="${escapeHtml(product.product_id)}" aria-label="Select ${escapeHtml(product.product_name)} for category pricing" ${selected ? 'checked' : ''}>` : `<input class="form-check-input" type="checkbox" aria-label="${escapeHtml(selectionStatus.label)}" title="${escapeHtml(selectionStatus.label)}" disabled>`}</div></td>
                 <td><span class="product-clamp">${escapeHtml(dash(product.brand_name))}</span></td>
                 <td class="product-column"><div class="medicine-product-identity"><strong class="product-clamp">${escapeHtml(productCatalogName(product))}</strong>${medicineRxBadge(product)}</div></td>
                 <td>${productCatalogSpecification(product)}</td>
                 <td class="product-container-cell">${escapeHtml(formatProductForm(product, '—'))}</td>
-                <td class="markup-column ${productState.pricingSelectionMode ? '' : 'd-none'}">${cost == null ? '<span class="text-warning">No accepted cost</span>' : `₱${formatPriceNumber(cost)}`}</td>
-                <td class="markup-column ${productState.pricingSelectionMode ? '' : 'd-none'}">${cost == null || markup == null ? '—' : `${Number(markup) >= 0 ? '+' : ''}${formatPriceNumber(markup)}%`}<small class="d-block text-muted">${method === 'manual' ? '<i class="fa-solid fa-lock" aria-hidden="true"></i> ' : ''}${escapeHtml(method === 'manual' ? 'Manual' : method === 'custom_markup' ? 'Custom' : 'Category')}</small></td>
-                <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(product.price)}</span><span class="selling-price-unit">per ${escapeHtml(product.inventory_unit_name || product.inventory_unit_symbol || 'unit')}</span></div></td>
+                <td class="markup-column markup-number-cell ${productState.pricingSelectionMode ? '' : 'd-none'}" title="${escapeHtml(selectionPreview?.eligibility_status || '')}">${validCost ? `<span class="markup-money-stack"><strong>₱${formatPriceNumber(cost)}</strong><small>per ${unitLabel}</small></span>` : `<span class="text-warning">${costUnavailableText}</span>`}</td>
+                <td class="markup-column markup-percent-cell ${productState.pricingSelectionMode ? '' : 'd-none'}">${validMarkup ? `${Number(markup.toFixed(2))}%` : '—'}</td>
+                <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(currentPrice)}</span><span class="selling-price-unit">per ${productState.pricingSelectionMode ? unitLabel : escapeHtml(product.inventory_unit_name || product.inventory_unit_symbol || 'unit')}</span></div></td>
+                <td class="markup-column markup-number-cell ${productState.pricingSelectionMode ? '' : 'd-none'}">${proposedPrice === null ? '—' : `<span class="markup-money-stack"><strong>₱${formatPriceNumber(proposedPrice)}</strong><small>per ${unitLabel}</small></span>`}</td>
+                <td class="markup-column markup-difference ${differenceClass} ${productState.pricingSelectionMode ? '' : 'd-none'}">${priceDifference === null ? '—' : `${priceDifference > 0 ? '+' : priceDifference < 0 ? '−' : ''}₱${formatPriceNumber(Math.abs(priceDifference))}`}</td>
                 <td><span class="badge ${isActive ? 'text-bg-success' : 'text-bg-secondary'}">${escapeHtml(status)}</span></td>
                 <td>
                     ${productState.pricingSelectionMode
-                        ? `<span class="markup-row-state ${selectionStatus.className}">${escapeHtml(selectionStatus.label)}</span>`
+                        ? `<span class="pricing-method-badge ${pricingMethodClass}" title="${escapeHtml(selectionStatus.label)}">${escapeHtml(pricingMethod)}</span>`
                         : `<div class="product-actions" role="group" aria-label="Product actions">
                         <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" aria-label="Edit product">
                             <i class="fa-solid fa-pen" aria-hidden="true"></i>
@@ -893,7 +917,14 @@ function productPricingSelectionStatus(product) {
     if (String(product.status || 'Active') !== 'Active') {
         return { label: 'Inactive', eligible: false, className: 'is-blocked' };
     }
-    if (!pricing.latest_cost_basis) {
+    if (productState.pricingSelectionMode) {
+        if (!markupSelectionPreviewReady) return { label: 'Checking price', eligible: false, className: 'is-blocked' };
+        const preview = markupSelectionPreviewById.get(String(product.product_id));
+        if (!preview || !preview.eligible_for_apply) {
+            return { label: preview?.eligibility_status || 'Pricing unavailable', eligible: false, className: 'is-blocked' };
+        }
+    }
+    if (!productState.pricingSelectionMode && (!pricing.latest_cost_basis || !(Number(pricing.latest_cost_basis.unit_cost) > 0))) {
         return { label: 'No accepted cost', eligible: false, className: 'is-blocked' };
     }
     if (method === 'manual') {
@@ -902,7 +933,7 @@ function productPricingSelectionStatus(product) {
     if (method === 'custom_markup') {
         return { label: 'Custom markup', eligible: true, className: 'is-eligible' };
     }
-    if (pricing.category_pricing_eligible) {
+    if (productState.pricingSelectionMode || pricing.category_pricing_eligible) {
         return { label: 'Price outdated', eligible: true, className: 'is-outdated' };
     }
     return { label: 'Up to date', eligible: false, className: 'is-blocked' };
@@ -958,6 +989,7 @@ function toggleMarkupProduct(productId, forceSelected = null) {
     const checkbox = row?.querySelector('.product-pricing-select');
     if (checkbox) checkbox.checked = selected;
     row?.classList.toggle('is-markup-selected', selected);
+    row?.setAttribute('aria-selected', selected ? 'true' : 'false');
     syncSelectedPricingControls();
 }
 
@@ -989,14 +1021,48 @@ function syncSelectedPricingControls() {
 function enterPricingSelectionMode() {
     productState.pricingSelectionMode = true;
     productState.selectedPricingProductIds.clear();
+    markupSelectionPreviewById.clear();
+    markupSelectionPreviewReady = false;
     renderProductCards();
+    loadMarkupSelectionPreview();
 }
 
 function exitPricingSelectionMode() {
+    markupSelectionPreviewRequest++;
+    markupSelectionPreviewById.clear();
+    markupSelectionPreviewReady = false;
     productState.pricingSelectionMode = false;
     productState.selectedPricingProductIds.clear();
     selectedPricingEligibleProductIds.clear();
     selectedPricingPreviewRows = [];
+    renderProductCards();
+}
+
+async function loadMarkupSelectionPreview() {
+    const requestId = ++markupSelectionPreviewRequest;
+    markupSelectionPreviewReady = false;
+    markupSelectionPreviewById.clear();
+    const productIds = productState.products.map(product => String(product.product_id));
+    if (!productIds.length) {
+        markupSelectionPreviewReady = true;
+        renderProductCards();
+        return;
+    }
+    try {
+        const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/apply_selected_category_pricing.php`, {
+            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'preview', product_ids: productIds, replace_manual: true })
+        });
+        if (requestId !== markupSelectionPreviewRequest || !productState.pricingSelectionMode) return;
+        markupSelectionPreviewById = new Map((response.products || []).map(row => [String(row.product_id), row]));
+    } catch (error) {
+        if (requestId !== markupSelectionPreviewRequest || !productState.pricingSelectionMode) return;
+        PharmaUtils.toast.error('Unable to check accepted unit costs. Leave and reopen markup selection to retry.');
+    }
+    markupSelectionPreviewReady = true;
+    productState.selectedPricingProductIds.forEach(productId => {
+        if (!markupSelectionPreviewById.get(productId)?.eligible_for_apply) productState.selectedPricingProductIds.delete(productId);
+    });
     renderProductCards();
 }
 
@@ -1187,6 +1253,7 @@ function invalidateProductDetails(productIds) {
 }
 
 async function openProductDetailsModal(productId, options = {}) {
+    if (productState.pricingSelectionMode) return;
     const product = getProductById(productId);
     const container = document.getElementById('productDetailsContent');
     const modalElement = document.getElementById('productDetailsModal');
@@ -1775,6 +1842,7 @@ async function loadProductsTable(options = {}) {
             });
             let renderMs = 0;
             replaceProducts(freshProducts);
+            if (changed && productState.pricingSelectionMode) loadMarkupSelectionPreview();
             if (changed || !cachedProducts) {
                 const renderStartedAt = performance.now();
                 renderProductCards();
@@ -2819,6 +2887,7 @@ function updateEditPricingView({ preserveApply = false } = {}) {
 }
 
 async function openEditProduct(productId) {
+    if (productState.pricingSelectionMode) return;
     const product = getProductById(productId);
     const modalElement = document.getElementById('editProductModal');
 
@@ -3050,7 +3119,7 @@ function selectedPricingIds() {
 }
 
 function pricingMethodDisplay(method) {
-    return { category_markup: 'Category markup', custom_markup: 'Custom markup', manual: 'Manual price' }[method] || 'Manual price';
+    return { category_markup: 'Category Markup', custom_markup: 'Custom Markup', manual: 'Manual Price' }[method] || 'Manual Price';
 }
 
 function enrichSelectedPricingRow(row) {
@@ -3075,11 +3144,19 @@ function selectedPricingUnitLines(row) {
     }];
 }
 
+function selectedPricingChange(unit) {
+    const current = Number(unit.current_price);
+    const next = Number(unit.new_price);
+    if (unit.current_price === null || unit.current_price === undefined || unit.new_price === null || unit.new_price === undefined || !Number.isFinite(current) || !Number.isFinite(next)) return null;
+    const amount = Math.round((next - current) * 100) / 100;
+    return { amount, percent: current > 0 ? (amount / current) * 100 : null };
+}
+
 function updateSelectedPricingPreviewSummary() {
     const selectedCount = selectedPricingEligibleProductIds.size;
     const eligibleCount = selectedPricingPreviewRows.filter(row => row.eligible_for_apply).length;
     const blockedCount = selectedPricingPreviewRows.length - eligibleCount;
-    const warningCount = selectedPricingPreviewRows.filter(row => row.warning && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
+    const warningCount = selectedPricingPreviewRows.filter(row => selectedPricingEligibleProductIds.has(String(row.product_id)) && (row.warning || (row.existing_pricing_method === 'manual' && selectedPricingUnitLines(row).some(unit => (selectedPricingChange(unit)?.amount ?? 0) < 0)))).length;
     const reviewCount = selectedPricingPreviewRows.filter(row => row.review_note && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
     setPricingText('selectedPricingSelectedCount', String(selectedCount));
     setPricingText('selectedPricingEligibleCount', String(eligibleCount));
@@ -3088,7 +3165,9 @@ function updateSelectedPricingPreviewSummary() {
     const summary = document.getElementById('selectedPricingPreviewSummary');
     if (summary) {
         const parts = [`${selectedCount} product${selectedCount === 1 ? '' : 's'} selected.`];
-        if (warningCount) parts.push(`${warningCount} price change${warningCount === 1 ? '' : 's'} of 30% or more require Admin confirmation.`);
+        if (warningCount) parts.push(`${warningCount} product${warningCount === 1 ? '' : 's'} need price review before applying.`);
+        const manualCount = selectedPricingPreviewRows.filter(row => row.existing_pricing_method === 'manual' && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
+        if (manualCount) parts.push(`${manualCount} manual price${manualCount === 1 ? '' : 's'} will be replaced only with Admin confirmation.`);
         if (reviewCount) parts.push(`${reviewCount} medicine price${reviewCount === 1 ? '' : 's'} have no verified ceiling and need manual review.`);
         if (blockedCount) parts.push(`${blockedCount} excluded. Products without an accepted unit cost stay unchanged.`);
         summary.textContent = parts.join(' ');
@@ -3111,20 +3190,31 @@ function renderSelectedPricingPreview() {
         const eligible = Boolean(row.eligible_for_apply);
         const checked = eligible && selectedPricingEligibleProductIds.has(String(row.product_id));
         const lines = selectedPricingUnitLines(row);
-        const statusClass = eligible ? (row.warning || row.review_note ? 'is-warning' : 'is-ready') : 'is-blocked';
+        const manual = row.existing_pricing_method === 'manual';
+        const manualDrop = manual && lines.some(unit => (selectedPricingChange(unit)?.amount ?? 0) < 0);
+        const statusClass = eligible ? (row.warning || row.review_note || manualDrop ? 'is-warning' : 'is-ready') : 'is-blocked';
         const statusText = row.eligibility_status || (eligible ? 'Ready' : 'Excluded');
-        return lines.map((unit, index) => `<tr class="${eligible ? (row.warning ? 'has-price-warning' : '') : 'is-ineligible'}">
+        return lines.map((unit, index) => {
+            const change = selectedPricingChange(unit);
+            const decrease = change && change.amount < -0.004;
+            const increase = change && change.amount > 0.004;
+            const changeText = change ? `${change.amount > 0 ? '+' : change.amount < 0 ? '−' : ''}${formatPrice(Math.abs(change.amount))}` : '—';
+            const changePercent = change?.percent === null || change?.percent === undefined ? '' : `${change.percent > 0 ? '+' : ''}${change.percent.toFixed(1)}%`;
+            return `<tr class="${eligible ? (decrease && manual ? 'has-manual-price-drop' : row.warning ? 'has-price-warning' : '') : 'is-ineligible'}">
             ${index === 0 ? `<td class="center-column" rowspan="${lines.length}"><input class="form-check-input bulk-pricing-select" type="checkbox" value="${escapeHtml(row.product_id)}" aria-label="Select ${escapeHtml(row.product_name || row.product)}" ${checked ? 'checked' : ''} ${eligible ? '' : 'disabled'}></td>
-            <td class="text-column" rowspan="${lines.length}"><span class="identity-value">${escapeHtml(row.product_name || row.product)}</span></td>
+            <td class="text-column" rowspan="${lines.length}"><span class="identity-value">${escapeHtml(row.product_name || row.product)}</span>${manual && eligible ? '<small class="manual-overwrite-note">Manual price will be replaced</small>' : ''}</td>
             <td class="text-column" rowspan="${lines.length}">${escapeHtml(row.category || '—')}</td>` : ''}
             <td class="text-column">${escapeHtml(unit.sellable_unit || '—')}</td>
             <td class="numeric-column">${unit.unit_cost === null || unit.unit_cost === undefined ? '<span class="text-danger">No accepted cost</span>' : formatPrice(unit.unit_cost)}</td>
             <td class="numeric-column">${unit.current_price === null || unit.current_price === undefined ? '—' : formatPrice(unit.current_price)}</td>
-            <td class="numeric-column">${unit.markup_percentage === null || unit.markup_percentage === undefined ? '—' : `${Number(unit.markup_percentage).toFixed(2)}%`}</td>
-            <td class="numeric-column ${row.warning ? 'bulk-pricing-warning-value' : ''}">${unit.new_price === null || unit.new_price === undefined ? '—' : formatPrice(unit.new_price)}</td>
+            <td class="numeric-column">${unit.markup_percentage === null || unit.markup_percentage === undefined ? '—' : `${Number(Number(unit.markup_percentage).toFixed(2))}%`}</td>
+            <td class="numeric-column ${decrease && manual ? 'bulk-pricing-warning-value' : ''}">${unit.new_price === null || unit.new_price === undefined ? '—' : formatPrice(unit.new_price)}</td>
+            <td class="numeric-column price-change ${decrease ? 'is-decrease' : increase ? 'is-increase' : ''}"><strong>${changeText}</strong>${changePercent ? `<small>${changePercent}</small>` : ''}</td>
+            ${index === 0 ? `<td class="text-column" rowspan="${lines.length}"><span class="pricing-method-badge ${manual ? 'pricing-method-manual' : row.existing_pricing_method === 'custom_markup' ? 'pricing-method-custom' : 'pricing-method-category'}">${escapeHtml(pricingMethodDisplay(row.existing_pricing_method))}</span><small class="d-block mt-1 text-muted">→ Category Markup</small></td>` : ''}
             ${index === 0 ? `<td class="center-column" rowspan="${lines.length}"><span class="bulk-pricing-status ${statusClass}">${escapeHtml(statusText)}</span>${row.review_note ? `<small class="d-block text-muted mt-1">${escapeHtml(row.review_note)}</small>` : ''}</td>` : ''}
-        </tr>`).join('');
-    }).join('') || '<tr><td colspan="9" class="text-center text-muted py-4">No preview products match this search.</td></tr>';
+        </tr>`;
+        }).join('');
+    }).join('') || '<tr><td colspan="11" class="text-center text-muted py-4">No preview products match this search.</td></tr>';
     updateSelectedPricingPreviewSummary();
 }
 
@@ -3141,7 +3231,7 @@ async function previewSelectedCategoryPricing() {
             body: JSON.stringify({
             action: 'preview',
             product_ids: productIds,
-            replace_manual: Boolean(document.getElementById('selectedPricingReplaceManual')?.checked)
+            replace_manual: true
         })
         });
         PharmaUtils.modal.close();
@@ -3161,6 +3251,13 @@ async function applySelectedCategoryPricing() {
     const productIds = Array.from(selectedPricingEligibleProductIds);
     if (!productIds.length || selectedPricingSubmissionActive) return;
     const selectedRows = selectedPricingPreviewRows.filter(row => productIds.includes(String(row.product_id)));
+    const manualRows = selectedRows.filter(row => row.existing_pricing_method === 'manual');
+    const replaceManual = Boolean(document.getElementById('selectedPricingReplaceManual')?.checked);
+    if (manualRows.length && !replaceManual) {
+        PharmaUtils.toast.error('Confirm replacement of manual prices before applying.');
+        document.getElementById('selectedPricingReplaceManual')?.focus();
+        return;
+    }
     const flagged = selectedRows.filter(row => row.warning);
     const reviews = selectedRows.filter(row => row.review_note);
     const warningList = flagged.length
@@ -3170,9 +3267,9 @@ async function applySelectedCategoryPricing() {
         ? `<p class="small mb-0">Medicine prices with no verified ceiling stay flagged for manual review: ${reviews.map(row => escapeHtml(row.product)).join(', ')}.</p>`
         : '';
     const approval = await Swal.fire({
-        icon: flagged.length ? 'warning' : 'question',
+        icon: flagged.length || manualRows.length ? 'warning' : 'question',
         title: 'Confirm Category Markup',
-        html: `<p>${productIds.length} selected product${productIds.length === 1 ? '' : 's'} will update every configured sellable unit. Shelf Inventory and both POS screens use those selling prices.</p>${reviewList}${warningList}`,
+        html: `<p>${productIds.length} selected product${productIds.length === 1 ? '' : 's'} will update every configured sellable unit. Shelf Inventory and both POS screens use those selling prices.</p>${manualRows.length ? `<p class="text-danger fw-bold">${manualRows.length} manual-priced product${manualRows.length === 1 ? '' : 's'} will switch to Category Markup. Their current manual prices will be overwritten.</p>` : ''}${reviewList}${warningList}`,
         showCancelButton: true,
         confirmButtonText: `Apply to ${productIds.length} Product${productIds.length === 1 ? '' : 's'}`,
         ...(flagged.length ? {
@@ -3195,7 +3292,7 @@ async function applySelectedCategoryPricing() {
             body: JSON.stringify({
                 action: 'apply', product_ids: productIds,
                 confirm_flagged: flagged.length > 0 && Boolean(approval.value),
-                replace_manual: Boolean(document.getElementById('selectedPricingReplaceManual')?.checked),
+                replace_manual: true,
                 preview_tokens: Object.fromEntries(selectedRows.map(row => [row.product_id, row.preview_token]))
             })
         });
@@ -3409,10 +3506,6 @@ function initProductCards() {
         if (checkbox.checked) selectedPricingEligibleProductIds.add(String(checkbox.value));
         else selectedPricingEligibleProductIds.delete(String(checkbox.value));
         updateSelectedPricingPreviewSummary();
-    });
-    document.getElementById('selectedPricingReplaceManual')?.addEventListener('change', () => {
-        if (!selectedPricingPreviewRows.length) return;
-        previewSelectedCategoryPricing();
     });
     document.getElementById('selectedPricingSearch')?.addEventListener('input', renderSelectedPricingPreview);
     document.getElementById('selectedPricingModal')?.addEventListener('shown.bs.modal', () => {
