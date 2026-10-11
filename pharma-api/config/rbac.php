@@ -95,20 +95,20 @@ function enforceSupervisorApiBoundary(): void
     }
 }
 
-function cashierApiRequestAllowed(string $scriptName): bool
+function cashierApiRequestAllowed(string $scriptName, string $requestMethod = 'GET'): bool
 {
     $relativePath = rbacRelativeApiPath($scriptName);
 
     return str_starts_with($relativePath, 'auth/')
         || str_starts_with($relativePath, 'cashier/')
         || $relativePath === 'settings/get_business_hours.php'
-        || $relativePath === 'reports/get_report.php';
+        || (in_array($relativePath, ['reports/get_report.php', 'reports/get_overall_report.php'], true) && strtoupper($requestMethod) === 'GET');
 }
 
 function enforceCashierApiBoundary(): void
 {
     if (currentSessionHasRbacRole('cashier') || currentSessionHasRbacRole('ro_cashier')) {
-        if (!cashierApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '')) {
+        if (!cashierApiRequestAllowed($_SERVER['SCRIPT_NAME'] ?? '', $_SERVER['REQUEST_METHOD'] ?? 'GET')) {
             sendForbiddenResponse('Access denied.');
         }
     }
@@ -136,19 +136,17 @@ function salesClerkApiRequestAllowed(string $scriptName, string $requestMethod =
         return $method === 'POST';
     }
 
-    if ($relativePath === 'sales/get_sales_clerk_reports.php') {
+    if (in_array($relativePath, ['sales/get_sales_clerk_reports.php', 'reports/get_report.php', 'reports/get_overall_report.php'], true)) {
         return $method === 'GET';
     }
     if ($relativePath === 'settings/get_business_hours.php') {
         return $method === 'GET';
     }
 
-    return $relativePath === 'reports/get_report.php'
-        || $relativePath === 'settings/get_admin_settings.php'
+    return $relativePath === 'settings/get_admin_settings.php'
         || in_array($relativePath, [
             'dashboard/get_dashboard_summary.php',
             'sales/get_sales_clerk_dashboard.php',
-            'sales/get_sales_clerk_reports.php',
             'sales/get_my_sales_clerk_order.php',
             'sales/get_my_sales_clerk_orders.php',
             'sales/cancel_my_sales_clerk_order.php',

@@ -75,9 +75,9 @@ try {
 
     switch ($period) {
         case 'yesterday':
-    $startDate = date('Y-m-d', strtotime('-1 day'));
-    $endDate = date('Y-m-d');
-    break;
+            $startDate = date('Y-m-d', strtotime('-1 day'));
+            $endDate = $startDate;
+            break;
 
         case 'week':
             $startDate = date('Y-m-d', strtotime('monday this week'));
@@ -140,6 +140,11 @@ try {
         AND so.status = 'completed'
         AND COALESCE(so.completed_at, so.created_at) >= :start_datetime
         AND COALESCE(so.completed_at, so.created_at) < :end_exclusive
+        AND EXISTS (
+            SELECT 1 FROM sales_payments paid_payment
+            WHERE paid_payment.order_id = so.order_id
+              AND paid_payment.payment_status = 'paid'
+        )
     ";
 
     $baseParams = [
@@ -164,6 +169,11 @@ try {
                   AND so2.status = 'completed'
                   AND COALESCE(so2.completed_at, so2.created_at) >= :items_start_datetime
                   AND COALESCE(so2.completed_at, so2.created_at) < :items_end_exclusive
+                  AND EXISTS (
+                      SELECT 1 FROM sales_payments item_paid_payment
+                      WHERE item_paid_payment.order_id = so2.order_id
+                        AND item_paid_payment.payment_status = 'paid'
+                  )
             ), 0) AS items_sold
         FROM sales_orders so
         WHERE {$baseWhere}
@@ -201,8 +211,7 @@ try {
      * Payment method summary.
      *
      * Only completed/paid sales are included.
-     * LEFT JOIN is used so a completed order without a payment row
-     * does not cause the whole report to fail.
+     * Only paid records are included, matching the completed-sale workflow.
      */
     $paymentStmt = $pdo->prepare("
         SELECT
@@ -217,7 +226,7 @@ try {
         FROM sales_orders so
         LEFT JOIN sales_payments sp
             ON sp.order_id = so.order_id
-           AND sp.payment_status IN ('paid', 'unpaid')
+           AND sp.payment_status = 'paid'
         WHERE {$baseWhere}
         GROUP BY COALESCE(sp.payment_method, 'unknown')
         ORDER BY total_amount DESC

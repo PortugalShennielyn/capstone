@@ -2,7 +2,7 @@ import API_BASE_URL from '../config/config.js';
 import { ensurePageTabSession as verifySession } from './auth_guard.js?v=21';
 
 const categories={sales:'Sales',inventory:'Inventory',expiry:'Expiry & Batch',purchases:'Purchasing',supplier:'Supplier & Receiving',staff:'Cashier & Audit',products:'Product Performance',overview:'Overview'};
-const categoryIcons={sales:'fa-chart-line',inventory:'fa-cubes-stacked',expiry:'fa-calendar-clock',purchases:'fa-cart-shopping',supplier:'fa-truck',staff:'fa-shield-halved',products:'fa-box',overview:'fa-gauge'};
+const categoryIcons={sales:'fa-chart-line',inventory:'fa-cubes-stacked',expiry:'fa-calendar-days',purchases:'fa-cart-shopping',supplier:'fa-truck',staff:'fa-shield-halved',products:'fa-box',overview:'fa-gauge'};
 const reportViews={
     overview:['Management Overview'],
     sales:['Sales Summary','Product Sales','Category Sales','Cashier Sales'],
@@ -27,7 +27,7 @@ const tones={
     purple:'#7c3aed',blue:'#2563eb',teal:'#0f9f92',indigo:'#4f46e5',green:'#16a34a',amber:'#d97706',red:'#dc2626',gray:'#64748b',
     sales:'#5b4cf0',inventory:'#0f9f92',purchases:'#4f46e5',expiry:'#dc2626'
 };
-const statusColors={Healthy:'green',Completed:'green',Delivered:'green',Paid:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Draft:'gray',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal',Arrived:'indigo',Watch:'amber'};
+const statusColors={Healthy:'green',Completed:'green',Delivered:'green',Paid:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Draft:'gray',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal',Arrived:'indigo',Watch:'amber','Waiting for cashier':'amber','Accepted by cashier':'indigo','Processing payment':'teal',Rejected:'red',Other:'gray'};
 const money=new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}),number=new Intl.NumberFormat('en-PH');
 const qs=s=>document.querySelector(s),qsa=s=>[...document.querySelectorAll(s)];
 const state={category:'sales',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity',initialPeriodSet:false,period:'30',roleConfigured:false};
@@ -36,6 +36,8 @@ const viewDescriptions={
     'Product Sales':'Best-selling products, with Rx and OTC classification.',
     'Category Sales':'Quantity, sales and share by product category.',
     'Cashier Sales':'Sales and cancellations attributed to each cashier.',
+    'Staff Sales':'Completed sales grouped by the staff account assigned to each sale.',
+    'Payment and Discount':'Sales totals grouped by payment method with recorded discounts, VAT, and refunds.',
     'Current Inventory':'Storage, Shelf and On Hand by product.',
     'Stock Movement':'Receiving, transfers, sales and adjustments.',
     'Low / Out of Stock':'Products at or below the reorder level.',
@@ -72,10 +74,19 @@ function reportToday(timezone){
     const value=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${value.year}-${value.month}-${value.day}`;
 }
 function shiftDate(date,days){const [year,month,day]=date.split('-').map(Number),value=new Date(Date.UTC(year,month-1,day+days));return value.toISOString().slice(0,10);}
+function setPeriodSelection(period){
+    state.period=period;
+    qs('.report-presets').querySelectorAll('button[data-period]').forEach(button=>{const active=button.dataset.period===period;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+    setFilterExpanded(period==='custom');
+    const view=qs('[name="report_view"]')?.value||'',inventorySnapshot=state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view);
+    const periodLabel=qs('#reportPeriodLabel');if(periodLabel)periodLabel.textContent=inventorySnapshot?'Live inventory snapshot':({custom:'Custom date range',month:'This month',today:'Today',yesterday:'Yesterday','7':'Last 7 days','30':'Last 30 days'}[period]||`Last ${period} days`);
+}
+function setPrintTimestamp(){
+    const timezone=state.data?.system?.timezone||'Asia/Manila';
+    qs('#reportPrintGenerated').textContent=new Intl.DateTimeFormat('en-PH',{timeZone:timezone,year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date());
+}
 function renderTabs(available=Object.keys(categories)){
-    if(state.data?.access.management)available=['sales','inventory','expiry','purchases','supplier','staff'];
-    else if(!state.data)available=['sales','inventory','expiry','purchases','supplier','staff'];
-    qs('#reportTabs').innerHTML=available.map(key=>`<button class="report-tab ${key===state.category?'active':''}" type="button" data-category="${key}" aria-current="${key===state.category?'page':'false'}"><i class="fa-solid ${categoryIcons[key]||'fa-chart-simple'}" aria-hidden="true"></i><span>${esc(categories[key])}</span><b class="report-tab-count">${(reportViews[key]||[]).length}</b></button>`).join('');
+    qs('#reportTabs').innerHTML=available.map(key=>`<button class="report-tab ${key===state.category?'active':''}" type="button" data-category="${key}" aria-current="${key===state.category?'page':'false'}"><i class="fa-solid ${categoryIcons[key]||'fa-chart-simple'}" aria-hidden="true"></i><span>${esc(categories[key])}</span></button>`).join('');
 }
 function renderViewMenu(){
     const selected=qs('[name="report_view"]').value,[heading,description]=groupDescriptions[state.category]||groupDescriptions.sales;
@@ -130,7 +141,9 @@ function updateVisibleFilters(){
         'Sales Summary':['view','dates'],
         'Product Sales':['view','dates','primary-category','rx'],
         'Category Sales':['view','dates'],
-        'Cashier Sales':['view','dates','cashier']
+        'Cashier Sales':['view','dates','cashier'],
+        'Staff Sales':['view','dates'],
+        'Payment and Discount':['view','dates','payment']
     };
     const inventoryFields={
         'Current Inventory':['view','primary-category','primary-stock','product','secondary-supplier'],
@@ -141,7 +154,11 @@ function updateVisibleFilters(){
     };
     const visible=new Set(state.category==='inventory'&&inventoryFields[inventoryView]?inventoryFields[inventoryView]:state.category==='sales'&&salesFields[view.value]?salesFields[view.value]:visibility[state.category]||[]);
     qsa('[data-filter]').forEach(el=>el.hidden=!visible.has(el.dataset.filter));
-    qs('#moreFiltersToggle').hidden=state.category==='overview';if(state.category==='overview')qs('#secondaryFilters').hidden=true;
+    const dateRange=qs('[name="start_date"]').closest('[data-filter]');dateRange.hidden=!visible.has('dates')||state.period!=='custom';
+    const moreFiltersButton=qs('#moreFiltersToggle'),secondaryFilters=qs('#secondaryFilters');
+    const hasSecondaryFilters=qsa('#secondaryFilters [data-filter]').some(field=>!field.hidden);
+    moreFiltersButton.hidden=state.category==='overview'||!hasSecondaryFilters;
+    if(!hasSecondaryFilters){secondaryFilters.hidden=true;moreFiltersButton.setAttribute('aria-expanded','false');moreFiltersButton.lastElementChild.className='fa-solid fa-chevron-down';}
     const group=qs('[name="group_by"]'),options=groupOptions[state.category]||[];group.innerHTML=options.map(([value,label])=>`<option value="${value}">${label}</option>`).join('');const initial=group.dataset.initial;if(initial&&options.some(x=>x[0]===initial))group.value=initial;delete group.dataset.initial;
     syncDependentOptions(false);renderViewMenu();
 }
@@ -152,7 +169,10 @@ function buildParams(overrides={}){
     Object.entries(overrides).forEach(([k,v])=>params.set(k,String(v)));return params;
 }
 async function loadReport(){
-    state.controller?.abort();state.controller=new AbortController();destroyCharts();qs('#reportContent').classList.add('d-none');qs('#reportError').classList.add('d-none');qs('#reportLoading').classList.remove('d-none');
+    state.controller?.abort();
+    const form=qs('#reportFilters'),startDate=form.elements.start_date.value,endDate=form.elements.end_date.value;
+    if(startDate&&endDate&&startDate>endDate){state.controller=null;qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.add('d-none');qs('#reportError').textContent='Start date cannot be after end date.';qs('#reportError').classList.remove('d-none');return;}
+    state.controller=new AbortController();destroyCharts();qs('#reportContent').classList.add('d-none');qs('#reportError').classList.add('d-none');qs('#reportLoading').classList.remove('d-none');
     try{const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams()}`,{credentials:'include',cache:'no-store',signal:state.controller.signal});const data=await response.json();if(response.status===403&&data.access?.available_categories?.length){state.category=data.access.available_categories[0];state.page=1;updateVisibleFilters();return loadReport();}if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to generate this report.');
         if(!state.initialPeriodSet&&!state.explicitDates){state.initialPeriodSet=true;const today=reportToday(data.system.timezone);qs('[name="start_date"]').value=shiftDate(today,-29);qs('[name="end_date"]').value=today;return loadReport();}
         state.initialPeriodSet=true;state.data=data;if(data.access?.supervisor){categories.overview='Inventory Overview';categories.purchases='Purchase Requests';reportViews.overview=['Inventory Overview'];reportViews.purchases=['Purchase Request Summary'];visibility.purchases=['view','dates'];}
@@ -172,14 +192,64 @@ function salesComparisonBadge(card){
     const arrow=change>0?'↗':change<0?'↘':'→';
     return `<small class="summary-change is-${direction}" aria-label="${Math.abs(change).toFixed(1)} percent ${direction} from the previous period">${arrow} ${Math.abs(change).toFixed(1)}%</small>`;
 }
-function metricSparkline(rows,label='Daily net sales trend'){
-    const values=(rows||[]).map(row=>Number(row.value)||0);
+function reportContextBadge(card){
+    if(card.comparison)return salesComparisonBadge(card);
+    const view=qs('[name="report_view"]').value;
+    const liveSnapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||state.category==='expiry';
+    const title=String(card.title||'').toLowerCase(),value=Number(card.value)||0;
+    let tone='neutral';
+    if(/expired|expir|wastage|risk|out of stock|negative stock|damage|shortage|unpaid|outstanding|pending|rejected|no sales|slow-moving|low stock/.test(title)){
+        tone=value>0?(/expir|risk|out of stock|negative stock|wastage|rejected/.test(title)?'risk':'warning'):'good';
+    }else if(['green','teal'].includes(card.tone))tone='good';
+    else if(card.tone==='amber')tone='warning';
+    else if(card.tone==='red')tone='risk';
+    else if(value>0)tone='good';
+    return `<small class="summary-change is-${tone}">${liveSnapshot?'Live snapshot':'Selected period'}</small>`;
+}
+function isFinancialHighlight(card){return ['Total VAT Collected','Gross Profit','Estimated Gross Profit'].includes(String(card?.title||''));}
+function financialCardDescription(card){
+    const title=String(card?.title||'');
+    if(title==='Total VAT Collected')return 'VAT recorded on completed paid sales, less recorded refunds.';
+    if(title==='Estimated Gross Profit')return 'Sales excluding VAT, less recorded costs and estimated costs for items with missing batch history.';
+    if(title==='Gross Profit')return 'Completed sales excluding VAT, less recorded batch costs.';
+    return '';
+}
+function orderFinancialCards(cards, salesSummary=false){
+    const priority=salesSummary
+        ? {'Gross Sales':0,'Total VAT Collected':1,'Gross Profit':2,'Estimated Gross Profit':2,'Net Sales':3}
+        : {'Net Sales':0,'Total VAT Collected':1,'Gross Profit':2,'Estimated Gross Profit':2};
+    return [...(cards||[])].map((card,index)=>({card,index})).sort((a,b)=>{
+        const aRank=priority[a.card?.title],bRank=priority[b.card?.title];
+        if(aRank===undefined&&bRank===undefined)return a.index-b.index;
+        if(aRank===undefined)return 1;
+        if(bRank===undefined)return -1;
+        return aRank-bRank||a.index-b.index;
+    }).map(item=>item.card);
+}
+function salesTrendIndicator(data,card){
+    const chart=(data.charts||[]).find(item=>['daily-net-sales','sales-trend'].includes(item.id));
+    const series=Array.isArray(data.trend_series)?data.trend_series:(chart?.rows||[]);
+    const seriesKey={'Gross Sales':'gross_sales','Total VAT Collected':'vat','Gross Profit':'gross_profit','Estimated Gross Profit':'gross_profit'}[card?.title]||'value';
+    const seriesLabel=card?.title==='Gross Sales'?'Gross sales':card?.title==='Total VAT Collected'?'VAT collected':/profit/i.test(card?.title||'')?'Gross profit':'Sales';
+    const rows=series.map(row=>({...row,value:seriesKey==='value'?row.value:row[seriesKey]})).filter(row=>row.value!==null&&row.value!==undefined&&Number.isFinite(Number(row.value))&&(seriesKey==='gross_profit'||Number(row.value)>=0)&&row.raw_date);
+    const ordered=[...rows].sort((a,b)=>String(a.raw_date).localeCompare(String(b.raw_date)));
+    const periodComparison=ordered.length===0&&card.comparison?.previous_value!==undefined&&card.comparison?.previous_value!==null;
+    const values=periodComparison?[Number(card.comparison.previous_value),Number(card.value)]:ordered.map(row=>Number(row.value));
     if(!values.length)return '';
-    const max=Math.max(1,...values),width=220,height=68;
-    const points=values.map((value,index)=>[values.length===1?width/2:index*width/(values.length-1),height-6-(value/max)*(height-16)]);
-    const line=points.map(([x,y],index)=>`${index?'L':'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
-    const area=`${line} L${points.at(-1)[0].toFixed(1)} ${height} L${points[0][0].toFixed(1)} ${height} Z`;
-    return `<svg class="summary-sparkline" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}"><path class="sparkline-fill" d="${area}"></path><path class="sparkline-line" d="${line}"></path></svg>`;
+    const width=180,height=38,pad=3,min=Math.min(0,...values),max=Math.max(...values),span=max-min||1;
+    const points=values.length===1?`${width/2-12},${height/2} ${width/2+12},${height/2}`:values.map((value,index)=>`${pad+index*(width-2*pad)/Math.max(1,values.length-1)},${height-pad-(value-min)*(height-2*pad)/span}`).join(' ');
+    const description=periodComparison?`${seriesLabel} compared with the previous period`:`Daily ${seriesLabel.toLowerCase()} trend for the selected period`;
+    return `<div class="summary-trend-indicator financial-trend-indicator" role="img" aria-label="${description}"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg></div>`;
+}
+function reportSummaryIndicator(data){
+    const charts=data.charts||[];
+    const chart=charts.find(item=>Array.isArray(item.rows)&&item.rows.length>0)||charts.find(item=>Array.isArray(item.rows));
+    const values=(chart?.rows||[]).map(row=>Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))).filter(value=>Number.isFinite(value)&&value>=0);
+    const title=chart?.title||'Current report data';
+    if(!values.length)return `<div class="summary-trend-indicator is-empty"><small>No indicator data for the selected filters.</small></div>`;
+    const width=180,height=38,pad=3,min=Math.min(0,...values),max=Math.max(...values),span=max-min||1;
+    const points=values.length===1?`${width/2-12},${height/2} ${width/2+12},${height/2}`:values.map((value,index)=>`${pad+index*(width-2*pad)/Math.max(1,values.length-1)},${height-pad-(value-min)*(height-2*pad)/span}`).join(' ');
+    return `<div class="summary-trend-indicator has-caption" role="img" aria-label="Indicator for ${esc(title)}"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg><small>${esc(title)}</small></div>`;
 }
 function renderSummaryCards(data){
     const target=qs('#summaryCards'),view=qs('[name="report_view"]').value,
@@ -188,14 +258,12 @@ function renderSummaryCards(data){
     target.classList.toggle('sales-summary',Boolean(salesSummary));
     target.classList.toggle('purchase-summary',Boolean(purchaseSummary));
     if(purchaseSummary){
-        const sparkline=metricSparkline(data.purchase_trend,'Purchase order totals by day');
-        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong>${index===0?`<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>${sparkline}`:''}</article>`).join('');
+        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card)}</div>${index===0?`${reportSummaryIndicator(data)}<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>`:''}</article>`).join('');
         return;
     }
-    if(!salesSummary){target.innerHTML=(data.summary||[]).map(card=>`<article class="summary-card tone-${esc(card.tone||'purple')}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong></article>`).join('');return;}
+    if(!salesSummary){target.innerHTML=orderFinancialCards(data.summary).map((card,index)=>`<article class="summary-card tone-${esc(card.tone||'purple')} ${index===0?'report-primary-metric':''} ${isFinancialHighlight(card)?'report-highlight-metric':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}" aria-hidden="true"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong>${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>`:''}<div class="summary-context">${reportContextBadge(card)}</div>${isFinancialHighlight(card)?salesTrendIndicator(data,card):''}${index===0?(state.category==='sales'&&Array.isArray(data.trend_series)&&!isFinancialHighlight(card)?salesTrendIndicator(data,card):reportSummaryIndicator(data)):''}</article>`).join('');return;}
     const period=data.comparison_period,previousRange=`${reportDate(period.start,{month:'short',day:'numeric'})} – ${reportDate(period.end,{month:'short',day:'numeric',year:'numeric'})}`;
-    const sparkline=metricSparkline(data.charts?.find(chart=>chart.id==='daily-net-sales')?.rows);
-    target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${index===0?`<span>vs ${esc(previousRange)}</span>`:''}</div>${index===0?`<p class="summary-explanation">Completed sales after discounts and refunds over ${period.days} day${period.days===1?'':'s'}</p>${sparkline}`:''}</article>`).join('');
+    target.innerHTML=orderFinancialCards(data.summary,true).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''} ${isFinancialHighlight(card)?'sales-metric-highlight':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${index===0?`<span>vs ${esc(previousRange)}</span>`:''}</div>${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0?`${salesTrendIndicator(data,card)}<p class="summary-explanation">${card.title==='Gross Sales'?'Sales before discounts': 'Completed sales after discounts and refunds'} over ${period.days} day${period.days===1?'':'s'}</p>`:''}</article>`).join('');
 }
 function renderReport(data){
     qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.remove('d-none');
@@ -206,16 +274,27 @@ function renderReport(data){
     qs('#reportToday').textContent=generated.toLocaleDateString('en-PH',{timeZone:data.system.timezone,weekday:'short',year:'numeric',month:'short',day:'numeric'});
     const rangeStart=data.system.date_range.start,rangeEnd=data.system.date_range.end;
     qs('#reportDateRange').textContent=`${reportDate(rangeStart,{month:'short',day:'numeric',...(rangeStart.slice(0,4)===rangeEnd.slice(0,4)?{}:{year:'numeric'})})} – ${reportDate(rangeEnd,{month:'short',day:'numeric',year:'numeric'})}`;
+
     qs('#reportPeriodLabel').textContent=state.category==='inventory'&&qs('[name="report_view"]').value!=='Stock Movement'&&qs('[name="report_view"]').value!=='Fast / Slow Moving'?'Live inventory snapshot':state.period==='custom'?'Custom date range':state.period==='month'?'This month':state.period==='today'?'Today':state.period==='yesterday'?'Yesterday':`Last ${state.period} days`;
-    qs('.report-presets').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.period===state.period));
+    setPeriodSelection(state.period);
     renderViewMenu();renderReferenceControls();
+    const categoryName=(qs('#reportGroupTitle').textContent || 'Pharmacy').replace(/\s+reports?$/i,'');
+    qs('#reportPrintTitle').textContent=state.category==='overview'?(data.access?.supervisor?'INVENTORY OVERVIEW REPORT':'OVERALL PHARMACY REPORT'):`${categoryName} Report`.toUpperCase();
+    qs('#reportPrintCategory').textContent=state.category==='overview'?(data.access?.supervisor?'Inventory supervisor summary':'Pharmacy operations summary'):qs('#reportViewTitle').textContent || 'Report details';
+    const startDate=new Date(`${rangeStart}T00:00:00`),endDate=new Date(`${rangeEnd}T00:00:00`);
+    const startLabel=reportDate(rangeStart,{month:'long',day:'numeric'}),endLabel=reportDate(rangeEnd,{month:'long',day:'numeric',year:'numeric'});
+    const periodLabel=startDate.getFullYear()===endDate.getFullYear()&&startDate.getMonth()===endDate.getMonth()?`${new Intl.DateTimeFormat('en-PH',{month:'long'}).format(startDate)} ${startDate.getDate()}–${endDate.getDate()}, ${endDate.getFullYear()}`:startDate.getFullYear()===endDate.getFullYear()?`${startLabel}–${endLabel}`:`${reportDate(rangeStart,{month:'long',day:'numeric',year:'numeric'})}–${endLabel}`;
+    qs('#reportPrintPeriod').textContent=periodLabel;
+    qs('#reportPrintGenerated').textContent=generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});
+    qs('#reportPrintPreparedBy').textContent=data.system.generated_by || '';
+    const printAddress=qs('#reportPrintAddress');printAddress.textContent='Capistrano corner Cruz Taal Street, Barangay 08, Cagayan de Oro City';printAddress.hidden=false;
     renderSummaryCards(data);
     renderCharts(data.charts||[]);renderRanking(data);renderInsights(data);
     if(state.category==='purchases'&&form.elements.report_view.value==='PR / PO Summary'){
         qs('#reportCharts .chart-card h2')?.insertAdjacentHTML('afterend',`<small class="chart-date-caption">${esc(qs('#reportDateRange').textContent)}</small>`);
     }
     if(state.category==='overview'){const attention=qs('#reportInsights .attention-card');if(attention){qs('#reportCharts').appendChild(attention);qs('#reportCharts').classList.remove('single-chart');}}
-    renderOverview(data.overview_previews);renderTableInsights(data.table_insights||[]);renderTable(data);qs('.report-table-card').hidden=state.category==='overview'||form.elements.report_view.value==='Batch Traceability';renderNotes(data.notes||[]);renderFilterChips();
+    renderOverview(data.overview_previews);renderOverviewPrint(data);renderTableInsights(data.table_insights||[]);renderTable(data);qs('.report-table-card').hidden=state.category==='overview'||form.elements.report_view.value==='Batch Traceability';renderNotes(data.notes||[]);renderFilterChips();
     if(form.elements.report_view.value==='Batch Traceability')renderBatchTrace(data.trace);
 }
 function renderRanking(data){
@@ -290,7 +369,7 @@ function reportDate(value,options={month:'short',day:'numeric'}){
 function renderCharts(charts){
     // ✅ FIX: guard against undefined/non-array
     charts = Array.isArray(charts) ? charts : [];
-    const useful=charts.filter(chart=>chart && ((chart.rows||[]).some(r=>Number(r.value)>0||Number(r.paid)>0||Number(r.outstanding)>0)||chart.href));
+    const useful=charts.filter(chart=>chart && (chart.id==='my-order-status'||(chart.rows||[]).some(r=>Number(r.value)>0||Number(r.paid)>0||Number(r.outstanding)>0)||chart.href));
     const target=qs('#reportCharts');target.classList.toggle('single-chart',useful.length===1);
     target.innerHTML=useful.map((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0),heading=`<div class="panel-heading"><h2>${esc(chart.title)}</h2>${chart.href?`<a class="report-link" href="${esc(chart.href)}">${esc(chart.link_label||'View Report')} <i class="fa-solid fa-arrow-right"></i></a>`:''}</div>`;if(chart.type==='stacked-bar'){const max=Math.max(1,...chart.rows.map(r=>Number(r.paid||0)+Number(r.outstanding||0)));return `<article class="chart-card">${heading}<div class="payment-chart-legend"><span><i></i>Paid</span><span><i></i>Outstanding</span></div><div class="payment-chart">${chart.rows.map(r=>`<div class="payment-chart-row"><span>${esc(r.label)}</span><div class="payment-chart-track"><i style="width:${100*Number(r.paid||0)/max}%"></i><b style="width:${100*Number(r.outstanding||0)/max}%"></b></div></div>`).join('')}</div></article>`;}if(positive.length===0)return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="compact-empty">No records in the selected period.</div></article>`;if((positive.length===1&&chart.type!=='bar'&&chart.type!=='line')||chart.type==='doughnut'&&positive.length<2){const row=positive[0],singleSummary=chart.overview_trend?`Net sales were ${money.format(row.value)} on ${reportDate(row.raw_date||row.label,{month:'long',day:'numeric',year:'numeric'})}, from ${number.format(row.secondary)} completed transaction${Number(row.secondary)===1?'':'s'}.`:'Only one meaningful category is available, so a compact summary replaces the chart.';return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="ranked-insight"><span>${esc(row.label)}</span><strong>${esc(format(row.value,/sales|cost|revenue|payable/i.test(chart.title)?'currency':'number'))}</strong></div><p class="chart-summary">${esc(singleSummary)}</p></article>`;}return `<article class="chart-card">${heading}<div class="chart-box"><canvas id="reportChart${index}" role="img" aria-label="${esc(chart.title)}"></canvas></div><p class="chart-summary" id="chartSummary${index}"></p></article>`;}).join('');
     useful.forEach((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0);if(chart.type==='stacked-bar'||positive.length===0||!qs(`#reportChart${index}`)||typeof Chart==='undefined')return;const values=positive.map(r=>Number(r.value)),rawLabels=positive.map(r=>r.label),labels=chart.overview_trend?rawLabels.map(label=>reportDate(label)):rawLabels,currency=/sales|cost|revenue|payable|value/i.test(chart.title),horizontal=chart.orientation==='horizontal',chartType=chart.type==='line'?'bar':chart.type;
@@ -299,18 +378,19 @@ function renderCharts(charts){
 function renderInsights(data){
     const cards=[];
     (data.insights||[]).forEach(insight=>cards.push(`<article class="insight-card tone-${esc(insight.tone||'gray')}"><h2>${esc(insight.title)}</h2>${(insight.rows||[]).map(r=>`<div class="insight-row"><span>${esc(r.label)} <small>${r.secondary?`${number.format(r.secondary)} transaction${Number(r.secondary)===1?'':'s'}`:''}</small></span><strong>${esc(format(r.value,insight.format))}</strong></div>`).join('')}</article>`));
+    (data.actions||[]).forEach(action=>cards.push(`<article class="insight-card tone-${esc(action.tone||'blue')}"><h2>${esc(action.title)}</h2><p class="insight-action-description">${esc(action.description)}</p><a class="insight-action-link" href="${esc(action.href)}">${esc(action.label)} <i class="fa-solid fa-arrow-right"></i></a></article>`));
     if(data.attention)cards.push(`<article class="attention-card"><h2><i class="fa-solid fa-triangle-exclamation"></i> Pharmacy Attention</h2>${data.attention.map(x=>{const label=Number(x.value)===1?x.singular:x.plural;return `<a class="attention-row tone-${esc(x.tone)}" href="${esc(x.href)}"><i class="attention-icon fa-solid ${esc(x.icon)}"></i><span>${esc(label)}</span><strong>${esc(format(x.value,x.format))}</strong><i class="fa-solid fa-arrow-right"></i></a>`;}).join('')}</article>`);
     qs('#reportInsights').innerHTML=cards.join('');
 }
 function overviewPanelHeading(title,href,label){return `<div class="panel-heading"><h2>${esc(title)}</h2><a class="report-link" href="${esc(href)}">${esc(label)} <i class="fa-solid fa-arrow-right"></i></a></div>`;}
-function compactBars(rows,{value='value',tone='blue',currency=false,tooltip,summaryLabel='items'}={}){
-    const visible=rows.filter(row=>Number(row[value])>0),max=Math.max(1,...visible.map(row=>Number(row[value])));
-    if(!visible.length)return '';
-    return `<div class="compact-bars" role="img" aria-label="${esc(`${visible.length} ${summaryLabel}`)}">${visible.map(row=>{const amount=Number(row[value]),width=100*amount/max;return `<div class="compact-bar-row tone-${esc(row.tone||tone)}" title="${esc(tooltip?tooltip(row):`${row.label}: ${amount}`)}"><div class="compact-bar-label"><span>${esc(row.label)}</span><strong>${esc(currency?money.format(amount):number.format(amount))}</strong></div><div class="compact-bar-track"><span style="width:${width}%"></span></div></div>`;}).join('')}</div>`;
+function overviewChart(id,type,labels,values,colors,{horizontal=false,label='Records',tooltip,valueFormatter,showValueLabels=false}={}){
+    if(typeof Chart==='undefined')return;
+    const canvas=qs(`#${id}`);if(!canvas)return;
+    const doughnut=type==='doughnut',valueLabelPlugin=showValueLabels?{id:`${id}-value-labels`,afterDatasetsDraw(instance){const ctx=instance.ctx,meta=instance.getDatasetMeta(0),dataset=instance.data.datasets[0];ctx.save();ctx.font='600 10px Inter, sans-serif';ctx.textBaseline='middle';meta.data.forEach((bar,index)=>{const text=valueFormatter?valueFormatter(dataset.data[index]):number.format(dataset.data[index]),width=ctx.measureText(text).width,inside=bar.x+width+10>instance.chartArea.right;ctx.fillStyle=inside?'#fff':'#334155';ctx.textAlign=inside?'right':'left';ctx.fillText(text,inside?Math.max(instance.chartArea.left+width+4,bar.x-6):bar.x+6,bar.y);});ctx.restore();}}:null,chart=new Chart(canvas,{type,data:{labels,datasets:[{label,data:values,backgroundColor:colors,borderColor:doughnut?'#fff':colors,borderWidth:doughnut?2:1,borderRadius:doughnut?0:5,borderSkipped:false,maxBarThickness:30}]},plugins:valueLabelPlugin?[valueLabelPlugin]:[],options:{responsive:true,maintainAspectRatio:false,indexAxis:horizontal?'y':'x',animation:{duration:180},plugins:{legend:{display:doughnut,position:'bottom',labels:{usePointStyle:true,boxWidth:8,padding:12,font:{size:10}}},tooltip:{callbacks:{label:ctx=>tooltip?tooltip(ctx):`${ctx.label}: ${number.format(ctx.raw)}`}}},scales:doughnut?{}:{x:{beginAtZero:true,grid:{display:!horizontal},ticks:{precision:0,font:{size:10},callback:value=>valueFormatter?valueFormatter(value):horizontal?number.format(value):value}},y:{beginAtZero:!horizontal,grid:{display:false},ticks:{autoSkip:false,font:{size:10}}}}}});
+    state.charts.set(`overview-${id}`,chart);
 }
-function staffActivityPanel(title,rows,tone,href){
-    const max=Math.max(1,...rows.map(row=>Number(row.transactions)));
-    const content=rows.length?`<div class="staff-bars" role="img" aria-label="${esc(`${title}, top ${rows.length}`)}">${rows.map((row,index)=>`<div class="staff-rank tone-${tone}" title="${esc(`${row.name}: ${number.format(row.transactions)} completed transaction${Number(row.transactions)===1?'':'s'}, ${money.format(row.net_sales)} net sales`)}"><b>${index+1}</b><div><div class="staff-rank-label"><span>${esc(row.name)}</span><strong>${number.format(row.transactions)}</strong></div><div class="compact-bar-track"><span style="width:${100*Number(row.transactions)/max}%"></span></div><small>${money.format(row.net_sales)} net sales</small></div></div>`).join('')}</div><p class="visual-summary">${esc(rows[0].name)} leads with ${number.format(rows[0].transactions)} completed transaction${Number(rows[0].transactions)===1?'':'s'}.</p>`:'<div class="compact-empty">No completed staff activity in the selected period.</div>';
+function overviewStaffPanel(title,rows,tone,href,id){
+    const content=rows.length?`<div class="overview-chart-box staff-overview-chart" style="height:${Math.max(150,rows.length*38)}px"><canvas id="${id}" role="img" aria-label="${esc(`${title}: completed transactions by staff member`)}"></canvas></div><p class="visual-summary">Bars compare completed transaction counts. Hover for net sales.</p>`:'<div class="compact-empty">No completed staff activity in the selected period.</div>';
     return `<article class="overview-panel tone-${tone}">${overviewPanelHeading(title,href,'View Staff Performance')}${content}</article>`;
 }
 function renderOverview(previews){
@@ -326,27 +406,61 @@ function renderOverview(previews){
         && previews.staff_activity;
     target.hidden = !hasPreviews;
     if(!hasPreviews){target.innerHTML='';return;}
+    state.charts.forEach((chart,key)=>{if(String(key).startsWith('overview-')){chart.destroy();state.charts.delete(key);}});
     const products=previews.top_products.rows||[],inventory=previews.inventory_health,expiry=previews.expiry_risk,purchase=previews.purchase_status,staff=previews.staff_activity;
-    const productMode=state.productMode,productField=productMode==='revenue'?'net_revenue':'quantity_sold',sortedProducts=[...products].sort((a,b)=>Number(b[productField])-Number(a[productField])),productMax=Math.max(1,...sortedProducts.map(row=>Number(row[productField])));
-    const productRows=sortedProducts.length?sortedProducts.map((row,index)=>{const primary=productMode==='revenue'?money.format(row.net_revenue):`${number.format(row.quantity_sold)} sold`,secondary=productMode==='revenue'?`${number.format(row.quantity_sold)} sold`:money.format(row.net_revenue);return `<div class="product-rank" data-product-rank><b>${index+1}</b><div class="product-rank-detail"><strong>${esc(row.brand_name)} — ${esc(row.product_name)}</strong><small title="${esc(row.specification||'')}">${esc(row.specification||'No specification recorded')}</small><div class="compact-bar-track tone-sales"><span style="width:${100*Number(row[productField])/productMax}%"></span></div></div><span><strong>${esc(primary)}</strong><small>${esc(secondary)}</small></span></div>`;}).join(''):'<div class="compact-empty">No completed product sales in the selected period.</div>';
-    const healthRows=[['Healthy',inventory.healthy,'green'],['Low Stock',inventory.low_stock,'amber'],['Out of Stock',inventory.out_of_stock,'red'],['Data Issues',inventory.data_issues,'dark-red']],healthTotal=Math.max(1,inventory.total_products);
+    const productMode=state.productMode,productField=productMode==='revenue'?'net_revenue':'quantity_sold',sortedProducts=[...products].sort((a,b)=>Number(b[productField])-Number(a[productField])).slice(0,5);
+    const healthRows=[['Healthy',inventory.healthy,'green'],['Low Stock',inventory.low_stock,'amber'],['Out of Stock',inventory.out_of_stock,'red'],['Data Issues',inventory.data_issues,'dark-red']];
     const expiryTones={'Expired':'red','Within 7 days':'red-orange','Within 30 days':'amber','Within 60 days':'yellow'},expiryRows=(expiry.chart_rows||[]).map(row=>({...row,tone:expiryTones[row.label]||'amber'}));
-const poTones={'Draft':'gray','Pending':'amber','Arrived':'teal','Delivered':'green','Cancelled':'red'},statusRows=Object.entries(purchase.statuses).map(([label,value])=>({label,value,tone:poTones[label]||'gray'}));
-    const poBars=compactBars(statusRows,{tooltip:row=>`${row.label}: ${number.format(row.value)} unique purchase order${Number(row.value)===1?'':'s'}`,summaryLabel:'purchase order statuses'});
-    const expiryBars=compactBars(expiryRows,{value:'quantity_at_risk',tooltip:row=>`${row.label}: ${number.format(row.batch_count)} active batch${Number(row.batch_count)===1?'':'es'}, ${number.format(row.quantity_at_risk)} units, ${money.format(row.cost_at_risk)} at risk`,summaryLabel:'expiry-risk windows'});
+    const poTones={'Draft':'gray','Pending':'amber','Arrived':'teal','Delivered':'green','Cancelled':'red'},statusRows=Object.entries(purchase.statuses).map(([label,value])=>({label,value,tone:poTones[label]||'gray'})),poRows=statusRows.filter(row=>Number(row.value)>0);
     target.innerHTML=`
-      <article class="overview-panel tone-sales">${overviewPanelHeading('Top 5 Products',previews.top_products.href,'View Product Performance')}<div class="mini-toggle" role="group" aria-label="Rank products"><button class="${productMode==='quantity'?'active':''}" type="button" data-product-mode="quantity" aria-pressed="${productMode==='quantity'}">By Quantity</button><button class="${productMode==='revenue'?'active':''}" type="button" data-product-mode="revenue" aria-pressed="${productMode==='revenue'}">By Revenue</button></div><div id="overviewProducts">${productRows}</div><p class="visual-summary">${sortedProducts.length?`${esc(sortedProducts[0].brand_name)} — ${esc(sortedProducts[0].product_name)} ranks first by ${productMode}.`:'No ranked products for this period.'}</p></article>
-      <article class="overview-panel tone-inventory">${overviewPanelHeading('Inventory Health',inventory.href,'View Inventory Report')}<p class="current-label"><i class="fa-solid fa-circle"></i> Current active stock</p><div class="segmented-bar" role="img" aria-label="Stock health across ${number.format(inventory.total_products)} active products">${healthRows.filter(([,value])=>Number(value)>0).map(([label,value,tone])=>{const percent=100*value/healthTotal;return `<span class="segment tone-${tone}" style="width:${percent}%" title="${esc(`${label}: ${number.format(value)} unique products, ${percent.toFixed(1)}% of active products`)}">${percent>=10?`<b>${number.format(value)}</b>`:''}</span>`;}).join('')}</div><div class="status-summary">${healthRows.map(([label,value,tone])=>`<div><i class="status-dot tone-${tone}"></i><span>${esc(label)}</span><strong>${number.format(value)}</strong></div>`).join('')}</div><p class="visual-summary">${number.format(inventory.healthy)} of ${number.format(inventory.total_products)} active products are healthy.</p><div class="mini-metrics"><div><span>Total On Hand</span><strong>${number.format(inventory.total_on_hand)}</strong></div><div><span>Shelf Stock</span><strong>${number.format(inventory.shelf_stock)}</strong></div><div><span>Storage Stock</span><strong>${number.format(inventory.storage_stock)}</strong></div></div></article>
-      <article class="overview-panel tone-expiry">${overviewPanelHeading('Expiry Risk',expiry.href,'View Expiry Report')}<p class="current-label"><i class="fa-solid fa-circle"></i> Current active batches</p>${expiry.expired+expiry.within_30===0?`<div class="compact-empty success"><i class="fa-solid fa-circle-check"></i><strong>No immediate expiry risk.</strong><span>No active batches expire within the next 30 days.</span></div>`:`${expiryBars}<p class="visual-summary">${number.format(expiryRows.reduce((sum,row)=>sum+Number(row.batch_count),0))} active at-risk batches are shown in non-overlapping windows.</p>`}<div class="mini-metrics two"><div><span>Quantity at Risk</span><strong>${number.format(expiry.quantity_at_risk)}</strong></div><div><span>Cost at Risk</span><strong>${money.format(expiry.cost_at_risk)}</strong></div></div></article>
-      <article class="overview-panel tone-purchases">${overviewPanelHeading('Purchase Order Status',purchase.href,'View Purchase Report')}${poBars||'<div class="compact-empty">No purchase orders to chart.</div>'}<div class="po-status-legend">${statusRows.map(row=>`<span><i class="status-dot tone-${row.tone}"></i>${esc(row.label)} <b>${number.format(row.value)}</b></span>`).join('')}</div><p class="visual-summary">${statusRows.filter(row=>Number(row.value)>0).length} non-zero purchase order statuses are charted.</p><div class="mini-metrics"><div><span>Awaiting Inspection</span><strong>${number.format(purchase.arrived_awaiting_inspection)}</strong></div><div><span>Open Commitments</span><strong>${money.format(purchase.open_commitments)}</strong></div><div><span>Outstanding Payables</span><strong>${money.format(purchase.outstanding_payable)}</strong></div></div></article>
-      ${staffActivityPanel('Cashier Activity',staff.cashiers||[],'indigo',staff.href)}
-      ${staffActivityPanel('Sales Clerk Activity',staff.sales_clerks||[],'teal',staff.href)}
+      <article class="overview-panel tone-sales">${overviewPanelHeading('Top 5 Products',previews.top_products.href,'View all products')}<div class="mini-toggle" role="group" aria-label="Rank products"><button class="${productMode==='quantity'?'active':''}" type="button" data-product-mode="quantity" aria-pressed="${productMode==='quantity'}">By Quantity</button><button class="${productMode==='revenue'?'active':''}" type="button" data-product-mode="revenue" aria-pressed="${productMode==='revenue'}">By Revenue</button></div><p class="product-chart-context">Ranked by ${productMode==='revenue'?'net sales':'units sold'} · ${esc(reportDate(state.data?.system?.date_range?.start||state.defaultStart,{month:'short',day:'numeric'}))} – ${esc(reportDate(state.data?.system?.date_range?.end||state.defaultEnd,{month:'short',day:'numeric',year:'numeric'}))}</p>${sortedProducts.length?'<div class="overview-chart-box product-overview-chart"><canvas id="overviewTopProducts" role="img" aria-label="Top products ranked by selected measure, with values shown on each bar"></canvas></div>':'<div class="compact-empty">No completed sales for the selected period, so there are no products to rank.</div>'}<p class="visual-summary">Bar-end labels show ${productMode==='revenue'?'net sales in pesos':'units sold'}; hover for both measures.</p></article>
+      <article class="overview-panel tone-inventory">${overviewPanelHeading('Inventory Health',inventory.href,'View Inventory Report')}<p class="current-label"><i class="fa-solid fa-circle"></i> Current active stock</p>${Number(inventory.total_products)>0?'<div class="overview-chart-box doughnut-overview-chart"><canvas id="overviewInventoryHealth" role="img" aria-label="Active products by stock health"></canvas></div>':'<div class="compact-empty">No active products to chart.</div>'}<p class="visual-summary">${number.format(inventory.healthy)} of ${number.format(inventory.total_products)} active products are healthy.</p><div class="mini-metrics"><div><span>Total On Hand</span><strong>${number.format(inventory.total_on_hand)}</strong></div><div><span>Shelf Stock</span><strong>${number.format(inventory.shelf_stock)}</strong></div><div><span>Storage Stock</span><strong>${number.format(inventory.storage_stock)}</strong></div></div></article>
+      <article class="overview-panel tone-expiry">${overviewPanelHeading('Expiry Risk',expiry.href,'View Expiry Report')}<p class="current-label"><i class="fa-solid fa-circle"></i> Current active batches</p>${expiry.expired+expiry.within_30===0?`<div class="compact-empty success"><i class="fa-solid fa-circle-check"></i><strong>No immediate expiry risk.</strong><span>No active batches expire within the next 30 days.</span></div>`:'<div class="overview-chart-box expiry-overview-chart"><canvas id="overviewExpiryRisk" role="img" aria-label="Active batches by expiry window"></canvas></div><p class="visual-summary">Bars compare active batch counts in each window; hover for units and cost at risk.</p>'}<div class="mini-metrics two"><div><span>Quantity at Risk</span><strong>${number.format(expiry.quantity_at_risk)}</strong></div><div><span>Cost at Risk</span><strong>${money.format(expiry.cost_at_risk)}</strong></div></div></article>
+      <article class="overview-panel tone-purchases">${overviewPanelHeading('Purchase Order Status',purchase.href,'View Purchase Report')}${poRows.length?'<div class="overview-chart-box doughnut-overview-chart"><canvas id="overviewPurchaseStatus" role="img" aria-label="Purchase orders by status"></canvas></div><p class="visual-summary">Doughnut segments show purchase orders in each status.</p>':'<div class="compact-empty">No purchase orders in the selected period.</div>'}<div class="mini-metrics"><div><span>Awaiting Inspection</span><strong>${number.format(purchase.arrived_awaiting_inspection)}</strong></div><div><span>Open Commitments</span><strong>${money.format(purchase.open_commitments)}</strong></div><div><span>Outstanding Payables</span><strong>${money.format(purchase.outstanding_payable)}</strong></div></div></article>
+      ${overviewStaffPanel('Cashier Activity',staff.cashiers||[],'indigo',staff.href,'overviewCashierActivity')}
+      ${overviewStaffPanel('Sales Clerk Activity',staff.sales_clerks||[],'teal',staff.href,'overviewClerkActivity')}
       <div class="staff-supporting-metrics"><div><span>Active cashiers</span><strong>${number.format(staff.active_cashiers)}</strong></div><div><span>Active sales clerks</span><strong>${number.format(staff.active_sales_clerks)}</strong></div><div><span>Completed transactions</span><strong>${number.format(staff.completed_transactions)}</strong></div><div><span>Average transaction</span><strong>${money.format(staff.average_transaction)}</strong></div></div>`;
+    const palette={green:'#16a34a',amber:'#d97706',red:'#dc2626','dark-red':'#991b1b','red-orange':'#ea580c',yellow:'#ca8a04',gray:'#64748b',teal:'#0d9488',indigo:'#4f46e5',purple:'#5b4cf0',blue:'#2563eb'};
+    if(sortedProducts.length){const labels=sortedProducts.map(row=>`${row.brand_name?`${row.brand_name} — `:''}${row.product_name}`),values=sortedProducts.map(row=>Number(row[productField])||0);overviewChart('overviewTopProducts','bar',labels,values,labels.map(()=>palette.blue),{horizontal:true,label:productMode==='revenue'?'Net sales':'Units sold',valueFormatter:productMode==='revenue'?value=>money.format(value):value=>`${number.format(value)} units`,showValueLabels:true,tooltip:ctx=>{const row=sortedProducts[ctx.dataIndex];return `${productMode==='revenue'?money.format(row.net_revenue):`${number.format(row.quantity_sold)} units sold`} · ${money.format(row.net_revenue)} net sales`;}});}
+    overviewChart('overviewInventoryHealth','doughnut',healthRows.map(row=>row[0]),healthRows.map(row=>Number(row[1])||0),healthRows.map(row=>palette[row[2]]),{label:'Products',tooltip:ctx=>`${ctx.label}: ${number.format(ctx.raw)} products`});
+    if(expiry.expired+expiry.within_30>0){const riskRows=expiryRows.filter(row=>Number(row.batch_count)>0);overviewChart('overviewExpiryRisk','bar',riskRows.map(row=>row.label),riskRows.map(row=>Number(row.batch_count)||0),riskRows.map(row=>palette[row.tone]),{horizontal:true,label:'Active batches',tooltip:ctx=>{const row=riskRows[ctx.dataIndex];return `${row.label}: ${number.format(row.batch_count)} batches · ${number.format(row.quantity_at_risk)} units · ${money.format(row.cost_at_risk)}`;}});}
+    if(poRows.length)overviewChart('overviewPurchaseStatus','doughnut',poRows.map(row=>row.label),poRows.map(row=>Number(row.value)||0),poRows.map(row=>palette[row.tone]),{label:'Purchase orders',tooltip:ctx=>`${ctx.label}: ${number.format(ctx.raw)} purchase orders`});
+    const renderStaff=(id,rows,color)=>{if(!rows.length)return;const labels=rows.map(row=>row.name),values=rows.map(row=>Number(row.transactions)||0);overviewChart(id,'bar',labels,values,labels.map(()=>color),{horizontal:true,label:'Completed transactions',tooltip:ctx=>{const row=rows[ctx.dataIndex];return `${number.format(row.transactions)} transactions · ${money.format(row.net_sales)} net sales`;}});};
+    renderStaff('overviewCashierActivity',staff.cashiers||[],'#4f46e5');renderStaff('overviewClerkActivity',staff.sales_clerks||[],'#0d9488');
+}
+function overviewPrintTable(headers,rows,numericColumns=[]){
+    const head=headers.map((label,index)=>`<th class="${numericColumns.includes(index)?'numeric':''}">${esc(label)}</th>`).join('');
+    const body=rows.length?rows.map(row=>`<tr>${row.map((value,index)=>`<td class="${numericColumns.includes(index)?'numeric':''}">${esc(value)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${headers.length}" class="overview-print-empty">No records for the selected period.</td></tr>`;
+    return `<table class="overview-print-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+function renderOverviewPrint(data){
+    const target=qs('#overviewPrintLayout'),previews=data.overview_previews||{},inventory=previews.inventory_health,expiry=previews.expiry_risk,purchase=previews.purchase_status,staff=previews.staff_activity,products=previews.top_products;
+    const hasFullOverview=Boolean(inventory&&expiry&&purchase&&staff&&products);
+    const summary=(data.summary||[]).map(card=>`<div class="overview-print-metric"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong></div>`).join('');
+    const sections=[`<section class="overview-print-section"><h3>Executive Summary</h3><div class="overview-print-metric-grid">${summary||'<p class="overview-print-empty">No summary data is available.</p>'}</div></section>`];
+    if(hasFullOverview){
+        const sortedProducts=[...(products.rows||[])].sort((a,b)=>Number(b[state.productMode==='revenue'?'net_revenue':'quantity_sold'])-Number(a[state.productMode==='revenue'?'net_revenue':'quantity_sold']));
+        const productRows=sortedProducts.slice(0,5).map((row,index)=>[String(index+1),`${row.brand_name?`${row.brand_name} — `:''}${row.product_name}${row.specification?`\n${row.specification}`:''}`,number.format(row.quantity_sold),money.format(Number(row.net_revenue)||0)]);
+        sections.push(`<section class="overview-print-section"><h3>Pharmacy Attention</h3>${overviewPrintTable(['No.','Indicator','Count / Amount'],(data.attention||[]).map((row,index)=>[String(index+1),Number(row.value)===1?row.singular:row.plural,format(row.value,row.format)]),[2])}</section>`);
+        sections.push(`<section class="overview-print-section"><h3>Top 5 Products</h3>${overviewPrintTable(['Rank','Product Name / Description','Quantity Sold','Sales Amount'],productRows,[0,2,3])}</section>`);
+        sections.push(`<section class="overview-print-section"><h3>Inventory Health</h3>${overviewPrintTable(['Metric','Products'],[['Active products',number.format(inventory.total_products)],['Healthy',number.format(inventory.healthy)],['Low stock',number.format(inventory.low_stock)],['Out of stock',number.format(inventory.out_of_stock)],['Data issues',number.format(inventory.data_issues)]],[1])}${overviewPrintTable(['Stock Quantity','Units'],[['Total on hand',number.format(inventory.total_on_hand)],['Shelf stock',number.format(inventory.shelf_stock)],['Storage stock',number.format(inventory.storage_stock)]],[1])}</section>`);
+        const expiryRows=(expiry.chart_rows||[]).map(row=>[row.label,number.format(row.batch_count),number.format(row.quantity_at_risk),money.format(Number(row.cost_at_risk)||0)]);
+        sections.push(`<section class="overview-print-section"><h3>Expiry Risk</h3><p class="overview-print-caption">${number.format(expiry.active_batches||0)} active batches with recorded expiry dates and remaining stock</p>${overviewPrintTable(['Expiry Window','Batches','Quantity at Risk','Cost at Risk'],expiryRows,[1,2,3])}${overviewPrintTable(['Summary','Value'],[['Total quantity at risk (within 60 days)',number.format(expiry.quantity_at_risk)],['Total cost at risk (within 60 days)',money.format(Number(expiry.cost_at_risk)||0)]],[1])}</section>`);
+        const statusNames=['Draft','Pending','Arrived','Delivered','Cancelled'];
+        sections.push(`<section class="overview-print-section"><h3>Purchase Order Status</h3>${overviewPrintTable(['Status','Purchase Orders'],statusNames.map(name=>[name,number.format(purchase.statuses?.[name]||0)]),[1])}${overviewPrintTable(['Purchase Metric','Value'],[['Awaiting inspection',number.format(purchase.arrived_awaiting_inspection)],['Open commitments',money.format(Number(purchase.open_commitments)||0)],['Outstanding payables',money.format(Number(purchase.outstanding_payable)||0)]],[1])}</section>`);
+        const activityRows=rows=>(rows||[]).map((row,index)=>[String(index+1),row.name,number.format(row.transactions),money.format(Number(row.net_sales)||0)]);
+        sections.push(`<section class="overview-print-section"><h3>Cashier Activity</h3>${overviewPrintTable(['Rank','Cashier Name','Completed Transactions','Net Sales'],activityRows(staff.cashiers),[0,2,3])}</section>`);
+        sections.push(`<section class="overview-print-section"><h3>Sales Clerk Activity</h3>${overviewPrintTable(['Rank','Sales Clerk Name','Completed Transactions','Net Sales'],activityRows(staff.sales_clerks),[0,2,3])}</section>`);
+        sections.push(`<section class="overview-print-section"><h3>Activity Summary</h3>${overviewPrintTable(['Active Cashiers','Active Sales Clerks','Completed Transactions','Average Transaction'],[[number.format(staff.active_cashiers),number.format(staff.active_sales_clerks),number.format(staff.completed_transactions),money.format(Number(staff.average_transaction)||0)]],[0,1,2,3])}</section>`);
+    }
+    const notes=(data.notes||[]).map(note=>`<li>${esc(note)}</li>`).join('');
+    target.innerHTML=`${sections.join('')}${notes?`<section class="overview-print-notes"><h3>Notes</h3><ul>${notes}</ul></section>`:''}`;
 }
 function renderTableInsights(insights){qs('#tableInsights').innerHTML=insights.map(insight=>`<article class="table-insight-card"><h2>${esc(insight.title)}</h2><div class="report-table-scroll"><table class="report-table compact"><thead><tr>${Object.values(insight.columns).map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${insight.rows.map(row=>`<tr>${Object.keys(insight.columns).map(key=>`<td class="${(insight.currency_columns||[]).includes(key)||(insight.numeric_columns||[]).includes(key)?'numeric':''}">${esc((insight.currency_columns||[]).includes(key)?money.format(Number(row[key]||0)):row[key]??'—')}</td>`).join('')}</tr>`).join('')||`<tr class="empty-table"><td colspan="${Object.keys(insight.columns).length}">No completed supplier deliveries in this period.</td></tr>`}</tbody></table></div></article>`).join('');}
 function statusClass(value){return statusColors[String(value)]||(/paid|healthy|complete|accept/i.test(value)?'green':/cancel|expired|out of stock|data issue/i.test(value)?'red':/pending|partial|low|damage|slow/i.test(value)?'amber':'gray');}
 function cellHtml(key,value,row){
-    const text=value===null||value===''?'—':String(value);if(/status|performance/i.test(key))return `<span class="status-chip ${statusClass(text)}">${esc(text)}</span>`;
+    if(value===null||value==='')return key==='tracked_gross_profit'?'<span class="cell-text" title="Sales from this purchase order do not have complete batch-cost tracking yet.">Not tracked</span>':'—';
+    const text=String(value);if(/status|performance/i.test(key))return `<span class="status-chip ${statusClass(text)}">${esc(text)}</span>`;
     if(state.data.currency_columns.includes(key))return esc(money.format(Number(value||0)));if(key==='sell_through_rate'||key==='share')return `${esc(text)}%`;if(/date|activity/.test(key))return esc(text.replace(' ',' · '));
     return `<span class="cell-text" title="${esc(text)}">${esc(text)}</span>`;
 }
@@ -385,7 +499,7 @@ function clearCategoryFilters(){
 function csvCell(value){let text=String(value??'');if(/^[=+\-@]/.test(text))text=`'${text}`;return `"${text.replace(/"/g,'""')}"`;}
 async function exportCsv(){
     if(!state.data)return;const button=qs('#reportExport');button.disabled=true;
-    try{const first=state.data,rows=[...first.rows];for(let page=2;page<=first.pagination.pages;page++){const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams({page,page_size:100})}`,{credentials:'include',cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(payload.message||'Export failed.');rows.push(...payload.rows);}
+    try{const first=state.data,exportParams=buildParams({page:1,page_size:100}),firstResponse=await fetch(`${API_BASE_URL}/reports/get_report.php?${exportParams}`,{credentials:'include',cache:'no-store'}),firstPayload=await firstResponse.json();if(!firstResponse.ok)throw new Error(firstPayload.message||'Export failed.');const rows=[...firstPayload.rows];for(let page=2;page<=firstPayload.pagination.pages;page++){const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams({page,page_size:100})}`,{credentials:'include',cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(payload.message||'Export failed.');rows.push(...payload.rows);}
         const columns=Object.entries(first.columns),applied=qsa('.filter-chip').map(x=>x.textContent.trim().replace(/\s*×$/,'')).join('; ')||'Default period';
         const lines=[[first.system.pharmacy_name],[`${qs('[name=report_view]').value} Report`],[`Date range: ${first.system.date_range.start} to ${first.system.date_range.end}`],[`Applied filters: ${applied}`],[`Generated: ${first.system.generated_at}`],[`Generated by: ${first.system.generated_by}`],[],['Summary'],...first.summary.map(x=>[x.title,format(x.value,x.format)]),[],columns.map(([,label])=>label)];
         rows.forEach(row=>lines.push(columns.map(([key])=>row[key]??'')));const blob=new Blob(['\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${state.category}-report-${first.system.date_range.end}.csv`;document.body.appendChild(link);link.click();const url=link.href;link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -406,9 +520,9 @@ qs('#reportTableBody').addEventListener('click',event=>{const row=event.target.c
 qs('#reportTableBody').addEventListener('keydown',event=>{if(!['Enter',' '].includes(event.key))return;const row=event.target.closest('[data-row-index]');if(row){event.preventDefault();openRecordDetail(Number(row.dataset.rowIndex));}});
 qs('#reportDetailClose').addEventListener('click',()=>qs('#reportDetail').close());qs('#reportDetailPrevious').addEventListener('click',()=>openRecordDetail(state.detailIndex-1));qs('#reportDetailNext').addEventListener('click',()=>openRecordDetail(state.detailIndex+1));
 qs('#reportFilters').addEventListener('submit',event=>{event.preventDefault();state.page=1;state.explicitDates=true;state.period='custom';loadReport();});
-qs('#clearFilters').addEventListener('click',resetFilters);qs('#reportRefresh').addEventListener('click',loadReport);qs('#reportPrint').addEventListener('click',()=>window.print());qs('#reportPdf').addEventListener('click',()=>window.print());qs('#reportExport').addEventListener('click',exportCsv);
+qs('#clearFilters').addEventListener('click',resetFilters);qs('#reportRefresh').addEventListener('click',loadReport);qs('#reportPrint').addEventListener('click',()=>{setPrintTimestamp();window.print();});qs('#reportPdf').addEventListener('click',()=>{setPrintTimestamp();window.print();});window.addEventListener('beforeprint',setPrintTimestamp);qs('#reportExport').addEventListener('click',exportCsv);
 qs('#reportViewMenu').addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(!button)return;qs('#reportSearch').value='';qs('[name="report_view"]').value=button.dataset.view;setFilterExpanded(['expiry','purchases'].includes(state.category)?false:button.dataset.view!=='Sales Summary');qs('[name="report_view"]').dispatchEvent(new Event('change'));renderViewMenu();});
-qs('.report-presets').addEventListener('click',event=>{const button=event.target.closest('[data-period]');if(!button)return;const period=button.dataset.period;if(period==='custom'){qs('[name="start_date"]').closest('[data-filter]').hidden=false;qs('#reportFilters').classList.remove('is-collapsed');qs('[name="start_date"]').focus();state.period='custom';return;}const today=reportToday(state.data?.system?.timezone),end=period==='yesterday'?shiftDate(today,-1):today,start=period==='month'?`${today.slice(0,7)}-01`:period==='7'?shiftDate(end,-6):period==='30'?shiftDate(end,-29):end;qs('[name="start_date"]').value=start;qs('[name="end_date"]').value=end;state.period=period;state.explicitDates=true;state.page=1;qs('.report-presets').querySelectorAll('button').forEach(item=>item.classList.toggle('active',item===button));loadReport();});
+qs('.report-presets').addEventListener('click',event=>{const button=event.target.closest('[data-period]');if(!button)return;const period=button.dataset.period;if(period==='custom'){setPeriodSelection('custom');state.explicitDates=true;updateVisibleFilters();return;}const today=reportToday(state.data?.system?.timezone),end=period==='yesterday'?shiftDate(today,-1):today,start=period==='month'?`${today.slice(0,7)}-01`:period==='7'?shiftDate(end,-6):period==='30'?shiftDate(end,-29):end;qs('[name="start_date"]').value=start;qs('[name="end_date"]').value=end;setPeriodSelection(period);state.explicitDates=true;state.page=1;updateVisibleFilters();loadReport();});
 qs('#previousPage').addEventListener('click',()=>{state.page--;loadReport();});qs('#nextPage').addEventListener('click',()=>{state.page++;loadReport();});
 qs('#reportSearch').addEventListener('input',()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(()=>{state.page=1;loadReport();},350);});
 qs('#reportTableHead').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.direction=state.sort===button.dataset.sort&&state.direction==='asc'?'desc':'asc';state.sort=button.dataset.sort;state.page=1;loadReport();});
@@ -418,7 +532,7 @@ qs('#overviewGrid').addEventListener('click',event=>{const button=event.target.c
 ['category_id','secondary_category_id','type_id','brand'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{if(name.includes('category')){qs('[name=category_id]').value=event.target.value;qs('[name=secondary_category_id]').value=event.target.value;}syncDependentOptions(true);}));
 qs('[name="product_id"]').addEventListener('change',event=>{const product=state.options?.products.find(x=>x.id===event.target.value);if(!product)return;qs('[name=category_id]').value=qs('[name=secondary_category_id]').value=product.category_id;qs('[name=type_id]').value=product.type_id;qs('[name=brand]').value=product.brand;syncDependentOptions(false);qs('[name=product_id]').value=product.id;});
 ['supplier_id','secondary_supplier_id'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{qs('[name=supplier_id]').value=qs('[name=secondary_supplier_id]').value=event.target.value;}));
-qs('[name="report_view"]').addEventListener('change',event=>{const form=qs('#reportFilters'),map={'Product Sales':'product','Category Sales':'category','Cashier Sales':'cashier','Staff Sales':'cashier','Payment and Discount':'payment_method'};if(state.category==='sales')form.elements.group_by.value=map[event.target.value]||'day';if(event.target.value==='Expiring Products')form.elements.expiry_days.value='365';if(state.category==='purchases'){if(event.target.value==='PR / PO Summary'&&form.elements.payment_state.value==='Partially Paid')form.elements.payment_state.value='partial';else if(event.target.value==='Invoice & Payment'&&form.elements.payment_state.value==='partial')form.elements.payment_state.value='Partially Paid';if(event.target.value==='Invoice & Payment')form.elements.po_status.value='';if(event.target.value==='Purchase History')form.elements.payment_state.value='';}state.page=1;updateVisibleFilters();renderViewMenu();loadReport();});
+qs('[name="report_view"]').addEventListener('change',event=>{const form=qs('#reportFilters'),map={'Product Sales':'product','Category Sales':'category','Cashier Sales':'cashier','Staff Sales':state.data?.access?.cashier?'cashier':'sales_clerk','Payment and Discount':'payment_method'};if(state.category==='sales')form.elements.group_by.value=map[event.target.value]||'day';if(event.target.value==='Expiring Products')form.elements.expiry_days.value='365';if(state.category==='purchases'){if(event.target.value==='PR / PO Summary'&&form.elements.payment_state.value==='Partially Paid')form.elements.payment_state.value='partial';else if(event.target.value==='Invoice & Payment'&&form.elements.payment_state.value==='partial')form.elements.payment_state.value='Partially Paid';if(event.target.value==='Invoice & Payment')form.elements.po_status.value='';if(event.target.value==='Purchase History')form.elements.payment_state.value='';}state.page=1;updateVisibleFilters();renderViewMenu();loadReport();});
 qs('.report-filter-card').addEventListener('change',event=>{const id=event.target.id;if(id==='quickExpiry')qs('[name="expiry_days"]').value=event.target.value;else if(id==='quickSupplier')qs('[name="supplier_id"]').value=qs('[name="secondary_supplier_id"]').value=event.target.value;else if(id==='quickCategory')qs('[name="category_id"]').value=qs('[name="secondary_category_id"]').value=event.target.value;else if(id==='quickStock')qs('[name="stock_status"]').value=event.target.value;else if(id==='quickCashier')qs('[name="cashier_id"]').value=event.target.value;else if(id==='quickStatus')qs('[name="po_status"]').value=event.target.value;else if(id==='quickPayment')qs('[name="payment_state"]').value=event.target.value;else return;state.page=1;loadReport();});
 qs('.report-filter-card').addEventListener('click',event=>{if(event.target.closest('#quickTrace'))loadReport();});
 qs('#filterCollapse').addEventListener('click',()=>setFilterExpanded(qs('#reportFilters').classList.contains('is-collapsed')));
