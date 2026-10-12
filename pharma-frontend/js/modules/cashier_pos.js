@@ -185,6 +185,8 @@ function paymentDraft(order, isCompleted = false) {
         const cash = safeCurrencyValue(isCompleted ? (order.amount_paid || order.cash_received) : order.cash_received);
         state.paymentDrafts.set(orderId, {
             cashText: cash > 0 ? cash.toFixed(2) : '',
+            paymentMethod: String(order.payment_method || 'cash').toLowerCase() === 'gcash' ? 'gcash' : 'cash',
+            gcashConfirmed: false,
             discountType: order.cashier_discount_type || 'none',
             discountAmountText: safeCurrencyValue(order.cashier_discount_amount).toFixed(2),
             beneficiaryName: '',
@@ -270,6 +272,9 @@ function renderReceiptPrintArea(order) {
     }
 
     const totals = completedReceiptTotals(order);
+    const paymentMethod = String(order.payment_method || 'cash').toLowerCase();
+    const paidLabel = paymentMethod === 'gcash' ? 'GCash Paid:' : 'Cash Received:';
+    const changeAmount = paymentMethod === 'gcash' ? 0 : totals.change;
     nodes.receiptPrint.innerHTML = `
         <div class="thermal-receipt">
             <div class="receipt-center">
@@ -287,6 +292,7 @@ function renderReceiptPrintArea(order) {
                 <div class="receipt-meta-row-print"><span>Cashier:</span><span>${escapeHtml(order.cashier_name || 'Cashier')}</span></div>
                 <div class="receipt-meta-row-print"><span>Sales Clerk:</span><span>${escapeHtml(order.sales_clerk_name || 'Sales Clerk')}</span></div>
                 <div class="receipt-meta-row-print"><span>Customer:</span><span>${escapeHtml(order.customer_name || 'Walk-in Customer')}</span></div>
+                <div class="receipt-meta-row-print"><span>Payment Method:</span><span>${escapeHtml(paymentMethod === 'gcash' ? 'GCash' : 'Cash')}</span></div>
             </div>
 
             <div class="receipt-divider-print"></div>
@@ -308,8 +314,8 @@ function renderReceiptPrintArea(order) {
             <div class="receipt-total-print"><span>VAT (12%):</span><span>${escapeHtml(plainMoney(totals.vat))}</span></div>
             <div class="receipt-total-print is-grand"><span>TOTAL:</span><span>${escapeHtml(plainMoney(totals.finalAmount))}</span></div>
 
-            <div class="receipt-payment-print receipt-payment-spaced"><span>Cash Received:</span><span>${escapeHtml(plainMoney(totals.cashReceived))}</span></div>
-            <div class="receipt-payment-print"><span>Change:</span><span>${escapeHtml(plainMoney(totals.change))}</span></div>
+            <div class="receipt-payment-print receipt-payment-spaced"><span>${paidLabel}</span><span>${escapeHtml(plainMoney(totals.cashReceived))}</span></div>
+            <div class="receipt-payment-print"><span>Change:</span><span>${escapeHtml(plainMoney(changeAmount))}</span></div>
 
             <div class="receipt-divider-print"></div>
             <div class="receipt-footer-print">
@@ -384,7 +390,7 @@ function renderOrders() {
                 <div class="order-meta">
                     <span>Sales Clerk<b>${escapeHtml(order.sales_clerk_name || 'Unassigned')}</b></span>
                     <span>Total Amount<b>${money(order.total_amount)}</b></span>
-                    <span>Cash Received<b>${money(order.cash_received)}</b></span>
+                    <span>${String(order.payment_method || '').toLowerCase() === 'gcash' ? 'GCash Paid' : 'Cash Received'}<b>${money(String(order.payment_method || '').toLowerCase() === 'gcash' ? order.amount_paid : order.cash_received)}</b></span>
                     <span>Items<b>${numberText(order.item_count)} item${Number(order.item_count) === 1 ? '' : 's'}</b></span>
                     <span>Time Sent<b>${escapeHtml(formatDateTime(timeLabel))}</b></span>
                 </div>
@@ -465,8 +471,10 @@ function renderDetail(order) {
     const isCompleted = order.status_group === 'completed';
     const inactiveItem = !isCompleted && (order.items || []).find((item) => String(item.product_status || 'Active').toLowerCase() === 'inactive');
     const canPay = !inactiveItem && ['accepted_by_cashier', 'processing_payment', 'processing'].includes(order.status_code);
+    const canEditPayment = !inactiveItem && (isWaiting || canPay);
     const canCancel = ['accepted_by_cashier', 'processing_payment', 'processing'].includes(order.status_code);
     const draft = paymentDraft(order, isCompleted);
+    const paymentMethod = isCompleted ? (String(order.payment_method || 'cash').toLowerCase() === 'gcash' ? 'gcash' : 'cash') : draft.paymentMethod;
     const cashValue = safeCurrencyValue(draft.cashText);
     const amountPaid = isCompleted ? Number(order.amount_paid || 0) : 0;
     const selectedDiscountType = draft.discountType;
@@ -477,7 +485,11 @@ function renderDetail(order) {
     const statutoryAvailable = eligibleMedicine;
     const paidFinalAmount = Number(order.final_amount || order.total_amount || 0);
     const displayFinalAmount = isCompleted ? paidFinalAmount : totals.finalAmount;
-    const displayChange = isCompleted ? Number(order.change_amount || 0) : Math.max(0, cashValue - displayFinalAmount);
+    const displayChange = isCompleted ? Number(order.change_amount || 0) : paymentMethod === 'gcash' ? 0 : Math.max(0, cashValue - displayFinalAmount);
+    const paymentAmount = paymentMethod === 'gcash' ? (isCompleted ? Number(order.amount_paid || order.final_amount || displayFinalAmount) : displayFinalAmount) : cashValue;
+    const paymentMethodOptions = `
+        <option value="cash" ${paymentMethod === 'cash' ? 'selected' : ''}>Cash</option>
+        <option value="gcash" ${paymentMethod === 'gcash' ? 'selected' : ''}>GCash</option>`;
     const discountSelect = discountOptions.map((option) => `
         <option value="${option.value}" ${option.value === selectedDiscountType ? 'selected' : ''} ${option.disabled || (['senior', 'pwd'].includes(option.value) && !statutoryAvailable) ? 'disabled' : ''}>${option.label}</option>
     `).join('');
@@ -503,10 +515,15 @@ function renderDetail(order) {
                 <span>Total</span>
                 <strong id="paymentHeroTotal">${money(displayFinalAmount)}</strong>
             </div>
-            <label class="payment-hero-block" for="cashAmountInput">
-                <span>Cash Received</span>
-                <input class="cash-input" id="cashAmountInput" type="number" min="0" step="0.01" placeholder="0.00" value="${escapeHtml(draft.cashText)}" ${canPay ? '' : 'disabled'} inputmode="decimal" autocomplete="off">
-            </label>
+            <div class="payment-hero-block payment-entry-block">
+                <label for="paymentMethodSelect" class="payment-method-label">Payment Method</label>
+                <select class="payment-method-select" id="paymentMethodSelect" ${canEditPayment ? '' : 'disabled'}>${paymentMethodOptions}</select>
+                <label for="cashAmountInput" class="payment-amount-label" id="paymentAmountLabel">${paymentMethod === 'gcash' ? 'GCash Amount' : 'Cash Received'}</label>
+                <input class="cash-input" id="cashAmountInput" type="text" placeholder="0.00" value="${escapeHtml(paymentAmount ? Number(paymentAmount).toFixed(2) : '')}" ${canEditPayment ? '' : 'disabled'} ${paymentMethod === 'gcash' ? 'readonly' : ''} inputmode="decimal" autocomplete="off" aria-label="${paymentMethod === 'gcash' ? 'GCash amount due' : 'Cash received'}">
+                <small class="payment-input-feedback is-hidden" id="paymentInputFeedback" role="status"></small>
+                <label class="gcash-confirmation ${paymentMethod === 'gcash' && canEditPayment ? '' : 'is-hidden'}" id="gcashConfirmationLabel"><input id="gcashPaymentConfirmed" type="checkbox" ${draft.gcashConfirmed ? 'checked' : ''} ${canEditPayment ? '' : 'disabled'}><span>I confirmed this payment was received in GCash</span></label>
+                <small class="payment-method-note ${paymentMethod === 'gcash' && canPay ? '' : 'is-hidden'}" id="paymentMethodNote">Manual cashier confirmation only; no provider verification is connected.</small>
+            </div>
             <div class="payment-hero-block change">
                 <span>Change</span>
                 <strong id="changeAmount">${money(displayChange)}</strong>
@@ -555,7 +572,8 @@ function renderDetail(order) {
                     Cashier: ${escapeHtml(order.cashier_name || 'Unassigned')}<br>
                     Sales Clerk: ${escapeHtml(order.sales_clerk_name || 'Unassigned')}<br>
                     Customer: ${escapeHtml(order.customer_name || 'Walk-in Customer')}<br>
-                    Cash Received: ${money(amountPaid || cashValue)}<br>
+                    Payment Method: ${escapeHtml(paymentMethod === 'gcash' ? 'GCash' : 'Cash')}<br>
+                    ${paymentMethod === 'gcash' ? 'GCash Paid' : 'Cash Received'}: ${money(amountPaid || cashValue)}<br>
                     Change: ${money(order.change_amount)}<br>
                     Total Amount: ${money(displayFinalAmount)}
                 </div>
@@ -588,7 +606,15 @@ function renderDetail(order) {
 }
 
 function bindDetailEvents(order) {
+    const canPay = ['accepted_by_cashier', 'processing_payment', 'processing'].includes(order.status_code)
+        && !(order.items || []).some((item) => String(item.product_status || 'Active').toLowerCase() === 'inactive');
     const cashInput = document.getElementById('cashAmountInput');
+    const paymentMethodSelect = document.getElementById('paymentMethodSelect');
+    const gcashConfirmation = document.getElementById('gcashPaymentConfirmed');
+    const paymentAmountLabel = document.getElementById('paymentAmountLabel');
+    const gcashConfirmationLabel = document.getElementById('gcashConfirmationLabel');
+    const paymentMethodNote = document.getElementById('paymentMethodNote');
+    const paymentInputFeedback = document.getElementById('paymentInputFeedback');
     const completeBtn = document.getElementById('completePaymentBtn');
     const changeNode = document.getElementById('changeAmount');
     const finalNode = document.getElementById('finalAmount');
@@ -605,7 +631,7 @@ function bindDetailEvents(order) {
     const exemptionNode = document.getElementById('vatExemption');
     const exemptSalesNode = document.getElementById('vatExemptSales');
 
-    if (cashInput && completeBtn && changeNode && finalNode && discountType && discountInput && cashInput.dataset.paymentBound !== 'true') {
+    if (cashInput && paymentMethodSelect && changeNode && finalNode && discountType && discountInput && cashInput.dataset.paymentBound !== 'true') {
         cashInput.dataset.paymentBound = 'true';
         const orderId = Number(order.order_id);
         const draft = paymentDraft(order);
@@ -616,13 +642,27 @@ function bindDetailEvents(order) {
             const beneficiaryIdLabel = document.getElementById('beneficiaryIdLabel');
             if (beneficiaryIdLabel) beneficiaryIdLabel.textContent = type === 'pwd' ? 'PWD ID number' : 'Senior Citizen ID number';
             discountInput.classList.toggle('is-hidden', type !== 'custom');
-            discountInput.disabled = type !== 'custom';
+            discountInput.disabled = !canPay || type !== 'custom';
             if (type !== 'custom') discountInput.value = discountAmount(type, 0, order.subtotal).toFixed(2);
             const customDiscount = safeCurrencyValue(discountInput.value);
             const totals = paymentTotals(order, type, customDiscount);
             const cash = safeCurrencyValue(cashInput.value);
-            const change = Math.max(0, cash - totals.finalAmount);
-            draft.cashText = cashInput.value;
+            const isGcash = draft.paymentMethod === 'gcash';
+            if (isGcash) cashInput.value = totals.finalAmount.toFixed(2);
+            cashInput.readOnly = isGcash;
+            cashInput.setAttribute('aria-label', isGcash ? 'GCash amount due' : 'Cash received');
+            if (paymentAmountLabel) paymentAmountLabel.textContent = isGcash ? 'GCash Amount' : 'Cash Received';
+            gcashConfirmationLabel?.classList.toggle('is-hidden', !isGcash);
+            if (gcashConfirmation) gcashConfirmation.disabled = !isGcash;
+            paymentMethodNote?.classList.toggle('is-hidden', !isGcash);
+            const amount = isGcash ? totals.finalAmount : cash;
+            const cashText = cashInput.value.trim();
+            const validCashFormat = /^(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(cashText);
+            const hasValidAmount = isGcash
+                ? cashText !== '' && Number.isFinite(Number(cashText)) && Number(cashText) >= 0
+                : validCashFormat && Number.isFinite(Number(cashText)) && Number(cashText) >= 0;
+            const change = isGcash ? 0 : hasValidAmount ? Math.max(0, cash - totals.finalAmount) : 0;
+            if (!isGcash) draft.cashText = cashInput.value;
             draft.discountType = type;
             draft.discountAmountText = discountInput.value;
             draft.beneficiaryName = beneficiaryName?.value || '';
@@ -637,16 +677,68 @@ function bindDetailEvents(order) {
             if (exemptSalesNode) exemptSalesNode.textContent = money(totals.vatExemptSales);
             if (vatableNode) vatableNode.textContent = money(totals.vatableSales);
             if (vatNode) vatNode.textContent = money(totals.vat);
-            changeNode.textContent = money(change);
-            const canComplete = cashInput.value.trim() !== '' && cash + 0.00001 >= totals.finalAmount
+            changeNode.textContent = isGcash
+                ? money(0)
+                : hasValidAmount && amount + 0.00001 >= totals.finalAmount
+                    ? money(change)
+                    : '—';
+            const cashInsufficient = !isGcash && hasValidAmount && amount + 0.00001 < totals.finalAmount;
+            if (paymentInputFeedback) {
+                const feedback = isGcash
+                    ? (gcashConfirmation?.checked ? '' : 'Confirm that the customer payment was received in GCash.')
+                    : cashText === ''
+                        ? 'Enter cash received.'
+                        : !hasValidAmount
+                            ? 'Enter a valid amount with up to two decimal places.'
+                            : cashInsufficient
+                                ? 'Cash received is less than the amount due.'
+                                : '';
+                paymentInputFeedback.textContent = feedback;
+                paymentInputFeedback.classList.toggle('is-hidden', !feedback);
+            }
+            const canComplete = Boolean(completeBtn) && hasValidAmount && amount + 0.00001 >= totals.finalAmount
+                && (!isGcash || Boolean(gcashConfirmation?.checked))
                 && (!statutory || (draft.beneficiaryName.trim() && draft.beneficiaryId.trim()))
                 && !state.submittingOrderIds.has(orderId);
-            completeBtn.disabled = !canComplete;
-            completeBtn.setAttribute('aria-disabled', String(!canComplete));
+            if (completeBtn) {
+                completeBtn.disabled = !canComplete;
+                completeBtn.setAttribute('aria-disabled', String(!canComplete));
+            }
         };
-        cashInput.addEventListener('input', updatePayment);
+        paymentMethodSelect.addEventListener('change', () => {
+            draft.paymentMethod = paymentMethodSelect.value === 'gcash' ? 'gcash' : 'cash';
+            draft.gcashConfirmed = false;
+            if (gcashConfirmation) gcashConfirmation.checked = false;
+            if (draft.paymentMethod === 'gcash') {
+                const type = discountType.value || 'none';
+                cashInput.value = paymentTotals(order, type, safeCurrencyValue(discountInput.value)).finalAmount.toFixed(2);
+            } else {
+                cashInput.value = draft.cashText;
+            }
+            updatePayment();
+        });
+        gcashConfirmation?.addEventListener('change', () => {
+            draft.gcashConfirmed = gcashConfirmation.checked;
+            updatePayment();
+        });
+        cashInput.addEventListener('input', () => {
+            const original = cashInput.value;
+            if (original.includes('-')) {
+                cashInput.value = '';
+            } else {
+                let sanitized = original.replace(/[^\d.]/g, '');
+                const decimalAt = sanitized.indexOf('.');
+                if (decimalAt !== -1) {
+                    sanitized = sanitized.slice(0, decimalAt + 1) + sanitized.slice(decimalAt + 1).replace(/\./g, '');
+                    const parts = sanitized.split('.');
+                    sanitized = `${parts[0]}.${(parts[1] || '').slice(0, 2)}`;
+                }
+                if (sanitized !== original) cashInput.value = sanitized;
+            }
+            updatePayment();
+        });
         cashInput.addEventListener('blur', () => {
-            if (cashInput.value !== '' && (!Number.isFinite(Number(cashInput.value)) || Number(cashInput.value) < 0)) {
+            if (cashInput.value !== '' && !/^(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(cashInput.value.trim())) {
                 cashInput.value = '';
                 updatePayment();
             }
@@ -655,16 +747,16 @@ function bindDetailEvents(order) {
             if (event.key !== 'Enter') return;
             event.preventDefault();
             updatePayment();
-            if (!completeBtn.disabled) completeBtn.click();
+            if (completeBtn && !completeBtn.disabled) completeBtn.click();
         });
         discountType.addEventListener('change', updatePayment);
         discountInput.addEventListener('input', updatePayment);
         beneficiaryName?.addEventListener('input', updatePayment);
         beneficiaryId?.addEventListener('input', updatePayment);
-        completeBtn.addEventListener('click', () => {
+        completeBtn?.addEventListener('click', () => {
             updatePayment();
             if (completeBtn.disabled) return;
-            completePayment(orderId, safeCurrencyValue(cashInput.value), discountType.value, safeCurrencyValue(discountInput.value), draft.beneficiaryName.trim(), draft.beneficiaryId.trim());
+            completePayment(orderId, safeCurrencyValue(cashInput.value), discountType.value, safeCurrencyValue(discountInput.value), draft.beneficiaryName.trim(), draft.beneficiaryId.trim(), draft.paymentMethod, draft.gcashConfirmed);
         });
         updatePayment();
     }
@@ -814,7 +906,7 @@ async function submitCashierCancellation(event) {
     }
 }
 
-async function completePayment(orderId, amountPaid, discountType = 'none', discountAmountValue = 0, beneficiaryName = '', beneficiaryId = '') {
+async function completePayment(orderId, amountPaid, discountType = 'none', discountAmountValue = 0, beneficiaryName = '', beneficiaryId = '', paymentMethod = 'cash', gcashConfirmed = false) {
     const normalizedOrderId = Number(orderId);
     if (state.submittingOrderIds.has(normalizedOrderId)) return;
     state.submittingOrderIds.add(normalizedOrderId);
@@ -833,6 +925,8 @@ async function completePayment(orderId, amountPaid, discountType = 'none', disco
                 cashier_discount_amount: discountAmountValue,
                 beneficiary_name: beneficiaryName,
                 beneficiary_id: beneficiaryId,
+                payment_method: paymentMethod,
+                gcash_confirmed: gcashConfirmed,
             }),
         });
         state.paymentDrafts.delete(normalizedOrderId);

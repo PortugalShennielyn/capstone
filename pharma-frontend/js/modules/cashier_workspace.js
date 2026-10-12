@@ -118,6 +118,9 @@ function receiptItems(order) {
 
 function receiptHtml(order) {
     const totals = receiptTotals(order);
+    const paymentMethod = String(order.payment_method || 'cash').toLowerCase() === 'gcash' ? 'GCash' : 'Cash';
+    const paidLabel = paymentMethod === 'GCash' ? 'GCash Paid:' : 'Cash Received:';
+    const change = paymentMethod === 'GCash' ? 0 : totals.change;
     return `
         <div class="thermal-receipt">
             <div class="receipt-center">
@@ -133,6 +136,7 @@ function receiptHtml(order) {
                 <div class="receipt-meta-row-print"><span>Cashier:</span><span>${esc(order.cashier_name || 'Cashier')}</span></div>
                 ${state.canViewStaffDetails ? `<div class="receipt-meta-row-print"><span>Sales Clerk:</span><span>${esc(order.sales_clerk_name || 'Sales Clerk')}</span></div>` : ''}
                 <div class="receipt-meta-row-print"><span>Customer:</span><span>${esc(order.customer_name || 'Walk-in Customer')}</span></div>
+                <div class="receipt-meta-row-print"><span>Payment Method:</span><span>${esc(paymentMethod)}</span></div>
             </div>
             <div class="receipt-divider-print"></div>
             <div class="receipt-items-head-print"><span>QTY</span><span>ITEM</span><span class="receipt-money-print">AMOUNT</span></div>
@@ -144,8 +148,9 @@ function receiptHtml(order) {
             <div class="receipt-total-print"><span>VATable Sales:</span><span>${esc(plainMoney(totals.vatableSales))}</span></div>
             <div class="receipt-total-print"><span>VAT (12%):</span><span>${esc(plainMoney(totals.vat))}</span></div>
             <div class="receipt-total-print is-grand"><span>TOTAL:</span><span>${esc(plainMoney(totals.finalAmount))}</span></div>
-            <div class="receipt-payment-print receipt-payment-spaced"><span>Cash Received:</span><span>${esc(plainMoney(totals.cashReceived))}</span></div>
-            <div class="receipt-payment-print"><span>Change:</span><span>${esc(plainMoney(totals.change))}</span></div>
+            <div class="receipt-payment-print receipt-payment-spaced"><span>Payment Method:</span><span>${esc(paymentMethod)}</span></div>
+            <div class="receipt-payment-print"><span>${esc(paidLabel)}</span><span>${esc(plainMoney(totals.cashReceived))}</span></div>
+            <div class="receipt-payment-print"><span>Change:</span><span>${esc(plainMoney(change))}</span></div>
             <div class="receipt-divider-print"></div>
             <div class="receipt-footer-print"><div>Thank you!</div><div class="receipt-note">This serves as your sales receipt.</div></div>
         </div>

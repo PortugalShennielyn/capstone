@@ -467,6 +467,58 @@ body {
 
 .payment-hero-block.change strong { color: var(--green); }
 
+.payment-method-label,
+.payment-amount-label {
+    display: block;
+    color: #34476b;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.payment-method-select {
+    width: 100%;
+    min-height: 38px;
+    margin: 6px 0 10px;
+    padding: 0 11px;
+    border: 1px solid #d9e1ed;
+    border-radius: 8px;
+    color: #07112d;
+    background: #fbfcff;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.payment-method-select:focus,
+.payment-method-select:focus-visible { border-color: var(--purple); outline: 2px solid #eee4ff; }
+.payment-hero .cash-input { margin-top: 6px; }
+.payment-hero .cash-input[readonly] { background: #f7f8fc; }
+
+.gcash-confirmation {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin-top: 9px;
+    color: #34476b;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    cursor: pointer;
+}
+.gcash-confirmation.is-hidden,
+.payment-method-note.is-hidden { display: none; }
+.gcash-confirmation span {
+    display: inline;
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    text-transform: none;
+}
+.gcash-confirmation input { flex: 0 0 auto; margin: 2px 0 0; accent-color: var(--purple); }
+.payment-method-note { display: block; margin-top: 5px; color: #64748b; font-size: 10px; line-height: 1.35; }
+.payment-input-feedback { display: block; margin-top: 5px; color: var(--danger); font-size: 11px; font-weight: 700; }
+.payment-input-feedback.is-hidden { display: none; }
+
 .cash-input {
     width: 100%;
     min-height: 60px;
