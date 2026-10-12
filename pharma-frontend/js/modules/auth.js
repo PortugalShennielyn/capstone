@@ -1,6 +1,6 @@
-import API_BASE_URL from '../config/config.js';
+import API_BASE_URL from '../config/config.js?v=2';
 import PharmaUtils from '../utils.js';
-import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=27';
+import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=28';
 
 let currentSessionUser = null;
 

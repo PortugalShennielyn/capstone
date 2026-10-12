@@ -16,6 +16,7 @@ try {
     ensureSalesOrderCashSchema($pdo);
     ensureCashierPaymentDiscountSchema($pdo);
     ensureSalesProfitAllocationSchema($pdo);
+    ensureCashierShiftSchema($pdo);
 
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);
@@ -68,6 +69,18 @@ try {
     }
     if (!cashierIsAdminSession() && (string) $order['assigned_cashier_id'] !== $cashierId) {
         throw new RuntimeException('Only the assigned cashier can complete this order.');
+    }
+
+    $shiftStmt = $pdo->prepare(
+        "SELECT shift_id
+         FROM cashier_shifts
+         WHERE active_cashier_id = :cashier_id AND status = 'open'
+         LIMIT 1 FOR UPDATE"
+    );
+    $shiftStmt->execute([':cashier_id' => $cashierId]);
+    $activeShiftId = (int) ($shiftStmt->fetchColumn() ?: 0);
+    if ($activeShiftId <= 0) {
+        throw new RuntimeException('Start your cashier shift before completing a payment.');
     }
 
     $eligibleStmt = $pdo->prepare(
@@ -142,6 +155,16 @@ try {
         ':beneficiary_id' => in_array($cashierDiscountType, ['senior', 'pwd'], true) ? $beneficiaryId : null,
         ':amount_paid' => $amountPaid,
         ':change_amount' => $changeAmount,
+    ]);
+
+    $shiftTransaction = $pdo->prepare(
+        'INSERT INTO cashier_shift_transactions (order_id, shift_id, cashier_id)
+         VALUES (:order_id, :shift_id, :cashier_id)'
+    );
+    $shiftTransaction->execute([
+        ':order_id' => $orderId,
+        ':shift_id' => $activeShiftId,
+        ':cashier_id' => $cashierId,
     ]);
 
     $receiptNo = cashierGenerateReceiptNo($pdo);

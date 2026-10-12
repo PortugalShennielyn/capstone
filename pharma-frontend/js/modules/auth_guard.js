@@ -1,4 +1,4 @@
-import API_BASE_URL from '../config/config.js';
+import API_BASE_URL from '../config/config.js?v=2';
 import {
     ACCESS_DENIED_MESSAGE,
     allowedNavigationPages,

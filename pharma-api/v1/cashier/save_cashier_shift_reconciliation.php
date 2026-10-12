@@ -34,6 +34,23 @@ try {
     }
     if ($date > new DateTimeImmutable('today')) shiftReconciliationRespond(422, 'Future shift dates cannot be reconciled.');
 
+    ensureCashierShiftSchema($pdo);
+    $trackedShift = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM cashier_shifts
+         WHERE cashier_id = :cashier_id
+           AND opened_at >= :day_start
+           AND opened_at < :day_end'
+    );
+    $trackedShift->execute([
+        ':cashier_id' => $cashierId,
+        ':day_start' => $shiftDate . ' 00:00:00',
+        ':day_end' => $date->modify('+1 day')->format('Y-m-d') . ' 00:00:00',
+    ]);
+    if ((int) $trackedShift->fetchColumn() > 0) {
+        shiftReconciliationRespond(409, 'Cash counts for tracked shifts are saved when the shift is closed.');
+    }
+
     $beginningRaw = $payload['beginning_cash'] ?? null;
     $actualRaw = $payload['actual_cash'] ?? null;
     if (!is_numeric($beginningRaw) || !is_numeric($actualRaw)) {

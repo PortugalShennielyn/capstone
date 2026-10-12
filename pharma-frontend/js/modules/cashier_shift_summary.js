@@ -1,5 +1,5 @@
-import API_BASE_URL from '../config/config.js';
-import verifySession from './auth.js?v=5';
+import API_BASE_URL from '../config/config.js?v=2';
+import verifySession from './auth.js?v=6';
 
 const todayIso = localIsoDate();
 const state = {
@@ -327,8 +327,6 @@ function renderPaymentBreakdown(data) {
     return `<div class="cash-payment-summary">
         <div><span>Total Cash Sales</span><strong>${escapeHtml(currency(summary.cash_paid_sales))}</strong></div>
         <div><span>Total GCash Sales</span><strong>${escapeHtml(currency(summary.gcash_paid_sales))}</strong></div>
-        <div><span>Total Cash Collected</span><strong>${escapeHtml(currency(summary.net_cash_collected))}</strong><small>After cash refunds</small></div>
-        <div><span>Total GCash Collected</span><strong>${escapeHtml(currency(summary.net_gcash_collected))}</strong><small>After GCash refunds</small></div>
         <div><span>Total Payments Collected</span><strong>${escapeHtml(currency(summary.total_payments_collected))}</strong></div>
     </div>`;
 }
@@ -353,9 +351,6 @@ function renderKpiCards(data) {
 function renderCashReconciliation(data) {
     const recon = data.reconciliation || {};
     if (!data.is_single_day) return `<section class="report-card reconciliation-card"><h2 class="card-heading"><i class="fa-solid fa-coins"></i> Cash Reconciliation</h2><p class="muted-copy">Cash counts are recorded per day. Select one date to view or save a reconciliation.</p></section>`;
-    const editable = recon.editable === true;
-    const beginningValue = recon.beginning_cash === null || recon.beginning_cash === undefined ? '' : Number(recon.beginning_cash).toFixed(2);
-    const actualValue = recon.actual_cash === null || recon.actual_cash === undefined ? '' : Number(recon.actual_cash).toFixed(2);
     const variance = recon.cash_variance;
     const varianceLabel = variance === null || variance === undefined ? 'Not counted' : Number(variance) < 0 ? `Short ${currency(Math.abs(Number(variance)))}` : Number(variance) > 0 ? `Over ${currency(variance)}` : 'Cash matches';
     const varianceClass = variance === null || variance === undefined ? 'pending' : Number(variance) < 0 ? 'variance' : Number(variance) > 0 ? 'overage' : 'completed';
@@ -371,14 +366,7 @@ function renderCashReconciliation(data) {
             <div><span>Actual Cash Count</span><strong>${escapeHtml(recon.actual_cash == null ? 'Not counted' : currency(recon.actual_cash))}</strong></div>
             <div class="variance"><span>Cash Variance</span><strong>${escapeHtml(variance == null ? 'Not counted' : currency(variance))}</strong></div>
         </div>
-        ${editable ? `<form class="cash-count-form" id="cashCountForm">
-            <label>Beginning Cash / Opening Float<input name="beginning_cash" type="number" min="0" step="0.01" max="9999999999.99" value="${escapeHtml(beginningValue)}" required></label>
-            <label>Actual Cash Count<input name="actual_cash" type="number" min="0" step="0.01" max="9999999999.99" value="${escapeHtml(actualValue)}" required></label>
-            <label class="remarks-field">Variance Remarks<textarea name="variance_remarks" maxlength="500" rows="2" placeholder="Explain any cash shortage or overage">${escapeHtml(recon.variance_remarks || '')}</textarea></label>
-            <p class="muted-copy">Cash In and Cash Out movements are not recorded by the current system.</p>
-            <div class="form-feedback" id="cashCountFeedback" role="status"></div>
-            <button class="primary-action" type="submit"><i class="fa-regular fa-floppy-disk"></i> Save Cash Count</button>
-        </form>` : `<p class="muted-copy">${escapeHtml(recon.updated_at ? `Last saved ${formatDateTime(recon.updated_at)}.` : 'No cash count has been saved for this date.')}</p>`}
+        <p class="muted-copy">${escapeHtml(recon.updated_at ? `Last saved ${formatDateTime(recon.updated_at)}.` : 'Cash counts for tracked shifts are recorded when the cashier ends the shift from the dashboard.')}</p>
     </section>`;
 }
 
@@ -449,6 +437,7 @@ function renderCashierSummaryGrid(reports) {
                 ${reports.map((report) => {
                     const summary = report.summary || {};
                     const sales = report.sales_breakdown || {};
+                    const shifts = Array.isArray(report.shifts) ? report.shifts : [];
                     return `
                         <article class="cashier-summary-item">
                             <span class="eyebrow">${escapeHtml(report.cashier_name || 'Cashier')}</span>
@@ -461,35 +450,64 @@ function renderCashierSummaryGrid(reports) {
                                 <div><span>Net Sales</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
                                 <div class="grand"><span>Total Collected</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
                             </div>
+                            ${shifts.length ? `<div class="cashier-shift-mini-list">${shifts.map((shift) => `
+                                <div class="cashier-shift-mini">
+                                    <strong>Shift #${escapeHtml(number(shift.shift_id))} · ${escapeHtml(shift.status === 'closed' ? 'Closed' : 'Open')}</strong>
+                                    <span>${escapeHtml(formatDateTime(shift.opened_at))} – ${escapeHtml(shift.closed_at ? formatDateTime(shift.closed_at) : 'In progress')}</span>
+                                    <span>Payments ${escapeHtml(currency(shift.total_payments_collected))}${shift.cash_variance === null ? '' : ` · Cash variance ${escapeHtml(currency(shift.cash_variance))}`}</span>
+                                </div>`).join('')}</div>` : ''}
                         </article>`;
                 }).join('')}
             </div>
         </section>`;
 }
 
-function renderPrintReport(data, generated) {
+function renderPrintReport(data, generated, title = 'SHIFT SUMMARY') {
     const summary = data.summary || {};
     const sales = data.sales_breakdown || {};
-    const timezone = data.pharmacy?.timezone || 'Asia/Manila';
-    const paperCurrency = (value) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const printedAt = new Date().toLocaleString('en-PH', { timeZone: timezone, dateStyle: 'long', timeStyle: 'short' });
-    const recentRows = (data.recent_transactions || []).slice(0, 10);
-    const completedCount = Number(summary.completed_transactions || 0);
-    const cancelledCount = Number(summary.cancelled_voided_transactions || 0);
-    const refundedCount = Number(summary.refunded_transactions || 0);
-    const address = String(data.pharmacy?.address || '').trim();
-    const period = displayPeriod(data.selected_start_date, data.selected_end_date);
+    const reconciliation = data.reconciliation || {};
+    const activeShift = data.active_shift || null;
+    const shifts = Array.isArray(data.shifts) ? data.shifts : [];
+    const displayedShift = activeShift || shifts[0] || null;
+    const status = activeShift ? 'Active' : displayedShift?.status === 'closed' ? 'Closed' : 'No shift recorded';
+    const reconStatus = reconciliation.cash_variance == null
+        ? 'Pending'
+        : Number(reconciliation.cash_variance) < 0 ? 'Cash Shortage'
+            : Number(reconciliation.cash_variance) > 0 ? 'Cash Overage' : 'Balanced';
+    const dateLabel = displayPeriod(data.selected_start_date, data.selected_end_date);
+    const printedShifts = shifts.map((shift) => `
+        <article class="print-shift-card">
+            <h4>Shift #${escapeHtml(number(shift.shift_id))} · ${escapeHtml(shift.status === 'closed' ? 'Closed' : 'Active')}</h4>
+            <div class="print-lines">
+                <div><span>Cashier</span><strong>${escapeHtml(shift.cashier_name || data.cashier_name || 'Cashier')}</strong></div>
+                <div><span>Shift Start</span><strong>${escapeHtml(formatDateTime(shift.opened_at))}</strong></div>
+                <div><span>Shift End</span><strong>${escapeHtml(shift.closed_at ? formatDateTime(shift.closed_at) : 'In progress')}</strong></div>
+                <div><span>Duration</span><strong>${escapeHtml(shift.closed_at ? duration(shift.opened_at, shift.closed_at) : 'In progress')}</strong></div>
+                <div><span>Completed Transactions</span><strong>${escapeHtml(number(shift.completed_transactions))}</strong></div>
+                <div><span>Opening Cash</span><strong>${escapeHtml(currency(shift.opening_cash))}</strong></div>
+                <div><span>Cash Sales</span><strong>${escapeHtml(currency(shift.cash_paid_sales))}</strong></div>
+                <div><span>GCash Sales</span><strong>${escapeHtml(currency(shift.gcash_paid_sales))}</strong></div>
+                <div><span>Payments Collected</span><strong>${escapeHtml(currency(shift.total_payments_collected))}</strong></div>
+                <div><span>Expected Cash</span><strong>${escapeHtml(shift.expected_cash == null ? 'Not available' : currency(shift.expected_cash))}</strong></div>
+                <div><span>Actual Cash Count</span><strong>${escapeHtml(shift.actual_cash == null ? 'Not counted' : currency(shift.actual_cash))}</strong></div>
+                <div><span>Cash Variance</span><strong>${escapeHtml(shift.cash_variance == null ? 'Not counted' : currency(shift.cash_variance))}</strong></div>
+                ${shift.variance_remarks ? `<div><span>Variance Remarks</span><strong>${escapeHtml(shift.variance_remarks)}</strong></div>` : ''}
+            </div>
+        </article>`).join('');
     return `
         <section class="print-receipt-report">
-            <header class="cashier-paper-head">
-                <h1>DOC R PHARMACY</h1>
-                ${address ? `<p>${escapeHtml(address)}</p>` : ''}
-            </header>
-            <div class="cashier-paper-report-title">
-                <h2>SALES REPORT</h2>
-                <p>Reporting Period: ${escapeHtml(period)}</p>
-                <small>Date Printed: ${escapeHtml(printedAt)}</small>
+            <h1>${escapeHtml(data.pharmacy?.name || 'Dr. R Pharmacy')}</h1>
+            <h2>${escapeHtml(title)}</h2>
+            <div class="print-meta">
+                <div><span>Report Type</span><strong>${escapeHtml(reportKind(data))}</strong></div>
+                <div><span>From</span><strong>${escapeHtml(formatDateTime(reportFrom(data)))}</strong></div>
+                <div><span>To</span><strong>${escapeHtml(formatDateTime(reportTo(data)))}</strong></div>
+                <div><span>Cashier</span><strong>${escapeHtml(data.cashier_name || (data.all_cashiers ? 'All Cashiers' : 'Cashier'))}</strong></div>
+                <div><span>Selected Date</span><strong>${escapeHtml(dateLabel)}</strong></div>
+                <div><span>Status</span><strong>${escapeHtml(shiftStatus(data))}</strong></div>
+                <div><span>Printed</span><strong>${escapeHtml(generated)}</strong></div>
             </div>
+            <section class="print-section">
             <h3>SALES</h3>
             <div class="print-lines">
                 <div><span>Gross Sales</span><strong>${escapeHtml(currency(sales.gross_completed_sales))}</strong></div>
@@ -497,7 +515,9 @@ function renderPrintReport(data, generated) {
                 <div><span>Refunds</span><strong>-${escapeHtml(currency(sales.refunds))}</strong></div>
                 <div class="total"><span>Net Sales</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
             </div>
-            <h3>TENDER</h3>
+            </section>
+            <section class="print-section">
+            <h3>TENDER / PAYMENT BREAKDOWN</h3>
             <div class="print-lines">
                 <div><span>Total Cash Sales</span><strong>${escapeHtml(currency(summary.cash_paid_sales))}</strong></div>
                 <div><span>Total GCash Sales</span><strong>${escapeHtml(currency(summary.gcash_paid_sales))}</strong></div>
@@ -507,33 +527,94 @@ function renderPrintReport(data, generated) {
                 <div><span>Total GCash Collected</span><strong>${escapeHtml(currency(summary.net_gcash_collected))}</strong></div>
                 <div class="total"><span>Total Payments Collected</span><strong>${escapeHtml(currency(summary.total_payments_collected))}</strong></div>
             </div>
+            </section>
+            <section class="print-section">
             <h3>CASH RECONCILIATION</h3>
             <div class="print-lines">
-                <div><span>Beginning Cash</span><strong>${escapeHtml(data.reconciliation?.beginning_cash == null ? 'Not recorded' : currency(data.reconciliation.beginning_cash))}</strong></div>
-                <div><span>Expected Cash</span><strong>${escapeHtml(data.reconciliation?.expected_cash == null ? 'Not available' : currency(data.reconciliation.expected_cash))}</strong></div>
-                <div><span>Actual Cash Count</span><strong>${escapeHtml(data.reconciliation?.actual_cash == null ? 'Not counted' : currency(data.reconciliation.actual_cash))}</strong></div>
-                <div><span>Cash Variance</span><strong>${escapeHtml(data.reconciliation?.cash_variance == null ? 'Not counted' : currency(data.reconciliation.cash_variance))}</strong></div>
-                <div><span>Variance Remarks</span><strong>${escapeHtml(data.reconciliation?.variance_remarks || '—')}</strong></div>
+                <div><span>Beginning Cash / Opening Float</span><strong>${escapeHtml(reconciliation.beginning_cash == null ? 'Not recorded' : currency(reconciliation.beginning_cash))}</strong></div>
+                <div><span>Total Cash Sales</span><strong>${escapeHtml(currency(reconciliation.cash_sales))}</strong></div>
+                <div><span>Cash In</span><strong>${reconciliation.cash_in_supported ? escapeHtml(currency(reconciliation.cash_in)) : 'Not tracked'}</strong></div>
+                <div><span>Cash Out</span><strong>${reconciliation.cash_out_supported ? escapeHtml(currency(reconciliation.cash_out)) : 'Not tracked'}</strong></div>
+                <div><span>Cash Refunds Paid</span><strong>${escapeHtml(currency(reconciliation.cash_refunds_paid))}</strong></div>
+                <div><span>Expected Cash</span><strong>${escapeHtml(reconciliation.expected_cash == null ? 'Not available' : currency(reconciliation.expected_cash))}</strong></div>
+                <div><span>Actual Cash Count</span><strong>${escapeHtml(reconciliation.actual_cash == null ? 'Not counted' : currency(reconciliation.actual_cash))}</strong></div>
+                <div><span>Cash Variance</span><strong>${escapeHtml(reconciliation.cash_variance == null ? 'Not counted' : currency(reconciliation.cash_variance))}</strong></div>
+                <div><span>Variance Remarks</span><strong>${escapeHtml(reconciliation.variance_remarks || '—')}</strong></div>
             </div>
+            </section>
+            <section class="print-section">
             <h3>TRANSACTIONS</h3>
             <div class="print-lines">
-                <div><span>Completed</span><strong>${escapeHtml(number(completedCount))}</strong></div>
-                <div><span>Voided</span><strong>${escapeHtml(number(cancelledCount))}</strong></div>
-                <div><span>Refunded</span><strong>${escapeHtml(number(refundedCount))}</strong></div>
+                <div><span>Completed</span><strong>${escapeHtml(number(summary.completed_transactions))}</strong></div>
+                <div><span>Voided</span><strong>${escapeHtml(number(summary.cancelled_voided_transactions))}</strong></div>
+                <div><span>Refunded</span><strong>${escapeHtml(number(summary.refunded_transactions))}</strong></div>
             </div>
-            ${recentRows.length ? `<h3>RECENT TRANSACTIONS</h3><div class="print-lines">${recentRows.map((row, index) => `<div><span>${index + 1}. ${escapeHtml(row.cashier_name || 'Cashier')} - ${escapeHtml(row.receipt_no || row.order_no || '-')}</span><strong>${escapeHtml(currency(row.total_amount))}</strong></div>`).join('')}</div>` : ''}
-            <p class="printed-at">Printed: ${escapeHtml(generated)}</p>
+            </section>
+            <section class="print-section">
+            <h3>SHIFT INFORMATION</h3>
+            <div class="print-lines">
+                <div><span>Cashier Name</span><strong>${escapeHtml(data.cashier_name || 'Cashier')}</strong></div>
+                <div><span>Shift Start</span><strong>${escapeHtml(displayedShift?.opened_at ? formatDateTime(displayedShift.opened_at) : '—')}</strong></div>
+                <div><span>Shift End</span><strong>${escapeHtml(displayedShift?.closed_at ? formatDateTime(displayedShift.closed_at) : activeShift ? 'In progress' : '—')}</strong></div>
+                <div><span>Shift Status</span><strong>${escapeHtml(data.all_cashiers ? 'Aggregate report' : status)}</strong></div>
+                <div><span>Beginning Cash / Opening Float</span><strong>${escapeHtml(displayedShift ? currency(displayedShift.opening_cash) : reconciliation.beginning_cash == null ? 'Not recorded' : currency(reconciliation.beginning_cash))}</strong></div>
+                <div><span>Completed Transactions</span><strong>${escapeHtml(number(summary.completed_transactions))}</strong></div>
+                <div><span>Total Cash Sales</span><strong>${escapeHtml(currency(summary.cash_paid_sales))}</strong></div>
+                <div><span>Cash Reconciliation Status</span><strong>${escapeHtml(data.all_cashiers ? 'Per cashier' : reconStatus)}</strong></div>
+            </div>
+            </section>
+            <section class="print-tracked-section">
+                <h3>TRACKED SHIFTS</h3>
+                ${printedShifts ? `<div class="print-shift-list">${printedShifts}</div>` : '<p class="print-empty">No tracked shifts were found for the selected report date.</p>'}
+            </section>
         </section>`;
+}
+
+function printShiftSummary() {
+    if (!state.lastData || page.getAttribute('aria-busy') === 'true') return;
+
+    const printedAt = new Date().toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+    const reports = state.lastData.all_cashiers
+        ? [
+            renderPrintReport(state.lastData, printedAt, 'ALL CASHIERS SHIFT SUMMARY'),
+            ...(state.lastData.cashier_reports || []).map((report) => renderPrintReport(report, printedAt)),
+        ]
+        : [renderPrintReport(state.lastData, printedAt)];
+    const template = document.createElement('template');
+    template.innerHTML = reports.join('').trim();
+    const refreshedReports = Array.from(template.content.children);
+    const currentReports = Array.from(page.querySelectorAll('.print-receipt-report'));
+
+    currentReports.forEach((report, index) => {
+        const refreshedReport = refreshedReports[index];
+        if (refreshedReport) report.replaceWith(refreshedReport);
+        else report.remove();
+    });
+    if (!currentReports.length && refreshedReports.length) {
+        page.prepend(...refreshedReports);
+    } else if (refreshedReports.length > currentReports.length) {
+        page.prepend(...refreshedReports.slice(currentReports.length));
+    }
+
+    window.print();
 }
 
 function renderSummaryReport(data, options = {}) {
     const summary = data.summary || {};
     const recon = data.reconciliation || {};
+    const activeShift = data.active_shift;
+    const latestShift = (data.shifts || [])[0] || null;
+    const displayedShift = activeShift || latestShift;
     const variance = recon.cash_variance;
     const reconLabel = variance == null ? 'Pending' : Number(variance) < 0 ? 'Cash Shortage' : Number(variance) > 0 ? 'Cash Overage' : 'Balanced';
     const reconClass = variance == null ? 'pending' : Number(variance) === 0 ? 'completed' : 'variance';
-    const canSave = recon.editable === true && data.is_single_day;
-    const beginningCash = data.all_cashiers ? 'Per-cashier records' : recon.beginning_cash == null ? 'Not recorded' : currency(recon.beginning_cash);
+    const beginningCash = data.all_cashiers
+        ? 'Per-cashier records'
+        : displayedShift
+            ? currency(displayedShift.opening_cash)
+            : recon.beginning_cash == null ? 'Not recorded' : currency(recon.beginning_cash);
+    const shiftState = activeShift ? 'Active' : displayedShift?.status === 'closed' ? 'Closed' : 'No shift recorded';
+    const shiftEnded = activeShift ? 'In progress' : displayedShift?.closed_at ? formatDateTime(displayedShift.closed_at) : '—';
     const activityWindow = `Recorded transaction activity: ${formatDateTime(data.activity?.first_transaction_time)} – ${formatDateTime(data.activity?.last_transaction_time)}.`;
     return `
         <section class="report-card shift-info-card">
@@ -541,9 +622,9 @@ function renderSummaryReport(data, options = {}) {
             <div class="shift-info-grid">
                 <div class="shift-info-column">
                     <div class="shift-info-row"><span>Cashier Name</span><strong>${escapeHtml(data.cashier_name || options.eyebrow || 'Cashier')}</strong></div>
-                    <div class="shift-info-row"><span>Shift Start</span><strong>Not tracked</strong></div>
-                    <div class="shift-info-row"><span>Shift End</span><strong>Not tracked</strong></div>
-                    <div class="shift-info-row"><span>Shift Status</span><strong>${escapeHtml(data.all_cashiers ? 'Aggregate report' : 'Not tracked')}</strong></div>
+                    <div class="shift-info-row"><span>Shift Start</span><strong>${escapeHtml(displayedShift?.opened_at ? formatDateTime(displayedShift.opened_at) : '—')}</strong></div>
+                    <div class="shift-info-row"><span>Shift End</span><strong>${escapeHtml(shiftEnded)}</strong></div>
+                    <div class="shift-info-row"><span>Shift Status</span><strong>${escapeHtml(data.all_cashiers ? 'Aggregate report' : shiftState)}</strong></div>
                     <div class="shift-info-row"><span>Beginning Cash</span><strong>${escapeHtml(beginningCash)}</strong></div>
                 </div>
                 <div class="shift-info-column">
@@ -552,13 +633,32 @@ function renderSummaryReport(data, options = {}) {
                     <div class="shift-info-row"><span>Cash Reconciliation Status</span><strong><span class="status-pill ${reconClass}">${escapeHtml(data.all_cashiers ? 'Per cashier' : reconLabel)}</span></strong></div>
                 </div>
             </div>
-            <p class="shift-info-note">${escapeHtml(activityWindow)} The system does not store shift clock-in/close times.</p>
-            <footer class="shift-info-actions interactive-only">
-                <button class="primary-action" type="button" data-save-cash-count-action ${canSave ? '' : 'disabled'} title="${canSave ? 'Open the cash-count form below.' : 'Cash counts are available to the signed-in cashier for one selected date.'}"><i class="fa-regular fa-floppy-disk"></i> Save Cash Count</button>
-                <button class="secondary-action" type="button" disabled title="Supervisor verification is not implemented."><i class="fa-solid fa-shield-halved"></i> Submit for Verification</button>
-                <button class="secondary-action" type="button" disabled title="The current system has no shift-closing workflow."><i class="fa-solid fa-lock"></i> Close Shift</button>
-            </footer>
+            <p class="shift-info-note">${escapeHtml(activityWindow)} ${escapeHtml(data.all_cashiers ? 'Activity is aggregated across cashiers.' : 'New cashier transactions require an active tracked shift. Older transactions remain in date-based summaries.')}</p>
         </section>`;
+}
+
+function renderTrackedShifts(data) {
+    const shifts = Array.isArray(data.shifts) ? data.shifts : [];
+    if (!shifts.length) return '';
+    return `<section class="report-card tracked-shifts-card">
+        <header class="section-title"><h2><i class="fa-solid fa-clock-rotate-left"></i> Tracked Shifts</h2><span class="status-pill report-status">${shifts.length} ${shifts.length === 1 ? 'shift' : 'shifts'}</span></header>
+        <div class="tracked-shift-list">${shifts.map((shift) => `
+            <article class="tracked-shift">
+                <div class="tracked-shift-heading"><strong>Shift #${escapeHtml(number(shift.shift_id))}</strong><span class="status-pill ${shift.status === 'closed' ? 'completed' : 'pending'}">${escapeHtml(shift.status === 'closed' ? 'Closed' : 'Active')}</span></div>
+                <div class="tracked-shift-times"><span>Started ${escapeHtml(formatDateTime(shift.opened_at))}</span><span>Ended ${escapeHtml(shift.closed_at ? formatDateTime(shift.closed_at) : 'In progress')}</span><span>Duration ${escapeHtml(shift.closed_at ? duration(shift.opened_at, shift.closed_at) : 'In progress')}</span></div>
+                <div class="tracked-shift-totals">
+                    <div><span>Transactions</span><strong>${escapeHtml(number(shift.completed_transactions))}</strong></div>
+                    <div><span>Opening Cash</span><strong>${escapeHtml(currency(shift.opening_cash))}</strong></div>
+                    <div><span>Cash Sales</span><strong>${escapeHtml(currency(shift.cash_paid_sales))}</strong></div>
+                    <div><span>GCash Sales</span><strong>${escapeHtml(currency(shift.gcash_paid_sales))}</strong></div>
+                    <div><span>Payments Collected</span><strong>${escapeHtml(currency(shift.total_payments_collected))}</strong></div>
+                    <div><span>Expected Cash</span><strong>${escapeHtml(shift.expected_cash == null ? 'Not closed' : currency(shift.expected_cash))}</strong></div>
+                    <div><span>Actual Cash</span><strong>${escapeHtml(shift.actual_cash == null ? 'Not counted' : currency(shift.actual_cash))}</strong></div>
+                    <div><span>Cash Variance</span><strong>${escapeHtml(shift.cash_variance == null ? 'Not counted' : currency(shift.cash_variance))}</strong></div>
+                </div>
+                ${shift.variance_remarks ? `<p class="tracked-shift-remarks">${escapeHtml(shift.variance_remarks)}</p>` : ''}
+            </article>`).join('')}</div>
+    </section>`;
 }
 
 function renderSummary(data) {
@@ -575,7 +675,14 @@ function renderSummary(data) {
         <div class="shift-content-grid">
         <div class="shift-main-column">
         ${renderSummaryReport(data)}
-        <section class="report-card payment-summary-card"><header class="section-title"><h2><i class="fa-solid fa-wallet"></i> Payment Summary</h2><span class="status-pill report-status">Cash &amp; GCash</span></header>${renderPaymentBreakdown(data)}</section>
+        </div>
+        <aside class="shift-side-column">
+            ${renderCashReconciliation(data)}
+        </aside>
+        </div>
+        <div class="shift-wide-sections">
+        ${renderTrackedShifts(data)}
+        <section class="report-card payment-summary-card"><header class="section-title"><h2><i class="fa-solid fa-wallet"></i> Transaction Summary</h2><span class="status-pill report-status">Cash &amp; GCash</span></header>${renderPaymentBreakdown(data)}</section>
         <section class="report-card transactions-card">
             <header class="transactions-head">
                 <h2>${escapeHtml(recentTitle)}</h2>
@@ -589,10 +696,6 @@ function renderSummary(data) {
             <form class="history-search interactive-only" id="shiftHistorySearch"><label for="shiftHistoryQuery">Search history</label><input id="shiftHistoryQuery" type="search" value="${escapeHtml(state.historySearch)}" placeholder="Search receipt, cashier, reason, or transaction"><button type="submit">Search</button></form>
             <div id="shiftHistoryContent">${renderRecent(data.recent_transactions || [], data)}</div>
         </section>
-        </div>
-        <aside class="shift-side-column">
-            ${renderCashReconciliation(data)}
-        </aside>
         </div>
         ${data.has_records ? '' : `<p class="activity-empty">${escapeHtml('No completed transactions were found for the selected cashier and date range.')}</p>`}`;
 
@@ -683,7 +786,7 @@ function aggregateRecentTransactions(rows) {
 }
 
 function buildAllCashiersData(base, reports) {
-    const activeReports = reports.filter((report) => report?.has_records);
+    const activeReports = reports.filter((report) => report?.has_records || report?.active_shift || report?.shifts?.length);
     const paymentBreakdown = aggregatePaymentBreakdown(activeReports);
     const completedTransactions = sumValues(activeReports, 'summary.completed_transactions');
     const grossSales = sumValues(activeReports, 'sales_breakdown.gross_completed_sales');
@@ -702,7 +805,7 @@ function buildAllCashiersData(base, reports) {
         cashier_name: 'All Cashiers',
         all_cashiers: true,
         cashier_reports: activeReports,
-        has_records: activeReports.length > 0,
+        has_records: activeReports.some((report) => report?.has_records),
         summary: {
             total_completed_sales: netSales,
             cash_tendered: cashTendered,
@@ -746,7 +849,7 @@ function renderAllCashiersSummary(data) {
     const reports = data.cashier_reports || [];
     page.innerHTML = `
         <div class="loading-strip"><span class="spinner-border spinner-border-sm"></span><span>Updating report...</span></div>
-        ${renderPrintReport({ ...data, cashier_name: 'All Cashiers', include_recent_print: true }, generated).replace(reportKind(data), 'ALL CASHIERS PERIOD SUMMARY')}
+        ${renderPrintReport({ ...data, cashier_name: 'All Cashiers', include_recent_print: true }, generated, 'ALL CASHIERS SHIFT SUMMARY')}
         ${reports.map((report) => renderPrintReport(report, generated)).join('')}
         ${renderKpiCards(data)}
         <section class="all-cashiers-report">
@@ -872,10 +975,6 @@ async function openTransactionDetail(orderId) {
 }
 
 function handlePageClick(event) {
-    if (event.target.closest('[data-save-cash-count-action]')) {
-        const form = document.getElementById('cashCountForm');
-        if (form) form.requestSubmit();
-    }
     const historyTab = event.target.closest('[data-history-tab]');
     if (historyTab) loadHistory(historyTab.dataset.historyTab, 1);
     const historyPage = event.target.closest('[data-history-page]');
@@ -885,39 +984,7 @@ function handlePageClick(event) {
     if (event.target.closest('[data-retry-summary]')) loadSummary();
 }
 
-async function saveCashCount(form) {
-    const feedback = document.getElementById('cashCountFeedback');
-    const button = form.querySelector('button[type="submit"]');
-    const formData = new FormData(form);
-    const body = {
-        shift_date: state.startDate,
-        beginning_cash: formData.get('beginning_cash'),
-        actual_cash: formData.get('actual_cash'),
-        variance_remarks: formData.get('variance_remarks'),
-    };
-    if (button) button.disabled = true;
-    if (feedback) feedback.textContent = 'Saving cash count...';
-    try {
-        await request('cashier/save_cashier_shift_reconciliation.php', undefined, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        await loadSummary();
-        const updatedFeedback = document.getElementById('cashCountFeedback');
-        if (updatedFeedback) updatedFeedback.textContent = 'Cash count saved successfully.';
-    } catch (error) {
-        if (feedback) feedback.textContent = error.message || 'Cash count could not be saved.';
-        if (button) button.disabled = false;
-    }
-}
-
 function handlePageSubmit(event) {
-    if (event.target.id === 'cashCountForm') {
-        event.preventDefault();
-        saveCashCount(event.target);
-        return;
-    }
     if (event.target.id === 'shiftHistorySearch') {
         event.preventDefault();
         state.historySearch = document.getElementById('shiftHistoryQuery')?.value.trim() || '';
@@ -977,7 +1044,7 @@ async function initializeShiftSummary() {
         state.requestedCashierId = cashierSelect.value || '';
         loadSummary({ pushUrl: true });
     });
-    printButton.addEventListener('click', () => window.print());
+    printButton.addEventListener('click', printShiftSummary);
     page.addEventListener('click', handlePageClick);
     page.addEventListener('submit', handlePageSubmit);
     modal.addEventListener('click', handleModalClick);
