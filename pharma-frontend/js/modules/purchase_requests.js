@@ -1200,7 +1200,9 @@ function openPoGeneration(request) {
     document.getElementById("generatePoNumber").textContent = request.pr_number;
     renderManagerPurchasingSetup(request);
     setPoGenerationStep(1);
-    bootstrap.Modal.getOrCreateInstance(document.getElementById("generatePoModal")).show();
+    const poModalElement = document.getElementById("generatePoModal");
+    if (poModalElement.parentElement !== document.body) document.body.append(poModalElement);
+    bootstrap.Modal.getOrCreateInstance(poModalElement).show();
 }
 
 async function generatePurchaseOrders() {

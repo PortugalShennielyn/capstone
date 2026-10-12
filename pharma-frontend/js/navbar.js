@@ -180,7 +180,7 @@ async function initializeNavbar(container) {
 
     try {
         const rbac = await import("./modules/rbac.js?v=9");
-        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v52";
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v53";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -1296,6 +1296,15 @@ async function initializeNavbar(container) {
             });
 
             if (accessRole === "salesclerk") {
+                container.querySelectorAll("#masterFilesCollapse [data-nav-page='products'], #masterFilesCollapse [data-nav-page='supplier']").forEach(link => link.remove());
+                const inventoryMenuTrigger = container.querySelector("a[href='#masterFilesCollapse']");
+                if (inventoryMenuTrigger) {
+                    inventoryMenuTrigger.title = "Inventory";
+                    const inventoryMenuLabel = inventoryMenuTrigger.querySelector(".nav-label");
+                    if (inventoryMenuLabel) inventoryMenuLabel.textContent = "Inventory";
+                    const inventoryMenuIcon = inventoryMenuTrigger.querySelector("i");
+                    if (inventoryMenuIcon) inventoryMenuIcon.className = "fa-solid fa-warehouse";
+                }
                 const dashboardLink = container.querySelector(".sidebar-nav [data-nav-page='dashboard']");
                 if (dashboardLink) dashboardLink.href = "sales_clerk_dashboard.html";
                 const reportsLink = container.querySelector(".sidebar-nav [data-nav-page='reports']");
@@ -1478,7 +1487,7 @@ async function initializeNavbar(container) {
 
             const flyout = getSlimFlyout();
             const title = trigger.querySelector(".nav-label")?.textContent?.trim() || trigger.getAttribute("title") || "Menu";
-            const links = Array.from(collapse.querySelectorAll("a.nav-link-item[href]"));
+            const links = Array.from(collapse.querySelectorAll("a.nav-link-item[href]:not(.d-none):not([aria-hidden='true'])"));
 
             flyout.innerHTML = `<div class="sidebar-slim-flyout-title">${title}</div>`;
             links.forEach(link => {
