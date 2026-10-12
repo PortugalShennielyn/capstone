@@ -4434,7 +4434,15 @@ async function openSupplierInvoice(poId, options = {}) {
                 const saved = savedByItem.get(String(item.po_item_id)) || {};
                 const qty = Number(item.purchase_qty || 1);
                 const unit = String(item.purchase_unit || "pcs").trim();
-                const unitCost = saved.unit_cost ?? "";
+                const orderLineTotal = Number(item.line_total ?? item.stored_line_total);
+                const snapshotSupplierPrice = Number.isFinite(orderLineTotal) && orderLineTotal > 0
+                    ? orderLineTotal / qty
+                    : Number(item.price || 0) * Number(item.units_per_purchase_unit || 1);
+                const configuredSupplierPrice = Number(item.supplier_price_per_purchase_unit);
+                const fixedSupplierPrice = Number.isFinite(configuredSupplierPrice) && configuredSupplierPrice > 0
+                    ? configuredSupplierPrice
+                    : snapshotSupplierPrice;
+                const unitCost = saved.unit_cost ?? (fixedSupplierPrice > 0 ? fixedSupplierPrice.toFixed(2) : "");
                 return `
                 <tr data-po-item-id="${escapeHtml(item.po_item_id)}" data-order-qty="${qty}">
                     <td><div class="supplier-invoice-product">${escapeHtml(item.generic_name || item.product_name || "Product")}</div></td>
@@ -4446,7 +4454,7 @@ async function openSupplierInvoice(poId, options = {}) {
                     <td>
                         <div class="supplier-invoice-cost-group">
                             <span>₱</span>
-                            <input class="invoice-unit-cost invoice-financial-input" type="number" min="0" step="0.01" inputmode="decimal" value="${escapeHtml(unitCost)}" placeholder="0.00" aria-label="Supplier unit cost for ${escapeHtml(item.product_name || "product")}">
+                            <input class="invoice-unit-cost invoice-financial-input" type="number" min="0" step="0.01" inputmode="decimal" value="${escapeHtml(unitCost)}" placeholder="0.00" readonly aria-label="Fixed supplier price per ${escapeHtml(unit)} for ${escapeHtml(item.product_name || "product")}">
                             <span>/ ${escapeHtml(unit)}</span>
                         </div>
                         <small class="supplier-invoice-cost-error" hidden>Enter a valid supplier unit cost greater than ₱0.00.</small>
@@ -4475,19 +4483,9 @@ async function openSupplierInvoice(poId, options = {}) {
                     <h3 class="supplier-invoice-section-title">Invoice Line Breakdown</h3>
                     <div class="supplier-invoice-lines-wrap">
                         <table class="supplier-invoice-lines">
-                            <thead><tr><th>Product</th><th>Specification</th><th>Brand</th><th>Purchase Unit</th><th>Ordered Qty</th><th>Invoice Qty</th><th>Cost / Purchase Unit</th><th class="text-end">Line Total</th></tr></thead>
+                            <thead><tr><th>Product</th><th>Specification</th><th>Brand</th><th>Purchase Unit</th><th>Ordered Qty</th><th>Invoice Qty</th><th>Supplier Price / Purchase Unit</th><th class="text-end">Line Total</th></tr></thead>
                             <tbody id="supplierInvoiceLines">${rows}</tbody>
                         </table>
-                    </div>
-                    <div class="supplier-invoice-totals-wrap">
-                        <div class="supplier-invoice-totals">
-                            <h3 class="supplier-invoice-section-title">Totals &amp; Validation</h3>
-                            <div class="supplier-invoice-total-row"><span>Subtotal</span><strong id="supplierInvoiceSubtotal">${peso(0)}</strong></div>
-                            <div class="supplier-invoice-total-row"><span>Discount</span><div class="supplier-invoice-total-input"><span>₱</span><input id="supplierInvoiceDiscount" class="form-control invoice-financial-input" type="number" min="0" step="0.01" inputmode="decimal" value="${escapeHtml(invoice.discount ?? 0)}"></div></div>
-                            <div class="supplier-invoice-total-row"><span>Other Charges</span><div class="supplier-invoice-total-input"><span>₱</span><input id="supplierInvoiceCharges" class="form-control invoice-financial-input" type="number" min="0" step="0.01" inputmode="decimal" value="${escapeHtml(invoice.other_charges ?? 0)}"></div></div>
-                            <div class="supplier-invoice-total-row emphasis"><span>Final Invoice Total</span><strong id="supplierInvoiceCalculated">${peso(0)}</strong></div>
-                            <div id="supplierInvoiceValidation" class="supplier-invoice-validation neutral" role="status" aria-live="polite"><strong>Complete the required invoice information.</strong></div>
-                        </div>
                     </div>
                 </section>
             </div>`;
@@ -4512,14 +4510,8 @@ async function openSupplierInvoice(poId, options = {}) {
             const invoiceNumber =
                 document.getElementById("supplierInvoiceNumber")?.value.trim() || "";
             const invoiceDateInput = document.getElementById("supplierInvoiceDate");
-            const discount = parseInvoiceAmount(
-                document.getElementById("supplierInvoiceDiscount")?.value,
-                true,
-            );
-            const charges = parseInvoiceAmount(
-                document.getElementById("supplierInvoiceCharges")?.value,
-                true,
-            );
+            const discount = parseInvoiceAmount(invoice.discount ?? 0, true);
+            const charges = parseInvoiceAmount(invoice.other_charges ?? 0, true);
             const invoiceItems = Array.from(
                 document.querySelectorAll("#supplierInvoiceLines tr"),
             ).map((row) => ({
@@ -4568,9 +4560,6 @@ async function openSupplierInvoice(poId, options = {}) {
             const rawCalculated =
                 Math.round((subtotal - state.discount + state.charges) * 100) / 100;
             const calculated = Number.isFinite(rawCalculated) ? Math.max(0, rawCalculated) : 0;
-            document.getElementById("supplierInvoiceSubtotal").textContent = peso(subtotal);
-            document.getElementById("supplierInvoiceCalculated").textContent = peso(calculated);
-
             const formValid =
                 Boolean(state.invoiceNumber && state.validDate) &&
                 state.invoiceItems.length > 0 &&
@@ -4601,35 +4590,6 @@ async function openSupplierInvoice(poId, options = {}) {
             dateInput?.classList.toggle("is-invalid", !state.validDate);
             if (dateError) dateError.hidden = state.validDate;
 
-            const validation = document.getElementById("supplierInvoiceValidation");
-            const firstError = !state.invoiceNumber
-                ? "Enter the required invoice number."
-                : !state.validDate
-                  ? "Enter a valid invoice date."
-                  : !state.invoiceItems.length
-                    ? "This purchase order has no invoice lines."
-                    : !state.invoiceItems.every(
-                            (item) =>
-                                Number.isFinite(item.invoice_qty) &&
-                                item.invoice_qty >= 0 &&
-                                item.row.querySelector(".invoice-qty").checkValidity(),
-                        )
-                      ? "Enter valid invoice quantities of zero or greater."
-                      : !state.invoiceItems.every(
-                              (item) => Number.isFinite(item.unit_cost) && item.unit_cost > 0,
-                          )
-                        ? "Enter a supplier unit cost greater than zero for every line."
-                        : !Number.isFinite(state.discount) || state.discount < 0
-                          ? "Discount must be zero or greater."
-                          : !Number.isFinite(state.charges) || state.charges < 0
-                            ? "Other charges must be zero or greater."
-                            : !Number.isFinite(rawCalculated) || rawCalculated <= 0
-                              ? "Final invoice total must be greater than zero."
-                              : "";
-            validation.className = `supplier-invoice-validation ${formValid ? "match" : "neutral"}`;
-            validation.innerHTML = formValid
-                ? `<strong>✓ Ready to save</strong><span>Final invoice total: ${peso(calculated)}</span>`
-                : `<strong>${escapeHtml(firstError || "Complete the required invoice information.")}</strong>`;
             const confirmButton = Swal.getConfirmButton();
             if (confirmButton) confirmButton.disabled = !formValid;
             return { ...state, calculated, formValid };
@@ -4644,7 +4604,7 @@ async function openSupplierInvoice(poId, options = {}) {
             confirmButtonText: "Save Supplier Invoice",
             cancelButtonText: "Cancel",
             confirmButtonColor: "#4f46e5",
-            width: 1050,
+            width: 1200,
             customClass: {
                 popup: "supplier-invoice-modal",
                 htmlContainer: "supplier-invoice-modal-body",
