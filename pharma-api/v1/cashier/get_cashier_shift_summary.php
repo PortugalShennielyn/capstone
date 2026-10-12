@@ -339,10 +339,11 @@ try {
     ];
     $data['recent_transactions'] = $recentTransactions;
 
-    $settingsStmt = $pdo->query("SELECT pharmacy_name, timezone FROM system_settings ORDER BY setting_id ASC LIMIT 1");
+    $settingsStmt = $pdo->query("SELECT pharmacy_name, pharmacy_address, timezone FROM system_settings ORDER BY setting_id ASC LIMIT 1");
     $settings = $settingsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $data['pharmacy'] = [
         'name' => cashierDisplay($settings['pharmacy_name'] ?? '', 'Dr. R Pharmacy'),
+        'address' => cashierDisplay($settings['pharmacy_address'] ?? '', ''),
         'timezone' => cashierDisplay($settings['timezone'] ?? '', 'Asia/Manila'),
     ];
 

@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../sales/sales_pos_helpers.php';
+require_once __DIR__ . '/../sales/sales_profit_helpers.php';
 
 function cashierCurrentUserId(): string
 {
@@ -364,8 +365,9 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
         $stockBefore = (int) $beforeStmt->fetchColumn();
 
         $stockStmt = $pdo->prepare(
-            "SELECT pss.selling_stock_id,
-                    pss.quantity_remaining - pss.expiry_quarantined_qty AS available_qty
+            "SELECT pss.selling_stock_id, pss.source_batch_id,
+                    pss.quantity_remaining - pss.expiry_quarantined_qty AS available_qty,
+                    ib.po_id, ib.unit_cost
              FROM product_selling_stock pss
              LEFT JOIN inventory_batches ib ON ib.batch_id = pss.source_batch_id
              WHERE pss.product_id = :product_id
@@ -414,6 +416,19 @@ function cashierDeductShelfStock(PDO $pdo, int $orderId): void
             if ($update->rowCount() !== 1) {
                 throw new RuntimeException('Shelf stock changed while completing the sale. Please review the order and try again.');
             }
+
+            $allocation = $pdo->prepare('INSERT INTO sales_order_item_batch_allocations
+                (order_item_id, order_id, batch_id, po_id, quantity, unit_cost)
+                VALUES (:item_id, :order_id, :batch_id, :po_id, :quantity, :unit_cost)');
+            $unitCost = $batch['unit_cost'] === null ? null : (float) $batch['unit_cost'];
+            $allocation->execute([
+                ':item_id' => (int) $item['order_item_id'],
+                ':order_id' => $orderId,
+                ':batch_id' => $batch['source_batch_id'],
+                ':po_id' => $batch['po_id'],
+                ':quantity' => $deduct,
+                ':unit_cost' => $unitCost,
+            ]);
 
             $remaining -= $deduct;
         }

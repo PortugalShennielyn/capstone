@@ -43,34 +43,30 @@ function reportRoleContext(): array
     ];
 }
 
-function reportMyOrderStatusChart(PDO $pdo, array $filters, array $role): ?array
+function reportMySoldProductsChart(PDO $pdo, array $filters, array $role): ?array
 {
-    if (!empty($role['management']) || !empty($role['supervisor']) || (empty($role['cashier']) && empty($role['sales_clerk']))) return null;
+    if (!empty($role['supervisor']) || (empty($role['management']) && empty($role['cashier']) && empty($role['sales_clerk']))) return null;
     if (!in_array($filters['report_view'] ?? '', ['', 'Sales Summary'], true)) return null;
-    $params = [':workflow_start'=>$filters['start_date'], ':workflow_end'=>$filters['date_end_exclusive']];
-    $scope = [];
-    if (!empty($role['sales_clerk'])) {
-        $scope[] = 'o.sales_clerk_id=:workflow_clerk_id';
-        $params[':workflow_clerk_id'] = $role['user_id'];
-    }
-    if (!empty($role['cashier'])) {
-        $scope[] = "(o.status='waiting_cashier' OR o.assigned_cashier_id=:workflow_cashier_id OR EXISTS (SELECT 1 FROM sales_payments wp WHERE wp.order_id=o.order_id AND wp.cashier_id=:workflow_payment_cashier_id))";
-        $params[':workflow_cashier_id'] = $role['user_id'];
-        $params[':workflow_payment_cashier_id'] = $role['user_id'];
-    }
-    $rows = reportRows($pdo, "SELECT CASE o.status
-        WHEN 'draft' THEN 'Draft' WHEN 'waiting_cashier' THEN 'Waiting for cashier'
-        WHEN 'accepted_by_cashier' THEN 'Accepted by cashier' WHEN 'processing_payment' THEN 'Processing payment'
-        WHEN 'completed' THEN 'Completed' WHEN 'cancelled' THEN 'Cancelled' WHEN 'rejected' THEN 'Rejected'
-        ELSE 'Other' END label, COUNT(*) value
-        FROM sales_orders o
-        WHERE o.created_at>=:workflow_start AND o.created_at<:workflow_end
-          AND (".implode(' OR ', $scope).")
-        GROUP BY o.status ORDER BY value DESC", $params);
+    $params = [':sold_start'=>$filters['start_date'], ':sold_end'=>$filters['date_end_exclusive']];
+    $productFilter = reportProductFilterSql($filters, $params);
+    $paid = reportPaidSalesSubquery();
+    $rows = reportRows($pdo, "SELECT CONCAT(p.brand_name,' — ',p.product_name) label,
+        ROUND(COALESCE(sold.amount,0),2) value
+        FROM product p
+        LEFT JOIN (
+            SELECT i.product_id, SUM(CASE WHEN o.subtotal>0 THEN i.line_total/o.subtotal*pay.final_amount ELSE 0 END) amount
+            FROM sales_orders o
+            INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+            INNER JOIN sales_order_items i ON i.order_id=o.order_id
+            WHERE o.status='completed' AND o.completed_at>=:sold_start AND o.completed_at<:sold_end
+            GROUP BY i.product_id
+        ) sold ON sold.product_id=p.product_id
+        WHERE p.status='Active' AND sold.amount>0{$productFilter}
+        ORDER BY value DESC, p.product_name ASC
+        LIMIT 20", $params);
     return [
-        'id'=>'my-order-status','title'=>'My orders by status','type'=>'bar','orientation'=>'horizontal','tone'=>'status','rows'=>$rows,
-        'href'=>!empty($role['cashier'])?'cashier_transaction_history.html':'sales_clerk_orders.html',
-        'link_label'=>!empty($role['cashier'])?'Open transactions':'Open order queue',
+        'id'=>'my-sold-products','title'=>'Products with sales','type'=>'bar','orientation'=>'horizontal','tone'=>'sales','rows'=>$rows,
+        'caption'=>'Completed payments from all accounts in the selected dates. A product appears after it has a completed payment.',
     ];
 }
 
@@ -100,6 +96,28 @@ function reportDate(string $key, string $fallback): string
     return $value;
 }
 
+function reportComparisonRange(string $start, string $end, string $mode = 'previous'): ?array
+{
+    if ($mode === 'none') return null;
+    $periodStart = new DateTimeImmutable($start);
+    $periodEnd = new DateTimeImmutable($end);
+    if ($mode === 'year') {
+        $previousStartYear = (int)$periodStart->format('Y') - 1;
+        $previousEndYear = (int)$periodEnd->format('Y') - 1;
+        $startMonth = new DateTimeImmutable(sprintf('%04d-%02d-01', $previousStartYear, (int)$periodStart->format('n')));
+        $endMonth = new DateTimeImmutable(sprintf('%04d-%02d-01', $previousEndYear, (int)$periodEnd->format('n')));
+        $startDay = min((int)$periodStart->format('j'), (int)$startMonth->format('t'));
+        $endDay = min((int)$periodEnd->format('j'), (int)$endMonth->format('t'));
+        $previousStart = $periodStart->setDate($previousStartYear, (int)$periodStart->format('n'), $startDay);
+        $previousEnd = $periodEnd->setDate($previousEndYear, (int)$periodEnd->format('n'), $endDay);
+    } else {
+        $periodDays = $periodStart->diff($periodEnd)->days + 1;
+        $previousStart = $periodStart->modify('-'.$periodDays.' days');
+        $previousEnd = $periodStart->modify('-1 day');
+    }
+    return ['start'=>$previousStart->format('Y-m-d'),'end'=>$previousEnd->format('Y-m-d'),'days'=>$previousStart->diff($previousEnd)->days + 1];
+}
+
 function reportFilters(): array
 {
     $roles = reportSessionRoles();
@@ -108,6 +126,8 @@ function reportFilters(): array
     $cashierOnly = count(array_intersect($roles, $cashierRoles)) > 0 && count(array_intersect($roles, $managementRoles)) === 0;
     $start = reportDate('start_date', $cashierOnly ? date('Y-m-d') : date('Y-m-01'));
     $end = reportDate('end_date', date('Y-m-d'));
+    $comparisonMode = strtolower(trim((string)($_GET['comparison_mode'] ?? 'previous')));
+    if (!in_array($comparisonMode, ['previous','year','none'], true)) $comparisonMode = 'previous';
     if ($start > $end) throw new InvalidArgumentException('Start date cannot be after end date.');
     $days = (new DateTime($start))->diff(new DateTime($end))->days;
     if ($days > 3660) throw new InvalidArgumentException('Date range cannot exceed ten years.');
@@ -117,6 +137,7 @@ function reportFilters(): array
     return [
         'start_date' => $start,
         'end_date' => $end,
+        'comparison_mode' => $comparisonMode,
         'date_end_exclusive' => date('Y-m-d', strtotime($end . ' +1 day')),
         'category_id' => trim((string) ($_GET['category_id'] ?? '')),
         'type_id' => trim((string) ($_GET['type_id'] ?? '')),
@@ -167,6 +188,34 @@ function reportPagination(int $total, array $filters): array
     ];
 }
 
+function reportPaymentMethodTotalsSql(): string
+{
+    return "SELECT order_id, UPPER(TRIM(payment_method)) payment_method,
+        SUM(CASE WHEN payment_status='paid' THEN final_amount WHEN payment_status='refunded' THEN -final_amount ELSE 0 END) method_net
+        FROM sales_payments
+        WHERE payment_status IN ('paid','refunded') AND TRIM(COALESCE(payment_method,''))<>''
+        GROUP BY order_id, UPPER(TRIM(payment_method))";
+}
+
+function reportOrderPaymentMethodsSql(string $orderAlias = 'o'): string
+{
+    return "COALESCE((SELECT GROUP_CONCAT(DISTINCT UPPER(TRIM(sp.payment_method)) ORDER BY UPPER(TRIM(sp.payment_method)) SEPARATOR ', ')
+        FROM sales_payments sp
+        WHERE sp.order_id={$orderAlias}.order_id AND sp.payment_status='paid' AND TRIM(COALESCE(sp.payment_method,''))<>''),'')";
+}
+
+function reportPaymentMethodOptions(PDO $pdo): array
+{
+    $methods = ['cash', 'gcash', 'card', 'mixed'];
+    foreach (reportRows($pdo, "SELECT DISTINCT LOWER(TRIM(payment_method)) method FROM sales_payments WHERE TRIM(COALESCE(payment_method,''))<>''") as $row) {
+        $method = (string) ($row['method'] ?? '');
+        if ($method !== '') $methods[] = $method;
+    }
+    $methods = array_values(array_unique($methods));
+    sort($methods);
+    return $methods;
+}
+
 function reportPaidSalesSubquery(): string
 {
     return "SELECT order_id,
@@ -209,11 +258,11 @@ function reportKnownCostToSalesRatio(PDO $pdo): ?float
     return (float)($row['known_cost_of_goods'] ?? 0) / $netSales;
 }
 
-function reportSalesWhere(array $filters, array $role, string $alias = 'o'): array
+function reportSalesWhere(array $filters, array $role, string $alias = 'o', bool $storeWide = false): array
 {
     $where = ["{$alias}.status = 'completed'", "{$alias}.completed_at >= :start_date", "{$alias}.completed_at < :end_date"];
     $params = [':start_date' => $filters['start_date'], ':end_date' => $filters['date_end_exclusive']];
-    if (!$role['management'] && empty($role['supervisor'])) {
+    if (!$storeWide && !$role['management'] && empty($role['supervisor'])) {
         if ($role['cashier']) {
             $where[] = "COALESCE({$alias}.assigned_cashier_id, pay.cashier_id) = :scope_user";
         } else {
@@ -229,7 +278,7 @@ function reportSalesWhere(array $filters, array $role, string $alias = 'o'): arr
         $params[':sales_clerk_id'] = $filters['sales_clerk_id'];
     }
     if ($filters['payment_method'] !== '') {
-        $where[] = 'LOWER(pay.payment_method) = :payment_method';
+        $where[] = "EXISTS (SELECT 1 FROM sales_payments method_filter WHERE method_filter.order_id={$alias}.order_id AND method_filter.payment_status='paid' AND LOWER(TRIM(method_filter.payment_method))=:payment_method)";
         $params[':payment_method'] = $filters['payment_method'];
     }
     $itemWhere = [];
@@ -331,7 +380,7 @@ function reportFilterOptions(PDO $pdo, array $role): array
             'products' => [],
             'brands' => [],
             'suppliers' => [],
-            'payment_methods' => ['cash', 'gcash', 'card', 'mixed'],
+            'payment_methods' => reportPaymentMethodOptions($pdo),
             'po_statuses' => [],
             'stock_statuses' => [],
             'cashiers' => [],
@@ -344,7 +393,7 @@ function reportFilterOptions(PDO $pdo, array $role): array
         'products' => reportRows($pdo, 'SELECT product_id AS id, CONCAT(COALESCE(NULLIF(brand_name, \'\'), \'No brand\'), \' - \', product_name) AS name, category_id, type_id, brand_name AS brand FROM product ORDER BY brand_name, product_name'),
         'brands' => array_column(reportRows($pdo, "SELECT DISTINCT brand_name AS name FROM product WHERE brand_name IS NOT NULL AND brand_name <> '' ORDER BY brand_name"), 'name'),
         'suppliers' => reportRows($pdo, 'SELECT supplier_id AS id, supplier_name AS name FROM suppliers WHERE archived_at IS NULL ORDER BY supplier_name'),
-        'payment_methods' => ['cash', 'gcash', 'card', 'mixed'],
+        'payment_methods' => reportPaymentMethodOptions($pdo),
         'po_statuses' => ['Draft', 'Pending', 'Arrived', 'Delivered', 'Cancelled'],
         'stock_statuses' => ['healthy', 'low', 'out', 'negative'],
         'cashiers' => [],

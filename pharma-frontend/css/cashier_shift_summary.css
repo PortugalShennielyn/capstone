@@ -437,7 +437,18 @@ body {
         line-height: 1.42;
     }
 
-    .print-receipt-report h1,
+    .print-report-brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5mm;
+        padding-bottom: 4mm;
+        border-bottom: 1.5pt solid #4f35c7;
+    }
+
+    .print-report-brand img { width:17mm; height:17mm; object-fit:contain; }
+    .print-report-brand h1 { margin:0 !important; color:#20164b !important; font-size:18pt; font-weight:800; line-height:1.15; text-align:left; }
+    .print-report-brand p { margin:1mm 0 0 !important; color:#475569 !important; font-size:8.5pt; }    .print-receipt-report h1,
     .print-receipt-report h2,
     .print-receipt-report h3,
     .print-receipt-report p {
@@ -527,4 +538,32 @@ body {
         text-align: center;
         font-size: 9pt;
     }
+}
+
+@page { size: A4 portrait; margin: 12mm; }
+@media print {
+    .print-receipt-report { max-width:none !important; margin:0 !important; padding:0 !important; color:#111827 !important; font-family:Arial,Helvetica,sans-serif !important; font-size:9pt !important; }
+    .cashier-paper-head { padding:0 0 5mm; border-bottom:1px solid #94a3b8; text-align:center; }
+    .cashier-paper-head h1 { margin:0 !important; color:#111827 !important; font-size:16pt !important; font-weight:700 !important; line-height:1.2; }
+    .cashier-paper-head p { margin:1.5mm 0 0 !important; color:#334155 !important; font-size:9pt; }
+    .cashier-paper-report-title { padding:5mm 0; border-bottom:1px solid #cbd5e1; text-align:center; }
+    .cashier-paper-report-title h2 { margin:0 !important; padding:0 !important; border:0 !important; color:#111827 !important; font-size:13pt !important; font-weight:700 !important; }
+    .cashier-paper-report-title p { margin:2mm 0 1mm !important; color:#334155 !important; font-size:9pt; }
+    .cashier-paper-report-title small { color:#475569 !important; font-size:8pt; }
+    .cashier-paper-summary, .cashier-paper-transactions { margin-top:5mm; }
+    .cashier-paper-summary h3, .cashier-paper-transactions h3 { margin:0 0 3mm !important; padding:0 !important; border:0 !important; color:#111827 !important; font-size:10pt !important; font-weight:700 !important; }
+    .cashier-paper-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:2mm; }
+    .cashier-paper-metrics article { display:flex; min-height:16mm; flex-direction:column; justify-content:center; gap:1.5mm; padding:3mm; border-radius:1.5mm; background:#f1f3f6 !important; break-inside:avoid; }
+    .cashier-paper-metrics span { color:#475569 !important; font-size:7.5pt; }
+    .cashier-paper-metrics strong { color:#111827 !important; font-size:11pt; }
+    .cashier-paper-transactions table { width:100%; border-collapse:collapse; table-layout:auto; }
+    .cashier-paper-transactions th, .cashier-paper-transactions td { padding:2.5mm 1mm; border-bottom:1px solid #e2e8f0; color:#111827 !important; font-size:8pt; text-align:left; vertical-align:top; }
+    .cashier-paper-transactions th { font-weight:700; }
+    .cashier-paper-transactions td:last-child, .cashier-paper-transactions th:last-child { text-align:right; white-space:nowrap; }
+    .cashier-paper-transactions tr { break-inside:avoid; }
+    .cashier-paper-empty { text-align:center !important; color:#64748b !important; }
+    .cashier-paper-note { margin:2mm 0 0 !important; color:#64748b !important; font-size:7pt; }
+    .cashier-paper-signatures { display:grid; grid-template-columns:1fr 1fr; gap:12mm; margin-top:8mm; padding-top:4mm; border-top:1px solid #cbd5e1; break-inside:avoid; }
+    .cashier-paper-signatures div { display:flex; align-items:baseline; gap:2mm; color:#111827 !important; font-size:8pt; }
+    .cashier-paper-signatures strong { flex:1; min-height:6mm; border-bottom:1px solid #64748b; color:#111827 !important; font-weight:400; text-align:center; }
 }

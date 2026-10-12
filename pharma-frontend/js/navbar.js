@@ -292,7 +292,21 @@ async function initializeNavbar(container) {
         }
 
         function apiBaseUrl() {
-            return "../pharma-api/v1";
+            const localHost = ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+            const developmentPort = localHost && !['', '80', '443'].includes(window.location.port);
+            // Resolve the API beside the actual app folder. A hard-coded project
+            // name breaks when this checkout is served under a different folder.
+            const frontendMarker = '/pharma-frontend/';
+            const pagePath = window.location.pathname;
+            const frontendIndex = pagePath.toLowerCase().indexOf(frontendMarker);
+            const appPath = frontendIndex >= 0 ? pagePath.slice(0, frontendIndex) : '';
+            const apiOrigin = developmentPort
+                ? `${window.location.protocol}//${window.location.hostname}`
+                : window.location.origin;
+            if (frontendIndex >= 0) {
+                return `${apiOrigin}${appPath}/pharma-api/v1`;
+            }
+            return new URL('../pharma-api/v1', window.location.href).href.replace(/\/$/, '');
         }
 
         async function loadCurrentSession() {
@@ -1832,6 +1846,17 @@ async function initializeNavbar(container) {
             window.__drpNavigationRuntime.navigate(targetUrl);
         }
 
+        function closeSidebarFromOutside(event) {
+            if (!sidebar || sidebar.classList.contains("collapsed")) return;
+            if (sidebar.contains(event.target)) return;
+            if (event.target.closest("#sidebarToggle, #sidebarOpenToggle")) return;
+            if (event.target.closest(".modal, .modal-backdrop, .swal2-container, .toast, .toast-container")) return;
+
+            saveNavbarScrollPosition(true);
+            setSidebarState(true);
+            scheduleNavbarScrollRestore(false);
+        }
+
         function handleNavbarCollapseClick(event) {
             const trigger = event.target.closest("a.nav-link-item[data-bs-toggle='collapse']");
             if (!trigger || !container.contains(trigger) || sidebar?.classList.contains("collapsed")) return;
@@ -1917,6 +1942,7 @@ async function initializeNavbar(container) {
         container.addEventListener("click", handleUserPopoverClick);
         document.addEventListener("pointerdown", closeUserPopoverFromOutside);
         document.addEventListener("pointerdown", closeSlimFlyoutFromOutside);
+        document.addEventListener("pointerdown", closeSidebarFromOutside);
         document.addEventListener("keydown", handleNavbarKeydown);
         window.addEventListener("resize", closeSlimFlyout);
         window.addEventListener("scroll", closeSlimFlyout, true);
@@ -2156,7 +2182,7 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         controls.insertBefore(status, controls.firstChild);
         const notifications = document.createElement('div');
         notifications.className = 'dashboard-notifications';
-        notifications.innerHTML = `<button class="icon-btn notification-btn" type="button" id="dashboardNotificationButton" aria-label="Notifications" aria-expanded="false" aria-controls="dashboardNotificationMenu"><i class="fa-regular fa-bell"></i><span class="notification-badge is-hidden" id="dashboardNotificationBadge">0</span></button><div class="notification-menu" id="dashboardNotificationMenu" role="menu"><div class="notification-menu-header"><strong>System Alerts</strong><span id="dashboardNotificationSummary">Loading...</span></div><div class="notification-menu-list" id="dashboardNotificationList"><p class="notification-empty">Loading alerts...</p></div></div>`;
+        notifications.innerHTML = `<button class="icon-btn notification-btn" type="button" id="dashboardNotificationButton" aria-label="Notifications" aria-expanded="false" aria-controls="dashboardNotificationMenu"><i class="fa-regular fa-bell"></i><span class="notification-badge is-hidden" id="dashboardNotificationBadge">0</span></button><div class="notification-menu drp-alert-menu" id="dashboardNotificationMenu" role="menu"><div class="notification-menu-header"><span class="notification-heading-icon"><i class="fa-solid fa-bell"></i></span><div class="notification-heading-copy"><strong>System alerts</strong><span id="dashboardNotificationSummary">Loading...</span></div><span class="notification-total" id="dashboardNotificationTotal">—</span></div><div class="notification-menu-list" id="dashboardNotificationList"><p class="notification-empty">Loading alerts...</p></div><div class="notification-menu-footer"><i class="fa-solid fa-circle-info"></i><span>Select an alert to review the related records.</span></div></div>`;
         controls.appendChild(notifications);
         const clock = document.createElement('div');
         clock.className = 'topbar-clock';
@@ -2301,7 +2327,11 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
         const badge = document.getElementById('dashboardNotificationBadge');
         const list = document.getElementById('dashboardNotificationList');
         const summary = document.getElementById('dashboardNotificationSummary');
+        const totalLabel = document.getElementById('dashboardNotificationTotal');
         const headers = { 'X-Requested-With': 'XMLHttpRequest', 'X-Tab-Token': tabToken() };
+        let activeAlerts = [];
+        let seenAlerts = {};
+        let refreshUnreadCount = () => {};
         Promise.resolve(typeof loadCurrentSession === 'function' ? loadCurrentSession() : null)
             .then(session => {
                 const sessionRoles = [
@@ -2315,31 +2345,72 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
                 );
                 if (isLimitedAlertsRole) {
                     if (badge) badge.classList.add('is-hidden');
-                    if (summary) summary.textContent = 'System alerts are not available for this role.';
+                    if (summary) summary.textContent = 'Not available for this role';
+                    if (totalLabel) totalLabel.textContent = '—';
                     if (list) list.innerHTML = '<p class="notification-empty">System alerts are not available for this role.</p>';
                     return null;
                 }
-                return fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?period=today`, { credentials: 'include', headers });
+                const alertScope = encodeURIComponent(`${session?.account_id || session?.tenant_id || 'account'}:${session?.user_id || session?.username || session?.email || 'user'}`);
+                const alertSeenKey = `drpReviewedAlerts:v1:${alertScope}`;
+                try { seenAlerts = JSON.parse(localStorage.getItem(alertSeenKey) || '{}') || {}; } catch (error) {}
+                refreshUnreadCount = () => {
+                    const unread = activeAlerts.filter(alert => Number(seenAlerts[alert.label]) !== alert.count);
+                    const unreadTotal = unread.reduce((sum, alert) => sum + alert.count, 0);
+                    const openTotal = activeAlerts.reduce((sum, alert) => sum + alert.count, 0);
+                    if (badge) { badge.textContent = unreadTotal > 99 ? '99+' : String(unreadTotal); badge.classList.toggle('is-hidden', unreadTotal === 0); }
+                    if (summary) summary.textContent = unread.length ? `${unread.length} alert type${unread.length === 1 ? '' : 's'} not reviewed` : openTotal ? 'All current alerts reviewed' : 'No urgent items need attention';
+                };
+                if (list && list.dataset.readStateReady !== 'true') {
+                    list.dataset.readStateReady = 'true';
+                    list.addEventListener('click', event => {
+                        const row = event.target.closest('a[data-alert-key]');
+                        if (!row) return;
+                        seenAlerts[row.dataset.alertKey] = Number(row.dataset.alertCount) || 0;
+                        try { localStorage.setItem(alertSeenKey, JSON.stringify(seenAlerts)); } catch (error) {}
+                        refreshUnreadCount();
+                    });
+                }
+                return fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?scope=alerts`, { credentials: 'include', headers });
             })
-            .then(response => response ? (response.ok ? response.json() : Promise.reject(new Error('Unable to load alerts'))) : null)
+            .then(async response => {
+                if (!response) return null;
+                if (response.status === 401 || response.status === 403) throw new Error('auth');
+                if (!response.ok) throw new Error(response.status >= 500 ? 'server' : `http-${response.status}`);
+                let data;
+                try { data = await response.json(); } catch (error) { throw new Error('invalid-response'); }
+                if (data?.status === 'error') throw new Error('server');
+                return data;
+            })
             .then(data => {
                 if (!data) return;
                 const alerts = [
-                    { label: 'Out of Stock', count: Number(data.out_of_stock || 0), href: 'inventory.html?stock_status=out_of_stock', icon: 'fa-box-open' },
-                    { label: 'Low Stock', count: Number(data.low_stock || 0), href: 'inventory.html?stock_status=low_stock', icon: 'fa-triangle-exclamation' },
-                    { label: 'Expiring Soon', count: Number(data.expiring_soon || 0), href: 'inventory.html?stock_status=expiring_soon', icon: 'fa-calendar-xmark' },
-                    { label: 'Pending POs', count: Number(data.pending_po || 0), href: 'purchase_orders.html?status=Pending', icon: 'fa-file-circle-exclamation' }
+                    { label: 'Out of Stock', description: 'Products with no sellable units available', count: Number(data.out_of_stock || 0), href: 'inventory.html?stock_status=out_of_stock', icon: 'fa-box-open', tone: 'critical' },
+                    { label: 'Low Stock', description: 'Products at or below their reorder level', count: Number(data.low_stock || 0), href: 'inventory.html?stock_status=low_stock', icon: 'fa-triangle-exclamation', tone: 'warning' },
+                    { label: 'Expiring Soon', description: 'Active batches nearing their expiry date', count: Number(data.expiring_soon || 0), href: 'inventory.html?stock_status=expiring_soon', icon: 'fa-calendar-xmark', tone: 'warning' },
+                    { label: 'Pending POs', description: 'Purchase orders awaiting the next step', count: Number(data.pending_po || 0), href: 'purchase_orders.html?status=Pending', icon: 'fa-file-circle-exclamation', tone: 'procurement' }
                 ].filter(alert => alert.count > 0);
+                activeAlerts = alerts;
                 const total = alerts.reduce((sum, alert) => sum + alert.count, 0);
-                if (badge) { badge.textContent = total > 99 ? '99+' : String(total); badge.classList.toggle('is-hidden', total === 0); }
-                if (summary) summary.textContent = total ? `${total} items need attention` : 'All clear';
+                refreshUnreadCount();
+                if (totalLabel) totalLabel.textContent = total > 99 ? '99+ open' : `${total} open`;
                 if (list) list.innerHTML = alerts.length
-                    ? alerts.map(alert => `<a class="notification-menu-item" role="menuitem" href="${alert.href}"><i class="fa-solid ${alert.icon}"></i><span>${escapeHtml(alert.label)}</span><strong>${alert.count}</strong></a>`).join('')
-                    : '<p class="notification-empty">No urgent system alerts.</p>';
+                    ? alerts.map(alert => `<a class="notification-menu-item tone-${alert.tone}" role="menuitem" data-alert-key="${escapeHtml(alert.label)}" data-alert-count="${alert.count}" href="${alert.href}"><span class="notification-item-icon"><i class="fa-solid ${alert.icon}"></i></span><span class="notification-item-copy"><strong>${escapeHtml(alert.label)}</strong><small>${escapeHtml(alert.description)}</small></span><span class="notification-item-count">${alert.count}</span><i class="fa-solid fa-chevron-right notification-item-arrow" aria-hidden="true"></i></a>`).join('')
+                    : '<div class="notification-empty-state"><span><i class="fa-solid fa-check"></i></span><strong>You’re all caught up</strong><p>No urgent system alerts right now.</p></div>';
             })
-            .catch(() => {
-                if (summary) summary.textContent = 'Alerts unavailable';
-                if (list) list.innerHTML = '<p class="notification-empty">Unable to load alerts right now.</p>';
+            .catch(error => {
+                const message = error?.message === 'auth'
+                    ? ['Session or access issue', 'Sign in again to load system alerts.']
+                    : error?.message === 'server'
+                        ? ['Alert service error', 'The server could not load alerts. Please try again shortly.']
+                        : error?.message === 'invalid-response'
+                            ? ['Unexpected alert response', 'Refresh this page. If it continues, contact your administrator.']
+                            : error?.message?.startsWith('http-')
+                                ? ['Alert service unavailable', `The request failed (${error.message.slice(5)}). Refresh this page and try again.`]
+                                : ['Cannot reach alert service', 'Check your connection or reload the page to retry.'];
+                console.warn('System alerts could not be loaded:', error);
+                if (summary) summary.textContent = message[0];
+                if (totalLabel) totalLabel.textContent = '—';
+                if (list) list.innerHTML = `<div class="notification-empty-state"><span><i class="fa-solid fa-triangle-exclamation"></i></span><strong>${escapeHtml(message[0])}</strong><p>${escapeHtml(message[1])}</p></div>`;
             });
     }
 }

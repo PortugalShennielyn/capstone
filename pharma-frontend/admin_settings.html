@@ -13,7 +13,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=40" rel="stylesheet">
+    <link href="./css/navbar.css?v=42" rel="stylesheet">
     <script src="./js/navbar.js?v=100" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
     <script type="module" src="./js/modules/pr_quantity_limit_settings.js?v=1"></script>
@@ -5132,6 +5132,7 @@
                 ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
                 : "../pharma-api/v1";
             const state = { users: [], editingUser: null, actorRole: '', assignableRoles: [] };
+            const announceUserListChange = () => { try { localStorage.setItem('pharmacy-user-list-updated', String(Date.now())); } catch (_) {} };
             const roleLabels = {
                 super_admin: 'Super Admin',
                 admin: 'Admin',
@@ -5386,6 +5387,7 @@
                             method: 'POST',
                             body: JSON.stringify({ user_id: user.user_id, status: button.dataset.nextStatus })
                         });
+                        announceUserListChange();
                         toastr.success(button.dataset.nextStatus === 'Active' ? 'User activated.' : 'User deactivated.');
                         await loadUsers();
                     } catch (error) {
@@ -5421,6 +5423,7 @@
                         method: 'POST',
                         body: JSON.stringify(payload)
                     });
+                    announceUserListChange();
                     toastr.success(isEdit ? 'User updated.' : 'User created.');
                     modals.form?.hide();
                     await loadUsers();

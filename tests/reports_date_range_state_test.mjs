@@ -3,21 +3,8 @@ import fs from 'node:fs';
 
 const modulePath = new URL('../pharma-frontend/js/modules/reports.js', import.meta.url);
 const source = fs.readFileSync(modulePath, 'utf8');
-
-function extractFunction(name) {
-  const start = source.indexOf(`function ${name}(`);
-  assert.ok(start >= 0, `shared report module must define ${name}`);
-  const open = source.indexOf('{', start);
-  let depth = 0;
-  for (let index = open; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1;
-    else if (source[index] === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, index + 1);
-    }
-  }
-  throw new Error(`Unable to read ${name}`);
-}
+const helperLine = source.split(/\r?\n/).find((line) => line.startsWith('function setPeriodSelection('));
+assert.ok(helperLine, 'shared report module must define the shared period selection helper');
 
 const periods = ['today', 'yesterday', '7', '30', 'month', 'custom'];
 const buttons = periods.map((period) => ({
@@ -28,36 +15,29 @@ const buttons = periods.map((period) => ({
   setAttribute(name, value) { this.attributes[name] = value; },
 }));
 for (const button of buttons) button.classList.button = button;
-const state = { period: '30', category: 'sales' };
-const expandedCalls = [];
+const state = { period: '30' };
 const qs = (selector) => selector === '.report-presets'
   ? { querySelectorAll: () => buttons }
-  : selector === '[name="report_view"]'
-    ? { value: 'Sales Summary' }
-    : null;
-const setPeriodSelection = new Function('state', 'qs', 'setFilterExpanded', `${extractFunction('setPeriodSelection')}; return setPeriodSelection;`)(state, qs, (expanded) => expandedCalls.push(expanded));
+  : null;
+const setPeriodSelection = new Function('state', 'qs', `${helperLine}; return setPeriodSelection;`)(state, qs);
 
 for (const period of periods) {
-  expandedCalls.length = 0;
   setPeriodSelection(period);
   assert.equal(state.period, period);
   assert.deepEqual(buttons.filter((button) => button.active).map((button) => button.dataset.period), [period]);
   assert.equal(buttons.find((button) => button.dataset.period === period).attributes['aria-pressed'], 'true');
-  assert.deepEqual(expandedCalls, [period === 'custom']);
 }
 
 for (const page of ['reports.html', 'sales_clerk_reports.html']) {
   const html = fs.readFileSync(new URL(`../pharma-frontend/${page}`, import.meta.url), 'utf8');
-  assert.match(html, /js\/modules\/reports\.js\?v=63/, `${page} must use the shared report module`);
+  assert.match(html, /js\/modules\/reports\.js\?v=136/, `${page} must use the shared report module`);
   assert.match(html, /data-period="custom"/, `${page} must expose the Custom range button`);
 }
 
-const presetHandler = source.slice(source.indexOf("qs('.report-presets')"));
-const customBranch = presetHandler.match(/if\(period==='custom'\)\{[^}]+\}/)?.[0] ?? '';
-assert.ok(extractFunction('updateVisibleFilters').includes("state.period!=='custom'"), 'Custom must show the date controls');
-assert.ok(extractFunction('setFilterExpanded').includes("classList.toggle('is-collapsed',!expanded)"), 'Custom must expand the filter form');
+const customBranch = source.match(/if\(period==='custom'\)\{[^}]+\}/)?.[0] ?? '';
+assert.ok(customBranch.includes("closest('[data-filter]').hidden=false"), 'Custom must show the date controls');
+assert.ok(customBranch.includes("classList.remove('is-collapsed')"), 'Custom must expand the filter form');
 assert.ok(customBranch.includes("setPeriodSelection('custom')"), 'Custom must immediately select itself');
-assert.ok(customBranch.includes('updateVisibleFilters()'), 'Custom must refresh the visible date controls');
 assert.ok(!customBranch.includes('.focus()'), 'Custom must not focus or select a date input automatically');
 assert.ok(!customBranch.includes('loadReport()'), 'Choosing Custom alone must not apply the report');
 

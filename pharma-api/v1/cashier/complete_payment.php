@@ -15,6 +15,7 @@ try {
     ensureAuditLogSchema($pdo);
     ensureSalesOrderCashSchema($pdo);
     ensureCashierPaymentDiscountSchema($pdo);
+    ensureSalesProfitAllocationSchema($pdo);
 
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);

@@ -22,7 +22,6 @@
     ]);
     const supervisorNavigationVersion = "supervisor-v2";
     const pageAliases = {
-        "cashier_dashboard.html": "dashboard.html",
         "completed_sales.html": "cashier_transaction_history.html"
     };
 

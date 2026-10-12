@@ -101,6 +101,7 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'user-settings'
     ]),
     cashier: new Set([
+        'dashboard',
         'cashier-pos',
         'cashier-history',
         'cashier-shift',

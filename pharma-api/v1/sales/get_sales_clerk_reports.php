@@ -153,44 +153,40 @@ try {
         ':end_exclusive' => $endExclusive . ' 00:00:00'
     ];
 
-    // One row per order, using the same net paid-sales rule as the system
-    // reports: completed paid amount less any recorded refunds.
-    $paidPaymentsSql = "
-        SELECT order_id,
-            MAX(CASE WHEN payment_status = 'paid' THEN payment_method END) AS payment_method,
-            GREATEST(
-                MAX(CASE WHEN payment_status = 'paid' THEN final_amount ELSE 0 END)
-                - SUM(CASE WHEN payment_status = 'refunded' THEN final_amount ELSE 0 END),
-                0
-            ) AS net_final_amount,
-            SUM(CASE WHEN payment_status = 'refunded' THEN final_amount ELSE 0 END) AS refund_amount,
-            MAX(CASE WHEN payment_status = 'paid' THEN final_amount END) AS paid_final_amount,
-            MAX(CASE WHEN payment_status = 'paid' THEN paid_at END) AS paid_at
-        FROM sales_payments
-        WHERE payment_status IN ('paid', 'refunded')
-        GROUP BY order_id
-        HAVING SUM(payment_status = 'paid') > 0
-    ";
-
     /*
      * Summary
      */
     $summaryStmt = $pdo->prepare("
         SELECT
-            COALESCE(SUM(pay.net_final_amount), 0) AS total_sales,
-            COUNT(DISTINCT so.order_id) AS total_transactions,
-            COALESCE(SUM(item_counts.items_count), 0) AS items_sold
+            COALESCE(SUM(so.total_amount), 0) AS total_sales,
+            COUNT(*) AS total_transactions,
+            COALESCE((
+                SELECT SUM(soi.quantity)
+                FROM sales_order_items soi
+                INNER JOIN sales_orders so2
+                    ON so2.order_id = soi.order_id
+                WHERE so2.sales_clerk_id = :items_user_id
+                  AND so2.status = 'completed'
+                  AND COALESCE(so2.completed_at, so2.created_at) >= :items_start_datetime
+                  AND COALESCE(so2.completed_at, so2.created_at) < :items_end_exclusive
+                  AND EXISTS (
+                      SELECT 1 FROM sales_payments item_paid_payment
+                      WHERE item_paid_payment.order_id = so2.order_id
+                        AND item_paid_payment.payment_status = 'paid'
+                  )
+            ), 0) AS items_sold
         FROM sales_orders so
-        INNER JOIN ({$paidPaymentsSql}) pay ON pay.order_id = so.order_id
-        LEFT JOIN (
-            SELECT order_id, SUM(quantity) AS items_count
-            FROM sales_order_items
-            GROUP BY order_id
-        ) item_counts ON item_counts.order_id = so.order_id
         WHERE {$baseWhere}
     ");
 
-    $summaryStmt->execute($baseParams);
+    $summaryStmt->execute([
+        ':items_user_id' => $userId,
+        ':items_start_datetime' => $startDate . ' 00:00:00',
+        ':items_end_exclusive' => $endExclusive . ' 00:00:00',
+        ':user_id' => $userId,
+        ':start_datetime' => $startDate . ' 00:00:00',
+        ':end_exclusive' => $endExclusive . ' 00:00:00'
+    ]);
 
     $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [
         'total_sales' => 0,
@@ -202,43 +198,37 @@ try {
     $totalTransactions = (int)$summary['total_transactions'];
     $itemsSold = (int)$summary['items_sold'];
 
-    // The schema has cancelled/rejected lifecycle states rather than a
-    // separate "voided" status; count those orders once for this clerk.
-    $voidedStmt = $pdo->prepare("
-        SELECT COUNT(DISTINCT so.order_id)
-        FROM sales_orders so
-        WHERE so.sales_clerk_id = :user_id
-          AND so.status IN ('cancelled', 'rejected')
-          AND COALESCE(so.cancelled_at, so.updated_at, so.created_at) >= :start_datetime
-          AND COALESCE(so.cancelled_at, so.updated_at, so.created_at) < :end_exclusive
-    ");
-    $voidedStmt->execute($baseParams);
-    $voidedTransactions = (int)$voidedStmt->fetchColumn();
-
     $summaryData = [
         'total_sales' => $totalSales,
         'total_transactions' => $totalTransactions,
         'items_sold' => $itemsSold,
         'average_transaction' => $totalTransactions > 0
             ? $totalSales / $totalTransactions
-            : 0,
-        'voided_transactions' => $voidedTransactions
+            : 0
     ];
 
     /*
      * Payment method summary.
      *
-     * Only completed orders with a paid payment record are included.
+     * Only completed/paid sales are included.
+     * Only paid records are included, matching the completed-sale workflow.
      */
     $paymentStmt = $pdo->prepare("
         SELECT
-            COALESCE(pay.payment_method, 'unknown') AS payment_method,
+            COALESCE(sp.payment_method, 'unknown') AS payment_method,
             COUNT(DISTINCT so.order_id) AS transaction_count,
-            COALESCE(SUM(pay.net_final_amount), 0) AS total_amount
+            COALESCE(SUM(
+                CASE
+                    WHEN sp.final_amount IS NOT NULL THEN sp.final_amount
+                    ELSE so.total_amount
+                END
+            ), 0) AS total_amount
         FROM sales_orders so
-        INNER JOIN ({$paidPaymentsSql}) pay ON pay.order_id = so.order_id
+        LEFT JOIN sales_payments sp
+            ON sp.order_id = so.order_id
+           AND sp.payment_status = 'paid'
         WHERE {$baseWhere}
-        GROUP BY COALESCE(pay.payment_method, 'unknown')
+        GROUP BY COALESCE(sp.payment_method, 'unknown')
         ORDER BY total_amount DESC
     ");
 
@@ -264,8 +254,6 @@ try {
         FROM sales_order_items soi
         INNER JOIN sales_orders so
             ON so.order_id = soi.order_id
-        INNER JOIN ({$paidPaymentsSql}) pay
-            ON pay.order_id = so.order_id
         WHERE {$baseWhere}
         GROUP BY
             soi.product_id,
@@ -294,9 +282,8 @@ try {
         $trendStmt = $pdo->prepare("
             SELECT
                 HOUR(COALESCE(so.completed_at, so.created_at)) AS hour_value,
-                COALESCE(SUM(pay.net_final_amount), 0) AS amount
+                COALESCE(SUM(so.total_amount), 0) AS amount
             FROM sales_orders so
-            INNER JOIN ({$paidPaymentsSql}) pay ON pay.order_id = so.order_id
             WHERE {$baseWhere}
             GROUP BY HOUR(COALESCE(so.completed_at, so.created_at))
             ORDER BY hour_value
@@ -319,9 +306,8 @@ try {
         $trendStmt = $pdo->prepare("
             SELECT
                 DATE(COALESCE(so.completed_at, so.created_at)) AS sale_date,
-                COALESCE(SUM(pay.net_final_amount), 0) AS amount
+                COALESCE(SUM(so.total_amount), 0) AS amount
             FROM sales_orders so
-            INNER JOIN ({$paidPaymentsSql}) pay ON pay.order_id = so.order_id
             WHERE {$baseWhere}
             GROUP BY DATE(COALESCE(so.completed_at, so.created_at))
             ORDER BY sale_date
@@ -341,39 +327,12 @@ try {
         $trendLabel = 'Sales activity by day for the selected period';
     }
 
-    /* Transactions are one row per order; cancelled/rejected orders are
-     * shown for void tracking but never contribute to sales totals. */
-    $page = min(1000000, max(1, (int)($_GET['page'] ?? 1)));
-    $pageSize = 50;
-    $offset = ($page - 1) * $pageSize;
-    $transactionsWhere = "
-        so.sales_clerk_id = :user_id
-        AND (
-            (so.status = 'completed'
-                AND pay.order_id IS NOT NULL
-                AND COALESCE(so.completed_at, so.created_at) >= :start_datetime
-                AND COALESCE(so.completed_at, so.created_at) < :end_exclusive)
-            OR
-            (so.status IN ('cancelled', 'rejected')
-                AND COALESCE(so.cancelled_at, so.updated_at, so.created_at) >= :void_start_datetime
-                AND COALESCE(so.cancelled_at, so.updated_at, so.created_at) < :void_end_exclusive)
-        )
-    ";
-    $countStmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM sales_orders so
-        LEFT JOIN ({$paidPaymentsSql}) pay ON pay.order_id = so.order_id
-        WHERE {$transactionsWhere}
-    ");
-    $countStmt->execute($baseParams + [
-        ':void_start_datetime' => $startDate . ' 00:00:00',
-        ':void_end_exclusive' => $endExclusive . ' 00:00:00'
-    ]);
-    $transactionTotal = (int)$countStmt->fetchColumn();
-    $pageCount = max(1, (int)ceil($transactionTotal / $pageSize));
-    $page = min($page, $pageCount);
-    $offset = ($page - 1) * $pageSize;
-
+    /*
+     * Transactions.
+     *
+     * Payment information is aggregated by order_id so that the
+     * transaction table remains one row per sales order.
+     */
     $transactionsStmt = $pdo->prepare("
         SELECT
             so.order_id,
@@ -381,26 +340,19 @@ try {
             so.customer_name,
             so.sales_clerk_id,
             u.full_name AS sales_clerk_name,
-            CASE WHEN so.status = 'completed'
-                THEN COALESCE(so.completed_at, so.created_at)
-                ELSE COALESCE(so.cancelled_at, so.updated_at, so.created_at)
-            END AS transaction_date,
+            COALESCE(so.completed_at, so.created_at) AS transaction_date,
             so.subtotal,
             so.discount,
             so.vat,
-            CASE WHEN so.status = 'completed' THEN pay.net_final_amount ELSE so.total_amount END AS total_amount,
+            so.total_amount,
             so.status,
             COALESCE(item_counts.items_count, 0) AS items_count,
-            COALESCE(pay.payment_method, 'unknown') AS payment_method,
-            CASE WHEN pay.refund_amount > 0 THEN 'refunded'
-                 WHEN pay.order_id IS NOT NULL THEN 'paid'
-                 ELSE 'unpaid' END AS payment_status,
-            pay.net_final_amount AS final_amount
+            COALESCE(payment_data.payment_method, 'unknown') AS payment_method,
+            payment_data.payment_status,
+            payment_data.final_amount
         FROM sales_orders so
         LEFT JOIN users u
             ON u.user_id = so.sales_clerk_id
-        LEFT JOIN ({$paidPaymentsSql}) pay
-            ON pay.order_id = so.order_id
         LEFT JOIN (
             SELECT
                 order_id,
@@ -409,19 +361,28 @@ try {
             GROUP BY order_id
         ) item_counts
             ON item_counts.order_id = so.order_id
-        WHERE {$transactionsWhere}
-        ORDER BY transaction_date DESC, so.order_id DESC
-        LIMIT :limit OFFSET :offset
+        LEFT JOIN (
+            SELECT
+                sp1.order_id,
+                MAX(sp1.payment_method) AS payment_method,
+                MAX(sp1.payment_status) AS payment_status,
+                MAX(sp1.final_amount) AS final_amount
+            FROM sales_payments sp1
+            INNER JOIN (
+                SELECT order_id, MAX(payment_id) AS latest_payment_id
+                FROM sales_payments
+                GROUP BY order_id
+            ) latest
+                ON latest.latest_payment_id = sp1.payment_id
+            GROUP BY sp1.order_id
+        ) payment_data
+            ON payment_data.order_id = so.order_id
+        WHERE {$baseWhere}
+        ORDER BY COALESCE(so.completed_at, so.created_at) DESC
+        LIMIT 200
     ");
 
-    $transactionsStmt->bindValue(':user_id', $userId);
-    $transactionsStmt->bindValue(':start_datetime', $startDate . ' 00:00:00');
-    $transactionsStmt->bindValue(':end_exclusive', $endExclusive . ' 00:00:00');
-    $transactionsStmt->bindValue(':void_start_datetime', $startDate . ' 00:00:00');
-    $transactionsStmt->bindValue(':void_end_exclusive', $endExclusive . ' 00:00:00');
-    $transactionsStmt->bindValue(':limit', $pageSize, PDO::PARAM_INT);
-    $transactionsStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $transactionsStmt->execute();
+    $transactionsStmt->execute($baseParams);
     $transactions = $transactionsStmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($transactions as &$transaction) {
@@ -513,13 +474,7 @@ try {
             'sales_trend' => $salesTrend,
             'payment_methods' => $paymentMethods,
             'best_products' => $bestProducts,
-            'transactions' => $transactions,
-            'transactions_pagination' => [
-                'page' => $page,
-                'page_size' => $pageSize,
-                'total' => $transactionTotal,
-                'pages' => $pageCount
-            ]
+            'transactions' => $transactions
         ]
     ], JSON_UNESCAPED_UNICODE);
 

@@ -37,7 +37,7 @@ try {
                 'expiry'    => !empty($role['supervisor']) ? supervisorExpiryReport($pdo, $f) : expiryReport($pdo, $f),
                 'products'  => !empty($role['supervisor'])
                                 ? supervisorProductReport($pdo, $f, $role)
-                                : productReport($pdo, $f, $role),
+                                : productReport($pdo, $f, $role, !empty($role['sales_clerk']) && empty($role['management'])),
                 'staff'     => staffReport($pdo, $f, $role),
                 'overview'  => overviewReport($pdo, $f, $role),
                 default     => null,

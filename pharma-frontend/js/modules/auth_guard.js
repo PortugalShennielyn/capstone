@@ -398,9 +398,6 @@ function roleAllowedForPage() {
 }
 
 function redirectUnauthorizedPage() {
-    try {
-        sessionStorage.setItem('drpAccessDeniedMessage', ACCESS_DENIED_MESSAGE);
-    } catch (error) {}
     const destination = dashboardPathForRole(currentSession) || 'login.html';
     const currentPage = window.location.pathname.split('/').pop() || '';
     if (currentPage !== destination) window.location.replace(`${destination}?access=denied`);
@@ -415,7 +412,6 @@ function revealAccessDeniedMessage() {
         window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
     }
     try {
-        message = message || sessionStorage.getItem('drpAccessDeniedMessage') || '';
         sessionStorage.removeItem('drpAccessDeniedMessage');
     } catch (error) {}
     if (!message) return;

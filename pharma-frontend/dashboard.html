@@ -26,7 +26,7 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
             rel="stylesheet"
         />
-        <link href="./css/navbar.css?v=40" rel="stylesheet" />
+        <link href="./css/navbar.css?v=42" rel="stylesheet" />
         <script src="./js/navbar.js?v=100" defer></script>
         <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
 
@@ -3820,14 +3820,16 @@
                             <i class="fa-regular fa-bell"></i>
                             <span class="notification-badge is-hidden" id="dashboardNotificationBadge">0</span>
                         </button>
-                        <div class="notification-menu" id="dashboardNotificationMenu" role="menu">
+                        <div class="notification-menu drp-alert-menu" id="dashboardNotificationMenu" role="menu">
                             <div class="notification-menu-header">
-                                <strong>Dashboard Alerts</strong>
-                                <span id="dashboardNotificationSummary">Loading...</span>
+                                <span class="notification-heading-icon"><i class="fa-solid fa-bell"></i></span>
+                                <div class="notification-heading-copy"><strong>System alerts</strong><span id="dashboardNotificationSummary">Loading...</span></div>
+                                <span class="notification-total" id="dashboardNotificationTotal">—</span>
                             </div>
                             <div class="notification-menu-list" id="dashboardNotificationList">
                                 <p class="notification-empty">Loading alerts...</p>
                             </div>
+                            <div class="notification-menu-footer"><i class="fa-solid fa-circle-info"></i><span>Select an alert to review the related records.</span></div>
                         </div>
                     </div>
                     <div class="topbar-clock">
@@ -5322,18 +5324,38 @@
                 return alerts;
             }
 
-            function renderDashboardNotifications(alerts = []) {
+            let dashboardCurrentAlertRows = [];
+            function dashboardAlertReadKey() {
+                const session = window.__drpSession || {};
+                const scope = encodeURIComponent(`${session.account_id || session.tenant_id || "account"}:${session.user_id || session.username || session.email || "user"}`);
+                return `drpReviewedAlerts:v1:${scope}`;
+            }
+            function dashboardReadAlertState() {
+                try { return JSON.parse(localStorage.getItem(dashboardAlertReadKey()) || "{}") || {}; }
+                catch (error) { return {}; }
+            }
+            function refreshDashboardUnreadCount() {
                 const badge = document.getElementById("dashboardNotificationBadge");
-                const list = document.getElementById("dashboardNotificationList");
                 const summary = document.getElementById("dashboardNotificationSummary");
-                if (!badge || !list || !summary) return;
-                const total = alerts.reduce((sum, alert) => sum + alert.count, 0);
-                badge.textContent = total > 99 ? "99+" : wholeNumber.format(total);
-                badge.classList.toggle("is-hidden", total === 0);
-                summary.textContent = total ? `${wholeNumber.format(total)} items need attention` : "All clear";
+                const totalLabel = document.getElementById("dashboardNotificationTotal");
+                if (!badge || !summary) return;
+                const seen = dashboardReadAlertState();
+                const unread = dashboardCurrentAlertRows.filter(alert => Number(seen[alert.title]) !== alert.count);
+                const unreadTotal = unread.reduce((sum, alert) => sum + alert.count, 0);
+                const total = dashboardCurrentAlertRows.reduce((sum, alert) => sum + alert.count, 0);
+                badge.textContent = unreadTotal > 99 ? "99+" : wholeNumber.format(unreadTotal);
+                badge.classList.toggle("is-hidden", unreadTotal === 0);
+                summary.textContent = unread.length ? `${unread.length} alert type${unread.length === 1 ? "" : "s"} not reviewed` : total ? "All current alerts reviewed" : "No urgent items need attention";
+                if (totalLabel) totalLabel.textContent = total > 99 ? "99+ open" : `${wholeNumber.format(total)} open`;
+            }
+            function renderDashboardNotifications(alerts = []) {
+                const list = document.getElementById("dashboardNotificationList");
+                if (!list) return;
+                dashboardCurrentAlertRows = alerts;
+                refreshDashboardUnreadCount();
                 list.innerHTML = alerts.length
-                    ? alerts.map((alert) => `<a class="notification-menu-item" role="menuitem" href="${alert.href}"><i class="fa-solid ${alert.icon}"></i><span>${escapeHtml(alert.title)}</span><strong>${wholeNumber.format(alert.count)}</strong></a>`).join("")
-                    : '<p class="notification-empty">No urgent dashboard alerts.</p>';
+                    ? alerts.map((alert) => `<a class="notification-menu-item tone-${escapeHtml(alert.tone)}" role="menuitem" data-alert-key="${escapeHtml(alert.title)}" data-alert-count="${alert.count}" href="${alert.href}"><span class="notification-item-icon"><i class="fa-solid ${alert.icon}"></i></span><span class="notification-item-copy"><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(alert.description)}</small></span><span class="notification-item-count">${wholeNumber.format(alert.count)}</span><i class="fa-solid fa-chevron-right notification-item-arrow" aria-hidden="true"></i></a>`).join("")
+                    : '<div class="notification-empty-state"><span><i class="fa-solid fa-check"></i></span><strong>You’re all caught up</strong><p>No urgent system alerts right now.</p></div>';
             }
 
             function renderTodayAlerts(data = {}) {
@@ -5645,6 +5667,15 @@
                     event.stopPropagation();
                     const isOpen = menu.classList.toggle("is-open");
                     button.setAttribute("aria-expanded", String(isOpen));
+                });
+                const list = document.getElementById("dashboardNotificationList");
+                list?.addEventListener("click", event => {
+                    const row = event.target.closest("a[data-alert-key]");
+                    if (!row) return;
+                    const seen = dashboardReadAlertState();
+                    seen[row.dataset.alertKey] = Number(row.dataset.alertCount) || 0;
+                    try { localStorage.setItem(dashboardAlertReadKey(), JSON.stringify(seen)); } catch (error) {}
+                    refreshDashboardUnreadCount();
                 });
                 document.addEventListener("click", (event) => {
                     if (!event.target.closest(".dashboard-notifications")) {

@@ -143,9 +143,14 @@ function salesClerkApiRequestAllowed(string $scriptName, string $requestMethod =
         return $method === 'GET';
     }
 
-    return $relativePath === 'settings/get_admin_settings.php'
-        || in_array($relativePath, [
-            'dashboard/get_dashboard_summary.php',
+    if ($method === 'GET' && in_array($relativePath, [
+        'dashboard/get_dashboard_summary.php',
+        'settings/get_admin_settings.php',
+    ], true)) {
+        return true;
+    }
+
+    return in_array($relativePath, [
             'sales/get_sales_clerk_dashboard.php',
             'sales/get_my_sales_clerk_order.php',
             'sales/get_my_sales_clerk_orders.php',

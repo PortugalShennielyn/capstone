@@ -367,7 +367,7 @@ function renderActivity(data) {
     return `
         <h2 class="card-heading">Shift Information</h2>
         <div class="detail-list">
-            <div class="detail-row"><span>Cashier</span><strong>${escapeHtml(data.cashier_name)}</strong></div>
+            <div class="detail-row"><span>Cashier</span><strong>${escapeHtml(data.cashier_name || 'All Cashiers')}</strong></div>
             <div class="detail-row"><span>Shift Start</span><strong>${escapeHtml(formatDateTime(reportFrom(data)))}</strong></div>
             <div class="detail-row"><span>Shift End</span><strong>${escapeHtml(formatDateTime(reportTo(data)))}</strong></div>
             <div class="detail-row"><span>Status</span><strong>${escapeHtml(shiftStatus(data))}</strong></div>
@@ -411,41 +411,44 @@ function renderCashierSummaryGrid(reports) {
 function renderPrintReport(data, generated) {
     const summary = data.summary || {};
     const sales = data.sales_breakdown || {};
-    const completedCount = Number(summary.completed_transactions || 0);
-    const cancelledCount = Number(summary.cancelled_voided_transactions || 0);
-    const refundedCount = Number(summary.refunded_transactions || 0);
-    const paymentRows = data.payment_breakdown || [];
-    const recentRows = data.include_recent_print ? (data.recent_transactions || []).slice(0, 10) : [];
+    const timezone = data.pharmacy?.timezone || 'Asia/Manila';
+    const paperCurrency = (value) => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const printedAt = new Date().toLocaleString('en-PH', { timeZone: timezone, dateStyle: 'long', timeStyle: 'short' });
+    const recentRows = (data.recent_transactions || []).slice(0, 10);
+    const address = String(data.pharmacy?.address || '').trim();
+    const period = displayPeriod(data.selected_start_date, data.selected_end_date);
     return `
         <section class="print-receipt-report">
-            <h1>${escapeHtml(data.pharmacy?.name || 'Dr. R Pharmacy')}</h1>
-            <h2>${escapeHtml(reportKind(data))}</h2>
-            <div class="print-meta">
-                <div><span>From</span><strong>${escapeHtml(formatDateTime(reportFrom(data)))}</strong></div>
-                <div><span>To</span><strong>${escapeHtml(formatDateTime(reportTo(data)))}</strong></div>
-                <div><span>Cashier</span><strong>${escapeHtml(data.cashier_name)}</strong></div>
-                <div><span>Status</span><strong>${escapeHtml(shiftStatus(data))}</strong></div>
+            <header class="cashier-paper-head">
+                <h1>DOC R PHARMACY</h1>
+                ${address ? `<p>${escapeHtml(address)}</p>` : ''}
+            </header>
+            <div class="cashier-paper-report-title">
+                <h2>SALES REPORT</h2>
+                <p>Reporting Period: ${escapeHtml(period)}</p>
+                <small>Date Printed: ${escapeHtml(printedAt)}</small>
             </div>
-            <h3>SALES</h3>
-            <div class="print-lines">
-                <div><span>Gross Sales</span><strong>${escapeHtml(currency(sales.gross_completed_sales))}</strong></div>
-                <div><span>Discounts</span><strong>-${escapeHtml(currency(sales.discounts))}</strong></div>
-                <div><span>Refunds</span><strong>-${escapeHtml(currency(sales.refunds))}</strong></div>
-                <div class="total"><span>Net Sales</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
-            </div>
-            <h3>TENDER</h3>
-            <div class="print-lines">
-                ${paymentRows.length ? paymentRows.map((row) => `<div><span>${escapeHtml(methodLabel(row.payment_method))}</span><strong>${escapeHtml(currency(row.amount))}</strong></div>`).join('') : '<div><span>No tenders</span><strong>PHP 0.00</strong></div>'}
-                <div class="total"><span>Total Collected</span><strong>${escapeHtml(currency(sales.net_completed_sales))}</strong></div>
-            </div>
-            <h3>TRANSACTIONS</h3>
-            <div class="print-lines">
-                <div><span>Completed</span><strong>${escapeHtml(number(completedCount))}</strong></div>
-                <div><span>Voided</span><strong>${escapeHtml(number(cancelledCount))}</strong></div>
-                <div><span>Refunded</span><strong>${escapeHtml(number(refundedCount))}</strong></div>
-            </div>
-            ${recentRows.length ? `<h3>RECENT TRANSACTIONS</h3><div class="print-lines">${recentRows.map((row, index) => `<div><span>${index + 1}. ${escapeHtml(row.cashier_name || 'Cashier')} - ${escapeHtml(row.receipt_no || row.order_no || '-')}</span><strong>${escapeHtml(currency(row.total_amount))}</strong></div>`).join('')}</div>` : ''}
-            <p class="printed-at">Printed: ${escapeHtml(generated)}</p>
+            <section class="cashier-paper-summary">
+                <h3>Sales Summary</h3>
+                <div class="cashier-paper-metrics">
+                    <article><span>Completed Transactions</span><strong>${escapeHtml(number(summary.completed_transactions))}</strong></article>
+                    <article><span>Gross Sales</span><strong>${escapeHtml(paperCurrency(sales.gross_completed_sales))}</strong></article>
+                    <article><span>Discounts</span><strong>${escapeHtml(paperCurrency(sales.discounts))}</strong></article>
+                    <article><span>Net Sales</span><strong>${escapeHtml(paperCurrency(sales.net_completed_sales))}</strong></article>
+                </div>
+            </section>
+            <section class="cashier-paper-transactions">
+                <h3>Transaction Details</h3>
+                <table>
+                    <thead><tr><th>Receipt No.</th><th>Date / Time</th><th>Cashier</th><th>Payment</th><th>Amount</th></tr></thead>
+                    <tbody>${recentRows.length ? recentRows.map((row) => `<tr><td>${escapeHtml(row.receipt_no || row.order_no || '-')}</td><td>${escapeHtml(formatDateTime(row.completed_at))}</td><td>${escapeHtml(row.cashier_name || data.cashier_name || 'Cashier')}</td><td>${escapeHtml(methodLabel(row.payment_method))}</td><td>${escapeHtml(paperCurrency(row.total_amount))}</td></tr>`).join('') : '<tr><td colspan="5" class="cashier-paper-empty">No completed transactions for this reporting period.</td></tr>'}</tbody>
+                </table>
+                <p class="cashier-paper-note">Transaction details list up to 10 recent completed transactions. Summary totals reflect the selected reporting period.</p>
+            </section>
+            <footer class="cashier-paper-signatures">
+                <div><span>Prepared by:</span><strong>${escapeHtml(data.cashier_name || '____________________')}</strong></div>
+                <div><span>Reviewed by:</span><strong>____________________</strong></div>
+            </footer>
         </section>`;
 }
 
