@@ -59,26 +59,50 @@
         }
 
         .welcome-card {
-            padding: 24px 26px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
             margin-bottom: 22px;
-            border: 1px solid var(--line);
-            border-radius: 16px;
-            background: #fff;
-            box-shadow: var(--shadow);
         }
 
         .welcome-card h1 {
             margin: 0;
-            font-size: 25px;
+            font-size: 30px;
             font-weight: 900;
             color: var(--ink);
         }
 
-        .welcome-card p {
-            margin: 7px 0 0;
-            color: var(--muted);
+        .welcome-card .welcome-name {
+            color: var(--purple);
+        }
+
+        .welcome-pos-action {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            min-height: 46px;
+            padding: 0 18px;
+            border-radius: 12px;
+            background: var(--purple);
+            color: #fff;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 800;
+            text-decoration: none;
+            white-space: nowrap;
+            transition: background .18s ease, transform .18s ease;
+        }
+
+        .welcome-pos-action:hover {
+            background: var(--purple-dark);
+            color: #fff;
+            transform: translateY(-1px);
+        }
+
+        .welcome-pos-action:focus-visible {
+            outline: 3px solid rgba(109, 40, 217, .3);
+            outline-offset: 3px;
         }
 
         .dashboard-date-filter {
@@ -87,7 +111,7 @@
             justify-content: flex-end;
             flex-wrap: wrap;
             gap: 10px;
-            margin: 0 0 18px;
+            margin: 0;
             color: #64748b;
             font-size: 14px;
             font-weight: 600;
@@ -128,18 +152,32 @@
         .dashboard-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 18px;
+            gap: 0;
             margin-bottom: 22px;
-        }
-
-        .stat-card {
-            position: relative;
             overflow: hidden;
-            padding: 20px;
             border: 1px solid var(--line);
             border-radius: 16px;
             background: #fff;
             box-shadow: var(--shadow);
+        }
+
+        .stat-card {
+            position: relative;
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr);
+            grid-template-rows: auto auto;
+            align-content: center;
+            align-items: center;
+            column-gap: 12px;
+            padding: 16px 18px;
+            border: 0;
+            border-right: 1px solid var(--line);
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .stat-card:last-child {
+            border-right: 0;
         }
 
         .stat-icon {
@@ -151,10 +189,34 @@
             border-radius: 11px;
             color: #fff;
             background: linear-gradient(135deg, var(--purple), #8b5cf6);
-            margin-bottom: 16px;
+            grid-column: 1;
+            grid-row: 1 / span 2;
+            margin-bottom: 0;
+        }
+
+        .stat-card:nth-child(1) .stat-icon {
+            color: #0f9b93;
+            background: #e1f6f3;
+        }
+
+        .stat-card:nth-child(2) .stat-icon {
+            color: #2563eb;
+            background: #e8f0ff;
+        }
+
+        .stat-card:nth-child(3) .stat-icon {
+            color: #7045e8;
+            background: #f0eaff;
+        }
+
+        .stat-card:nth-child(4) .stat-icon {
+            color: #e34b4b;
+            background: #ffebeb;
         }
 
         .stat-label {
+            grid-column: 2;
+            grid-row: 1;
             color: var(--muted);
             font-size: 12px;
             font-weight: 800;
@@ -163,15 +225,17 @@
         }
 
         .stat-value {
+            grid-column: 2;
+            grid-row: 2;
             margin-top: 5px;
-            font-size: 27px;
+            font-size: 24px;
             font-weight: 900;
             color: var(--ink);
         }
 
         .content-grid {
             display: grid;
-            grid-template-columns: 1.4fr 1fr;
+            grid-template-columns: 1fr;
             gap: 20px;
         }
 
@@ -181,6 +245,10 @@
             background: #fff;
             box-shadow: var(--shadow);
             overflow: hidden;
+        }
+
+        .quick-actions-card {
+            margin-bottom: 20px;
         }
 
         .card-header-custom {
@@ -203,7 +271,7 @@
 
         .quick-actions {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 12px;
         }
 
@@ -211,18 +279,13 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 15px;
-            border: 1px solid var(--line);
-            border-radius: 12px;
+            padding: 8px;
             color: var(--ink);
             text-decoration: none;
-            background: #fff;
             transition: .15s ease;
         }
 
         .quick-action:hover {
-            border-color: #c4b5fd;
-            background: #faf8ff;
             transform: translateY(-1px);
         }
 
@@ -237,9 +300,29 @@
             background: var(--purple);
         }
 
+        .quick-action:nth-child(1) i {
+            color: #0f9b93;
+            background: #e1f6f3;
+        }
+
+        .quick-action:nth-child(2) i {
+            color: #2563eb;
+            background: #e8f0ff;
+        }
+
+        .quick-action:nth-child(3) i {
+            color: #d97706;
+            background: #fff3d9;
+        }
+
+        .quick-action:nth-child(4) i {
+            color: #7045e8;
+            background: #f0eaff;
+        }
+
         .quick-action strong {
             display: block;
-            font-size: 13px;
+            font-size: 15px;
             font-weight: 900;
         }
 
@@ -247,7 +330,7 @@
             display: block;
             margin-top: 2px;
             color: var(--muted);
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 600;
         }
 
@@ -263,6 +346,69 @@
             opacity: .65;
         }
 
+        .top-products-chart {
+            min-height: 300px;
+            padding: 22px 18px 18px;
+        }
+
+        .top-products-bars {
+            display: grid;
+            grid-template-columns: repeat(10, minmax(70px, 1fr));
+            align-items: end;
+            gap: 12px;
+            min-width: 760px;
+            height: 250px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .top-product-column {
+            display: grid;
+            grid-template-rows: 22px 1fr 42px;
+            align-items: end;
+            min-width: 0;
+            height: 100%;
+            text-align: center;
+        }
+
+        .top-product-quantity {
+            align-self: end;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .top-product-track {
+            display: flex;
+            align-items: end;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .top-product-bar {
+            width: min(44px, 72%);
+            min-height: 4px;
+            border-radius: 8px 8px 0 0;
+            background: linear-gradient(180deg, #8b5cf6, var(--purple));
+        }
+
+        .top-product-name {
+            align-self: start;
+            display: -webkit-box;
+            overflow: hidden;
+            color: var(--ink);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.35;
+            text-overflow: ellipsis;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+        }
+
+        .top-products-scroll {
+            overflow-x: auto;
+        }
+
         @media (max-width: 1100px) {
             .dashboard-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -271,9 +417,18 @@
             .content-grid {
                 grid-template-columns: 1fr;
             }
+
+            .quick-actions {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
 
         @media (max-width: 650px) {
+            .welcome-card {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
             .dashboard-page {
                 padding: 16px;
             }
@@ -307,18 +462,28 @@
         <section class="dashboard-page">
 
             <div class="welcome-card">
-                <h1>Sales Clerk Dashboard</h1>
-                <p>Quick overview of your sales clerk activities and transactions.</p>
+                <h1>Welcome, <span class="welcome-name" id="salesClerkWelcomeName">Sales Clerk</span>!</h1>
+                <div class="dashboard-date-filter">
+                    <label for="dashboardStartDate">Start date
+                        <input id="dashboardStartDate" type="date" required aria-label="Dashboard start date">
+                    </label>
+                    <label for="dashboardEndDate">End date
+                        <input id="dashboardEndDate" type="date" required aria-label="Dashboard end date">
+                    </label>
+                    <button id="applyDashboardDates" class="dashboard-date-apply" type="button">Apply</button>
+                </div>
             </div>
 
-            <div class="dashboard-date-filter">
-                <label for="dashboardStartDate">Start date
-                    <input id="dashboardStartDate" type="date" required aria-label="Dashboard start date">
-                </label>
-                <label for="dashboardEndDate">End date
-                    <input id="dashboardEndDate" type="date" required aria-label="Dashboard end date">
-                </label>
-                <button id="applyDashboardDates" class="dashboard-date-apply" type="button">Apply</button>
+            <div class="dashboard-card quick-actions-card">
+                <div class="card-header-custom"><h2>Quick Actions</h2></div>
+                <div class="card-body-custom">
+                    <div class="quick-actions">
+                        <a href="sales_clerk_pos.html" class="quick-action"><i class="fa-solid fa-cash-register"></i><span><strong>Open POS</strong><small>Create a new sale</small></span></a>
+                        <a href="sales_clerk_orders.html" class="quick-action"><i class="fa-solid fa-clipboard-list"></i><span><strong>My Transactions</strong><small>View your orders</small></span></a>
+                        <a href="sales_clerk_reports.html" class="quick-action"><i class="fa-solid fa-chart-column"></i><span><strong>My Reports</strong><small>View sales reports</small></span></a>
+                        <a href="sales_clerk_pos.html" class="quick-action"><i class="fa-solid fa-barcode"></i><span><strong>Scan Products</strong><small>Start selling</small></span></a>
+                    </div>
+                </div>
             </div>
 
             <div class="dashboard-grid">
@@ -361,45 +526,10 @@
 
                 <div class="dashboard-card">
                     <div class="card-header-custom">
-                        <h2>Quick Actions</h2>
+                        <h2>Top 10 Selling Products</h2>
                     </div>
-
-                    <div class="card-body-custom">
-                        <div class="quick-actions">
-
-                            <a href="sales_clerk_pos.html" class="quick-action">
-                                <i class="fa-solid fa-cash-register"></i>
-                                <span>
-                                    <strong>Open POS</strong>
-                                    <small>Create a new sale</small>
-                                </span>
-                            </a>
-
-                            <a href="sales_clerk_orders.html" class="quick-action">
-                                <i class="fa-solid fa-clipboard-list"></i>
-                                <span>
-                                    <strong>My Transactions</strong>
-                                    <small>View your orders</small>
-                                </span>
-                            </a>
-
-                            <a href="sales_clerk_reports.html" class="quick-action">
-                                <i class="fa-solid fa-chart-column"></i>
-                                <span>
-                                    <strong>My Reports</strong>
-                                    <small>View sales reports</small>
-                                </span>
-                            </a>
-
-                            <a href="sales_clerk_pos.html" class="quick-action">
-                                <i class="fa-solid fa-barcode"></i>
-                                <span>
-                                    <strong>Scan Products</strong>
-                                    <small>Start selling</small>
-                                </span>
-                            </a>
-
-                        </div>
+                    <div class="top-products-chart top-products-scroll" id="topProductsChart" role="img" aria-label="Top 10 selling products vertical bar chart">
+                        <div class="empty-state loading">Loading top-selling products...</div>
                     </div>
                 </div>
 
@@ -437,6 +567,47 @@
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
+        }
+
+        function renderTopProducts(products) {
+            const chart = document.getElementById('topProductsChart');
+            chart.replaceChildren();
+            if (!Array.isArray(products) || products.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.textContent = 'No product sales data for this period.';
+                chart.append(empty);
+                return;
+            }
+
+            const bars = document.createElement('div');
+            bars.className = 'top-products-bars';
+            const maxQuantity = Math.max(...products.map(product => Number(product.quantity_sold) || 0), 1);
+            products.forEach(product => {
+                const quantity = Number(product.quantity_sold) || 0;
+                const column = document.createElement('div');
+                column.className = 'top-product-column';
+
+                const value = document.createElement('div');
+                value.className = 'top-product-quantity';
+                value.textContent = String(quantity);
+
+                const track = document.createElement('div');
+                track.className = 'top-product-track';
+                const bar = document.createElement('div');
+                bar.className = 'top-product-bar';
+                bar.style.height = `${quantity > 0 ? Math.max(4, (quantity / maxQuantity) * 100) : 0}%`;
+                track.append(bar);
+
+                const name = document.createElement('div');
+                name.className = 'top-product-name';
+                name.textContent = product.product_name || 'Product';
+                name.title = name.textContent;
+
+                column.append(value, track, name);
+                bars.append(column);
+            });
+            chart.append(bars);
         }
 
         async function loadSalesClerkDashboard(startDate, endDate) {
@@ -484,6 +655,8 @@
             document.getElementById('pendingOrders').textContent =
     data.pending_for_cashier ?? 0;
 
+            renderTopProducts(data.top_products || []);
+
             document.getElementById('activityState').classList.remove('loading');
 
             document.getElementById('activityState').textContent =
@@ -492,7 +665,17 @@
 
         document.addEventListener('DOMContentLoaded', async () => {
             try {
-                if (!await (window.__drpSessionReadyPromise || ensurePageTabSession())) return;
+                const session = await (window.__drpSessionReadyPromise || ensurePageTabSession());
+                if (!session) return;
+                const authenticatedSession = window.__drpSession || session;
+                const profile = window.__drpNavbarProfileDisplay?.read();
+                const displayName = String(
+                    authenticatedSession.full_name || authenticatedSession.fullName || authenticatedSession.displayName || authenticatedSession.username ||
+                    profile?.displayName || ''
+                ).trim();
+                if (displayName) {
+                    document.getElementById('salesClerkWelcomeName').textContent = displayName;
+                }
                 const startInput = document.getElementById('dashboardStartDate');
                 const endInput = document.getElementById('dashboardEndDate');
                 const applyDates = async () => {

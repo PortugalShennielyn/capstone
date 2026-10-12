@@ -81,6 +81,28 @@ $itemsStmt = $pdo->prepare(
 $itemsStmt->execute($params);
 $totalItemsSold = (int) $itemsStmt->fetchColumn();
 
+$topProductsStmt = $pdo->prepare(
+    "SELECT soi.product_id, soi.product_name,
+            COALESCE(SUM(soi.quantity), 0) AS quantity_sold
+     FROM sales_order_items soi
+     INNER JOIN sales_orders so ON so.order_id = soi.order_id
+     WHERE so.status = 'completed'
+       AND COALESCE(so.completed_at, so.updated_at, so.created_at) >= :dashboard_start
+       AND COALESCE(so.completed_at, so.updated_at, so.created_at) < :dashboard_end_exclusive
+       {$whereClerk}
+     GROUP BY soi.product_id, soi.product_name
+     ORDER BY quantity_sold DESC, soi.product_name ASC
+     LIMIT 10"
+);
+$topProductsStmt->execute($params);
+$topProducts = array_map(static function (array $product): array {
+    return [
+        'product_id' => $product['product_id'],
+        'product_name' => (string) ($product['product_name'] ?? 'Product'),
+        'quantity_sold' => (int) ($product['quantity_sold'] ?? 0),
+    ];
+}, $topProductsStmt->fetchAll(PDO::FETCH_ASSOC));
+
 echo json_encode([
     'success' => true,
     'message' => 'Sales Clerk dashboard loaded.',
@@ -95,6 +117,7 @@ echo json_encode([
         'my_sales_today' => $todaySales,
         'total_items_sold' => $totalItemsSold,
         'total_items_sold_today' => $totalItemsSold,
+        'top_products' => $topProducts,
     ],
 ]);
 ?>

@@ -128,7 +128,7 @@
 
     .summary-grid{
       display:grid;
-      grid-template-columns:repeat(4,1fr);
+      grid-template-columns:repeat(5,minmax(0,1fr));
       gap:16px;
       margin-bottom:20px;
     }
@@ -267,6 +267,21 @@
       overflow:auto;
     }
 
+    .transaction-pagination{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px 16px;
+      border-top:1px solid var(--line);
+      color:var(--muted);
+      font-size:12px;
+    }
+
+    .transaction-pagination .page-controls{display:flex;align-items:center;gap:9px;}
+    .transaction-pagination button{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fff;color:var(--purple);font-weight:650;}
+    .transaction-pagination button:disabled{cursor:not-allowed;color:#aaa5b8;background:#faf9fc;}
+
     table{
       margin:0 !important;
     }
@@ -393,7 +408,7 @@
 
     @media(max-width:1000px){
       .summary-grid{
-        grid-template-columns:repeat(2,1fr);
+        grid-template-columns:repeat(3,minmax(0,1fr));
       }
       .main-grid{
         grid-template-columns:1fr;
@@ -410,6 +425,7 @@
       .summary-grid{
         grid-template-columns:1fr;
       }
+      .transaction-pagination{align-items:flex-start;flex-direction:column;}
       .detail-grid{
         grid-template-columns:1fr;
       }
@@ -434,6 +450,7 @@
   #navbar-container,
   .header-actions,
   .filter-card,
+  .transaction-pagination,
   .topbar,
   .view-btn {
     display: none !important;
@@ -452,7 +469,7 @@
 
   /* Keep the summary compact and in one row when possible */
   .summary-grid {
-    grid-template-columns: repeat(4, 1fr) !important;
+    grid-template-columns: repeat(5, 1fr) !important;
     gap: 8px !important;
     margin-bottom: 10px !important;
   }
@@ -728,10 +745,11 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
         </div>
 
         <div class="col-md-3">
-          <button type="button" class="btn-report primary w-100" id="applyFilterBtn">
-            <i class="fa-solid fa-filter me-1"></i> Apply Filter
+          <button type="button" class="btn-report w-100" id="clearFiltersBtn">
+            <i class="fa-solid fa-rotate-left me-1"></i> Reset to Today
           </button>
         </div>
+
       </div>
     </div>
 
@@ -755,7 +773,7 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
       <div class="summary-card">
         <div class="summary-top">
-          <div class="summary-label">Items Sold</div>
+          <div class="summary-label">Total Items Sold</div>
           <div class="summary-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
         </div>
         <div class="summary-value" id="itemsSold">0</div>
@@ -763,10 +781,18 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
       <div class="summary-card">
         <div class="summary-top">
-          <div class="summary-label">Average Transaction</div>
+          <div class="summary-label">Average Transaction Value</div>
           <div class="summary-icon"><i class="fa-solid fa-chart-line"></i></div>
         </div>
         <div class="summary-value" id="averageTransaction">₱0.00</div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-top">
+          <div class="summary-label">Voided Transactions</div>
+          <div class="summary-icon"><i class="fa-solid fa-ban"></i></div>
+        </div>
+        <div class="summary-value" id="voidedTransactions">0</div>
       </div>
     </div>
 
@@ -840,7 +866,7 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
       <div class="panel-header">
         <div>
           <div class="panel-title">Sales Transactions</div>
-          <div class="panel-subtitle">Completed and recorded transactions for the logged-in Sales Clerk</div>
+          <div class="panel-subtitle">Completed sales plus cancelled or rejected orders for the logged-in Sales Clerk</div>
         </div>
       </div>
 
@@ -863,6 +889,14 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
             </tr>
           </tbody>
         </table>
+      </div>
+      <div class="transaction-pagination" id="transactionPagination" aria-label="Transaction pages">
+        <span id="paginationSummary">0 transactions</span>
+        <div class="page-controls">
+          <button type="button" id="previousPageBtn" aria-label="Previous page"><i class="fa-solid fa-chevron-left"></i></button>
+          <span id="pageIndicator">Page 1 of 1</span>
+          <button type="button" id="nextPageBtn" aria-label="Next page"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
       </div>
     </div>
 
@@ -946,6 +980,9 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
     let currentReportData = null;
     let transactionModal = null;
+    let activeReportsController = null;
+    let reportsRequestVersion = 0;
+    let reportPage = 1;
 
     const peso = value =>
       '₱' + Number(value || 0).toLocaleString('en-PH', {
@@ -977,6 +1014,7 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
     const params = new URLSearchParams();
     params.set('period', period);
+    params.set('page', String(reportPage));
 
     if (period === 'custom') {
         const start = document.getElementById('startDate').value;
@@ -1006,13 +1044,10 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
 
     function initializeDefaultDateRange() {
       const today = new Date();
-      const targetMonth = new Date(today.getFullYear(), today.getMonth() - 4, 1);
-      const daysInTargetMonth = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
-      const start = new Date(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(today.getDate(), daysInTargetMonth));
       const dateValue = date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
 
-      document.getElementById('periodFilter').value = 'custom';
-      document.getElementById('startDate').value = dateValue(start);
+      document.getElementById('periodFilter').value = 'today';
+      document.getElementById('startDate').value = dateValue(today);
       document.getElementById('endDate').value = dateValue(today);
     }
 
@@ -1034,6 +1069,23 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
         Number(summary.items_sold || 0).toLocaleString();
       document.getElementById('averageTransaction').textContent =
         peso(summary.average_transaction);
+      document.getElementById('voidedTransactions').textContent =
+        Number(summary.voided_transactions || 0).toLocaleString();
+    }
+
+    function renderTransactionPagination(pagination = {}) {
+      const total = Number(pagination.total || 0);
+      const page = Math.max(1, Number(pagination.page || 1));
+      const pageSize = Math.max(1, Number(pagination.page_size || 50));
+      const pages = Math.max(1, Number(pagination.pages || 1));
+      const first = total ? ((page - 1) * pageSize) + 1 : 0;
+      const last = Math.min(page * pageSize, total);
+      document.getElementById('paginationSummary').textContent = total
+        ? `Showing ${first}–${last} of ${total} transactions`
+        : '0 transactions';
+      document.getElementById('pageIndicator').textContent = `Page ${page} of ${pages}`;
+      document.getElementById('previousPageBtn').disabled = page <= 1;
+      document.getElementById('nextPageBtn').disabled = page >= pages;
     }
 
     function renderPayments(payments) {
@@ -1089,8 +1141,9 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
       `).join('');
     }
 
-    function renderTransactions(transactions) {
+    function renderTransactions(transactions, pagination) {
       const body = document.getElementById('transactionsBody');
+      renderTransactionPagination(pagination);
 
       if (!transactions || transactions.length === 0) {
         body.innerHTML = `
@@ -1253,6 +1306,10 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
     }
 
     async function loadReports() {
+      const requestVersion = ++reportsRequestVersion;
+      activeReportsController?.abort();
+      const requestController = new AbortController();
+      activeReportsController = requestController;
       hideError();
 
       let params;
@@ -1260,6 +1317,8 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
         params = getFilterParams();
       } catch (error) {
         showError(error.message);
+        document.getElementById('refreshBtn').disabled = false;
+        activeReportsController = null;
         return;
       }
 
@@ -1280,10 +1339,12 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
           method: 'GET',
           credentials: 'include',
           cache: 'no-store',
-          headers
+          headers,
+          signal: requestController.signal
         });
 
         const result = await response.json();
+        if (requestVersion !== reportsRequestVersion) return;
 
         if (!response.ok || !result.success) {
           throw new Error(result.message || 'Unable to load Sales Clerk reports.');
@@ -1299,7 +1360,8 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
         renderSummary(currentReportData.summary || {});
         renderPayments(currentReportData.payment_methods || []);
         renderBestProducts(currentReportData.best_products || []);
-        renderTransactions(currentReportData.transactions || []);
+        reportPage = Number(currentReportData.transactions_pagination?.page || 1);
+        renderTransactions(currentReportData.transactions || [], currentReportData.transactions_pagination || {});
 
         document.getElementById('trendSubtitle').textContent =
           currentReportData.trend_label || 'Sales activity for the selected period';
@@ -1307,22 +1369,70 @@ body[data-dashboard-view="sales-clerk-reports"] .reports-page {
         drawSalesChart(currentReportData.sales_trend || []);
 
       } catch (error) {
+        if (error.name === 'AbortError' || requestVersion !== reportsRequestVersion) return;
         console.error('Sales Clerk Reports error:', error);
         showError(error.message || 'Unable to load Sales Clerk reports.');
 
         renderSummary({});
         renderPayments([]);
         renderBestProducts([]);
-        renderTransactions([]);
+        reportPage = 1;
+        renderTransactions([], {});
         drawSalesChart([]);
       } finally {
-        refreshButton.disabled = false;
+        if (requestVersion === reportsRequestVersion) {
+          refreshButton.disabled = false;
+          activeReportsController = null;
+        }
       }
     }
 
-    document.getElementById('periodFilter').addEventListener('change', updateCustomDateVisibility);
-    document.getElementById('applyFilterBtn').addEventListener('click', loadReports);
+    document.getElementById('periodFilter').addEventListener('change', () => {
+      reportPage = 1;
+      updateCustomDateVisibility();
+      if (document.getElementById('periodFilter').value !== 'custom') {
+        loadReports();
+        return;
+      }
+
+      if (document.getElementById('startDate').value && document.getElementById('endDate').value) {
+        loadReports();
+      }
+    });
+
+    const refreshCustomRange = () => {
+      if (document.getElementById('periodFilter').value !== 'custom') return;
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      if (start && end) {
+        reportPage = 1;
+        loadReports();
+      }
+    };
+
+    document.getElementById('startDate').addEventListener('change', refreshCustomRange);
+    document.getElementById('endDate').addEventListener('change', refreshCustomRange);
     document.getElementById('refreshBtn').addEventListener('click', loadReports);
+    document.getElementById('clearFiltersBtn').addEventListener('click', () => {
+      const today = new Date();
+      const todayValue = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+      document.getElementById('periodFilter').value = 'today';
+      document.getElementById('startDate').value = todayValue;
+      document.getElementById('endDate').value = todayValue;
+      reportPage = 1;
+      updateCustomDateVisibility();
+      loadReports();
+    });
+    document.getElementById('previousPageBtn').addEventListener('click', () => {
+      if (reportPage > 1) {
+        reportPage -= 1;
+        loadReports();
+      }
+    });
+    document.getElementById('nextPageBtn').addEventListener('click', () => {
+      reportPage += 1;
+      loadReports();
+    });
 
     document.getElementById('printReportBtn').addEventListener('click', () => {
       window.print();
