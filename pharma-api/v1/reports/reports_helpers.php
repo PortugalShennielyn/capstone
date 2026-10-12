@@ -188,6 +188,34 @@ function reportPagination(int $total, array $filters): array
     ];
 }
 
+function reportPaymentMethodTotalsSql(): string
+{
+    return "SELECT order_id, UPPER(TRIM(payment_method)) payment_method,
+        SUM(CASE WHEN payment_status='paid' THEN final_amount WHEN payment_status='refunded' THEN -final_amount ELSE 0 END) method_net
+        FROM sales_payments
+        WHERE payment_status IN ('paid','refunded') AND TRIM(COALESCE(payment_method,''))<>''
+        GROUP BY order_id, UPPER(TRIM(payment_method))";
+}
+
+function reportOrderPaymentMethodsSql(string $orderAlias = 'o'): string
+{
+    return "COALESCE((SELECT GROUP_CONCAT(DISTINCT UPPER(TRIM(sp.payment_method)) ORDER BY UPPER(TRIM(sp.payment_method)) SEPARATOR ', ')
+        FROM sales_payments sp
+        WHERE sp.order_id={$orderAlias}.order_id AND sp.payment_status='paid' AND TRIM(COALESCE(sp.payment_method,''))<>''),'')";
+}
+
+function reportPaymentMethodOptions(PDO $pdo): array
+{
+    $methods = ['cash', 'gcash', 'card', 'mixed'];
+    foreach (reportRows($pdo, "SELECT DISTINCT LOWER(TRIM(payment_method)) method FROM sales_payments WHERE TRIM(COALESCE(payment_method,''))<>''") as $row) {
+        $method = (string) ($row['method'] ?? '');
+        if ($method !== '') $methods[] = $method;
+    }
+    $methods = array_values(array_unique($methods));
+    sort($methods);
+    return $methods;
+}
+
 function reportPaidSalesSubquery(): string
 {
     return "SELECT order_id,
@@ -250,7 +278,7 @@ function reportSalesWhere(array $filters, array $role, string $alias = 'o', bool
         $params[':sales_clerk_id'] = $filters['sales_clerk_id'];
     }
     if ($filters['payment_method'] !== '') {
-        $where[] = 'LOWER(pay.payment_method) = :payment_method';
+        $where[] = "EXISTS (SELECT 1 FROM sales_payments method_filter WHERE method_filter.order_id={$alias}.order_id AND method_filter.payment_status='paid' AND LOWER(TRIM(method_filter.payment_method))=:payment_method)";
         $params[':payment_method'] = $filters['payment_method'];
     }
     $itemWhere = [];
@@ -352,7 +380,7 @@ function reportFilterOptions(PDO $pdo, array $role): array
             'products' => [],
             'brands' => [],
             'suppliers' => [],
-            'payment_methods' => ['cash', 'gcash', 'card', 'mixed'],
+            'payment_methods' => reportPaymentMethodOptions($pdo),
             'po_statuses' => [],
             'stock_statuses' => [],
             'cashiers' => [],
@@ -365,7 +393,7 @@ function reportFilterOptions(PDO $pdo, array $role): array
         'products' => reportRows($pdo, 'SELECT product_id AS id, CONCAT(COALESCE(NULLIF(brand_name, \'\'), \'No brand\'), \' - \', product_name) AS name, category_id, type_id, brand_name AS brand FROM product ORDER BY brand_name, product_name'),
         'brands' => array_column(reportRows($pdo, "SELECT DISTINCT brand_name AS name FROM product WHERE brand_name IS NOT NULL AND brand_name <> '' ORDER BY brand_name"), 'name'),
         'suppliers' => reportRows($pdo, 'SELECT supplier_id AS id, supplier_name AS name FROM suppliers WHERE archived_at IS NULL ORDER BY supplier_name'),
-        'payment_methods' => ['cash', 'gcash', 'card', 'mixed'],
+        'payment_methods' => reportPaymentMethodOptions($pdo),
         'po_statuses' => ['Draft', 'Pending', 'Arrived', 'Delivered', 'Cancelled'],
         'stock_statuses' => ['healthy', 'low', 'out', 'negative'],
         'cashiers' => [],

@@ -145,10 +145,12 @@ function salesReport(PDO $pdo, array $f, array $role): array
         $previousPaymentScope = "INNER JOIN ({$previousPaymentScopeSql}) payment_scope ON payment_scope.order_id=o.order_id";
         $previousPaymentShare = 'CASE WHEN o.subtotal>0 THEN payment_scope.line_subtotal/o.subtotal ELSE 0 END';
     }
-    $previousPayments = reportRows($pdo, "SELECT UPPER(pay.payment_method) label,
-        ROUND(SUM(pay.final_amount*{$previousPaymentShare}),2) value
-        FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$previousPaymentScope}
-        WHERE {$previousWhere} GROUP BY pay.payment_method", $previousPaymentParams);
+    $previousMethodTotals = reportPaymentMethodTotalsSql();
+    $previousPayments = reportRows($pdo, "SELECT mp.payment_method label,
+        ROUND(SUM(mp.method_net*{$previousPaymentShare}),2) value
+        FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+        INNER JOIN ({$previousMethodTotals}) mp ON mp.order_id=o.order_id {$previousPaymentScope}
+        WHERE {$previousWhere} GROUP BY mp.payment_method", $previousPaymentParams);
     $previousPaymentValues = array_column($previousPayments, 'value', 'label');
     $comparisonPeriod = ['start'=>$previousStart->format('Y-m-d'),'end'=>$previousEnd->format('Y-m-d'),'days'=>$periodDays];
     }
@@ -193,13 +195,6 @@ function salesReport(PDO $pdo, array $f, array $role): array
         }
         $groupChart = ['id'=>'sales-trend','title'=>'Net sales over time','type'=>'line','tone'=>'sales','rows'=>$groupRows];
     } elseif (in_array($group, ['cashier','sales_clerk','payment_method'], true)) {
-        $groupSql = match ($group) {
-            'cashier' => "COALESCE(NULLIF(u.full_name,''),u.username,'Unassigned')",
-            'sales_clerk' => "COALESCE(NULLIF(u.full_name,''),u.username,'Unassigned')",
-            default => 'UPPER(pay.payment_method)',
-        };
-        $join = $group === 'cashier' ? 'LEFT JOIN users u ON u.user_id=COALESCE(o.assigned_cashier_id,pay.cashier_id)'
-            : ($group === 'sales_clerk' ? 'LEFT JOIN users u ON u.user_id=o.sales_clerk_id' : '');
         $groupParams = $params;
         $groupShare = '1';
         $groupScopeJoin = '';
@@ -208,9 +203,23 @@ function salesReport(PDO $pdo, array $f, array $role): array
             $groupScopeJoin = "INNER JOIN ({$groupScopeSql}) item_scope ON item_scope.order_id=o.order_id";
             $groupShare = 'CASE WHEN o.subtotal>0 THEN item_scope.line_subtotal/o.subtotal ELSE 0 END';
         }
-        $groupRows = reportRows($pdo, "SELECT {$groupSql} label,ROUND(SUM(pay.final_amount*{$groupShare}),2) value,COUNT(DISTINCT o.order_id) secondary
-            FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$groupScopeJoin} {$join} WHERE {$where}
-            GROUP BY {$groupSql} ORDER BY value DESC LIMIT 10", $groupParams);
+        if ($group === 'payment_method') {
+            $methodTotals = reportPaymentMethodTotalsSql();
+            $groupRows = reportRows($pdo, "SELECT mp.payment_method label,ROUND(SUM(mp.method_net*{$groupShare}),2) value,COUNT(DISTINCT o.order_id) secondary
+                FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+                INNER JOIN ({$methodTotals}) mp ON mp.order_id=o.order_id {$groupScopeJoin} WHERE {$where}
+                GROUP BY mp.payment_method HAVING ROUND(SUM(mp.method_net*{$groupShare}),2)<>0 ORDER BY value DESC", $groupParams);
+        } else {
+            $groupSql = $group === 'cashier'
+                ? "COALESCE(NULLIF(u.full_name,''),u.username,'Unassigned')"
+                : "COALESCE(NULLIF(u.full_name,''),u.username,'Unassigned')";
+            $join = $group === 'cashier'
+                ? 'LEFT JOIN users u ON u.user_id=COALESCE(o.assigned_cashier_id,pay.cashier_id)'
+                : 'LEFT JOIN users u ON u.user_id=o.sales_clerk_id';
+            $groupRows = reportRows($pdo, "SELECT {$groupSql} label,ROUND(SUM(pay.final_amount*{$groupShare}),2) value,COUNT(DISTINCT o.order_id) secondary
+                FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$groupScopeJoin} {$join} WHERE {$where}
+                GROUP BY {$groupSql} ORDER BY value DESC LIMIT 10", $groupParams);
+        }
         $groupChart = ['id'=>'sales-group','title'=>'Net sales by '.str_replace('_',' ',$group),'type'=>'bar','orientation'=>'horizontal','tone'=>'sales','rows'=>$groupRows];
     } else {
         $groupSql = match ($group) {
@@ -245,9 +254,11 @@ function salesReport(PDO $pdo, array $f, array $role): array
         $paymentScopeJoin = "INNER JOIN ({$paymentScopeSql}) item_scope ON item_scope.order_id=o.order_id";
         $paymentShare = 'CASE WHEN o.subtotal>0 THEN item_scope.line_subtotal/o.subtotal ELSE 0 END';
     }
-    $payment = reportRows($pdo, "SELECT UPPER(pay.payment_method) label,ROUND(SUM(pay.final_amount*{$paymentShare}),2) value,COUNT(DISTINCT o.order_id) secondary
-        FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$paymentScopeJoin} WHERE {$where}
-        GROUP BY pay.payment_method ORDER BY value DESC", $paymentParams);
+    $methodTotals = reportPaymentMethodTotalsSql();
+    $payment = reportRows($pdo, "SELECT mp.payment_method label,ROUND(SUM(mp.method_net*{$paymentShare}),2) value,COUNT(DISTINCT o.order_id) secondary
+        FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+        INNER JOIN ({$methodTotals}) mp ON mp.order_id=o.order_id {$paymentScopeJoin} WHERE {$where}
+        GROUP BY mp.payment_method HAVING ROUND(SUM(mp.method_net*{$paymentShare}),2)<>0 ORDER BY value DESC", $paymentParams);
 
     $rowWhere = $where;
     $rowParams = $params;
@@ -277,7 +288,7 @@ function salesReport(PDO $pdo, array $f, array $role): array
         COALESCE(NULLIF(sc.full_name,''),sc.username,'Unassigned') sales_clerk,{$rowItemCount} item_count,
         {$rowSubtotal} subtotal,(COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$rowShare} discount,
         GREATEST(pay.payment_total-o.vat,0)*{$rowShare} vatable_sales,CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$rowShare} vat,
-        pay.refund_amount*{$rowShare} refund_reversal,pay.final_amount*{$rowShare} final_total,UPPER(pay.payment_method) payment_method,'Completed' status
+        pay.refund_amount*{$rowShare} refund_reversal,pay.final_amount*{$rowShare} final_total,".reportOrderPaymentMethodsSql('o')." payment_method,'Completed' status
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
         {$rowItemJoin}
         LEFT JOIN sales_receipts r ON r.order_id=o.order_id LEFT JOIN users ca ON ca.user_id=COALESCE(o.assigned_cashier_id,pay.cashier_id)
@@ -300,7 +311,7 @@ function salesReport(PDO $pdo, array $f, array $role): array
       $rows = reportRows($pdo, "SELECT o.order_no transaction_id,DATE_FORMAT(o.completed_at,'%Y-%m-%d %H:%i') date_time,
         {$cashierItems} items,pay.final_amount*{$rowShare} total_amount,
         (COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$rowShare} discount,
-        CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$rowShare} vat,UPPER(pay.payment_method) payment_method,o.status status
+        CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$rowShare} vat,".reportOrderPaymentMethodsSql('o')." payment_method,o.status status
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
         {$cashierItemJoin} LEFT JOIN sales_receipts r ON r.order_id=o.order_id
         WHERE {$rowWhere} ORDER BY {$sort} {$f['direction']} LIMIT :limit OFFSET :offset", $rowParams);

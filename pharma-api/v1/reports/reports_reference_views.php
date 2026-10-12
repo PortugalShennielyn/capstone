@@ -23,10 +23,16 @@ function referenceSalesBreakdownReport(PDO $pdo, array $filters, array $role, st
         $grossSales = 'o.subtotal';
     }
 
+    $methodJoin = '';
+    $methodShare = '1';
+    $netSalesSql = "pay.final_amount*{$share}";
     if ($view === 'Payment and Discount') {
-        $label = 'UPPER(pay.payment_method)';
+        $label = 'mp.payment_method';
         $staffJoin = '';
         $dimension = 'Payment method';
+        $methodJoin = 'INNER JOIN ('.reportPaymentMethodTotalsSql().') mp ON mp.order_id=o.order_id';
+        $methodShare = 'CASE WHEN pay.final_amount<>0 THEN mp.method_net/pay.final_amount ELSE 0 END';
+        $netSalesSql = "mp.method_net*{$share}";
     } else {
         if (!empty($role['cashier'])) {
             $label = "COALESCE(NULLIF(staff.full_name,''),staff.username,'Unassigned')";
@@ -40,15 +46,16 @@ function referenceSalesBreakdownReport(PDO $pdo, array $filters, array $role, st
     }
 
     $rows = reportRows($pdo, "SELECT {$label} label,COUNT(DISTINCT o.order_id) transactions,
-        COALESCE(SUM({$itemCount}),0) items_sold,
-        ROUND(SUM({$grossSales}),2) gross_sales,
-        ROUND(SUM((COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$share}),2) discounts,
-        ROUND(SUM(CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END*{$share}),2) vat,
-        ROUND(SUM(pay.refund_amount*{$share}),2) refunds,
-        ROUND(SUM(pay.final_amount*{$share}),2) net_sales
+        COALESCE(SUM({$itemCount}*{$methodShare}),0) items_sold,
+        ROUND(SUM(({$grossSales})*{$methodShare}),2) gross_sales,
+        ROUND(SUM((COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$share}*{$methodShare}),2) discounts,
+        ROUND(SUM((CASE WHEN pay.payment_total>0 THEN o.vat*pay.final_amount/pay.payment_total ELSE o.vat END)*{$share}*{$methodShare}),2) vat,
+        ROUND(SUM(pay.refund_amount*{$share}*{$methodShare}),2) refunds,
+        ROUND(SUM({$netSalesSql}),2) net_sales
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
-        {$itemJoin} {$staffJoin} WHERE {$where}
-        GROUP BY {$label} ORDER BY net_sales DESC, label ASC", $params);
+        {$methodJoin} {$itemJoin} {$staffJoin} WHERE {$where}
+        GROUP BY {$label} HAVING ROUND(SUM({$netSalesSql}),2)<>0 OR COUNT(DISTINCT o.order_id)>0
+        ORDER BY net_sales DESC, label ASC", $params);
     if ($filters['search'] !== '') $rows = referenceSearchRows($rows, $filters['search']);
     foreach ($rows as &$row) $row['average_transaction'] = (float)$row['transactions'] > 0 ? round((float)$row['net_sales']/(int)$row['transactions'],2) : 0;
     unset($row);
@@ -840,7 +847,8 @@ function referenceStaffReport(PDO $pdo, array $filters): array
         COALESCE(r.receipt_no,o.order_no) receipt,
         COALESCE(NULLIF(u.full_name,''),u.username,'Unassigned') cashier,
         COALESCE(o.assigned_cashier_id,pay.cashier_id) cashier_id,
-        UPPER(pay.payment_method) payment_method,pay.final_amount total,
+        ".reportOrderPaymentMethodsSql('o')." payment_method,pay.final_amount total,
+        (SELECT COALESCE(SUM(CASE WHEN LOWER(TRIM(sp.payment_method))='cash' AND sp.payment_status='paid' THEN sp.final_amount WHEN LOWER(TRIM(sp.payment_method))='cash' AND sp.payment_status='refunded' THEN -sp.final_amount ELSE 0 END),0) FROM sales_payments sp WHERE sp.order_id=o.order_id) cash_amount,
         COALESCE(items.item_count,0) items,'Completed' status
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
         LEFT JOIN users u ON u.user_id=COALESCE(o.assigned_cashier_id,pay.cashier_id)
@@ -875,8 +883,9 @@ function referenceStaffReport(PDO $pdo, array $filters): array
             'transactions' => 0, 'cash_sales' => 0, 'other_sales' => 0, 'total_sales' => 0];
         $shifts[$key]['transactions']++;
         $shifts[$key]['total_sales'] += (float)$order['total'];
-        $field = strcasecmp($order['payment_method'], 'CASH') === 0 ? 'cash_sales' : 'other_sales';
-        $shifts[$key][$field] += (float)$order['total'];
+        $cashAmount = (float)($order['cash_amount'] ?? 0);
+        $shifts[$key]['cash_sales'] += $cashAmount;
+        $shifts[$key]['other_sales'] += (float)$order['total'] - $cashAmount;
     }
     $rows = referenceSearchRows(array_values($shifts), $filters['search']);
     $daily = [];
