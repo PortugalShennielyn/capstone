@@ -55,6 +55,9 @@ function ensureCashierPaymentDiscountSchema(PDO $pdo): void
             $pdo->exec("ALTER TABLE sales_payments ADD COLUMN {$column} VARCHAR(150) NULL AFTER final_amount");
         }
     }
+    if (!salesColumnExists($pdo, 'sales_payments', 'gcash_reference_no')) {
+        $pdo->exec('ALTER TABLE sales_payments ADD COLUMN gcash_reference_no VARCHAR(100) NULL AFTER payment_method');
+    }
 }
 
 function cashierDiscountAmount(string $discountType, float $customAmount, float $subtotal): float
@@ -167,6 +170,8 @@ function cashierOrderRow(array $row): array
         'amount_paid' => cashierMoney($row['amount_paid'] ?? 0),
         'change_amount' => cashierMoney($row['payment_change_amount'] ?? $row['change_amount'] ?? 0),
         'payment_method' => cashierDisplay($row['payment_method'] ?? ''),
+        'payment_status' => cashierDisplay($row['payment_status'] ?? ''),
+        'gcash_reference_no' => cashierDisplay($row['gcash_reference_no'] ?? ''),
         'receipt_no' => cashierDisplay($row['receipt_no'] ?? ''),
         'status_code' => $status,
         'status' => salesStatusLabel($status),
@@ -212,6 +217,8 @@ function cashierLoadOrderDetail(PDO $pdo, int $orderId): ?array
             p.final_amount,
             p.change_amount AS payment_change_amount,
             p.payment_method,
+            p.payment_status,
+            p.gcash_reference_no,
             r.receipt_no
          FROM sales_orders o
          LEFT JOIN users sc ON sc.user_id = o.sales_clerk_id

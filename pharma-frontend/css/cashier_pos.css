@@ -467,6 +467,36 @@ body {
 
 .payment-hero-block.change strong { color: var(--green); }
 
+.payment-method-label,
+.payment-amount-label {
+    display: block;
+    color: #34476b;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.payment-method-select {
+    width: 100%;
+    min-height: 38px;
+    margin: 6px 0 10px;
+    padding: 0 11px;
+    border: 1px solid #d9e1ed;
+    border-radius: 8px;
+    color: #07112d;
+    background: #fbfcff;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.payment-method-select:focus,
+.payment-method-select:focus-visible { border-color: var(--purple); outline: 2px solid #eee4ff; }
+.payment-hero .cash-input { margin-top: 6px; }
+.payment-hero .cash-input[readonly] { background: #f7f8fc; }
+
+.payment-input-feedback { display: block; margin-top: 5px; color: var(--danger); font-size: 11px; font-weight: 700; }
+.payment-input-feedback.is-hidden { display: none; }
+
 .cash-input {
     width: 100%;
     min-height: 60px;
@@ -753,6 +783,35 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
 }
 
 /* Compact workstation layout: the page stays fixed while queue and order data scroll internally. */
+:root { --purple: #4f46e5; --purple-dark: #4338ca; --purple-soft: #eef2ff; --ink: #182233; }
+.payment-method-area { margin: 12px 18px 8px; }
+.payment-method-area .payment-method-label { margin:0; color:#182233; font-size:13px; font-weight:900; }
+.payment-method-options { display:flex; gap:10px; margin-top:7px; }
+.payment-method-button { flex:1; min-height:40px; display:flex; align-items:center; justify-content:center; gap:8px; border:1px solid #ded8f1; border-radius:9px; color:#39415a; background:#f8f7fc; font-size:13px; font-weight:800; cursor:pointer; }
+.payment-method-button.is-selected { border-color:#5740d9; color:#fff; background:#5740d9; box-shadow:0 4px 10px rgba(87,64,217,.16); }
+.payment-method-button.cash-selected { border-color:#ddd9eb; color:#25304a; background:#f5f3fb; box-shadow:none; }
+.payment-method-button.gcash-selected { background:#6b35d5; border-color:#6b35d5; }
+.payment-method-button:disabled { cursor:default; opacity:.7; }
+.payment-method-select { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.payment-hero { grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:8px 18px 12px; border:0; border-radius:0; background:transparent; overflow:visible; }
+.payment-hero-block { min-height:110px; padding:14px; border:1px solid #e4def4; border-radius:10px; background:linear-gradient(145deg,#fbfaff,#fff); }
+.payment-hero-block + .payment-hero-block { border-left:1px solid #e4def4; }
+.payment-hero-block > span { text-transform:none; font-size:11px; }
+.payment-hero-block > span i { margin-right:5px; color:#6846d8; }
+.payment-hero-block strong { margin-top:12px; font-size:26px; }
+.payment-amount-card strong { color:#6741d9; }
+.payment-reference-card.is-hidden { display:none; }
+.reference-value { width:100%; min-height:39px; margin-top:12px; padding:8px 9px; border:1px solid #ded8ee; border-radius:7px; color:#25253a; background:#fff; font-size:14px; font-weight:800; overflow-wrap:anywhere; }
+.payment-received-card { display:flex; flex-direction:column; }
+.payment-received-card .cash-input { min-height:39px; margin-top:7px; padding:0 9px; font-size:22px; }
+.payment-received-card .cash-input.is-hidden,
+.gcash-amount-display.is-hidden { display:none; }
+.gcash-amount-display { min-height:39px; display:flex; align-items:center; margin-top:7px; padding:0 9px; border:1px solid #ded8ee; border-radius:7px; color:#283146; background:#fff; font-size:17px; font-weight:800; }
+.cash-change-card.is-hidden { display:none; }
+.payment-hero-block .cash-change-value { margin-top:14px; color:#13844d; font-size:27px; }
+.payment-verified-card { display:flex; align-items:center; gap:6px; margin-top:10px; color:#14804a; font-size:12px; font-weight:800; }
+.payment-verified-card span { display:inline-flex; width:19px; height:19px; align-items:center; justify-content:center; border-radius:50%; color:#fff; background:#19a463; font-size:12px; }
+.payment-verified-card.is-hidden { display:none; }
 :root {
     --purple: #4f46e5;
     --purple-dark: #4338ca;
@@ -836,10 +895,16 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
     .detail-actions { flex-direction: column; align-items: stretch; }
     .secondary-action { width: 100%; }
 }
+@media (max-width: 460px) {
+    .payment-method-options { gap:7px; }
+    .payment-method-button { min-height:44px; }
+    .payment-hero-block { min-height:0; }
+}
 
 @media print {
     @page {
-        size: 80mm auto;
+        /* Explicit portrait custom page prevents browsers defaulting to A4. */
+        size: 80mm 297mm;
         margin: 0;
     }
 
@@ -869,7 +934,7 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
 
     #cashierReceiptPrintArea {
         display: block !important;
-        position: fixed !important;
+        position: absolute !important;
         left: 0 !important;
         top: 0 !important;
         width: 80mm !important;
@@ -906,15 +971,21 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
     .cashier-workspace,
     .queue-panel,
     .detail-panel,
-    .detail-actions {
+    .detail-actions,
+    .receipt-modal {
         display: none !important;
     }
 
     #cashierReceiptPrintArea .thermal-receipt {
         width: 100%;
         max-width: 100%;
+        box-sizing: border-box;
         color: #000;
         background: #fff;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        orphans: 3;
+        widows: 3;
     }
 
     #cashierReceiptPrintArea .receipt-center {
@@ -949,8 +1020,10 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
     #cashierReceiptPrintArea .receipt-total-print,
     #cashierReceiptPrintArea .receipt-payment-print {
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        gap: 2mm;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 1.5mm;
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     #cashierReceiptPrintArea .receipt-meta-row-print span:last-child,
@@ -981,6 +1054,8 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
 
     #cashierReceiptPrintArea .receipt-item-print {
         margin: 0 0 1.8mm;
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
 
     #cashierReceiptPrintArea .receipt-item-name-print {
@@ -1028,4 +1103,89 @@ body.cashier-receipt-only #cashierReceiptPrintArea {
         margin-top: 3mm;
         text-align: center;
     }
+}
+
+@media (max-width: 1240px) {
+    .payment-hero { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 820px) {
+    .payment-hero { grid-template-columns: 1fr; }
+    .payment-hero-block + .payment-hero-block { border-left:1px solid #e4def4; }
+    .payment-method-area { margin:12px 14px 8px; }
+    .payment-hero { margin:8px 14px 12px; }
+}
+
+/* Final payment-strip overrides follow legacy workstation and mobile rules. */
+.payment-method-area { margin:8px 18px 4px; }
+.payment-method-area .payment-method-label { font-size:12px; line-height:1.2; }
+.payment-method-options { gap:8px; margin-top:4px; }
+.payment-method-button { min-height:42px; border-radius:9px; }
+.payment-method-button.cash-selected { border-color:#5740d9; color:#fff; background:#5740d9; box-shadow:0 3px 8px rgba(87,64,217,.13); }
+.payment-hero { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:4px 18px 10px; }
+.payment-hero-block { min-height:96px; padding:10px 12px; }
+.payment-hero-block + .payment-hero-block { border-left:1px solid #e4def4; }
+.payment-hero-block > span { font-size:10px; line-height:1.25; }
+.payment-hero-block strong { margin-top:8px; font-size:23px; }
+.payment-amount-card strong { font-size:clamp(28px,2.7vw,40px); }
+.reference-value { min-height:34px; margin-top:7px; padding:6px 8px; font-size:13px; }
+.payment-received-card .cash-input { min-height:34px; margin-top:5px; font-size:19px; }
+.gcash-amount-display { min-height:34px; margin-top:5px; font-size:15px; }
+.payment-verified-card { gap:5px; margin-top:5px; padding:4px 7px; border-radius:7px; background:#eaf8ef; font-size:10px; line-height:1.2; }
+.payment-verified-card span { width:16px; height:16px; font-size:10px; }
+.payment-hero-block .cash-change-value { margin-top:8px; font-size:22px; }
+@media (max-width: 820px) {
+    .payment-hero { grid-template-columns:1fr; margin:4px 14px 10px; }
+    .payment-method-area { margin:8px 14px 4px; }
+    .payment-hero-block { min-height:0; }
+}
+@media (max-width: 460px) {
+    .payment-method-button { min-height:44px; }
+}
+
+/* Keep the three payment summary labels and values visually consistent. */
+.payment-hero-block > .payment-card-label,
+.payment-hero-block > .payment-amount-label.payment-card-label,
+.payment-reference-card > span {
+    color:#182233;
+    font-size:15px;
+    font-weight:800;
+    line-height:1.25;
+    text-transform:none;
+}
+.payment-hero-block > .payment-card-value:not(.is-hidden) {
+    display:block;
+    width:100%;
+    min-width:0;
+    margin-top:10px;
+    font-size:clamp(36px,3.3vw,48px);
+    font-weight:900;
+    line-height:1.15;
+    letter-spacing:-.035em;
+    white-space:nowrap;
+}
+.payment-amount-card > .payment-card-value { color:#6741d9; }
+.payment-hero-block > .cash-change-value { color:#13844d; }
+.payment-received-card > .cash-input.payment-card-value {
+    min-height:62px;
+    padding:0 2px;
+    border:0;
+    border-radius:0;
+    color:#182233;
+    background:transparent;
+    text-align:left;
+    outline-offset:2px;
+}
+.payment-received-card > .gcash-amount-display.payment-card-value {
+    min-height:62px;
+    margin-top:10px;
+    padding:0 2px;
+    border:0;
+    border-radius:0;
+    color:#182233;
+    background:transparent;
+    letter-spacing:-.035em;
+}
+.payment-received-card > .gcash-amount-display.payment-card-value.is-hidden { display:none; }
+@media (max-width: 820px) {
+    .payment-hero-block > .payment-card-value { font-size:clamp(34px,8vw,42px); }
 }

@@ -47,6 +47,53 @@ try {
         }
     }
 
+    if ($type === 'refunds') {
+        $refundWhere = ["p.payment_status = 'refunded'", "LOWER(p.payment_method) IN ('cash', 'gcash')"];
+        $refundParams = [];
+        if (!$isAdmin) {
+            $refundWhere[] = 'p.cashier_id = :cashier_id';
+            $refundParams[':cashier_id'] = $userId;
+        } elseif ($requestedCashierId !== '') {
+            $refundWhere[] = 'p.cashier_id = :selected_cashier_id';
+            $refundParams[':selected_cashier_id'] = $requestedCashierId;
+        }
+        if ($search !== '') {
+            $refundWhere[] = '(o.order_no LIKE :refund_search_order OR r.receipt_no LIKE :refund_search_receipt OR u.username LIKE :refund_search_username OR u.full_name LIKE :refund_search_name)';
+            foreach (['order', 'receipt', 'username', 'name'] as $key) $refundParams[':refund_search_' . $key] = '%' . $search . '%';
+        }
+        if ($dateStart !== '' && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $dateStart)) {
+            $refundWhere[] = 'COALESCE(p.paid_at, p.created_at) >= :refund_date_start';
+            $refundParams[':refund_date_start'] = $dateStart . ' 00:00:00';
+        }
+        if ($dateEnd !== '' && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $dateEnd)) {
+            $refundWhere[] = 'COALESCE(p.paid_at, p.created_at) <= :refund_date_end';
+            $refundParams[':refund_date_end'] = $dateEnd . ' 23:59:59';
+        }
+        $refundBase = ' FROM sales_payments p
+            INNER JOIN sales_orders o ON o.order_id = p.order_id
+            LEFT JOIN sales_receipts r ON r.order_id = o.order_id
+            LEFT JOIN users u ON u.user_id = p.cashier_id
+            WHERE ' . implode(' AND ', $refundWhere);
+        $refundCountStmt = $pdo->prepare('SELECT COUNT(DISTINCT p.payment_id)' . $refundBase);
+        $refundCountStmt->execute($refundParams);
+        $totalRows = (int) $refundCountStmt->fetchColumn();
+        $refundRowsStmt = $pdo->prepare(
+            'SELECT p.payment_id, o.order_id, o.order_no, r.receipt_no,
+                    COALESCE(NULLIF(u.full_name, \'\'), u.username, \'Unknown\') AS cashier_name,
+                    COALESCE(NULLIF(p.final_amount, 0), p.total_amount) AS refund_amount,
+                    COALESCE(p.paid_at, p.created_at) AS recorded_at, p.payment_method,
+                    \'\' AS refund_reason, p.payment_status AS status' . $refundBase . '
+             ORDER BY COALESCE(p.paid_at, p.created_at) DESC, p.payment_id DESC
+             LIMIT :limit OFFSET :offset'
+        );
+        foreach ($refundParams as $key => $value) $refundRowsStmt->bindValue($key, $value, PDO::PARAM_STR);
+        $refundRowsStmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $refundRowsStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $refundRowsStmt->execute();
+        echo json_encode(['status' => 'success', 'data' => ['rows' => $refundRowsStmt->fetchAll(PDO::FETCH_ASSOC), 'pagination' => ['page' => $page, 'per_page' => $perPage, 'total' => $totalRows]]]);
+        exit();
+    }
+
     if ($type === 'cancelled') {
         $where = ["o.status IN ('cancelled', 'rejected')"];
         if (!$isAdmin) {
@@ -59,9 +106,28 @@ try {
             $params[':selected_cancelled_by'] = $requestedCashierId;
         }
         if ($search !== '') {
-            $where[] = '(o.order_no LIKE :search OR o.customer_name LIKE :search OR o.cancellation_reason LIKE :search OR sc.full_name LIKE :search)';
-            $params[':search'] = '%' . $search . '%';
+            $where[] = '(o.order_no LIKE :cancel_search_order OR o.customer_name LIKE :cancel_search_customer OR o.cancellation_reason LIKE :cancel_search_reason OR sc.full_name LIKE :cancel_search_clerk OR ca.full_name LIKE :cancel_search_cashier OR cb.full_name LIKE :cancel_search_actor)';
+            foreach (['order', 'customer', 'reason', 'clerk', 'cashier', 'actor'] as $key) $params[':cancel_search_' . $key] = '%' . $search . '%';
         }
+        if ($dateStart !== '' && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $dateStart)) {
+            $where[] = 'COALESCE(o.cancelled_at, o.updated_at) >= :cancel_date_start';
+            $params[':cancel_date_start'] = $dateStart . ' 00:00:00';
+        }
+        if ($dateEnd !== '' && preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $dateEnd)) {
+            $where[] = 'COALESCE(o.cancelled_at, o.updated_at) <= :cancel_date_end';
+            $params[':cancel_date_end'] = $dateEnd . ' 23:59:59';
+        }
+        $cancelWhereSql = implode(' AND ', $where);
+        $count = $pdo->prepare(
+            'SELECT COUNT(DISTINCT o.order_id)
+             FROM sales_orders o
+             LEFT JOIN users sc ON sc.user_id = o.sales_clerk_id
+             LEFT JOIN users ca ON ca.user_id = o.assigned_cashier_id
+             LEFT JOIN users cb ON cb.user_id = o.cancelled_by
+             WHERE ' . $cancelWhereSql
+        );
+        $count->execute($params);
+        $totalRows = (int) $count->fetchColumn();
         $stmt = $pdo->prepare(
             "SELECT
                 o.order_id, o.order_no, COALESCE(NULLIF(o.customer_name, ''), 'Walk-in Customer') AS customer_name,
@@ -73,12 +139,15 @@ try {
              LEFT JOIN users sc ON sc.user_id = o.sales_clerk_id
              LEFT JOIN users ca ON ca.user_id = o.assigned_cashier_id
              LEFT JOIN users cb ON cb.user_id = o.cancelled_by
-             WHERE " . implode(' AND ', $where) . "
+             WHERE " . $cancelWhereSql . "
              ORDER BY o.cancelled_at DESC, o.updated_at DESC
-             LIMIT 120"
+             LIMIT :limit OFFSET :offset"
         );
-        $stmt->execute($params);
-        echo json_encode(['status' => 'success', 'data' => ['rows' => $stmt->fetchAll(PDO::FETCH_ASSOC)]]);
+        foreach ($params as $key => $value) $stmt->bindValue($key, $value, PDO::PARAM_STR);
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        echo json_encode(['status' => 'success', 'data' => ['rows' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'pagination' => ['page' => $page, 'per_page' => $perPage, 'total' => $totalRows]]]);
         exit();
     }
 
@@ -157,8 +226,12 @@ try {
             COALESCE(NULLIF(sc.full_name, ''), sc.username, 'Unassigned') AS sales_clerk_name,
             COALESCE(NULLIF(ca.full_name, ''), ca.username, '') AS cashier_name,
             COALESCE(items.item_count, 0) AS item_count,
+            o.subtotal AS gross_amount, (COALESCE(o.discount, 0) + COALESCE(p.cashier_discount_amount, 0)) AS discount_amount,
+            COALESCE(NULLIF(p.final_amount, 0), p.total_amount, o.total_amount) AS final_amount,
+            COALESCE((SELECT SUM(COALESCE(NULLIF(rp.final_amount, 0), rp.total_amount)) FROM sales_payments rp WHERE rp.order_id = o.order_id AND rp.payment_status = 'refunded' AND LOWER(rp.payment_method) IN ('cash', 'gcash')), 0) AS refund_amount,
             o.total_amount, o.cash_received, o.change_amount, o.completed_at,
-            p.payment_method, p.amount_paid, p.change_amount AS payment_change_amount, p.paid_at,
+            p.payment_method, p.amount_paid, p.change_amount AS payment_change_amount,
+            p.paid_at,
             r.receipt_no, r.printed_at
          FROM sales_orders o
          LEFT JOIN users sc ON sc.user_id = o.sales_clerk_id

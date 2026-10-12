@@ -24,6 +24,7 @@ $allowedEndpoints = [
     '/PharmacySystem_for_DocR/pharma-api/v1/users/fetch_users.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/sales/get_sales_history.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/get_cashier_shift_summary.php',
+    '/PharmacySystem_for_DocR/pharma-api/v1/cashier/get_cashier_report.php',
 ];
 
 foreach ($allowedEndpoints as $endpoint) {
@@ -35,6 +36,7 @@ $deniedEndpoints = [
     '/PharmacySystem_for_DocR/pharma-api/v1/sales/sales_products_search.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/sales/sales_order_create.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/get_cashier_orders.php',
+    '/PharmacySystem_for_DocR/pharma-api/v1/cashier/save_cashier_shift_reconciliation.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/accept_order.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/complete_payment.php',
 ];

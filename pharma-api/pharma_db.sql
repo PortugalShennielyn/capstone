@@ -4379,6 +4379,7 @@ CREATE TABLE `sales_payments` (
   `order_id` int(11) NOT NULL,
   `cashier_id` char(36) NOT NULL,
   `payment_method` enum('cash','gcash','card','mixed') NOT NULL DEFAULT 'cash',
+  `gcash_reference_no` varchar(100) DEFAULT NULL,
   `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `sales_clerk_discount` decimal(10,2) NOT NULL DEFAULT 0.00,
   `cashier_discount_type` varchar(30) NOT NULL DEFAULT 'none',

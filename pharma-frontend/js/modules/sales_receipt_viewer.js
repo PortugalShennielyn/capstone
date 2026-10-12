@@ -62,12 +62,12 @@ function injectStyles() {
         .receipt-total-print.is-grand{margin-top:1.5mm;font-size:12px;font-weight:800}
         .receipt-payment-spaced{margin-top:3mm}
         .receipt-footer-print{margin-top:3mm;text-align:center}
-        @page{size:80mm auto;margin:0}
+        @page{size:80mm 297mm;margin:0}
         @media print{
             html,body{width:80mm!important;max-width:80mm!important;margin:0!important;padding:0!important;background:white!important}
             body *{visibility:hidden!important}
             #cashierReceiptPrintArea,#cashierReceiptPrintArea *{visibility:visible!important}
-            #cashierReceiptPrintArea{display:block!important;position:fixed!important;left:0!important;top:0!important;width:80mm!important;max-width:80mm!important;min-width:80mm!important;margin:0!important;padding:4mm!important;box-sizing:border-box!important;background:white!important;color:black!important;box-shadow:none!important;border:none!important;overflow:visible!important;font-family:Arial,monospace,sans-serif!important;font-size:11px!important;line-height:1.3!important}
+            #cashierReceiptPrintArea{display:block!important;position:absolute!important;left:0!important;top:0!important;width:80mm!important;max-width:80mm!important;min-width:80mm!important;margin:0!important;padding:4mm!important;box-sizing:border-box!important;background:white!important;color:black!important;box-shadow:none!important;border:none!important;overflow:visible!important;font-family:Arial,monospace,sans-serif!important;font-size:11px!important;line-height:1.3!important}
             #cashierReceiptPrintArea .thermal-receipt{width:100%!important;max-width:100%!important;margin:0!important;padding:0!important;background:white!important;color:black!important}
             .no-print,nav,aside,header,.sidebar,.navbar,.page-header,.cashier-layout,.cashier-main,.order-queue,.tabs,.search-bar,button{display:none!important}
         }
