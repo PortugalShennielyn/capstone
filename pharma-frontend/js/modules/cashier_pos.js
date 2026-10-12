@@ -17,6 +17,7 @@ const state = {
     submittingOrderIds: new Set(),
     receiptAddress: 'Address not configured',
     receiptContact: 'Contact not configured',
+    printingReceipt: false,
 };
 
 const nodes = {};
@@ -265,9 +266,16 @@ function receiptItemRows(order) {
     }).join('');
 }
 
+function isPrintableReceipt(order) {
+    if (!order || typeof order !== 'object') return false;
+    const group = String(order.status_group || '').toLowerCase();
+    const code = String(order.status_code || '').toLowerCase();
+    return group === 'completed' || code === 'completed' || code === 'paid' || Boolean(String(order.receipt_no || '').trim());
+}
+
 function renderReceiptPrintArea(order) {
     if (!nodes.receiptPrint) return;
-    if (!order || order.status_group !== 'completed') {
+    if (!isPrintableReceipt(order)) {
         nodes.receiptPrint.innerHTML = '';
         return;
     }
@@ -329,23 +337,24 @@ function renderReceiptPrintArea(order) {
 }
 
 function printCashierReceipt(order = state.activeOrder, afterPrint) {
-    if (!order || order.status_group !== 'completed') {
+    if (!isPrintableReceipt(order)) {
         toast('error', 'Open a completed transaction before printing the receipt.');
         return;
     }
 
+    state.printingReceipt = true;
     renderReceiptPrintArea(order);
     let handled = false;
     const finish = () => {
         if (handled) return;
         handled = true;
+        state.printingReceipt = false;
         window.removeEventListener('afterprint', finish);
         if (typeof afterPrint === 'function') afterPrint();
     };
 
     if (typeof afterPrint === 'function') {
         window.addEventListener('afterprint', finish, { once: true });
-        window.setTimeout(finish, 1000);
     }
 
     window.setTimeout(() => window.print(), 50);
@@ -409,7 +418,7 @@ function renderOrders() {
 }
 
 function emptyDetail() {
-    renderReceiptPrintArea(null);
+    if (!state.printingReceipt && !state.receiptOnly) renderReceiptPrintArea(null);
     nodes.detail.innerHTML = `
         <div class="empty-detail">
             <span><i class="fa-solid fa-receipt"></i></span>
@@ -470,7 +479,7 @@ function renderDetail(order) {
     }
 
     const isWaiting = order.status_code === 'waiting_cashier';
-    const isCompleted = order.status_group === 'completed';
+    const isCompleted = isPrintableReceipt(order);
     const inactiveItem = !isCompleted && (order.items || []).find((item) => String(item.product_status || 'Active').toLowerCase() === 'inactive');
     const canPay = !inactiveItem && ['accepted_by_cashier', 'processing_payment', 'processing'].includes(order.status_code);
     const canEditPayment = !inactiveItem && (isWaiting || canPay);
@@ -836,6 +845,7 @@ async function loadOrders(keepSelection = true, { silent = false } = {}) {
 
         const stillVisible = state.orders.some((order) => Number(order.order_id) === Number(state.activeOrderId));
         if (!stillVisible) {
+            if (state.printingReceipt || state.receiptOnly) return;
             state.activeOrderId = null;
             state.activeOrder = null;
             emptyDetail();
@@ -971,17 +981,20 @@ async function completePayment(orderId, amountPaid, discountType = 'none', disco
             }),
         });
         state.paymentDrafts.delete(normalizedOrderId);
+        let paidOrder = data;
+        if (!isPrintableReceipt(paidOrder)) {
+            paidOrder = await apiFetch(`/cashier/get_cashier_order.php?order_id=${encodeURIComponent(normalizedOrderId)}`, { headers: {} });
+        }
         state.activeOrderId = normalizedOrderId;
-        state.activeOrder = data;
+        state.activeOrder = paidOrder;
         syncTabs();
-        renderDetail(data);
+        renderDetail(paidOrder);
         toast('success', 'Payment completed. Receipt is ready for printing.');
-        await loadOrders(true);
-        publishDataUpdate('payment-completed', { orderId: normalizedOrderId });
-        publishDataUpdate('shelf-updated', { orderId: normalizedOrderId });
-        printCashierReceipt(data, () => {
+        printCashierReceipt(paidOrder, () => {
             showWaitingQueueAndSelectNext().catch((error) => toast('error', error.message));
         });
+        publishDataUpdate('payment-completed', { orderId: normalizedOrderId });
+        publishDataUpdate('shelf-updated', { orderId: normalizedOrderId });
     } catch (error) {
         toast('error', error.message);
     } finally {
