@@ -73,3 +73,29 @@ function inventoryStockSummarySql(?array $thresholds = null): string
             GROUP BY ib.product_id
         ) totals";
 }
+
+/** Newest receive, transfer, shelf stock, sale, or stock edit for each product. */
+function inventoryLastActivitySql(): string
+{
+    return "SELECT product_id, MAX(activity_at) AS last_activity_at
+        FROM (
+            SELECT product_id, created_at AS activity_at FROM inventory_batches
+            UNION ALL
+            SELECT product_id, received_date FROM inventory_batches
+            UNION ALL
+            SELECT product_id, created_at FROM inventory_transfers
+            UNION ALL
+            SELECT product_id, created_at FROM product_selling_stock
+            UNION ALL
+            SELECT product_id, updated_at FROM product_inventory
+            UNION ALL
+            SELECT product_id, COALESCE(updated_at, created_at) FROM inventory_resolution_cases
+            UNION ALL
+            SELECT soi.product_id, COALESCE(o.completed_at, o.updated_at, soi.created_at)
+            FROM sales_order_items soi
+            INNER JOIN sales_orders o ON o.order_id = soi.order_id
+            WHERE o.status = 'completed'
+        ) inventory_activity
+        WHERE activity_at IS NOT NULL
+        GROUP BY product_id";
+}

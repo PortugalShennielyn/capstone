@@ -31,47 +31,86 @@ export function validatePackaging(purchaseUnit, baseUnit, levels, units) {
     return '';
 }
 
-/** Shared assignment/edit editor; quantities belong to adjacent unit levels. */
+/** Shared assignment editor; quantities belong to adjacent unit levels. */
 export function createPackagingEditor(host, { units, purchaseUnit, baseUnit, levels = [], onChange = () => {} }) {
     let currentPurchase = purchaseUnit;
     let rows = levels.length ? levels.map(level => ({...level})) : [{unit:baseUnit,quantity:''}];
-    const same = () => key(currentPurchase) === key(baseUnit);
+    let manual = key(purchaseUnit) !== key(baseUnit) || rows.length > 1;
+    const same = () => !manual && key(currentPurchase) === key(baseUnit);
     const read = () => same() ? [{unit:baseUnit,quantity:1}] : rows.map(level => ({unit:level.unit,quantity:level.quantity}));
     const error = () => validatePackaging(currentPurchase, baseUnit, read(), units);
     const options = selected => '<option value="">Select packaging unit…</option>' + packagingUnits(units).map(unit => `<option value="${esc(unit.unit_name)}" ${key(unit.unit_name)===key(selected)?'selected':''}>${esc(unit.unit_name)}</option>`).join('');
     function preview() {
-        host.querySelectorAll('[data-parent-label]').forEach((label,index) => { label.textContent = `1 ${index ? rows[index-1].unit || 'packaging unit' : currentPurchase || 'Purchase Unit'} contains`; });
+        const visible = read();
+        host.querySelectorAll('[data-parent-label]').forEach((label,index) => {
+            const parent = index ? (visible[index - 1]?.unit || 'packaging unit') : (currentPurchase || 'Purchase Unit');
+            label.textContent = `1 ${parent} contains`;
+        });
         const message = error();
-        host.querySelector('[data-packaging-preview]').textContent = message || purchasingConversion({purchase_unit:currentPurchase,inventory_unit:baseUnit,hierarchy_levels:read()}).summary.replaceAll(' = ', ' → ');
-        host.querySelector('[data-packaging-preview]').classList.toggle('text-danger', Boolean(message));
+        const previewNode = host.querySelector('[data-packaging-preview]');
+        if (previewNode) {
+            previewNode.textContent = message || purchasingConversion({purchase_unit:currentPurchase,inventory_unit:baseUnit,hierarchy_levels:read()}).summary.replaceAll(' = ', ' → ');
+            previewNode.classList.toggle('text-danger', Boolean(message));
+        }
         onChange();
     }
     function render() {
         const visible = read();
-        host.innerHTML = `<h6>Packaging Breakdown</h6>${visible.map((level,index) => `<div class="row g-2 align-items-end mb-2" data-packaging-row="${index}">
-            <div class="col-12"><label data-parent-label></label></div>
-            <div class="col-4"><input class="form-control" type="number" min="1" max="2147483647" step="1" data-level-qty value="${esc(level.quantity)}" aria-label="Quantity at packaging level ${index+1}" ${same()?'disabled':''}></div>
-            <div class="col-6">${index===visible.length-1 ? `<input class="form-control" value="${esc(baseUnit)}" readonly aria-label="Product Base Unit">` : `<select class="form-select" data-level-unit aria-label="Unit at packaging level ${index+1}">${options(level.unit)}</select>`}</div>
-            <div class="col-2">${index<visible.length-1 ? '<button type="button" class="btn btn-outline-danger" data-remove-level aria-label="Remove packaging level">×</button>':''}</div>
+        host.innerHTML = `<h6>Packaging Breakdown</h6>${visible.map((level,index) => `<div class="packaging-level" data-packaging-row="${index}">
+            <label data-parent-label></label>
+            <div class="packaging-level-controls">
+                <input class="form-control" type="number" min="1" max="2147483647" step="1" data-level-qty value="${esc(level.quantity)}" aria-label="Quantity at packaging level ${index+1}" ${same()?'disabled':''}>
+                ${index===visible.length-1 ? `<input class="form-control" value="${esc(baseUnit)}" readonly aria-label="Product Base Unit">` : `<select class="form-select" data-level-unit aria-label="Unit at packaging level ${index+1}">${options(level.unit)}</select>`}
+                ${index<visible.length-1 ? '<button type="button" class="btn btn-outline-danger" data-remove-level aria-label="Remove packaging level">×</button>':''}
+            </div>
         </div>`).join('')}
-        <button class="btn btn-sm btn-outline-primary my-2" type="button" data-add-level ${same()?'disabled':''}>+ Add Packaging Level</button>
+        <button class="btn btn-sm btn-outline-primary" type="button" data-add-level>+ Add Packaging Level</button>
         <p class="small text-muted">Product Base Unit: ${esc(baseUnit)} · Defined in Product Master</p>
         <div class="assignment-preview" data-packaging-preview role="status" aria-live="polite"></div>`;
         preview();
     }
     host.oninput = event => {
         const row = event.target.closest('[data-packaging-row]');
-        if (!row) return;
+        if (!row || same()) return;
         const index = Number(row.dataset.packagingRow);
+        if (!rows[index]) return;
         if (event.target.matches('[data-level-qty]')) rows[index].quantity = event.target.value;
         if (event.target.matches('[data-level-unit]')) rows[index].unit = event.target.value;
         preview();
     };
     host.onchange = host.oninput;
     host.onclick = event => {
-        if (event.target.closest('[data-add-level]')) { rows.splice(rows.length-1,0,{unit:'',quantity:''}); render(); }
-        if (event.target.closest('[data-remove-level]')) { rows.splice(Number(event.target.closest('[data-packaging-row]').dataset.packagingRow),1); render(); }
+        if (event.target.closest('[data-add-level]')) {
+            event.preventDefault();
+            const current = read().map(level => ({...level}));
+            current.splice(Math.max(current.length - 1, 0), 0, {unit:'', quantity:''});
+            rows = current;
+            manual = true;
+            render();
+            return;
+        }
+        if (event.target.closest('[data-remove-level]')) {
+            event.preventDefault();
+            const current = read().map(level => ({...level}));
+            current.splice(Number(event.target.closest('[data-packaging-row]').dataset.packagingRow), 1);
+            rows = current.length ? current : [{unit:baseUnit, quantity:1}];
+            manual = !(rows.length === 1 && key(currentPurchase) === key(baseUnit));
+            render();
+        }
     };
     render();
-    return { read, error, setPurchaseUnit(value) { currentPurchase=value; render(); } };
+    return {
+        read,
+        error,
+        setPurchaseUnit(value) {
+            currentPurchase = value;
+            if (key(value) === key(baseUnit)) {
+                manual = false;
+                rows = [{unit:baseUnit, quantity:1}];
+            } else if (!manual) {
+                rows = [{unit:baseUnit, quantity:''}];
+            }
+            render();
+        }
+    };
 }

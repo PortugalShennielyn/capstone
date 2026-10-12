@@ -60,11 +60,11 @@ try {
         }
         $requestUnit = purchaseRequestConfiguredUnit($packageOptions[$productId] ?? []);
         if ($requestUnit === null) {
-            throw new InvalidArgumentException($product['product_name'] . ' does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
+            throw new InvalidArgumentException($product['product_name'] . ': Supplier purchase unit not configured or supplier purchasing setups disagree.');
         }
         $requestedUnit = trim((string)($item['unit'] ?? $item['requested_unit'] ?? '')) ?: $requestUnit;
         $requestUnit = validatePurchaseRequestPackage($packageOptions[$productId] ?? [], $item['requested_qty'] ?? null, $requestedUnit);
-        $qty = positivePurchaseRequestQuantity($item['requested_qty'] ?? null, $requestUnit);
+        $qty = positivePurchaseRequestQuantity($item['requested_qty'] ?? null);
         assertPurchaseRequestQuantityLimit($qty, $pdo);
         assertNoActivePurchaseRequestConflict($pdo, $productId, (string) $product['product_name']);
         $stockStmt->execute([':product_id' => $productId]);

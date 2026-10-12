@@ -588,7 +588,15 @@ function purchaseRequestConfiguredUnit(array $options): ?string
     $units = [];
     foreach ($options as $option) {
         $unit = trim((string) ($option['purchase_unit'] ?? ''));
-        if ($unit !== '') $units[strtolower($unit)] = $unit;
+        $factor = (int) ($option['base_qty_per_purchase_unit'] ?? 0);
+        if ($unit === '' || $factor <= 0) return null;
+        $matchingLevel = false;
+        foreach ($option['absolute_levels'] ?? [] as $level) {
+            if (strcasecmp($unit, (string) ($level['unit'] ?? '')) === 0
+                && (int) ($level['base_quantity'] ?? 0) === $factor) $matchingLevel = true;
+        }
+        if (!$matchingLevel) return null;
+        $units[strtolower($unit) . ':' . $factor] = $unit;
     }
     return count($units) === 1 ? array_values($units)[0] : null;
 }
@@ -613,19 +621,13 @@ function validatePurchaseRequestPackage(array $options, $quantity, string $unit)
 {
     $configuredUnit = purchaseRequestConfiguredUnit($options);
     if ($configuredUnit === null) {
-        throw new InvalidArgumentException('The selected product does not have one unambiguous supplier purchase unit configured. Review Supplier Product Setup first.');
+        throw new InvalidArgumentException('Supplier purchase unit not configured or supplier purchasing setups disagree. Review Supplier Product Setup first.');
     }
-    $canonical = null;
-    foreach (purchaseRequestPackagingUnits($options) as $level) {
-        if (strcasecmp(trim($unit), $level['unit']) === 0) $canonical = $level['unit'];
+    if (strcasecmp(trim($unit), $configuredUnit) !== 0) {
+        throw new InvalidArgumentException('Requested quantity must use the configured supplier purchase unit.');
     }
-    if ($canonical === null) throw new InvalidArgumentException('Select an unambiguous unit from the supplier packaging setup.');
-    $error = null;
     foreach ($options as $option) {
-        try {
-            purchaseRequestExactOrderQuantity($quantity, $canonical, $option);
-            return $canonical;
-        } catch (InvalidArgumentException $exception) { $error = $exception; }
+        purchaseRequestExactOrderQuantity($quantity, $configuredUnit, $option);
     }
-    throw $error ?? new InvalidArgumentException('No active supplier packaging setup is available.');
+    return $configuredUnit;
 }

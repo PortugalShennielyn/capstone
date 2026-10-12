@@ -265,6 +265,20 @@
         .pricing-status-badge.is-warning { color:#92400e; background:#fef3c7; }
         .pricing-status-badge.is-invalid { color:#b42318; background:#fee4e2; }
         .pricing-view-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,.9fr); gap:22px; align-items:stretch; }
+        .pricing-unit-lines { grid-column:1 / -1; display:grid; gap:8px; }
+        .pricing-quote-note { grid-column:1 / -1; margin:0; color:#667085; font-size:.78rem; line-height:1.45; }
+        body.dark-mode .pricing-quote-note { color:#94a3b8; }
+        .pricing-unit-line { display:grid; grid-template-columns:minmax(64px,.55fr) repeat(4,minmax(0,1fr)); gap:4px 10px; align-items:end; padding:8px 10px; border:1px solid #e7ebf0; border-radius:8px; background:#fff; }
+        .pricing-unit-line strong { font-size:.9rem; }
+        .pricing-unit-line div { display:flex; flex-direction:column; min-width:0; }
+        .pricing-unit-line small { color:#667085; font-size:.68rem; line-height:1.2; }
+        .pricing-unit-line b { color:#253047; font-size:.84rem; font-weight:700; white-space:nowrap; }
+        .pricing-unit-line b.is-drop { color:#b42318; }
+        body.dark-mode .pricing-unit-line { border-color:#334155; background:#111827; }
+        body.dark-mode .pricing-unit-line strong,body.dark-mode .pricing-unit-line b { color:#e5e7eb; }
+        body.dark-mode .pricing-unit-line small { color:#94a3b8; }
+        body.dark-mode .pricing-unit-line b.is-drop { color:#fca5a5; }
+        @media (max-width:767px) { .pricing-unit-line { grid-template-columns:repeat(2,minmax(0,1fr)); } .pricing-unit-line strong { grid-column:1 / -1; } }
         .pricing-entry-column { min-width:0; padding:4px 2px; }
         .pricing-entry-field { max-width:420px; margin-bottom:15px; }
         .pricing-entry-list,.pricing-summary-list { display:grid; gap:9px; margin:0; }
@@ -316,6 +330,73 @@
         body.dark-mode .bulk-pricing-table tr.is-ineligible td { background:#2b1d24; }
         @media (max-width:991px) { #selectedPricingModal .modal-dialog { width:98vw; height:94vh; margin:3vh auto; } .bulk-pricing-toolbar { grid-template-columns:repeat(4,minmax(0,1fr)); } .bulk-pricing-search { grid-column:1/-1; justify-self:stretch; width:100%; } }
         @media (max-width:767px) { #editProductModal .modal-dialog { width:96vw; height:92vh; margin:4vh auto; } #editProductModal .modal-body { padding:14px; overflow-x:hidden; } .pricing-method-row,.pricing-view-grid { grid-template-columns:1fr; gap:12px; } .pricing-method-status { justify-content:flex-start; min-height:0; } .pricing-entry-field { max-width:none; } .pricing-summary-row { grid-template-columns:minmax(120px,.9fr) minmax(0,1.1fr); gap:10px; } .product-master-actions { width:100%; justify-content:stretch; } .product-master-actions .btn { flex:1 1 auto; } #selectedPricingModal .modal-dialog { width:100vw; height:100dvh; margin:0; } #selectedPricingModal .modal-content { border-radius:0; } #selectedPricingModal .modal-header,#selectedPricingModal .modal-footer { padding:12px; } #selectedPricingModal .modal-body { padding:10px 12px; } .bulk-pricing-toolbar { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .bulk-pricing-metric { padding:7px; } .bulk-pricing-footer-summary { width:100%; order:-1; } }
+        #selectedPricingModal .modal-dialog { width:min(1240px,calc(100vw - 32px)); max-width:none; height:auto; margin:24px auto; }
+        #selectedPricingModal .modal-content { height:auto; max-height:calc(100dvh - 48px); border-radius:16px; box-shadow:0 24px 70px rgba(15,23,42,.25); }
+        #selectedPricingModal .pricing-preview-header { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 24px; border-bottom:1px solid #e5eaf1; }
+        .pricing-preview-header .modal-title { margin-bottom:3px; color:#1d2939; font-size:1.15rem; }
+        .pricing-preview-header-actions { display:flex; align-items:center; gap:20px; }
+        .pricing-preview-header-actions .bulk-pricing-search { width:min(310px,28vw); }
+        .pricing-preview-header-actions .form-control { min-height:38px; border-radius:9px; }
+        #selectedPricingModal .pricing-preview-layout { display:grid; grid-template-columns:minmax(0,1fr) 300px; flex:0 1 auto; gap:0; padding:0; overflow:hidden; }
+        .pricing-preview-main { display:flex; flex-direction:column; min-width:0; min-height:0; }
+        .pricing-preview-list-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 24px; color:#253047; border-bottom:1px solid #e5eaf1; }
+        .pricing-preview-list-heading span { color:#8793a6; font-size:.75rem; }
+        .pricing-preview-list { min-height:110px; max-height:calc(100dvh - 185px); overflow-y:auto; overscroll-behavior:contain; }
+        .pricing-preview-card { padding:17px 24px; border-bottom:1px solid #e9edf3; background:#fff; }
+        .pricing-preview-card:last-child { border-bottom:0; }
+        .pricing-preview-card.has-manual-price-drop { background:#fff6f5; box-shadow:inset 3px 0 #e65149; }
+        .pricing-preview-card.has-price-warning:not(.has-manual-price-drop) { background:#fffaf2; }
+        .pricing-preview-card.is-ineligible { background:#f8fafc; opacity:.72; }
+        .pricing-preview-card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:13px; }
+        .pricing-preview-product { display:flex; align-items:flex-start; gap:11px; min-width:0; cursor:pointer; }
+        .pricing-preview-product .form-check-input { flex:none; margin-top:3px; }
+        .pricing-preview-product strong,.pricing-preview-product small { display:block; }
+        .pricing-preview-product strong { color:#202b43; font-size:.88rem; line-height:1.25; }
+        .pricing-preview-product small { margin-top:3px; color:#73829a; font-size:.72rem; }
+        .pricing-preview-product .pricing-preview-purchase-conversion { color:#5947a8; font-weight:650; }
+        .pricing-preview-card .pricing-method-badge { flex:none; padding:4px 9px; border-radius:999px; font-size:.67rem; }
+        .pricing-preview-unit-line { display:grid; grid-template-columns:minmax(105px,1.12fr) minmax(62px,.55fr) minmax(92px,.9fr) 20px minmax(92px,.9fr) minmax(90px,.8fr); align-items:center; column-gap:10px; padding:10px 0 10px 30px; border-top:1px solid #edf0f5; font-variant-numeric:tabular-nums; }
+        .pricing-preview-unit-line > div { min-width:0; }
+        .pricing-preview-unit-line small { display:block; margin-bottom:3px; color:#8290a4; font-size:.67rem; line-height:1.2; }
+        .pricing-preview-unit-line .pricing-preview-unit-conversion { grid-column:1/-1; margin:0 0 2px; color:#667085; font-weight:650; }
+        .pricing-preview-unit-line strong { color:#243047; font-size:.85rem; white-space:nowrap; }
+        .pricing-preview-arrow { color:#a6b0c1; text-align:center; }
+        .pricing-preview-price.is-new strong { color:#342ad0; }
+        .pricing-preview-difference { text-align:right; }
+        .pricing-preview-difference strong,.pricing-preview-difference span { display:block; }
+        .pricing-preview-difference span { font-size:.7rem; }
+        .pricing-preview-difference.is-decrease strong,.pricing-preview-difference.is-decrease span { color:#c4372d; }
+        .pricing-preview-difference.is-increase strong,.pricing-preview-difference.is-increase span { color:#087d50; }
+        .pricing-preview-card-footer { display:flex; align-items:center; flex-wrap:wrap; gap:7px 10px; padding:9px 0 0 30px; }
+        .pricing-preview-manual-note { color:#b42318; font-size:.72rem; font-weight:750; }
+        .pricing-preview-review-note { color:#667085; font-size:.72rem; line-height:1.3; }
+        .pricing-preview-empty { padding:42px 24px; color:#667085; text-align:center; }
+        .pricing-preview-sidebar { display:flex; flex-direction:column; justify-content:space-between; min-width:0; border-left:1px solid #e5eaf1; background:#f8faff; }
+        .pricing-preview-sidebar-content { padding:21px 20px; overflow-y:auto; }
+        .pricing-preview-sidebar h6 { margin:0 0 12px; color:#29364e; font-size:.78rem; font-weight:800; }
+        .pricing-preview-sidebar .bulk-pricing-toolbar { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+        .pricing-preview-sidebar .bulk-pricing-metric { padding:10px 12px; border-radius:9px; background:#fff; }
+        .pricing-preview-sidebar .bulk-pricing-metric strong { font-size:1.1rem; }
+        .pricing-preview-impact { margin-top:20px; padding-top:19px; border-top:1px solid #e1e7f0; }
+        .pricing-preview-impact > div { display:flex; justify-content:space-between; gap:12px; margin:9px 0; color:#667085; font-size:.78rem; }
+        .pricing-preview-impact > div strong { color:#26364f; font-size:.85rem; }
+        .pricing-preview-sidebar .bulk-pricing-footer-summary { margin-top:16px; color:#667085; font-size:.72rem; line-height:1.45; }
+        .pricing-preview-sidebar .bulk-pricing-footer-summary:empty { display:none; }
+        .pricing-preview-actions { display:flex; flex-direction:column; gap:9px; padding:16px 20px 20px; border-top:1px solid #e1e7f0; background:#fff; }
+        .pricing-preview-actions .btn { width:100%; min-height:38px; }
+        .pricing-preview-actions .btn-light { color:#58677d; background:transparent; }
+        .pricing-preview-actions .manual-confirmation { margin:0 0 3px; padding:11px 11px 11px 34px; border:1px solid #f8d596; border-radius:9px; background:#fffbeb; color:#895600; font-size:.75rem; line-height:1.35; }
+        .pricing-preview-actions .manual-confirmation[hidden] { display:none; }
+        .pricing-preview-actions .manual-confirmation .form-check-input { margin-left:-23px; }
+        body.dark-mode .pricing-preview-card,body.dark-mode .pricing-preview-actions { background:#1b2637; }
+        body.dark-mode .pricing-preview-sidebar,body.dark-mode .pricing-preview-card.is-ineligible { background:#172234; }
+        body.dark-mode .pricing-preview-card.has-manual-price-drop { background:#342529; }
+        body.dark-mode .pricing-preview-card.has-price-warning:not(.has-manual-price-drop) { background:#302b22; }
+        body.dark-mode .pricing-preview-card,body.dark-mode .pricing-preview-unit-line,body.dark-mode .pricing-preview-sidebar,body.dark-mode .pricing-preview-actions,body.dark-mode .pricing-preview-impact { border-color:#344155; }
+        body.dark-mode .pricing-preview-product strong,body.dark-mode .pricing-preview-unit-line strong,body.dark-mode .pricing-preview-sidebar h6,body.dark-mode .pricing-preview-list-heading { color:#f1f5f9; }
+        @media (max-width:1050px) { #selectedPricingModal .pricing-preview-layout { grid-template-columns:minmax(0,1fr) 265px; } .pricing-preview-unit-line { grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px 12px; } .pricing-preview-arrow { display:none; } .pricing-preview-difference { text-align:left; } }
+        @media (max-width:767px) { #selectedPricingModal .modal-dialog { width:100vw; height:100dvh; margin:0; } #selectedPricingModal .modal-content { height:100dvh; max-height:none; border-radius:0; } #selectedPricingModal .pricing-preview-header { align-items:flex-start; padding:14px 16px; } .pricing-preview-header-actions { gap:10px; } .pricing-preview-header-actions .bulk-pricing-search { width:150px; } #selectedPricingModal .pricing-preview-layout { display:flex; flex-direction:column; flex:1 1 auto; overflow-y:auto; } .pricing-preview-list { max-height:none; overflow:visible; } .pricing-preview-list-heading,.pricing-preview-card { padding-left:16px; padding-right:16px; } .pricing-preview-sidebar { border-left:0; border-top:1px solid #e5eaf1; } .pricing-preview-sidebar-content { overflow:visible; } .pricing-preview-actions { position:sticky; bottom:0; z-index:2; } }
+        @media (max-width:480px) { .pricing-preview-header .modal-title { font-size:1rem; } .pricing-preview-header small { display:block; max-width:180px; line-height:1.3; } .pricing-preview-header-actions .bulk-pricing-search { width:115px; } .pricing-preview-unit-line { grid-template-columns:repeat(2,minmax(0,1fr)); padding-left:0; } .pricing-preview-card-footer { padding-left:0; } .pricing-preview-difference { text-align:left; } }
         #addProductModal .modal-dialog { width:min(960px,calc(100vw - 24px)); height:min(94vh,820px); margin:3vh auto; }
         #addProductModal .modal-header { padding:13px 18px; }
         #addProductModal .modal-body { padding:14px 18px 16px; overflow-x:hidden; }
@@ -859,7 +940,7 @@
                                     <label class="form-label" for="productName">Product Name</label>
                                     <input class="form-control" id="productName" required>
                                 </div>
-                                <div class="add-product-field"><label class="form-label" for="productPricingMethod">Pricing Method</label><select class="form-select" id="productPricingMethod"><option value="manual">Fixed / Manual price</option><option value="category_markup">Category markup</option><option value="custom_markup">Custom markup</option></select></div>
+                                <div class="add-product-field"><label class="form-label" for="productPricingMethod">Pricing Method</label><select class="form-select" id="productPricingMethod"><option value="category_markup" selected>Category markup</option><option value="manual">Manual selling price</option></select></div>
                                 <div class="add-product-field d-none" id="productCustomMarkupWrap"><label class="form-label" for="productCustomMarkup">Custom Markup Percentage</label><input class="form-control" id="productCustomMarkup" type="number" min="0" step=".01" placeholder="Only for Custom markup"></div>
                             </div>
                         </section>
@@ -1058,20 +1139,22 @@
                         </div></section>
                         <section class="add-product-section" aria-labelledby="editPricingSetupHeading">
                             <h6 class="add-product-section-title" id="editPricingSetupHeading">Pricing Setup</h6>
-                            <div class="pricing-method-row"><div><label class="form-label" for="editProductPricingMethod">Pricing Method</label><select class="form-select" id="editProductPricingMethod"><option value="category_markup">Category Markup</option><option value="custom_markup">Custom Markup</option><option value="manual">Fixed / Manual Price</option></select></div><div class="pricing-method-status"><span class="pricing-status-badge" id="editPricingMethodStatus">Pricing status</span></div></div>
+                            <div class="pricing-method-row"><div><label class="form-label" for="editProductPricingMethod">Pricing Method</label><select class="form-select" id="editProductPricingMethod"><option value="category_markup">Category markup</option><option value="manual">Manual selling price</option></select></div><div class="pricing-method-status"><span class="pricing-status-badge" id="editPricingMethodStatus">Pricing status</span></div></div>
                             <div id="editCategoryPricingView" class="pricing-view-grid">
-                                <div class="pricing-entry-column"><dl class="pricing-entry-list"><div class="pricing-summary-row"><dt>Category</dt><dd id="editPricingCategory">—</dd></div><div class="pricing-summary-row"><dt>Applied Markup</dt><dd id="editPricingCategoryMarkup">—</dd></div><div class="pricing-summary-row"><dt>Markup Source</dt><dd><span class="pricing-inline-badge" id="editPricingMarkupSource">—</span></dd></div><div class="pricing-summary-row"><dt>Current Cost Basis</dt><dd id="editPricingCategoryCost">—</dd></div></dl></div>
-                                <div class="pricing-summary-card"><dl class="pricing-summary-list"><div class="pricing-summary-row"><dt>Calculated Selling Price</dt><dd id="editPricingCategoryCalculated">—</dd></div><div class="pricing-summary-row"><dt>Active Selling Price</dt><dd class="pricing-active-amount" id="editPricingCategoryCurrent">—</dd></div><div class="pricing-summary-row"><dt>Price Difference</dt><dd id="editPricingCategoryDifference">—</dd></div><div class="pricing-summary-row"><dt>Price Status</dt><dd><span class="pricing-inline-badge" id="editPricingCategoryStatus">—</span></dd></div></dl></div>
+                                <div class="pricing-entry-column"><dl class="pricing-entry-list"><div class="pricing-summary-row"><dt>Category</dt><dd id="editPricingCategory">—</dd></div><div class="pricing-summary-row"><dt>Category Markup</dt><dd id="editPricingCategoryMarkup">—</dd></div><div class="pricing-summary-row"><dt>Markup Source</dt><dd><span class="pricing-inline-badge" id="editPricingMarkupSource">—</span></dd></div><div class="pricing-summary-row"><dt>Current Supplier Quoted Cost</dt><dd id="editPricingQuotedCost">—</dd></div><div class="pricing-summary-row"><dt>Quote Source</dt><dd id="editPricingQuoteSource">—</dd></div><div class="pricing-summary-row"><dt>Latest Confirmed Accepted Cost</dt><dd id="editPricingCategoryCost">—</dd></div><div class="pricing-summary-row"><dt>Cost Source</dt><dd id="editPricingCostSource">—</dd></div></dl></div>
+                                <div class="pricing-summary-card"><dl class="pricing-summary-list"><div class="pricing-summary-row"><dt>Suggested Selling Price</dt><dd id="editPricingCategoryCalculated">—</dd></div><div class="pricing-summary-row"><dt>Active Selling Price</dt><dd class="pricing-active-amount" id="editPricingCategoryCurrent">—</dd></div><div class="pricing-summary-row"><dt>Price Difference</dt><dd id="editPricingCategoryDifference">—</dd></div><div class="pricing-summary-row"><dt>Price Status</dt><dd><span class="pricing-inline-badge" id="editPricingCategoryStatus">—</span></dd></div></dl></div>
+                                <div class="pricing-unit-lines" id="editPricingUnitLines"></div>
+                                <p class="pricing-quote-note" id="editPricingQuoteEstimate"></p>
                             </div>
                             <div id="editCustomPricingView" class="pricing-view-grid d-none">
                                 <div class="pricing-entry-column"><div class="pricing-entry-field"><label class="form-label" for="editProductCustomMarkup">Custom Markup Percentage</label><div class="input-group"><input class="form-control" id="editProductCustomMarkup" type="number" min="0" step=".01"><span class="input-group-text">%</span></div></div><dl class="pricing-entry-list"><div class="pricing-summary-row"><dt>Current Cost Basis</dt><dd id="editPricingCustomCost">—</dd></div></dl></div>
                                 <div class="pricing-summary-card"><dl class="pricing-summary-list"><div class="pricing-summary-row"><dt>Calculated Selling Price</dt><dd id="editPricingCustomCalculated">—</dd></div><div class="pricing-summary-row"><dt>Active Selling Price</dt><dd class="pricing-active-amount" id="editPricingCustomCurrent">—</dd></div><div class="pricing-summary-row"><dt>Price Difference</dt><dd id="editPricingCustomDifference">—</dd></div><div class="pricing-summary-row"><dt>Price Status</dt><dd><span class="pricing-inline-badge" id="editPricingCustomStatus">—</span></dd></div></dl></div>
                             </div>
                             <div id="editManualPricingView" class="pricing-view-grid d-none">
-                                <div class="pricing-entry-column"><p class="small text-muted mb-2">Edit the default base price below. Set current POS prices for each selling unit in Shelf Selling Prices.</p><dl class="pricing-entry-list"><div class="pricing-summary-row"><dt>Cost Basis</dt><dd id="editPricingManualCost">—</dd></div></dl></div>
+                                <div class="pricing-entry-column"><p class="small text-muted mb-2">Manual selling price override. Category markup will not replace these prices unless you confirm Apply Category Markup.</p><dl class="pricing-entry-list"><div class="pricing-summary-row"><dt>Current Supplier Quoted Cost</dt><dd id="editPricingManualQuoted">—</dd></div><div class="pricing-summary-row"><dt>Quote Source</dt><dd id="editPricingManualQuoteSource">—</dd></div><div class="pricing-summary-row"><dt>Latest Confirmed Accepted Cost</dt><dd id="editPricingManualCost">—</dd></div><div class="pricing-summary-row"><dt>Cost Source</dt><dd id="editPricingManualSource">—</dd></div></dl></div>
                                 <div class="pricing-summary-card"><dl class="pricing-summary-list"><div class="pricing-summary-row"><dt>Active Selling Price</dt><dd class="pricing-active-amount" id="editPricingManualCurrent">—</dd></div><div class="pricing-summary-row"><dt>Gross Amount per Unit</dt><dd id="editPricingManualGross">—</dd></div><div class="pricing-summary-row"><dt>Pricing Protection</dt><dd><span class="pricing-inline-badge" id="editPricingManualStatus">Manual price protected</span></dd></div></dl></div>
                             </div>
-                            <div class="pricing-action-row"><div class="pricing-action-note" id="editPricingActionNote">Saving does not overwrite the active price unless you explicitly apply the calculation.</div><button class="btn btn-sm btn-outline-primary" id="btnApplyCalculatedPrice" type="button"><i class="fa-solid fa-check me-1"></i>Apply Calculated Price</button></div>
+                            <div class="pricing-action-row"><div class="pricing-action-note" id="editPricingActionNote">Saving does not overwrite the active price unless you explicitly apply the category markup.</div><button class="btn btn-sm btn-outline-primary" id="btnApplyCalculatedPrice" type="button"><i class="fa-solid fa-check me-1"></i>Apply Category Markup</button></div>
                         </section>
                         <section class="add-product-section">
                             <div class="col-12">
@@ -1110,13 +1193,17 @@
     <div class="modal fade" id="selectedPricingModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header"><div><h5 class="modal-title fw-bold">Apply Category Markup</h5><small class="text-muted">Each sellable unit uses its converted unit cost. Prices change only after you confirm.</small></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
-                <div class="modal-body">
-                    <div class="bulk-pricing-toolbar"><div class="bulk-pricing-metric"><span>Selected</span><strong id="selectedPricingSelectedCount">0</strong></div><div class="bulk-pricing-metric"><span>Eligible</span><strong id="selectedPricingEligibleCount">0</strong></div><div class="bulk-pricing-metric"><span>Excluded</span><strong id="selectedPricingBlockedCount">0</strong></div><div class="bulk-pricing-metric"><span>Price warnings</span><strong id="selectedPricingWarningCount">0</strong></div><div class="bulk-pricing-search"><label class="visually-hidden" for="selectedPricingSearch">Search selected products</label><input class="form-control form-control-sm" id="selectedPricingSearch" type="search" placeholder="Search product, category, or unit"></div></div>
-                    <div class="form-check manual-confirmation"><input class="form-check-input" id="selectedPricingReplaceManual" type="checkbox"><label class="form-check-label" for="selectedPricingReplaceManual">I confirm that applying markup will replace the selected manual prices.</label></div>
-                    <div class="bulk-pricing-table-wrap"><table class="table table-hover bulk-pricing-table"><thead><tr><th class="center-column">Select</th><th class="text-column">Product</th><th class="text-column">Category</th><th class="text-column">Sellable Unit</th><th class="numeric-column">Accepted Unit Cost</th><th class="numeric-column">Current Price</th><th class="numeric-column">Category Markup %</th><th class="numeric-column">New Price</th><th class="numeric-column">Difference</th><th class="text-column">Pricing Method</th><th class="center-column">Status</th></tr></thead><tbody id="selectedPricingPreviewBody"></tbody></table></div>
+                <div class="modal-header pricing-preview-header">
+                    <div><h5 class="modal-title fw-bold">Apply Category Markup</h5><small class="text-muted">Review the new prices for each sellable unit before applying.</small></div>
+                    <div class="pricing-preview-header-actions"><div class="bulk-pricing-search"><label class="visually-hidden" for="selectedPricingSearch">Search selected products</label><input class="form-control form-control-sm" id="selectedPricingSearch" type="search" placeholder="Search product, category, or unit"></div><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 </div>
-                <div class="modal-footer"><div class="bulk-pricing-footer-summary" id="selectedPricingPreviewSummary"></div><button class="btn btn-light" type="button" data-bs-dismiss="modal">Back</button><button class="btn btn-purple" id="btnConfirmSelectedPricing" type="button">Apply to Selected Products</button></div>
+                <div class="modal-body pricing-preview-layout">
+                    <section class="pricing-preview-main" aria-label="Product price changes"><div class="pricing-preview-list-heading"><strong>Product price changes</strong><span>Accepted cost × category markup</span></div><div class="pricing-preview-list" id="selectedPricingPreviewBody" role="list"></div></section>
+                    <aside class="pricing-preview-sidebar" aria-label="Pricing review summary">
+                        <div class="pricing-preview-sidebar-content"><h6>Review summary</h6><div class="bulk-pricing-toolbar"><div class="bulk-pricing-metric"><span>Selected</span><strong id="selectedPricingSelectedCount">0</strong></div><div class="bulk-pricing-metric"><span>Eligible</span><strong id="selectedPricingEligibleCount">0</strong></div><div class="bulk-pricing-metric"><span>Excluded</span><strong id="selectedPricingBlockedCount">0</strong></div><div class="bulk-pricing-metric"><span>Needs review</span><strong id="selectedPricingWarningCount">0</strong></div></div><div class="pricing-preview-impact"><h6>What will change</h6><div>Price increases <strong id="selectedPricingIncreaseCount">0</strong></div><div>Price decreases <strong id="selectedPricingDecreaseCount">0</strong></div><div>Manual prices replaced <strong id="selectedPricingManualCount">0</strong></div></div><div class="bulk-pricing-footer-summary" id="selectedPricingPreviewSummary"></div></div>
+                        <div class="pricing-preview-actions"><div class="form-check manual-confirmation" id="selectedPricingManualConfirmation"><input class="form-check-input" id="selectedPricingReplaceManual" type="checkbox"><label class="form-check-label" for="selectedPricingReplaceManual">I confirm that the selected manual prices will be replaced.</label></div><button class="btn btn-purple" id="btnConfirmSelectedPricing" type="button">Apply to Selected Products</button><button class="btn btn-light" type="button" data-bs-dismiss="modal">Back</button></div>
+                    </aside>
+                </div>
             </div>
         </div>
     </div>
@@ -1127,7 +1214,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script type="module">
         import verifySession from './js/modules/auth.js?v=8';
-        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=103';
+        import { initAddProductForm, loadProductsTable, initProductCards } from './js/modules/products.js?v=110';
 
         verifySession().then((user) => {
             if (!user) return;

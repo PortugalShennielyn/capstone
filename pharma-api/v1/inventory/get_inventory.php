@@ -34,6 +34,9 @@ function inventoryDateStatus(?string $expiryDate): string
 try {
     $stockThresholds = fetchStockThresholds($pdo);
     $inventoryStockSql = inventoryStockSummarySql($stockThresholds);
+    $activitySql = inventoryLastActivitySql();
+    $requestedProductId = filter_input(INPUT_GET, 'product_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $productFilterSql = $requestedProductId ? 'WHERE p.product_id = ?' : '';
     $statement = $pdo->prepare(
         "SELECT
             p.product_id,
@@ -57,6 +60,16 @@ try {
             md.net_content_unit,
             md.dosage_form,
             COALESCE(md.package_type, gd.package_type, msd.package_type) AS package_type,
+            specs.recorded_form,
+            specs.recorded_strength_value,
+            specs.recorded_strength_unit,
+            specs.recorded_package_type,
+            specs.recorded_pack_content,
+            specs.recorded_pack_content_unit,
+            selling_package.unit_name AS selling_package_unit,
+            selling_package.base_quantity AS selling_package_quantity,
+            supplier_package.purchase_unit AS supplier_package_unit,
+            supplier_package.base_quantity AS supplier_package_quantity,
             gd.variant,
             gd.size,
             gd.net_weight,
@@ -86,7 +99,8 @@ try {
             recv.latest_supplier_name,
             recv.latest_po_number,
             COALESCE(cost.unit_cost, p.price, 0) AS inventory_unit_cost,
-            inv.total_quantity * COALESCE(cost.unit_cost, p.price, 0) AS inventory_value
+            inv.total_quantity * COALESCE(cost.unit_cost, p.price, 0) AS inventory_value,
+            activity.last_activity_at
          FROM ({$inventoryStockSql}) inv
          INNER JOIN product p ON p.product_id = inv.product_id
          LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = p.inventory_unit_id
@@ -98,6 +112,18 @@ try {
          LEFT JOIN (
             SELECT
                 psv.product_id,
+                MAX(CASE WHEN LOWER(TRIM(ps.specification_name)) IN ('form', 'dosage form')
+                    THEN NULLIF(TRIM(psv.value_text), '') END) AS recorded_form,
+                MAX(CASE WHEN LOWER(TRIM(ps.specification_name)) = 'strength'
+                    THEN psv.value_number END) AS recorded_strength_value,
+                MAX(CASE WHEN LOWER(TRIM(ps.specification_name)) = 'strength'
+                    THEN COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name) END) AS recorded_strength_unit,
+                MAX(CASE WHEN LOWER(TRIM(ps.specification_name)) IN ('package type', 'package / container', 'package/container')
+                    THEN NULLIF(TRIM(psv.value_text), '') END) AS recorded_package_type,
+                MAX(CASE WHEN LOWER(TRIM(ps.specification_name)) = 'pack content'
+                    THEN psv.value_number END) AS recorded_pack_content,
+                MAX(CASE WHEN LOWER(TRIM(ps.specification_name)) = 'pack content'
+                    THEN COALESCE(NULLIF(pmu.unit_symbol, ''), pmu.unit_name) END) AS recorded_pack_content_unit,
                 GROUP_CONCAT(
                     COALESCE(
                         NULLIF(TRIM(psv.value_text), ''),
@@ -123,6 +149,33 @@ try {
               AND LOWER(TRIM(ps.specification_name)) <> 'medicine classification'
             GROUP BY psv.product_id
          ) specs ON specs.product_id = p.product_id
+         LEFT JOIN (
+            SELECT ranked.product_id, ranked.unit_name, ranked.base_quantity
+            FROM (
+                SELECT pso.product_id, pso.unit_name, pso.base_quantity,
+                       ROW_NUMBER() OVER (PARTITION BY pso.product_id
+                           ORDER BY pso.is_default DESC, pso.base_quantity ASC, pso.unit_name ASC) AS rn
+                FROM product_selling_options pso
+                WHERE pso.is_active = 1 AND pso.base_quantity > 1
+                  AND LOWER(TRIM(pso.unit_name)) IN
+                      ('bag', 'blister pack', 'bottle', 'box', 'bundle', 'can', 'carton', 'case',
+                       'jar', 'pack', 'pouch', 'roll', 'sachet', 'strip', 'tray', 'tube', 'vial')
+            ) ranked
+            WHERE ranked.rn = 1
+         ) selling_package ON selling_package.product_id = p.product_id
+         LEFT JOIN (
+            SELECT sp.product_id,
+                   CASE WHEN COUNT(DISTINCT LOWER(TRIM(sp.purchase_unit))) = 1
+                        THEN MIN(sp.purchase_unit) END AS purchase_unit,
+                   CASE WHEN COUNT(DISTINCT CONCAT(LOWER(TRIM(sp.purchase_unit)), ':', sp.units_per_purchase_unit)) = 1
+                        THEN MIN(sp.units_per_purchase_unit) END AS base_quantity
+            FROM supplier_products sp
+            WHERE sp.units_per_purchase_unit > 1
+              AND LOWER(TRIM(sp.purchase_unit)) IN
+                  ('bag', 'blister pack', 'bottle', 'box', 'bundle', 'can', 'carton', 'case',
+                   'jar', 'pack', 'pouch', 'roll', 'sachet', 'strip', 'tray', 'tube', 'vial')
+            GROUP BY sp.product_id
+         ) supplier_package ON supplier_package.product_id = p.product_id
          LEFT JOIN (
             SELECT psv.product_id,
                    psv.value_text AS medicine_classification,
@@ -161,10 +214,12 @@ try {
             ) latest
             WHERE latest.rn = 1
          ) recv ON recv.product_id = p.product_id
-         ORDER BY p.product_name ASC, p.brand_name ASC"
+         LEFT JOIN ({$activitySql}) activity ON activity.product_id = p.product_id
+         {$productFilterSql}
+         ORDER BY activity.last_activity_at IS NULL, activity.last_activity_at DESC, p.product_name ASC, p.brand_name ASC"
     );
 
-    $statement->execute();
+    $statement->execute($requestedProductId ? [$requestedProductId] : []);
     $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
 
     $productIds = array_values(array_filter(array_map(fn ($row) => cleanId($row['product_id'] ?? null), $rows)));

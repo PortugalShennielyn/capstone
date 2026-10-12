@@ -265,8 +265,8 @@
 .assignment-product-row {
     display: grid;
     grid-template-columns: 22px minmax(0, 1fr);
-    gap: 10px;
-    padding: 5px 12px;
+    gap: 12px;
+    padding: 12px 14px;
     border-bottom: 1px solid #edf0f4;
     cursor: pointer;
 }
@@ -285,12 +285,25 @@
     background: #f8fafc;
 }
 
+.assignment-product-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
 .assignment-product-identity,
 .assignment-selected-identity {
+    display: block;
     color: #253047;
     font-size: .83rem;
-    font-weight: 850;
+    font-weight: 500;
     overflow-wrap: anywhere;
+}
+
+.assignment-product-identity strong,
+.assignment-selected-identity strong {
+    font-weight: 800;
 }
 
 .assignment-product-meta,
@@ -371,6 +384,138 @@
     background: #fff;
 }
 
+.assignment-term-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.assignment-term-body {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px 16px;
+    align-items: start;
+    padding: 16px;
+}
+
+.assignment-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 0;
+}
+
+.assignment-field > div:first-child {
+    min-height: 58px;
+}
+
+.assignment-field strong {
+    display: block;
+    color: #1f2430;
+    font-size: .9rem;
+}
+
+.assignment-help {
+    display: block;
+    margin-top: 2px;
+    color: #98a2b3;
+    font-size: .78rem;
+    line-height: 1.35;
+}
+
+.assignment-combo { position: relative; width: 100%; }
+
+.assignment-unit-search,
+.assignment-field .form-control,
+.assignment-cost {
+    width: 100%;
+}
+
+.assignment-unit-search {
+    min-height: 42px;
+    border-radius: 10px;
+    border-color: #e4e7ec;
+    font-weight: 650;
+}
+
+.assignment-native-unit {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+.assignment-cost .form-control { width: 1%; min-height: 42px; }
+
+.assignment-field .assignment-field-error:empty { display: none; }
+
+.term-packaging-host {
+    min-width: 0;
+    padding-top: 0;
+}
+
+.term-packaging-host > p.small,
+.term-packaging-host > .assignment-preview {
+    display: none;
+}
+
+.term-packaging-host [data-parent-label] {
+    display: flex;
+    align-items: flex-end;
+    min-height: 38px;
+    margin: 0 0 8px;
+    color: #667085;
+    font-size: .78rem;
+    font-weight: 650;
+}
+
+.packaging-level + .packaging-level [data-parent-label] {
+    min-height: 0;
+    margin-top: 10px;
+}
+
+.packaging-level-controls {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.packaging-level-controls .form-control,
+.packaging-level-controls .form-select,
+.assignment-unit-search,
+.assignment-field .form-control,
+.assignment-cost,
+.assignment-cost .form-control,
+.assignment-cost .input-group-text {
+    height: 42px;
+    min-height: 42px;
+}
+
+.packaging-level-controls [data-remove-level] {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+}
+
+.term-packaging-host [data-add-level] {
+    margin-top: 10px;
+}
+
+.term-packaging-host h6 {
+    height: 20px;
+    margin: 0;
+    color: #1f2430;
+    font-size: .9rem;
+    font-weight: 750;
+    line-height: 20px;
+}
+
 .assignment-term-card.is-invalid {
     border-color: #fda4af;
     box-shadow: 0 0 0 3px rgba(225, 29, 72, .08);
@@ -381,7 +526,10 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 0;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border-bottom: 1px solid #eef1f4;
 }
 
 .assignment-term-grid,
@@ -505,6 +653,9 @@ body.dark-mode #assignSupplierProductsModal .assignment-progress,
 body.dark-mode #assignSupplierProductsModal .modal-footer,
 body.dark-mode .assignment-section-card,
 body.dark-mode .assignment-panel,
+body.dark-mode .assignment-term-header { background:#111827; border-bottom-color:#334155; }
+body.dark-mode .assignment-field { border-bottom-color:#334155; }
+body.dark-mode .assignment-field strong { color:#e5e7eb; }
 body.dark-mode .assignment-term-card,
 body.dark-mode .assignment-review-card {
     color: #e5e7eb;
@@ -521,8 +672,9 @@ body.dark-mode .assignment-review-card {
         margin: 4vh auto;
     }
 
-    .assignment-existing-grid {
-        grid-template-columns: 1fr;
+    .assignment-existing-grid,
+    .assignment-term-body {
+        grid-template-columns: 1fr 1fr;
     }
 
     .assignment-product-results,
@@ -569,7 +721,8 @@ body.dark-mode .assignment-review-card {
 
     .assignment-mode-toggle,
     .assignment-term-grid,
-    .assignment-review-grid {
+    .assignment-review-grid,
+    .assignment-term-body {
         grid-template-columns: 1fr;
     }
 

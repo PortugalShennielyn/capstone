@@ -18,9 +18,16 @@ try {
         "SELECT DISTINCT
             p.product_id,
             COALESCE(NULLIF(TRIM(md.generic_name), ''), p.product_name) AS product_name,
+            p.product_name AS master_product_name,
             p.brand_name, p.barcode, p.status AS product_status,
             pc.category_name, pt.type_name,
             md.generic_name, md.strength, md.strength_value, md.strength_unit,
+            (SELECT psv.value_text
+             FROM product_specification_values psv
+             INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+             WHERE psv.product_id = p.product_id
+               AND LOWER(TRIM(ps.specification_name)) = 'medicine classification'
+             LIMIT 1) AS medicine_classification,
             md.net_content_value, md.net_content_unit, md.dosage_form,
             COALESCE(md.package_type, gd.package_type, msd.package_type) AS package_type,
             gd.variant, gd.size, gd.net_weight, gd.unit, gd.pack_content,
@@ -30,7 +37,12 @@ try {
             COALESCE(stock.shelf_quantity, 0) AS shelf_quantity,
             COALESCE(stock.storage_quantity, 0) AS storage_quantity,
             COALESCE(stock.total_quantity, 0) AS total_quantity,
-            1 AS has_active_supplier_assignment,
+            EXISTS (
+                SELECT 1 FROM supplier_products eligible_sp
+                INNER JOIN suppliers eligible_s ON eligible_s.supplier_id = eligible_sp.supplier_id
+                WHERE eligible_sp.product_id = p.product_id
+                  AND eligible_s.archived_at IS NULL
+            ) AS has_active_supplier_assignment,
             " . INVENTORY_LOW_STOCK_THRESHOLD . " AS reorder_level,
             CASE
                 WHEN COALESCE(received.has_received, 0) = 0 THEN 'New Product'
@@ -39,7 +51,7 @@ try {
                 ELSE 'In Stock'
             END AS stock_status
          FROM product p
-         INNER JOIN product_measurement_units pmu ON pmu.measurement_unit_id=p.inventory_unit_id
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id=p.inventory_unit_id
          LEFT JOIN ({$stockSql}) stock ON stock.product_id = p.product_id
          LEFT JOIN (
             SELECT product_id, MAX(CASE WHEN received_qty > 0 THEN 1 ELSE 0 END) AS has_received
@@ -52,17 +64,6 @@ try {
          LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          LEFT JOIN medical_supply_details msd ON msd.product_id = p.product_id
          WHERE p.status = 'Active'
-           AND EXISTS (
-               SELECT 1
-               FROM supplier_products eligible_sp
-               INNER JOIN suppliers eligible_s ON eligible_s.supplier_id = eligible_sp.supplier_id
-               WHERE eligible_sp.product_id = p.product_id
-                 AND eligible_s.archived_at IS NULL
-           )
-           AND (
-               COALESCE(received.has_received, 0) = 0
-               OR COALESCE(stock.total_quantity, 0) <= " . INVENTORY_LOW_STOCK_THRESHOLD . "
-           )
          ORDER BY
             CASE
                 WHEN COALESCE(received.has_received, 0) = 1 AND COALESCE(stock.total_quantity, 0) = 0 THEN 0

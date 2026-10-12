@@ -98,6 +98,8 @@ const productDetailsCache = new Map();
 let editProductRequestSequence = 0;
 let pendingSpecificationEdits = new Map();
 let editPricingApplyRequested = false;
+let editPricingConfirmLarge = false;
+let editPricingReplaceManual = false;
 let selectedPricingPreviewRows = [];
 let selectedPricingEligibleProductIds = new Set();
 let selectedPricingSubmissionActive = false;
@@ -1489,7 +1491,7 @@ function buildProductPayload() {
     const firstVariation = variations.find((variation) => !variation.delete) || variations[0] || {};
     const categoryName = getSelectedAddCategoryName();
 
-    const pricingMethod = getValue('productPricingMethod') || 'manual';
+    const pricingMethod = getValue('productPricingMethod') || 'category_markup';
     const genericName = getValue('productGenericName');
     const brandName = getValue('productBrandName');
     const payload = {
@@ -2790,9 +2792,87 @@ function setPricingText(id, value, tone = '') {
 }
 
 function pricingDifferenceStatus(calculated, current) {
-    if (calculated === null) return 'No accepted cost';
+    if (calculated === null) return 'Awaiting accepted cost';
     const difference = roundedCurrency(calculated - current);
     return Math.abs(difference) < 0.005 ? 'Up to date' : 'Price differs';
+}
+
+function acceptedCostLabel(context) {
+    if (context.cost === null) return 'Awaiting accepted cost';
+    return `${formatPrice(context.cost)} per ${context.inventoryUnit}`;
+}
+
+function acceptedCostSource(context) {
+    if (context.cost === null) return 'Awaiting accepted cost';
+    return context.pricing.price_source || 'Latest accepted delivery';
+}
+
+function supplierQuoteDisplay(context) {
+    const quote = context.pricing.supplier_quote;
+    if (!quote) {
+        return { cost: 'No supplier quote', source: 'No current supplier quotation' };
+    }
+    if (!quote.available) {
+        return { cost: 'No supplier quote', source: quote.label || 'No current supplier quotation' };
+    }
+    const unit = quote.inventory_unit || context.inventoryUnit;
+    return {
+        cost: `${formatPrice(quote.quoted_base_cost)} per ${unit}, estimated`,
+        source: quote.label || 'Supplier quotation, estimated'
+    };
+}
+
+function quotationEstimateNote(context, markup) {
+    const quote = context.pricing.supplier_quote;
+    if (!quote?.available || !Number.isFinite(Number(quote.quoted_base_cost)) || !Number.isFinite(markup)) {
+        return quote && !quote.available ? (quote.label || '') : '';
+    }
+    const base = Number(quote.quoted_base_cost);
+    const confirmedLines = categoryPricingUnitLines(context, markup);
+    const estimates = confirmedLines.length
+        ? confirmedLines.map(line => {
+            const factor = context.cost > 0 ? line.cost / context.cost : 1;
+            return `${formatPrice(calculatedClientPrice(base * factor, markup))} per ${line.unit}`;
+        })
+        : [`${formatPrice(calculatedClientPrice(base, markup))} per ${quote.inventory_unit || context.inventoryUnit}`];
+    const prices = estimates.join(' and ');
+    if (context.cost === null) {
+        return `Quotation estimate ${prices}. It stays inactive until a confirmed invoice exists and an admin applies the category markup.`;
+    }
+    return `Quotation estimate ${prices}. The approved suggestion uses the confirmed invoice, not this estimate.`;
+}
+
+function categoryPricingUnitLines(context, markup) {
+    const suggestions = context.product.supplier_invoice_pricing?.suggestions;
+    if (Array.isArray(suggestions) && suggestions.length && Number.isFinite(markup)) {
+        return suggestions.map(row => {
+            const cost = Number(row.cost_per_selling_unit);
+            const current = Number(row.current_selling_price);
+            const suggested = Number.isFinite(cost) ? calculatedClientPrice(cost, markup) : null;
+            return {
+                unit: row.selling_unit || context.inventoryUnit,
+                cost: Number.isFinite(cost) ? cost : null,
+                suggested,
+                current: Number.isFinite(current) ? current : null,
+                difference: suggested === null || !Number.isFinite(current) ? null : roundedCurrency(suggested - current)
+            };
+        }).filter(row => row.cost !== null && row.suggested !== null);
+    }
+    if (context.cost === null || !Number.isFinite(markup)) return [];
+    const suggested = calculatedClientPrice(context.cost, markup);
+    return [{
+        unit: context.inventoryUnit,
+        cost: context.cost,
+        suggested,
+        current: context.currentPrice,
+        difference: roundedCurrency(suggested - context.currentPrice)
+    }];
+}
+
+function renderCategoryPricingUnits(lines) {
+    const container = document.getElementById('editPricingUnitLines');
+    if (!container) return;
+    container.innerHTML = lines.length ? lines.map(line => `<div class="pricing-unit-line"><strong>${escapeHtml(line.unit)}</strong><div><small>Cost</small><b>${formatPrice(line.cost)}</b></div><div><small>Suggested</small><b>${formatPrice(line.suggested)}</b></div><div><small>Current</small><b>${formatPrice(line.current)}</b></div><div><small>Difference</small><b class="${Number(line.difference) < 0 ? 'is-drop' : ''}">${signedPrice(line.difference)}</b></div></div>`).join('') : '';
 }
 
 function setPricingMethodStatus(label, tone = '') {
@@ -2806,40 +2886,51 @@ function setPricingMethodStatus(label, tone = '') {
 
 function resetEditPricingApplyState() {
     editPricingApplyRequested = false;
+    editPricingConfirmLarge = false;
+    editPricingReplaceManual = false;
     const button = document.getElementById('btnApplyCalculatedPrice');
     if (button) {
         button.classList.remove('btn-success');
         button.classList.add('btn-outline-primary');
-        button.innerHTML = '<i class="fa-solid fa-check me-1"></i>Apply Calculated Price';
+        button.innerHTML = '<i class="fa-solid fa-check me-1"></i>Apply Category Markup';
     }
 }
 
 function updateEditPricingView({ preserveApply = false } = {}) {
-    const method = getValue('editProductPricingMethod') || 'manual';
+    const method = getValue('editProductPricingMethod') === 'manual' ? 'manual' : 'category_markup';
     const context = editPricingContext();
     const categoryMarkup = Number(context.category.effective_markup_percentage ?? context.pricing.category_markup_percentage ?? 0);
-    const customMarkupText = getValue('editProductCustomMarkup');
-    const customMarkup = customMarkupText === '' ? null : Number(customMarkupText);
-    const activeMarkup = method === 'custom_markup' ? customMarkup : categoryMarkup;
+    const activeMarkup = Number.isFinite(categoryMarkup) ? categoryMarkup : null;
     const calculated = context.cost === null || activeMarkup === null ? null : calculatedClientPrice(context.cost, activeMarkup);
     const difference = calculated === null ? null : roundedCurrency(calculated - context.currentPrice);
-    const costLabel = context.cost === null ? 'No accepted delivery' : `${formatPrice(context.cost)} per ${context.inventoryUnit}`;
+    const costLabel = acceptedCostLabel(context);
+    const sourceLabel = acceptedCostSource(context);
+    const quoteDisplay = supplierQuoteDisplay(context);
+    setPricingText('editPricingQuotedCost', quoteDisplay.cost);
+    setPricingText('editPricingQuoteSource', quoteDisplay.source);
+    setPricingText('editPricingManualQuoted', quoteDisplay.cost);
+    setPricingText('editPricingManualQuoteSource', quoteDisplay.source);
+    const quoteNote = document.getElementById('editPricingQuoteEstimate');
+    if (quoteNote) quoteNote.textContent = quotationEstimateNote(context, activeMarkup);
     const currentLabel = `${formatPrice(context.currentPrice)} per ${context.inventoryUnit}`;
-    const calculatedLabel = calculated === null ? 'Not available' : `${formatPrice(calculated)} per ${context.inventoryUnit}`;
+    const calculatedLabel = calculated === null ? 'Awaiting accepted cost' : `${formatPrice(calculated)} per ${context.inventoryUnit}`;
+    const unitLines = categoryPricingUnitLines(context, activeMarkup);
 
     document.getElementById('editCategoryPricingView')?.classList.toggle('d-none', method !== 'category_markup');
-    document.getElementById('editCustomPricingView')?.classList.toggle('d-none', method !== 'custom_markup');
+    document.getElementById('editCustomPricingView')?.classList.add('d-none');
     document.getElementById('editManualPricingView')?.classList.toggle('d-none', method !== 'manual');
     const customInput = document.getElementById('editProductCustomMarkup');
     if (customInput) {
-        customInput.required = method === 'custom_markup';
-        customInput.disabled = method !== 'custom_markup';
+        customInput.required = false;
+        customInput.disabled = true;
     }
+    renderCategoryPricingUnits(method === 'category_markup' ? unitLines : []);
 
     setPricingText('editPricingCategory', context.category.category_name || context.product.category_name || 'Not available');
     setPricingText('editPricingCategoryMarkup', `${Number.isFinite(categoryMarkup) ? categoryMarkup.toFixed(2) : '0.00'}%`);
     setPricingText('editPricingMarkupSource', context.category.markup_source || context.pricing.category_markup_source || 'Category');
     setPricingText('editPricingCategoryCost', costLabel, context.cost === null ? 'negative' : '');
+    setPricingText('editPricingCostSource', sourceLabel);
     setPricingText('editPricingCategoryCalculated', method === 'category_markup' ? calculatedLabel : 'Not available');
     setPricingText('editPricingCategoryCurrent', currentLabel);
     setPricingText('editPricingCategoryDifference', difference === null ? 'Not available' : signedPrice(difference), difference > 0 ? 'positive' : difference < 0 ? 'negative' : '');
@@ -2849,11 +2940,12 @@ function updateEditPricingView({ preserveApply = false } = {}) {
     setPricingText('editPricingCustomCalculated', method === 'custom_markup' ? calculatedLabel : 'Not available');
     setPricingText('editPricingCustomCurrent', currentLabel);
     setPricingText('editPricingCustomDifference', difference === null ? 'Not available' : signedPrice(difference), difference > 0 ? 'positive' : difference < 0 ? 'negative' : '');
-    setPricingText('editPricingCustomStatus', customMarkup === null ? 'Enter a valid custom markup' : pricingDifferenceStatus(calculated, context.currentPrice));
+    setPricingText('editPricingCustomStatus', pricingDifferenceStatus(calculated, context.currentPrice));
 
     const manualPrice = Number(document.querySelector('#editVariationList .edit-variation-entry:first-child .edit-var-price')?.value);
     const gross = Number.isFinite(manualPrice) && context.cost !== null ? roundedCurrency(manualPrice - context.cost) : null;
     setPricingText('editPricingManualCost', costLabel, context.cost === null ? 'negative' : '');
+    setPricingText('editPricingManualSource', sourceLabel);
     setPricingText('editPricingManualGross', gross === null ? 'Not available' : signedPrice(gross), gross > 0 ? 'positive' : gross < 0 ? 'negative' : '');
     setPricingText('editPricingManualCurrent', currentLabel);
     setPricingText('editPricingManualStatus', 'Manual price protected');
@@ -2861,9 +2953,7 @@ function updateEditPricingView({ preserveApply = false } = {}) {
     if (method === 'manual') {
         setPricingMethodStatus('Manual price protected', 'valid');
     } else if (context.cost === null) {
-        setPricingMethodStatus('No accepted cost', 'invalid');
-    } else if (method === 'custom_markup' && (customMarkup === null || !Number.isFinite(customMarkup) || customMarkup < 0)) {
-        setPricingMethodStatus('Enter custom markup', 'warning');
+        setPricingMethodStatus('Awaiting accepted cost', 'invalid');
     } else if (calculated !== null && Math.abs(calculated - context.currentPrice) < 0.005) {
         setPricingMethodStatus('Up to date', 'valid');
     } else {
@@ -2873,17 +2963,17 @@ function updateEditPricingView({ preserveApply = false } = {}) {
     const applyButton = document.getElementById('btnApplyCalculatedPrice');
     if (applyButton) {
         applyButton.classList.toggle('d-none', method === 'manual');
-        applyButton.disabled = calculated === null || !Number.isFinite(activeMarkup) || activeMarkup < 0;
+        applyButton.disabled = method === 'manual' || calculated === null || !Number.isFinite(activeMarkup) || activeMarkup < 0;
     }
     if (!preserveApply) resetEditPricingApplyState();
     const note = document.getElementById('editPricingActionNote');
     if (note) note.textContent = method === 'manual'
         ? 'Category and supplier-cost changes will not overwrite this manual price.'
         : context.cost === null
-            ? 'An accepted delivery with a unit cost is needed to calculate a markup price. You can save the markup method now.'
+            ? 'No confirmed invoice yet. A supplier quotation can be shown as an estimate, but it cannot become the active selling price until a delivery is confirmed and an admin applies the markup.'
         : editPricingApplyRequested
-            ? `The calculated price ${calculatedLabel} will become active when you save.`
-            : 'Saving the pricing method preserves the active price unless you explicitly apply the calculation.';
+            ? `The category markup price ${calculatedLabel} will become active for each sellable unit when you save. The supplier quote stays an estimate.`
+            : 'Saving keeps the active selling price until you apply the category markup. The suggestion uses the latest confirmed invoice.';
 }
 
 async function openEditProduct(productId) {
@@ -2905,7 +2995,8 @@ async function openEditProduct(productId) {
         statusAction.classList.toggle('btn-outline-warning', active);
         statusAction.classList.toggle('btn-outline-success', !active);
     }
-    document.getElementById('editProductPricingMethod').value = product.pricing_method || product.pricing?.pricing_method || 'manual';
+    const storedPricingMethod = product.pricing_method || product.pricing?.pricing_method || 'category_markup';
+    document.getElementById('editProductPricingMethod').value = storedPricingMethod === 'manual' ? 'manual' : 'category_markup';
     document.getElementById('editProductCustomMarkup').value = product.pricing?.custom_markup_percentage ?? '';
     editPricingApplyRequested = false;
     const requestSequence = ++editProductRequestSequence;
@@ -2957,7 +3048,12 @@ async function openEditProduct(productId) {
 
         const details = detailResult.status === 'fulfilled' ? (detailResult.value?.data || {}) : {};
         if (detailResult.status === 'fulfilled') productDetailsCache.set(String(product.product_id), details);
-        const hydratedProduct = { ...product, ...(details.product || {}) };
+        const cachedProduct = getProductById(product.product_id);
+        if (cachedProduct && detailResult.status === 'fulfilled') {
+            if (details.pricing) cachedProduct.pricing = details.pricing;
+            if (details.supplier_invoice_pricing) cachedProduct.supplier_invoice_pricing = details.supplier_invoice_pricing;
+        }
+        const hydratedProduct = { ...product, ...(details.product || {}), supplier_invoice_pricing: details.supplier_invoice_pricing, pricing: details.pricing || product.pricing };
         document.getElementById('editProductGenericName').value = hydratedProduct.generic_name || '';
         const rawSavedSpecifications = Array.isArray(details.specifications) && details.specifications.length
             ? details.specifications
@@ -2998,9 +3094,12 @@ async function submitEditProduct(event) {
         pricing_method: pricingMethod,
         variations: collectEditVariations()
     };
-    if (pricingMethod === 'custom_markup') payload.custom_markup_percentage = getValue('editProductCustomMarkup');
     if (pricingMethod === 'manual') payload.manual_selling_price = payload.variations.find(variation => !variation.delete)?.price || '';
-    if (pricingMethod !== 'manual' && editPricingApplyRequested) payload.apply_calculated_price = true;
+    if (pricingMethod === 'category_markup' && editPricingApplyRequested) {
+        payload.apply_calculated_price = true;
+        if (editPricingConfirmLarge) payload.confirm_large_change = true;
+        if (editPricingReplaceManual) payload.confirm_replace_manual = true;
+    }
 
     try {
         PharmaUtils.modal.loading('Updating Product...');
@@ -3157,23 +3256,33 @@ function updateSelectedPricingPreviewSummary() {
     const eligibleCount = selectedPricingPreviewRows.filter(row => row.eligible_for_apply).length;
     const blockedCount = selectedPricingPreviewRows.length - eligibleCount;
     const warningCount = selectedPricingPreviewRows.filter(row => selectedPricingEligibleProductIds.has(String(row.product_id)) && (row.warning || (row.existing_pricing_method === 'manual' && selectedPricingUnitLines(row).some(unit => (selectedPricingChange(unit)?.amount ?? 0) < 0)))).length;
-    const reviewCount = selectedPricingPreviewRows.filter(row => row.review_note && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
+    const selectedRows = selectedPricingPreviewRows.filter(row => selectedPricingEligibleProductIds.has(String(row.product_id)));
+    const reviewCount = selectedRows.filter(row => row.review_note).length;
+    const manualCount = selectedRows.filter(row => row.existing_pricing_method === 'manual').length;
+    const increaseCount = selectedRows.filter(row => selectedPricingUnitLines(row).some(unit => (selectedPricingChange(unit)?.amount ?? 0) > 0.004)).length;
+    const decreaseCount = selectedRows.filter(row => selectedPricingUnitLines(row).some(unit => (selectedPricingChange(unit)?.amount ?? 0) < -0.004)).length;
     setPricingText('selectedPricingSelectedCount', String(selectedCount));
     setPricingText('selectedPricingEligibleCount', String(eligibleCount));
     setPricingText('selectedPricingBlockedCount', String(blockedCount));
     setPricingText('selectedPricingWarningCount', String(warningCount));
+    setPricingText('selectedPricingIncreaseCount', String(increaseCount));
+    setPricingText('selectedPricingDecreaseCount', String(decreaseCount));
+    setPricingText('selectedPricingManualCount', String(manualCount));
+    const manualConfirmation = document.getElementById('selectedPricingManualConfirmation');
+    if (manualConfirmation) manualConfirmation.hidden = manualCount === 0;
     const summary = document.getElementById('selectedPricingPreviewSummary');
     if (summary) {
-        const parts = [`${selectedCount} product${selectedCount === 1 ? '' : 's'} selected.`];
-        if (warningCount) parts.push(`${warningCount} product${warningCount === 1 ? '' : 's'} need price review before applying.`);
-        const manualCount = selectedPricingPreviewRows.filter(row => row.existing_pricing_method === 'manual' && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
-        if (manualCount) parts.push(`${manualCount} manual price${manualCount === 1 ? '' : 's'} will be replaced only with Admin confirmation.`);
-        if (reviewCount) parts.push(`${reviewCount} medicine price${reviewCount === 1 ? '' : 's'} have no verified ceiling and need manual review.`);
-        if (blockedCount) parts.push(`${blockedCount} excluded. Products without an accepted unit cost stay unchanged.`);
+        const parts = [];
+        if (warningCount) parts.push(`${warningCount} selected product${warningCount === 1 ? '' : 's'} need price review.`);
+        if (reviewCount) parts.push(`${reviewCount} medicine price${reviewCount === 1 ? '' : 's'} have no verified ceiling.`);
+        if (blockedCount) parts.push(`${blockedCount} excluded product${blockedCount === 1 ? '' : 's'} will stay unchanged.`);
         summary.textContent = parts.join(' ');
     }
     const confirm = document.getElementById('btnConfirmSelectedPricing');
-    if (confirm) confirm.disabled = selectedCount === 0 || selectedPricingSubmissionActive;
+    if (confirm) {
+        confirm.disabled = selectedCount === 0 || selectedPricingSubmissionActive || (manualCount > 0 && !document.getElementById('selectedPricingReplaceManual')?.checked);
+        if (!selectedPricingSubmissionActive) confirm.textContent = `Apply to ${selectedCount} Product${selectedCount === 1 ? '' : 's'}`;
+    }
 }
 
 function renderSelectedPricingPreview() {
@@ -3193,28 +3302,36 @@ function renderSelectedPricingPreview() {
         const manual = row.existing_pricing_method === 'manual';
         const manualDrop = manual && lines.some(unit => (selectedPricingChange(unit)?.amount ?? 0) < 0);
         const statusClass = eligible ? (row.warning || row.review_note || manualDrop ? 'is-warning' : 'is-ready') : 'is-blocked';
-        const statusText = row.eligibility_status || (eligible ? 'Ready' : 'Excluded');
-        return lines.map((unit, index) => {
+        const statusText = eligible ? (statusClass === 'is-warning' ? 'Needs review' : 'Ready') : 'Excluded';
+        const inventoryUnit = row.accepted_inventory_unit || row.inventory_unit || 'base units';
+        const purchaseConversion = Number(row.accepted_conversion) > 0 && row.accepted_purchase_unit
+            ? `Purchase conversion: 1 ${row.accepted_purchase_unit} = ${Number(row.accepted_conversion)} ${inventoryUnit}`
+            : '';
+        const unitCards = lines.map(unit => {
             const change = selectedPricingChange(unit);
             const decrease = change && change.amount < -0.004;
             const increase = change && change.amount > 0.004;
             const changeText = change ? `${change.amount > 0 ? '+' : change.amount < 0 ? '−' : ''}${formatPrice(Math.abs(change.amount))}` : '—';
             const changePercent = change?.percent === null || change?.percent === undefined ? '' : `${change.percent > 0 ? '+' : ''}${change.percent.toFixed(1)}%`;
-            return `<tr class="${eligible ? (decrease && manual ? 'has-manual-price-drop' : row.warning ? 'has-price-warning' : '') : 'is-ineligible'}">
-            ${index === 0 ? `<td class="center-column" rowspan="${lines.length}"><input class="form-check-input bulk-pricing-select" type="checkbox" value="${escapeHtml(row.product_id)}" aria-label="Select ${escapeHtml(row.product_name || row.product)}" ${checked ? 'checked' : ''} ${eligible ? '' : 'disabled'}></td>
-            <td class="text-column" rowspan="${lines.length}"><span class="identity-value">${escapeHtml(row.product_name || row.product)}</span>${manual && eligible ? '<small class="manual-overwrite-note">Manual price will be replaced</small>' : ''}</td>
-            <td class="text-column" rowspan="${lines.length}">${escapeHtml(row.category || '—')}</td>` : ''}
-            <td class="text-column">${escapeHtml(unit.sellable_unit || '—')}</td>
-            <td class="numeric-column">${unit.unit_cost === null || unit.unit_cost === undefined ? '<span class="text-danger">No accepted cost</span>' : formatPrice(unit.unit_cost)}</td>
-            <td class="numeric-column">${unit.current_price === null || unit.current_price === undefined ? '—' : formatPrice(unit.current_price)}</td>
-            <td class="numeric-column">${unit.markup_percentage === null || unit.markup_percentage === undefined ? '—' : `${Number(Number(unit.markup_percentage).toFixed(2))}%`}</td>
-            <td class="numeric-column ${decrease && manual ? 'bulk-pricing-warning-value' : ''}">${unit.new_price === null || unit.new_price === undefined ? '—' : formatPrice(unit.new_price)}</td>
-            <td class="numeric-column price-change ${decrease ? 'is-decrease' : increase ? 'is-increase' : ''}"><strong>${changeText}</strong>${changePercent ? `<small>${changePercent}</small>` : ''}</td>
-            ${index === 0 ? `<td class="text-column" rowspan="${lines.length}"><span class="pricing-method-badge ${manual ? 'pricing-method-manual' : row.existing_pricing_method === 'custom_markup' ? 'pricing-method-custom' : 'pricing-method-category'}">${escapeHtml(pricingMethodDisplay(row.existing_pricing_method))}</span><small class="d-block mt-1 text-muted">→ Category Markup</small></td>` : ''}
-            ${index === 0 ? `<td class="center-column" rowspan="${lines.length}"><span class="bulk-pricing-status ${statusClass}">${escapeHtml(statusText)}</span>${row.review_note ? `<small class="d-block text-muted mt-1">${escapeHtml(row.review_note)}</small>` : ''}</td>` : ''}
-        </tr>`;
+            const unitLabel = escapeHtml(unit.sellable_unit || '—');
+            const baseQuantity = Math.max(1, Number(unit.base_quantity) || 1);
+            return `<div class="pricing-preview-unit-line">
+                <small class="pricing-preview-unit-conversion">Sellable conversion: 1 ${unitLabel} = ${baseQuantity} ${escapeHtml(inventoryUnit)}</small>
+                <div class="pricing-preview-cost"><small>Accepted unit cost · ${unitLabel}</small><strong>${unit.unit_cost === null || unit.unit_cost === undefined ? '—' : formatPrice(unit.unit_cost)}</strong></div>
+                <div class="pricing-preview-markup"><small>Markup</small><strong>${unit.markup_percentage === null || unit.markup_percentage === undefined ? '—' : `${Number(Number(unit.markup_percentage).toFixed(2))}%`}</strong></div>
+                <div class="pricing-preview-price"><small>Current · ${unitLabel}</small><strong>${unit.current_price === null || unit.current_price === undefined ? '—' : formatPrice(unit.current_price)}</strong></div>
+                <span class="pricing-preview-arrow" aria-hidden="true">→</span>
+                <div class="pricing-preview-price is-new"><small>New · ${unitLabel}</small><strong>${unit.new_price === null || unit.new_price === undefined ? '—' : formatPrice(unit.new_price)}</strong></div>
+                <div class="pricing-preview-difference ${decrease ? 'is-decrease' : increase ? 'is-increase' : ''}"><small>Difference</small><strong>${changeText}</strong>${changePercent ? `<span>${changePercent}</span>` : ''}</div>
+            </div>`;
         }).join('');
-    }).join('') || '<tr><td colspan="11" class="text-center text-muted py-4">No preview products match this search.</td></tr>';
+        const note = row.review_note || row.warning || (!eligible ? row.eligibility_status : '');
+        return `<article class="pricing-preview-card ${eligible ? '' : 'is-ineligible'} ${manualDrop ? 'has-manual-price-drop' : ''} ${statusClass === 'is-warning' ? 'has-price-warning' : ''}" role="listitem">
+            <div class="pricing-preview-card-header"><label class="pricing-preview-product"><input class="form-check-input bulk-pricing-select" type="checkbox" value="${escapeHtml(row.product_id)}" aria-label="Select ${escapeHtml(row.product_name || row.product)}" ${checked ? 'checked' : ''} ${eligible ? '' : 'disabled'}><span><strong>${escapeHtml(row.product_name || row.product)}</strong><small>${escapeHtml([row.brand_name && row.brand_name !== '—' ? row.brand_name : '', row.category].filter(Boolean).join(' · '))}</small>${purchaseConversion ? `<small class="pricing-preview-purchase-conversion">${escapeHtml(purchaseConversion)}</small>` : ''}</span></label><span class="pricing-method-badge ${manual ? 'pricing-method-manual' : row.existing_pricing_method === 'custom_markup' ? 'pricing-method-custom' : 'pricing-method-category'}">${escapeHtml(pricingMethodDisplay(row.existing_pricing_method))}</span></div>
+            <div class="pricing-preview-units">${unitCards}</div>
+            <div class="pricing-preview-card-footer"><span class="bulk-pricing-status ${statusClass}">${statusText}</span>${manual && eligible ? '<span class="pricing-preview-manual-note">Manual price will be replaced</span>' : ''}${note ? `<span class="pricing-preview-review-note">${escapeHtml(note)}</span>` : ''}</div>
+        </article>`;
+    }).join('') || '<div class="pricing-preview-empty">No preview products match this search.</div>';
     updateSelectedPricingPreviewSummary();
 }
 
@@ -3505,8 +3622,11 @@ function initProductCards() {
         if (!checkbox || checkbox.disabled) return;
         if (checkbox.checked) selectedPricingEligibleProductIds.add(String(checkbox.value));
         else selectedPricingEligibleProductIds.delete(String(checkbox.value));
+        const manualConfirmation = document.getElementById('selectedPricingReplaceManual');
+        if (manualConfirmation) manualConfirmation.checked = false;
         updateSelectedPricingPreviewSummary();
     });
+    document.getElementById('selectedPricingReplaceManual')?.addEventListener('change', updateSelectedPricingPreviewSummary);
     document.getElementById('selectedPricingSearch')?.addEventListener('input', renderSelectedPricingPreview);
     document.getElementById('selectedPricingModal')?.addEventListener('shown.bs.modal', () => {
         renderSelectedPricingPreview();
@@ -3594,13 +3714,39 @@ function initProductCards() {
 
     document.getElementById('editProductPricingMethod')?.addEventListener('change', () => updateEditPricingView());
     document.getElementById('editProductCustomMarkup')?.addEventListener('input', () => updateEditPricingView());
-    document.getElementById('btnApplyCalculatedPrice')?.addEventListener('click', () => {
+    document.getElementById('btnApplyCalculatedPrice')?.addEventListener('click', async () => {
+        const context = editPricingContext();
+        const markup = Number(context.category.effective_markup_percentage ?? context.pricing.category_markup_percentage ?? 0);
+        const lines = categoryPricingUnitLines(context, markup);
+        if (!lines.length) return;
+        const storedMethod = context.product.pricing_method || context.pricing.pricing_method || '';
+        editPricingReplaceManual = false;
+        editPricingConfirmLarge = false;
+        if (storedMethod === 'manual') {
+            const confirmed = await PharmaUtils.modal.confirm(
+                'Replace manual selling price?',
+                'Category markup will replace the manual price on every active sellable unit. Completed sales stay unchanged.',
+                'Replace manual price'
+            );
+            if (!confirmed) return;
+            editPricingReplaceManual = true;
+        }
+        const largeReduction = lines.some(line => Number(line.current) > 0 && (Number(line.suggested) - Number(line.current)) / Number(line.current) <= -0.3);
+        if (largeReduction) {
+            const confirmed = await PharmaUtils.modal.confirm(
+                'Confirm selling-price reduction',
+                'The suggested category markup price is more than 30% below a current selling price. Apply it only if that reduction is intended.',
+                'Apply lower price'
+            );
+            if (!confirmed) return;
+            editPricingConfirmLarge = true;
+        }
         editPricingApplyRequested = true;
         const button = document.getElementById('btnApplyCalculatedPrice');
         if (button) {
             button.classList.remove('btn-outline-primary');
             button.classList.add('btn-success');
-            button.innerHTML = '<i class="fa-solid fa-check-double me-1"></i>Calculated Price Selected';
+            button.innerHTML = '<i class="fa-solid fa-check-double me-1"></i>Category Markup Selected';
         }
         updateEditPricingView({ preserveApply: true });
     });

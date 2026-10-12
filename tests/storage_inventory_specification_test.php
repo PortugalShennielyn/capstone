@@ -75,6 +75,12 @@ try {
             storageInventoryAssert(strtolower((string) ($cetzy['product_name'] ?? '')) === 'cetzy-10', 'CETZY-10 fixture changed; update this regression test.');
             storageInventoryAssert(strtolower((string) ($cetzy['generic_name'] ?? '')) === 'cetirizine hydrochloride', 'Storage Inventory did not fetch CETZY-10 generic name from Product Master medicine details.');
             storageInventoryAssert(array_key_exists('brand_name', $cetzy) && array_key_exists('product_name', $cetzy) && array_key_exists('generic_name', $cetzy), 'Storage Inventory API product identity keys are incomplete.');
+            if (strcasecmp((string) ($cetzy['medicine_classification'] ?? ''), 'Prescription (Rx)') === 0) {
+                storageInventoryAssert((float) ($cetzy['recorded_pack_content'] ?? 0) === 10.0, 'Inventory Details lost CETZY-10 pack content from Product Master specifications.');
+                storageInventoryAssert(strcasecmp((string) ($cetzy['selling_package_unit'] ?? ''), 'box') === 0
+                    && (int) ($cetzy['selling_package_quantity'] ?? 0) === 100,
+                    'Inventory Details did not recover CETZY-10 packaging from its configured selling unit.');
+            }
         }
     }
 

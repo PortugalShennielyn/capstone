@@ -16,10 +16,10 @@ foreach (['editSupplierProductSetupPane', 'editSupplierProductReviewPane'] as $p
 }
 supplierPurchasingModalAssert(!str_contains($html, 'editSupplierProductDetailsPane'), 'Product Details must not remain a separate tab.');
 supplierPurchasingModalAssert(!str_contains($html, 'editSupplierProductPricingPane'), 'Supplier Pricing must not remain a separate tab.');
-supplierPurchasingModalAssert(str_contains($html, '1. Product &amp; Supplier Setup'), 'The unified Product and Supplier Setup tab is required.');
-supplierPurchasingModalAssert(str_contains($html, '2. Purchase Review'), 'Purchase Review must be the second tab.');
-supplierPurchasingModalAssert(str_contains($html, 'width:94vw; max-width:1360px; height:88vh;'), 'The edit modal must use the wide fixed-height layout.');
-supplierPurchasingModalAssert(str_contains($html, 'overflow-y:auto; overflow-x:hidden;'), 'Only the modal body should scroll vertically.');
+supplierPurchasingModalAssert(str_contains($html, 'Supplier purchasing setup'), 'The purchasing setup title is required.');
+supplierPurchasingModalAssert(str_contains($html, 'Purchasing terms') && str_contains($html, '>Review<'), 'Purchasing terms and Review must be the two steps.');
+supplierPurchasingModalAssert(str_contains($html, 'class="sps-layout"'), 'The setup must use the two-column purchasing layout.');
+supplierPurchasingModalAssert(str_contains($html, 'overflow-y: auto;') && str_contains($html, 'overflow-x: hidden;'), 'Only the modal body should scroll vertically.');
 supplierPurchasingModalAssert(!str_contains($html, 'id="editSupplierProductConversionPreview"'), 'The permanent right-side preview must be removed.');
 supplierPurchasingModalAssert(!str_contains($html, 'class="edit-attribute'), 'Legacy editable Product Master attribute controls must not remain in the modal.');
 supplierPurchasingModalAssert(str_contains($html, 'id="editSupplierProductAttributes"'), 'The Product Master attribute container is required.');
@@ -27,13 +27,13 @@ supplierPurchasingModalAssert(str_contains($html, 'id="editSupplierProductForm" 
 supplierPurchasingModalAssert(!str_contains($html, 'id="editSupplierProductSupplierCost"'), 'Supplier setup must not contain an editable purchasing price.');
 supplierPurchasingModalAssert(str_contains($html, 'id="editSupplierProductPurchaseUnit"'), 'Purchase Unit must remain editable.');
 supplierPurchasingModalAssert(str_contains($html, 'id="editSupplierProductInventoryUnitPreview"'), 'Inventory Unit must remain editable.');
-supplierPurchasingModalAssert(str_contains($html, '<select class="form-select" id="editSupplierProductPurchaseUnit"'), 'Purchase Unit must be a controlled selector.');
+supplierPurchasingModalAssert(str_contains($html, 'id="editSupplierProductPurchaseUnit"'), 'Purchase Unit must be a controlled selector.');
 supplierPurchasingModalAssert(str_contains($html, 'id="editSupplierProductInventoryUnitPreview" required disabled aria-readonly="true"'), 'Product Base Unit must be read only in Supplier Purchasing Setup.');
 supplierPurchasingModalAssert(!str_contains($html, 'id="editSupplierProductInnerUnit"'), 'The simplified setup must not expose an Inner Unit selector.');
 supplierPurchasingModalAssert(!str_contains($html, 'id="editSupplierProductPurchaseUnit" list='), 'Purchase Unit must not use a free-text datalist.');
-supplierPurchasingModalAssert(str_contains($html, 'supplier-compact-table'), 'Product and purchasing details must use compact tables.');
-supplierPurchasingModalAssert(str_contains($html, 'Contents Per Purchase Unit'), 'The final contents conversion section is required.');
-supplierPurchasingModalAssert(str_contains($html, '<th>Purchase Unit</th><th>Contents</th><th>Product Base Unit</th>'), 'The simplified conversion must show Purchase Unit, Contents, and Product Base Unit.');
+supplierPurchasingModalAssert(str_contains($html, 'Pack content'), 'Pack content must remain part of the purchasing setup.');
+supplierPurchasingModalAssert(str_contains($html, 'From Product Master'), 'Product Master details must stay visible beside the purchasing form.');
+supplierPurchasingModalAssert(str_contains($html, 'Continue to review'), 'The first step must continue into review.');
 supplierPurchasingModalAssert(!str_contains($html, 'Packaging Hierarchy'), 'The multi-level Packaging Hierarchy editor must be removed.');
 supplierPurchasingModalAssert(!str_contains($html, 'Product Packaging <small>From Product Master</small>'), 'Product Packaging must not appear in the Supplier Purchasing Setup.');
 supplierPurchasingModalAssert(str_contains($html, 'Invalid legacy unit — please select a valid Purchase Unit.'), 'Numeric legacy Purchase Units must show a clear correction message.');
@@ -65,12 +65,16 @@ supplierPurchasingModalAssert(str_contains($javascript, 'editSupplierDirectPurch
 supplierPurchasingModalAssert(str_contains($javascript, 'editSupplierDirectBaseUnit'), 'The direct conversion must label the Product Base Unit.');
 supplierPurchasingModalAssert(!str_contains($javascript, "supplier_cost_basis: 'purchase'"), 'Supplier setup must not submit a purchasing price or cost basis.');
 supplierPurchasingModalAssert(str_contains($javascript, 'measurementUnitsForContext'), 'All supplier selectors must use shared central context filtering.');
-supplierPurchasingModalAssert(str_contains($javascript, "['box', 'carton'].includes(normalizedSupplierUnit(unit.unit_name))"), 'Edit Purchase Unit options must be restricted to Box and Carton.');
+supplierPurchasingModalAssert(!str_contains($javascript, "['box', 'carton'].includes(normalizedSupplierUnit(unit.unit_name))"), 'Purchase Unit options must come from the unit list, not a hardcoded Box and Carton filter.');
+supplierPurchasingModalAssert(str_contains($javascript, 'dedupedPurchaseUnits'), 'Duplicate purchase units from Count and Packaging must be shown once.');
+supplierPurchasingModalAssert(str_contains($html, 'id="editSupplierPurchaseUnitSearch"'), 'Purchase Unit must be a type-to-select field.');
+supplierPurchasingModalAssert(str_contains($javascript, 'Customize purchase unit'), 'Purchase Unit must offer a customize action.');
+supplierPurchasingModalAssert(str_contains($javascript, "measurement_group: 'Packaging'"), 'A custom purchase unit must be saved into the measurement unit list.');
 supplierPurchasingModalAssert(!str_contains($javascript, 'validateHierarchyDraft'), 'Multi-level hierarchy validation must be removed.');
 supplierPurchasingModalAssert(!str_contains($javascript, 'alignHierarchyWithPurchaseUnit'), 'Multi-level hierarchy realignment must be removed.');
 supplierPurchasingModalAssert(str_contains($javascript, 'Number.isInteger(Number(quantityInput?.value))'), 'Final contents must use positive whole-number validation.');
-supplierPurchasingModalAssert(str_contains($html, 'background:#fafbff'), 'The modal content must use the bright faded background.');
-supplierPurchasingModalAssert(str_contains($html, 'background:#f3f0ff'), 'Calculated conversion and receiving impact must use the soft purple highlight.');
+supplierPurchasingModalAssert(str_contains($html, '#fafbff'), 'The Product Master panel must use the bright faded background.');
+supplierPurchasingModalAssert(str_contains($html, '#f3f0ff'), 'The active purchasing step must use the soft purple highlight.');
 
 preg_match_all('/\sid="([^"]+)"/', $html, $matches);
 $duplicateIds = array_filter(array_count_values($matches[1]), static fn(int $count): bool => $count > 1);

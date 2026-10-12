@@ -165,15 +165,38 @@ try {
         throw new InvalidArgumentException('An active SKU Selling Price must be greater than 0.');
     }
 
+    $acceptedPriceLines = [];
     if ($applyCalculatedPrice) {
-        $basis = latestAcceptedCostBasis($pdo, $productId);
-        if (!$basis || !is_numeric($basis['unit_cost']) || !is_finite((float) $basis['unit_cost'])) {
-            throw new InvalidArgumentException('A valid accepted cost basis is required before applying a calculated price.');
+        if ($pricingMethod !== 'category_markup') {
+            throw new InvalidArgumentException('Only the category markup price can be applied. Use a manual selling price to override it.');
         }
-        $markup = $pricingMethod === 'custom_markup'
-            ? (float) $customMarkup
-            : (float) categoryMarkupResolution($pdo, $categoryId)['markup_percentage'];
+        $basis = latestAcceptedCostBasis($pdo, $productId);
+        if (!$basis || !is_numeric($basis['unit_cost']) || !is_finite((float) $basis['unit_cost']) || (float) $basis['unit_cost'] <= 0) {
+            throw new InvalidArgumentException('Awaiting accepted cost. A confirmed supplier invoice is required before applying a category markup price.');
+        }
+        $markup = (float) categoryMarkupResolution($pdo, $categoryId)['markup_percentage'];
         $price = calculatedSellingPrice((float) $basis['unit_cost'], $markup);
+        $acceptedPriceLines = categoryMarkupSellableUnitLines(
+            $pdo,
+            $productId,
+            (float) $basis['unit_cost'],
+            $markup,
+            (string) ($basis['inventory_unit'] ?? 'unit'),
+            (float) $existingPricing['price']
+        );
+        $changeWarning = selectedPricingChangeWarning((float) $existingPricing['price'], $price);
+        foreach ($acceptedPriceLines as $line) {
+            $lineWarning = selectedPricingChangeWarning((float) $line['current_price'], (float) $line['new_price']);
+            if ($lineWarning) {
+                $changeWarning = $lineWarning;
+            }
+        }
+        if ($changeWarning && empty($payload['confirm_large_change'])) {
+            throw new InvalidArgumentException('Confirm this selling-price change before applying category markup. ' . $changeWarning);
+        }
+        if (($existingPricing['pricing_method'] ?? '') === 'manual' && empty($payload['confirm_replace_manual'])) {
+            throw new InvalidArgumentException('Confirm replacement of the manual selling price before applying category markup.');
+        }
     }
     $barcode = cleanUpdateField($variation, 'barcode') ?? cleanUpdateField($payload, 'barcode') ?? ('AUTO-' . strtoupper(bin2hex(random_bytes(6))));
     $submittedSpecifications = is_array($variation['specifications'] ?? null) ? $variation['specifications'] : [];
@@ -265,6 +288,23 @@ try {
         ':product_id' => $productId
     ]);
     syncProductDefaultSellingPrice($pdo, $productId, (float)$price);
+    if ($acceptedPriceLines) {
+        $updateSellingOption = $pdo->prepare(
+            'UPDATE product_selling_options
+             SET selling_price = :price
+             WHERE selling_option_id = :selling_option_id AND product_id = :product_id AND is_active = 1'
+        );
+        foreach ($acceptedPriceLines as $line) {
+            if (($line['selling_option_id'] ?? '') === '') {
+                continue;
+            }
+            $updateSellingOption->execute([
+                ':price' => $line['new_price'],
+                ':selling_option_id' => $line['selling_option_id'],
+                ':product_id' => $productId,
+            ]);
+        }
+    }
     if ($inventoryUnitChanged) {
         foreach ($supplierRows as $supplierRow) {
             $supplierRow['inventory_unit'] = $inventoryUnit['unit_name'];

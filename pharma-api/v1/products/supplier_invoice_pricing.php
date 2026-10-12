@@ -27,12 +27,13 @@ function supplierInvoicePricingSuggestions(PDO $pdo, string $productId): array
     $productQuery = $pdo->prepare('SELECT product_id, product_name, brand_name, price, category_id, pricing_method, custom_markup_percentage FROM product WHERE product_id=?');
     $productQuery->execute([$productId]);
     $product = $productQuery->fetch(PDO::FETCH_ASSOC);
-    $markup = $product['pricing_method']==='custom_markup' && $product['custom_markup_percentage']!==null
-        ? (float)$product['custom_markup_percentage']
-        : ($product['category_id'] ? categoryMarkupResolution($pdo, $product['category_id'])['markup_percentage'] : null);
+    $markup = $product['category_id'] ? categoryMarkupResolution($pdo, $product['category_id'])['markup_percentage'] : null;
     $base = productSellingBaseUnit($pdo, $productId);
     // Existing POS policy sells only the Product Master base unit.
-    $options = productSellingOptions($pdo, $productId, true);
+    $options = array_values(array_filter(
+        productSellingOptions($pdo, $productId, false),
+        static fn(array $option): bool => (int) ($option['is_active'] ?? 0) === 1
+    ));
     if (!$options) $options = [['unit'=>$base['unit_name'],'base_quantity'=>1,'selling_price'=>$product['price']]];
     $factor = (float)$basis['units_per_purchase_unit'];
     $suggestions = [];

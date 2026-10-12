@@ -77,6 +77,15 @@ try {
     $pdo->prepare('DELETE FROM purchase_order_invoice_items WHERE invoice_id=:id')->execute([':id'=>$invoiceId]);
     $insert=$pdo->prepare('INSERT INTO purchase_order_invoice_items(invoice_item_id,invoice_id,po_item_id,unit_cost,invoice_qty) VALUES(:id,:invoice,:po_item,:cost,:qty)');
     foreach($normalized as $line) $insert->execute([':id'=>newUuid($pdo),':invoice'=>$invoiceId,':po_item'=>$line['id'],':cost'=>$line['cost'],':qty'=>$line['qty']]);
+    // An invoice recorded or corrected after receiving refreshes the accepted batch cost,
+    // while preserving quantities and every existing customer selling price.
+    $pdo->prepare('UPDATE inventory_batches ib
+        INNER JOIN purchase_order_items poi ON poi.po_item_id=ib.po_item_id
+        INNER JOIN purchase_order_invoice_items invoice_item ON invoice_item.po_item_id=poi.po_item_id AND invoice_item.invoice_id=:invoice_id
+        SET ib.unit_cost=CASE WHEN invoice_item.invoice_qty > 0 AND poi.units_per_purchase_unit_snapshot > 0
+            THEN ROUND(invoice_item.unit_cost / poi.units_per_purchase_unit_snapshot, 4) ELSE 0 END
+        WHERE ib.po_id=:po_id AND poi.po_id=:item_po_id')
+        ->execute([':invoice_id'=>$invoiceId,':po_id'=>$poId,':item_po_id'=>$poId]);
     $previousCredits=$pdo->prepare("SELECT DISTINCT app.credit_id
         FROM supplier_credit_applications app
         INNER JOIN supplier_credits cr ON cr.credit_id=app.credit_id

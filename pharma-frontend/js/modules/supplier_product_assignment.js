@@ -5,9 +5,9 @@ import {
     productSearchText
 } from './product_specification.js?v=12';
 import { primaryAccessRole } from './rbac.js?v=9';
-import { loadMeasurementUnits, measurementUnitsForContext } from './measurement_units.js?v=2';
+import { loadMeasurementUnits, measurementUnitsForContext, upsertMeasurementUnitCache } from './measurement_units.js?v=2';
 import { purchasingConversion } from './purchasing_conversion.js?v=2';
-import { createPackagingEditor } from './packaging_breakdown.js?v=1';
+import { createPackagingEditor } from './packaging_breakdown.js?v=2';
 
 const API = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -28,7 +28,7 @@ function compactPrice(value) {
 
 const canManageSupplierCatalog = () => ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
 
-function assignmentProductIdentity(product = {}) {
+function assignmentNameParts(product = {}) {
     const brand = String(product.brand_name || '').trim();
     const productName = String(product.product_name || '').trim();
     const genericName = String(product.generic_name || '').trim();
@@ -37,7 +37,21 @@ function assignmentProductIdentity(product = {}) {
     const name = brand && preferredName.toLowerCase().startsWith(`${brand.toLowerCase()} `)
         ? preferredName.slice(brand.length).trim() : preferredName;
     const distinctName = name.toLowerCase() === brand.toLowerCase() ? '' : name;
-    return [brand, distinctName].filter(Boolean).join(' — ') || productName || genericName || 'Unnamed product';
+    return {
+        brand,
+        name: distinctName || (!brand ? (productName || genericName) : '')
+    };
+}
+
+function assignmentProductIdentity(product = {}) {
+    const parts = assignmentNameParts(product);
+    return [parts.brand, parts.name].filter(Boolean).join(' ') || 'Unnamed product';
+}
+
+function assignmentProductTitle(product = {}) {
+    const parts = assignmentNameParts(product);
+    const names = [parts.brand, parts.name].filter(Boolean).map((part) => `<strong>${esc(part)}</strong>`);
+    return names.join(' ') || `<strong>${esc('Unnamed product')}</strong>`;
 }
 
 function assignmentRxBadge(product) {
@@ -62,35 +76,42 @@ function unitKey(value) {
     return String(value || '').trim().toLowerCase();
 }
 
-function unitOptions(context, selected = '') {
-    const selectedKey = unitKey(selected);
-    return measurementUnitsForContext(state.units, { context })
-        .filter(unit => context !== 'purchase' || ['box', 'carton'].includes(unitKey(unit.unit_name)))
-        .map(unit => {
-            const value = String(unit.unit_name || '').trim();
-            const symbol = String(unit.unit_symbol || '').trim();
-            const label = symbol && unitKey(symbol) !== unitKey(value) ? `${value} (${symbol})` : value;
-            const isSelected = [value, symbol].some(item => unitKey(item) === selectedKey);
-            return `<option value="${esc(value)}" ${isSelected ? 'selected' : ''}>${esc(label)}</option>`;
-        }).join('');
+function assignmentUnitLabel(unit) {
+    const value = String(unit.unit_name || '').trim();
+    const symbol = String(unit.unit_symbol || '').trim();
+    return symbol && unitKey(symbol) !== unitKey(value) ? `${value} (${symbol})` : value;
+}
+
+function assignmentPurchaseUnits(product = null) {
+    const ranked = new Map();
+    const add = (unit) => {
+        const key = unitKey(unit?.unit_name);
+        if (!key) return;
+        const current = ranked.get(key);
+        const nextIsCount = unitKey(unit.measurement_group) === 'count';
+        const currentIsCount = current && unitKey(current.measurement_group) === 'count';
+        if (!current || (nextIsCount && !currentIsCount)) ranked.set(key, unit);
+    };
+    measurementUnitsForContext(state.units, { context: 'purchase' }).forEach(add);
+    const baseUnit = inventoryUnit(product || {});
+    if (baseUnit && !ranked.has(unitKey(baseUnit))) {
+        const record = state.units.find(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(baseUnit)));
+        if (record) add(record);
+    }
+    return [...ranked.values()].sort((left, right) => assignmentUnitLabel(left).localeCompare(assignmentUnitLabel(right)));
+}
+
+function validAssignmentPurchaseUnit(value) {
+    const key = unitKey(value);
+    return Boolean(key && !/^\d+(?:\.\d+)?$/.test(key) && assignmentPurchaseUnits().some(unit => [unit.unit_name, unit.unit_symbol].some(item => unitKey(item) === key)));
 }
 
 function purchaseUnitOptions(product, selected = '') {
     const selectedKey = unitKey(selected);
-    const baseUnit = inventoryUnit(product);
-    const allowed = measurementUnitsForContext(state.units, { context: 'purchase' })
-        .filter(unit => ['box', 'carton'].includes(unitKey(unit.unit_name)));
-    if (baseUnit && !allowed.some(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(baseUnit)))) {
-        const baseRecord = measurementUnitsForContext(state.units, { context: 'inventory' })
-            .find(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(baseUnit)));
-        if (baseRecord) allowed.push(baseRecord);
-    }
-    return allowed.map(unit => {
+    return assignmentPurchaseUnits(product).map(unit => {
         const value = String(unit.unit_name || '').trim();
-        const symbol = String(unit.unit_symbol || '').trim();
-        const label = symbol && unitKey(symbol) !== unitKey(value) ? `${value} (${symbol})` : value;
-        const isSelected = [value, symbol].some(item => unitKey(item) === selectedKey);
-        return `<option value="${esc(value)}" ${isSelected ? 'selected' : ''}>${esc(label)}</option>`;
+        const isSelected = [value, unit.unit_symbol].some(item => unitKey(item) === selectedKey);
+        return `<option value="${esc(value)}" ${isSelected ? 'selected' : ''}>${esc(assignmentUnitLabel(unit))}</option>`;
     }).join('');
 }
 
@@ -253,8 +274,8 @@ function renderProducts() {
                     <input class="form-check-input assignment-product-check mt-1" type="checkbox"
                            value="${esc(productId)}" ${state.selectedIds.has(productId) ? 'checked' : ''}
                            ${disabled ? 'disabled' : ''}>
-                    <span>
-                        <span class="assignment-product-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)} ${badges}</span>
+                    <span class="assignment-product-copy">
+                        <span class="assignment-product-identity">${assignmentProductTitle(product)} ${assignmentRxBadge(product)} ${badges}</span>
                         <span class="assignment-product-meta">${esc(product.type_name || 'Uncategorized')} · ${esc(formatProductSpecification(product))}</span>
                     </span>
                 </label>`;
@@ -272,7 +293,7 @@ function renderSelectedProducts() {
         ? products.map((product) => `
             <article class="assignment-selected-card">
                 <div>
-                    <div class="assignment-selected-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
+                    <div class="assignment-selected-identity">${assignmentProductTitle(product)} ${assignmentRxBadge(product)}</div>
                     <div class="assignment-selected-meta">${esc(formatProductSpecification(product))}</div>
                 </div>
                 <button class="btn btn-sm btn-outline-danger remove-selected-product" type="button"
@@ -349,6 +370,7 @@ function defaultTerms(product) {
 }
 
 function renderStep2() {
+    closeAssignmentUnitMenu();
     rememberTerms();
     state.packagingEditors.clear();
     const products = selectedProducts();
@@ -362,34 +384,51 @@ function renderStep2() {
             ${products.map((product) => {
                 const saved = defaultTerms(product);
                 const unit = saved.inventoryUnit || inventoryUnit(product);
+                const selectedPurchaseUnit = assignmentPurchaseUnits(product).find(item => [item.unit_name, item.unit_symbol].some(value => unitKey(value) === unitKey(saved.purchaseUnit)));
                 return `
                     <article class="assignment-term-card" data-product-id="${esc(product.product_id)}">
                         <div class="assignment-term-header">
                             <div>
-                                <div class="assignment-selected-identity">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
+                                <div class="assignment-selected-identity">${assignmentProductTitle(product)} ${assignmentRxBadge(product)}</div>
                                 <div class="assignment-selected-meta">${esc(formatProductSpecification(product))}</div>
                             </div>
                             <span class="badge text-bg-light term-status">Missing information</span>
                         </div>
-                        <div class="assignment-term-grid">
-                            <div>
-                                <label class="form-label">Purchase Unit <span class="text-danger">*</span></label>
-                                <select class="form-select term-unit">
-                                    <option value="">Select Purchase Unit...</option>${purchaseUnitOptions(product, saved.purchaseUnit)}
-                                </select>
-                                <div class="assignment-field-error"></div>
-                            </div>
-                            <div>
-                                <label class="form-label">Product Base Unit</label>
-                                <input class="form-control term-inventory-unit" value="${esc(unit)}" readonly>
-                                <div class="form-text">Defined in Product Master.</div>
-                                <div class="assignment-field-error"></div>
-                            </div>
-                            <div>
-                                <label class="form-label">Supplier Price per Purchase Unit</label>
-                                <div class="input-group"><span class="input-group-text">₱</span><input class="form-control term-supplier-cost" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(saved.supplierCost || '')}" placeholder="Optional"></div>
-                                <div class="form-text">Supplier's cost for one ${esc(saved.purchaseUnit || 'purchase unit')}. Does not change retail price.</div>
-                            </div>
+                        <div class="assignment-term-body">
+                            <section class="assignment-field">
+                                <div>
+                                    <strong>Purchase unit <span class="text-danger">*</span></strong>
+                                    <span class="assignment-help">Type to select a unit, or add one for this supplier.</span>
+                                </div>
+                                <div>
+                                    <div class="assignment-combo">
+                                        <input class="form-control assignment-unit-search" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="assignmentPurchaseUnitMenu" autocomplete="off" placeholder="Select a unit" value="${esc(selectedPurchaseUnit ? assignmentUnitLabel(selectedPurchaseUnit) : '')}" />
+                                        <select class="assignment-native-unit term-unit" tabindex="-1" aria-hidden="true">
+                                            <option value="">Select a purchase unit...</option>${purchaseUnitOptions(product, saved.purchaseUnit)}
+                                        </select>
+                                    </div>
+                                    <div class="assignment-field-error"></div>
+                                </div>
+                            </section>
+                            <section class="assignment-field">
+                                <div>
+                                    <strong>Product base unit</strong>
+                                    <span class="assignment-help">Defined in Product Master.</span>
+                                </div>
+                                <div>
+                                    <input class="form-control term-inventory-unit" value="${esc(unit)}" readonly>
+                                    <div class="assignment-field-error"></div>
+                                </div>
+                            </section>
+                            <section class="assignment-field">
+                                <div>
+                                    <strong>Quoted cost</strong>
+                                    <span class="assignment-help">Price for one purchase unit. Selling prices stay unchanged.</span>
+                                </div>
+                                <div>
+                                    <div class="input-group assignment-cost"><span class="input-group-text">₱</span><input class="form-control term-supplier-cost" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(saved.supplierCost || '')}" placeholder="Optional"></div>
+                                </div>
+                            </section>
                             <div class="term-packaging-host"></div>
                             <div class="assignment-field-error term-packaging-error" role="status"></div>
                             <div class="assignment-preview term-preview"></div>
@@ -417,9 +456,9 @@ function updateTermCard(card) {
     const inventory = card.querySelector('.term-inventory-unit')?.value || '';
     const editor = state.packagingEditors.get(String(card.dataset.productId));
     if (!editor) return;
-    const allowedPurchaseUnit = ['box', 'carton'].includes(unitKey(purchaseUnit)) || unitKey(purchaseUnit) === unitKey(inventory);
+    const allowedPurchaseUnit = validAssignmentPurchaseUnit(purchaseUnit);
     const validation = !inventory ? 'Configure the Product Base Unit in Product Master first.'
-        : !allowedPurchaseUnit ? 'Purchase Unit must be Box, Carton, or the Product Base Unit.' : editor.error();
+        : !allowedPurchaseUnit ? 'Select a purchase unit.' : editor.error();
     const conversion = purchasingConversion({ purchase_unit: purchaseUnit || 'Purchase Unit', inventory_unit: inventory, hierarchy_levels: editor.read() });
     const complete = purchaseUnit !== '' && !validation;
     const status = card.querySelector('.term-status');
@@ -446,7 +485,7 @@ function updateTermCard(card) {
 function clearTermValidation() {
     document.querySelectorAll('.assignment-term-card').forEach((card) => {
         card.classList.remove('is-invalid');
-        card.querySelectorAll('.form-control,.form-select').forEach((field) => {
+        card.querySelectorAll('.form-control,.form-select,.assignment-unit-search').forEach((field) => {
             field.classList.remove('is-invalid');
             field.removeAttribute('aria-invalid');
         });
@@ -459,8 +498,14 @@ function clearTermValidation() {
 function setFieldError(field, message) {
     field.classList.add('is-invalid');
     field.setAttribute('aria-invalid', 'true');
-    const error = field.closest('div')?.querySelector(':scope > .assignment-field-error')
-        || field.closest('.input-group')?.nextElementSibling;
+    const search = field.classList.contains('term-unit')
+        ? field.closest('.assignment-combo')?.querySelector('.assignment-unit-search')
+        : null;
+    if (search) {
+        search.classList.add('is-invalid');
+        search.setAttribute('aria-invalid', 'true');
+    }
+    const error = (field.closest('.assignment-field') || field.closest('div'))?.querySelector('.assignment-field-error');
     if (error?.classList.contains('assignment-field-error')) error.textContent = message;
     field.closest('.assignment-term-card')?.classList.add('is-invalid');
 }
@@ -474,12 +519,11 @@ function validateStep2() {
         const identity = assignmentProductIdentity(product || {});
         const purchaseUnit = card.querySelector('.term-unit');
         const inventoryUnit = card.querySelector('.term-inventory-unit');
-        const sameUnit = unitKey(purchaseUnit.value) === unitKey(inventoryUnit.value);
 
-        if (!['box', 'carton'].includes(unitKey(purchaseUnit.value)) && !sameUnit) {
-            setFieldError(purchaseUnit, 'Purchase Unit must be Box, Carton, or the Product Base Unit.');
-            errors.push(`${identity}: select Box, Carton, or the Product Base Unit.`);
-            firstInvalid ||= purchaseUnit;
+        if (!validAssignmentPurchaseUnit(purchaseUnit.value)) {
+            setFieldError(purchaseUnit, 'Select a purchase unit.');
+            errors.push(`${identity}: select a purchase unit.`);
+            firstInvalid ||= card.querySelector('.assignment-unit-search') || purchaseUnit;
         }
         if (!inventoryUnit.value) {
             setFieldError(inventoryUnit, 'Configure the Product Base Unit in Product Master first.');
@@ -535,7 +579,7 @@ function renderStep3() {
                 const conversion = purchasingConversion({ purchase_unit: saved.purchaseUnit, inventory_unit: unit, hierarchy_levels: saved.hierarchyLevels });
                 return `
                     <article class="assignment-review-card">
-                        <div class="assignment-selected-identity mb-1">${esc(assignmentProductIdentity(product))} ${assignmentRxBadge(product)}</div>
+                        <div class="assignment-selected-identity mb-1">${assignmentProductTitle(product)} ${assignmentRxBadge(product)}</div>
                         <div class="assignment-selected-meta mb-3">${esc(formatProductSpecification(product))}</div>
                         <div class="assignment-review-grid">
                             <div><span>Purchase Unit</span><strong>${esc(saved.purchaseUnit)}</strong></div>
@@ -716,6 +760,156 @@ async function saveAssignments() {
     setStep(2);
 }
 
+let assignmentUnitCard = null;
+let assignmentMenuIndex = -1;
+
+function assignmentUnitMenu() {
+    let menu = document.getElementById('assignmentPurchaseUnitMenu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'assignmentPurchaseUnitMenu';
+    menu.className = 'sps-combo-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.hidden = true;
+    document.body.appendChild(menu);
+    menu.addEventListener('mousedown', (event) => {
+        if (event.target.closest('input')) return;
+        event.preventDefault();
+    });
+    menu.addEventListener('click', (event) => {
+        const option = event.target.closest('[data-purchase-unit]');
+        if (option && assignmentUnitCard) {
+            selectAssignmentPurchaseUnit(assignmentUnitCard, option.dataset.purchaseUnit);
+            return;
+        }
+        if (event.target.closest('[data-customize-purchase-unit]')) showAssignmentUnitCustomizer();
+        if (event.target.closest('[data-save-purchase-unit]')) void saveAssignmentPurchaseUnit();
+    });
+    return menu;
+}
+
+function positionAssignmentUnitMenu() {
+    const input = assignmentUnitCard?.querySelector('.assignment-unit-search');
+    const menu = document.getElementById('assignmentPurchaseUnitMenu');
+    if (!input || !menu || menu.hidden) return;
+    const rect = input.getBoundingClientRect();
+    const width = Math.max(rect.width, 280);
+    menu.style.width = `${width}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
+    menu.style.top = `${rect.bottom + 6}px`;
+}
+
+function closeAssignmentUnitMenu() {
+    const menu = document.getElementById('assignmentPurchaseUnitMenu');
+    if (menu) menu.hidden = true;
+    assignmentUnitCard?.querySelector('.assignment-unit-search')?.setAttribute('aria-expanded', 'false');
+}
+
+function syncAssignmentUnitSearch(card) {
+    const select = card.querySelector('.term-unit');
+    const input = card.querySelector('.assignment-unit-search');
+    if (!select || !input) return;
+    const selected = select.selectedOptions?.[0];
+    input.value = select.value ? (selected?.textContent || select.value) : '';
+    input.classList.toggle('is-invalid', select.classList.contains('is-invalid'));
+}
+
+function selectAssignmentPurchaseUnit(card, value) {
+    const select = card.querySelector('.term-unit');
+    if (!select) return;
+    const match = [...select.options].find(option => unitKey(option.value) === unitKey(value));
+    if (!match) return;
+    select.value = match.value;
+    select.classList.remove('is-invalid');
+    syncAssignmentUnitSearch(card);
+    closeAssignmentUnitMenu();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function renderAssignmentUnitMenu(query = '') {
+    const menu = assignmentUnitMenu();
+    const matches = assignmentPurchaseUnits().filter(unit => {
+        const needle = unitKey(query);
+        if (!needle) return true;
+        return [unit.unit_name, unit.unit_symbol, assignmentUnitLabel(unit)].some(value => unitKey(value).includes(needle));
+    });
+    const selectedValue = assignmentUnitCard?.querySelector('.term-unit')?.value || '';
+    const exactIndex = matches.findIndex(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(query || selectedValue)));
+    assignmentMenuIndex = exactIndex >= 0 ? exactIndex : (unitKey(query) && matches.length ? 0 : -1);
+    const options = matches.map((unit, index) => {
+        const active = index === assignmentMenuIndex;
+        return `<button class="sps-combo-option${active ? ' is-active' : ''}" type="button" role="option" data-purchase-unit="${esc(unit.unit_name)}" aria-selected="${active ? 'true' : 'false'}">${esc(assignmentUnitLabel(unit))}</button>`;
+    }).join('');
+    const empty = matches.length ? '' : '<p class="sps-combo-empty">No matching purchase unit.</p>';
+    menu.innerHTML = `${options}${empty}<div class="sps-combo-create" hidden><label class="visually-hidden" for="assignmentNewPurchaseUnit">New purchase unit</label><input class="form-control assignment-new-unit" id="assignmentNewPurchaseUnit" type="text" maxlength="40" placeholder="New purchase unit" /><button class="btn btn-purple" type="button" data-save-purchase-unit>Add</button></div><button class="sps-combo-customize" type="button" data-customize-purchase-unit><i class="fa-solid fa-gear" aria-hidden="true"></i><span>Customize purchase unit</span></button>`;
+    menu.hidden = false;
+    assignmentUnitCard?.querySelector('.assignment-unit-search')?.setAttribute('aria-expanded', 'true');
+    positionAssignmentUnitMenu();
+}
+
+function showAssignmentUnitCustomizer() {
+    const menu = assignmentUnitMenu();
+    const create = menu.querySelector('.sps-combo-create');
+    const button = menu.querySelector('[data-customize-purchase-unit]');
+    if (create) create.hidden = false;
+    if (button) button.hidden = true;
+    const typed = String(assignmentUnitCard?.querySelector('.assignment-unit-search')?.value || '').trim();
+    const exact = assignmentPurchaseUnits().some(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(typed)));
+    const input = menu.querySelector('.assignment-new-unit');
+    if (!input) return;
+    input.value = exact ? '' : typed;
+    input.focus();
+    input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        void saveAssignmentPurchaseUnit();
+    });
+}
+
+function appendAssignmentPurchaseOption(unitName) {
+    document.querySelectorAll('.assignment-term-card .term-unit').forEach((select) => {
+        if ([...select.options].some(option => unitKey(option.value) === unitKey(unitName))) return;
+        const option = document.createElement('option');
+        option.value = unitName;
+        option.textContent = unitName;
+        select.appendChild(option);
+    });
+}
+
+async function saveAssignmentPurchaseUnit() {
+    const name = String(document.getElementById('assignmentNewPurchaseUnit')?.value || '').trim();
+    if (!name || /^\d+(?:\.\d+)?$/.test(name)) {
+        PharmaUtils.toast.error('Enter a purchase unit name.');
+        return;
+    }
+    const existing = assignmentPurchaseUnits().find(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(name)));
+    if (existing && assignmentUnitCard) {
+        selectAssignmentPurchaseUnit(assignmentUnitCard, existing.unit_name);
+        return;
+    }
+    try {
+        const data = await PharmaUtils.safeFetch(`${API}/products/add_measurement_unit.php`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ unit_name: name, unit_symbol: name, measurement_group: 'Packaging' })
+        });
+        const unit = data.unit || { unit_name: name, unit_symbol: name, measurement_group: 'Packaging', is_active: 1 };
+        upsertMeasurementUnitCache(unit);
+        if (!state.units.some(item => unit.measurement_unit_id && String(item.measurement_unit_id) === String(unit.measurement_unit_id))) {
+            state.units.push(unit);
+        }
+        appendAssignmentPurchaseOption(unit.unit_name || name);
+        document.querySelectorAll('.assignment-term-card').forEach((card) => {
+            state.packagingEditors.get(String(card.dataset.productId))?.setPurchaseUnit(card.querySelector('.term-unit')?.value || '');
+        });
+        if (assignmentUnitCard) selectAssignmentPurchaseUnit(assignmentUnitCard, unit.unit_name || name);
+        PharmaUtils.toast.success(data.message || 'Purchase unit added.');
+    } catch (error) {
+        PharmaUtils.toast.error(error.message);
+    }
+}
+
 document.body.insertAdjacentHTML('beforeend', markup());
 const modal = document.getElementById('assignSupplierProductsModal');
 
@@ -732,10 +926,81 @@ modal.addEventListener('shown.bs.modal', () => {
 });
 
 modal.addEventListener('hidden.bs.modal', () => {
+    closeAssignmentUnitMenu();
     document.querySelectorAll('.modal-backdrop').forEach((backdrop) => backdrop.remove());
     document.body.classList.remove('modal-open');
     document.body.style.removeProperty('padding-right');
 });
+
+modal.addEventListener('focusin', (event) => {
+    const input = event.target.closest?.('.assignment-unit-search');
+    if (!input) return;
+    assignmentUnitCard = input.closest('.assignment-term-card');
+    input.select();
+    renderAssignmentUnitMenu('');
+});
+
+modal.addEventListener('click', (event) => {
+    const input = event.target.closest?.('.assignment-unit-search');
+    if (!input) return;
+    const menu = document.getElementById('assignmentPurchaseUnitMenu');
+    if (menu && !menu.hidden) return;
+    assignmentUnitCard = input.closest('.assignment-term-card');
+    renderAssignmentUnitMenu('');
+});
+
+modal.addEventListener('input', (event) => {
+    if (!event.target.matches('.assignment-unit-search')) return;
+    assignmentUnitCard = event.target.closest('.assignment-term-card');
+    renderAssignmentUnitMenu(event.target.value);
+});
+
+modal.addEventListener('keydown', (event) => {
+    if (!event.target.matches('.assignment-unit-search') && !event.target.matches('.assignment-new-unit')) return;
+    if (event.target.matches('.assignment-new-unit')) {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        void saveAssignmentPurchaseUnit();
+        return;
+    }
+    const menu = document.getElementById('assignmentPurchaseUnitMenu');
+    const options = [...(menu?.querySelectorAll('[data-purchase-unit]') || [])];
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (!options.length) return;
+        if (menu?.hidden) renderAssignmentUnitMenu('');
+        const next = event.key === 'ArrowDown' ? assignmentMenuIndex + 1 : assignmentMenuIndex - 1;
+        assignmentMenuIndex = (next + options.length) % options.length;
+        options.forEach((option, index) => {
+            option.classList.toggle('is-active', index === assignmentMenuIndex);
+            option.setAttribute('aria-selected', index === assignmentMenuIndex ? 'true' : 'false');
+        });
+        return;
+    }
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        if (menu?.hidden) return;
+        const active = options[assignmentMenuIndex];
+        const exact = assignmentPurchaseUnits().find(unit => [unit.unit_name, unit.unit_symbol].some(value => unitKey(value) === unitKey(event.target.value)));
+        const value = active?.dataset.purchaseUnit || exact?.unit_name;
+        if (value && assignmentUnitCard) selectAssignmentPurchaseUnit(assignmentUnitCard, value);
+        return;
+    }
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        if (assignmentUnitCard) syncAssignmentUnitSearch(assignmentUnitCard);
+        closeAssignmentUnitMenu();
+    }
+});
+
+document.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('#assignmentPurchaseUnitMenu, .assignment-unit-search')) return;
+    if (assignmentUnitCard) syncAssignmentUnitSearch(assignmentUnitCard);
+    closeAssignmentUnitMenu();
+});
+
+modal.querySelector('.modal-body')?.addEventListener('scroll', () => positionAssignmentUnitMenu());
+window.addEventListener('resize', () => positionAssignmentUnitMenu());
 
 modal.addEventListener('input', (event) => {
     if (event.target.matches('#assignmentProductSearch')) renderProducts();

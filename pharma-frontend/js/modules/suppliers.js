@@ -255,7 +255,20 @@ function removeBrandPrefix(productName, brandName) {
 }
 
 function productDisplayName(product) {
-    return formatProductIdentityParts(product).productName || cleanText(product.product_name) || 'Unnamed product';
+    const identity = supplierCatalogProductIdentity(product);
+    return [identity.primary, identity.secondary].filter(Boolean).join(' ') || 'Unnamed product';
+}
+
+function supplierCatalogProductIdentity(product) {
+    const identity = formatProductIdentityParts(product);
+    if (categoryGroup(product.category_name) === 'medicine') {
+        return { primary: identity.productName, secondary: identity.genericName };
+    }
+    const brand = cleanText(product.brand_name);
+    const productName = removeBrandPrefix(product.product_name, brand) || cleanText(product.product_name);
+    const primary = productName || brand || identity.productName || 'Unnamed product';
+    const secondary = brand && brand.toLowerCase() !== primary.toLowerCase() ? brand : '';
+    return { primary, secondary };
 }
 
 function supplierRxBadge(product) {
@@ -536,7 +549,7 @@ function renderSupplierProducts(rows) {
     document.getElementById('table-supplier-products')?.classList.add('supplier-product-table');
     body.innerHTML = rows.length
         ? rows.map((product) => {
-            const identity = formatProductIdentityParts(product);
+            const identity = supplierCatalogProductIdentity(product);
             return `
             <tr class="supplier-product-row" tabindex="0" data-supplier-product-id="${esc(product.supplier_product_id)}" aria-label="View details for ${esc(productDisplayName(product))}">
                 <td class="col-supplier">
@@ -545,8 +558,8 @@ function renderSupplierProducts(rows) {
                 </td>
                 <td class="col-product">
                     <div class="supplier-product-name">
-                        <strong><span class="supplier-product-primary">${esc(displayOrNotSet(identity.productName))}</span>${supplierRxBadge(product)}</strong>
-                        ${identity.genericName ? `<small>${esc(identity.genericName)}</small>` : ''}
+                        <strong><span class="supplier-product-primary">${esc(displayOrNotSet(identity.primary))}</span>${supplierRxBadge(product)}</strong>
+                        ${identity.secondary ? `<small>${esc(identity.secondary)}</small>` : ''}
                     </div>
                 </td>
                 <td class="col-specification">${supplierCatalogSpecification(product)}</td>
@@ -615,6 +628,12 @@ function legacySupplierProductAttributes(product = {}) {
     ];
 }
 
+function supplierAttributeValue(attributes, names) {
+    const wanted = names.map((name) => name.toLowerCase());
+    const match = attributes.find(([label]) => wanted.includes(cleanText(label).toLowerCase()));
+    return cleanText(match?.[1]);
+}
+
 function renderSupplierProductMasterDetails(product, configuredSpecifications = [], savedSpecifications = [], units = []) {
     const normalizedSpecifications = normalizeProductSpecificationValues(configuredSpecifications, savedSpecifications, units);
     setSupplierEditText('editSupplierProductBrandText', product.brand_name);
@@ -622,10 +641,19 @@ function renderSupplierProductMasterDetails(product, configuredSpecifications = 
     setSupplierEditText('editSupplierProductCategoryText', product.category_name);
     setSupplierEditText('editSupplierProductTypeText', product.type_name);
     setSupplierEditText('editSupplierProductStatusText', product.status || 'Active');
+    document.getElementById('editSupplierProductStatusText')?.classList.toggle('is-active', /^active$/i.test(cleanText(product.status || 'Active')));
     setSupplierEditText('editSupplierProductBarcodeText', product.barcode);
     setSupplierEditText('editSupplierProductSkuText', product.sku);
     document.getElementById('editSupplierProductSkuField')?.classList.toggle('d-none', !cleanText(product.sku));
     setSupplierEditText('editSupplierProductPackagingText', supplierProductPackaging(product));
+    const subtitle = document.getElementById('editSupplierProductSubtitle');
+    if (subtitle) {
+        const productName = cleanText(product.product_name) || 'Product';
+        const supplierName = cleanText(product.supplier_name);
+        subtitle.textContent = supplierName ? `${productName} · ${supplierName}` : productName;
+    }
+    const purchaseHelp = document.getElementById('editSupplierPurchaseUnitHelp');
+    if (purchaseHelp) purchaseHelp.textContent = cleanText(product.supplier_name) ? `How ${cleanText(product.supplier_name)} sells it to you.` : 'How the supplier sells it to you.';
 
     setSupplierEditGroup('brand', product.brand_name);
     setSupplierEditGroup('product', removeBrandPrefix(product.product_name, product.brand_name) || product.product_name);
@@ -649,17 +677,23 @@ function renderSupplierProductMasterDetails(product, configuredSpecifications = 
 
     const container = document.getElementById('editSupplierProductAttributes');
     if (container) {
-        const visible = attributes.filter(([label]) => cleanText(label));
-        const cells = visible.map(([label, value]) => [esc(label), esc(cleanText(value) || 'Not set')]);
-        const rows = [];
-        for (let index = 0; index < cells.length; index += 2) {
-            const left = cells[index];
-            const right = cells[index + 1];
-            rows.push(`<tr><th>${left[0]}</th><td>${left[1]}</td>${right ? `<th>${right[0]}</th><td>${right[1]}</td>` : '<th></th><td></td>'}</tr>`);
-        }
-        container.innerHTML = rows.length
-            ? rows.join('')
-            : '<tr><td colspan="4" class="text-muted text-center">No attributes are configured for this Product Type.</td></tr>';
+        const netContent = supplierAttributeValue(attributes, ['net content', 'net weight', 'net weight / volume'])
+            || combineValueUnit(product.net_content_value || product.net_weight || product.weight_volume_value, product.net_content_unit || product.unit || product.weight_volume_unit);
+        const packContent = supplierAttributeValue(attributes, ['pack content']) || cleanText(product.pack_content);
+        const containerName = supplierAttributeValue(attributes, ['container', 'packaging', 'package type']) || cleanText(product.package_type || product.packaging);
+        const baseUnit = cleanText(product.inventory_unit_name || product.inventory_unit || product.base_unit_name);
+        const category = [cleanText(product.category_name), cleanText(product.type_name)].filter(Boolean).join(' · ');
+        const covered = new Set(['net content', 'net weight', 'net weight / volume', 'pack content', 'container', 'packaging', 'package type', 'package']);
+        const rows = [
+            ['Category', category],
+            ['Net content', netContent],
+            ['Pack content', packContent],
+            ['Base unit', baseUnit],
+            ['Container', containerName],
+            ['Barcode', product.barcode],
+            ...attributes.filter(([label]) => cleanText(label) && !covered.has(cleanText(label).toLowerCase()))
+        ];
+        container.innerHTML = rows.map(([label, value]) => `<div class="sps-meta-row"><span>${esc(label)}</span><strong>${esc(cleanText(value) || 'Not set')}</strong></div>`).join('');
     }
 }
 
@@ -699,13 +733,162 @@ function populateSupplierUnitSelect(selectId, units, savedValue, placeholder) {
     select.value = numericSaved ? '' : selectedValue;
 }
 
+function dedupedPurchaseUnits(units) {
+    const ranked = new Map();
+    units.forEach(unit => {
+        const key = normalizedSupplierUnit(unit.unit_name);
+        if (!key) return;
+        const current = ranked.get(key);
+        const nextIsCount = normalizedSupplierUnit(unit.measurement_group) === 'count';
+        const currentIsCount = current && normalizedSupplierUnit(current.measurement_group) === 'count';
+        if (!current || (nextIsCount && !currentIsCount)) ranked.set(key, unit);
+    });
+    return [...ranked.values()].sort((left, right) => supplierUnitOptionLabel(left).localeCompare(supplierUnitOptionLabel(right)));
+}
+
+let supplierPurchaseUnitRecords = [];
+let purchaseUnitMenuIndex = -1;
+
+function purchaseUnitMenu() {
+    let menu = document.getElementById('editSupplierPurchaseUnitMenu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.id = 'editSupplierPurchaseUnitMenu';
+    menu.className = 'sps-combo-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.hidden = true;
+    document.body.appendChild(menu);
+    menu.addEventListener('mousedown', event => {
+        if (event.target.closest('input')) return;
+        event.preventDefault();
+    });
+    menu.addEventListener('click', event => {
+        const option = event.target.closest('[data-purchase-unit]');
+        if (option) {
+            selectPurchaseUnit(option.dataset.purchaseUnit);
+            return;
+        }
+        if (event.target.closest('[data-customize-purchase-unit]')) showPurchaseUnitCustomizer();
+        if (event.target.closest('[data-save-purchase-unit]')) void saveCustomPurchaseUnit();
+    });
+    return menu;
+}
+
+function positionPurchaseUnitMenu() {
+    const input = document.getElementById('editSupplierPurchaseUnitSearch');
+    const menu = document.getElementById('editSupplierPurchaseUnitMenu');
+    if (!input || !menu || menu.hidden) return;
+    const rect = input.getBoundingClientRect();
+    const width = Math.max(rect.width, 280);
+    menu.style.width = `${width}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
+    menu.style.top = `${rect.bottom + 6}px`;
+}
+
+function filteredPurchaseUnits(query) {
+    const needle = normalizedSupplierUnit(query);
+    if (!needle) return supplierPurchaseUnitRecords;
+    return supplierPurchaseUnitRecords.filter(unit => [unit.unit_name, unit.unit_symbol].some(value => normalizedSupplierUnit(value).includes(needle)));
+}
+
+function renderPurchaseUnitMenu(query = '') {
+    const menu = purchaseUnitMenu();
+    const matches = filteredPurchaseUnits(query);
+    const selectedValue = query || document.getElementById('editSupplierProductPurchaseUnit')?.value || '';
+    const exactIndex = matches.findIndex(unit => [unit.unit_name, unit.unit_symbol].some(value => normalizedSupplierUnit(value) === normalizedSupplierUnit(selectedValue)));
+    purchaseUnitMenuIndex = exactIndex >= 0 ? exactIndex : (normalizedSupplierUnit(query) && matches.length ? 0 : -1);
+    const options = matches.map((unit, index) => {
+        const active = index === purchaseUnitMenuIndex;
+        return `<button class="sps-combo-option${active ? ' is-active' : ''}" type="button" role="option" data-purchase-unit="${esc(unit.unit_name)}" aria-selected="${active ? 'true' : 'false'}">${esc(supplierUnitOptionLabel(unit))}</button>`;
+    }).join('');
+    const empty = matches.length ? '' : '<p class="sps-combo-empty">No matching purchase unit.</p>';
+    menu.innerHTML = `${options}${empty}<div class="sps-combo-create" hidden><label class="visually-hidden" for="editSupplierNewPurchaseUnit">New purchase unit</label><input class="form-control" id="editSupplierNewPurchaseUnit" type="text" maxlength="40" placeholder="New purchase unit" /><button class="btn btn-purple" type="button" data-save-purchase-unit>Add</button></div><button class="sps-combo-customize" type="button" data-customize-purchase-unit><i class="fa-solid fa-gear" aria-hidden="true"></i><span>Customize purchase unit</span></button>`;
+    menu.hidden = false;
+    document.getElementById('editSupplierPurchaseUnitSearch')?.setAttribute('aria-expanded', 'true');
+    positionPurchaseUnitMenu();
+}
+
+function closePurchaseUnitMenu() {
+    const menu = document.getElementById('editSupplierPurchaseUnitMenu');
+    if (menu) menu.hidden = true;
+    document.getElementById('editSupplierPurchaseUnitSearch')?.setAttribute('aria-expanded', 'false');
+}
+
+function syncPurchaseUnitSearch() {
+    const select = document.getElementById('editSupplierProductPurchaseUnit');
+    const input = document.getElementById('editSupplierPurchaseUnitSearch');
+    if (!select || !input) return;
+    const selected = select.selectedOptions?.[0];
+    input.value = select.value ? (selected?.textContent?.replace(/\s+— saved value$/, '') || select.value) : '';
+    input.classList.toggle('is-invalid', select.classList.contains('is-invalid'));
+}
+
+function selectPurchaseUnit(value) {
+    const select = document.getElementById('editSupplierProductPurchaseUnit');
+    if (!select) return;
+    select.value = value;
+    select.classList.remove('is-invalid');
+    syncPurchaseUnitSearch();
+    closePurchaseUnitMenu();
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function showPurchaseUnitCustomizer() {
+    const menu = purchaseUnitMenu();
+    const create = menu.querySelector('.sps-combo-create');
+    const button = menu.querySelector('[data-customize-purchase-unit]');
+    if (create) create.hidden = false;
+    if (button) button.hidden = true;
+    const typed = cleanText(document.getElementById('editSupplierPurchaseUnitSearch')?.value);
+    const exact = supplierPurchaseUnitRecords.some(unit => [unit.unit_name, unit.unit_symbol].some(value => normalizedSupplierUnit(value) === normalizedSupplierUnit(typed)));
+    const input = document.getElementById('editSupplierNewPurchaseUnit');
+    if (!input) return;
+    input.value = exact ? '' : typed;
+    input.focus();
+    input.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        void saveCustomPurchaseUnit();
+    }, { once: true });
+}
+
+async function saveCustomPurchaseUnit() {
+    const name = cleanText(document.getElementById('editSupplierNewPurchaseUnit')?.value);
+    if (!name || /^\d+(?:\.\d+)?$/.test(name)) {
+        PharmaUtils.toast.error('Enter a purchase unit name.');
+        return;
+    }
+    const existing = supplierPurchaseUnitRecords.find(unit => [unit.unit_name, unit.unit_symbol].some(value => normalizedSupplierUnit(value) === normalizedSupplierUnit(name)));
+    if (existing) {
+        selectPurchaseUnit(existing.unit_name);
+        return;
+    }
+    try {
+        const data = await fetchJson(endpoint('products/add_measurement_unit.php'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ unit_name: name, unit_symbol: name, measurement_group: 'Packaging' })
+        });
+        upsertMeasurementUnitCache(data.unit);
+        await loadSupplierPurchasingUnitSelectors({
+            purchaseUnit: data.unit?.unit_name || name,
+            inventoryUnit: document.getElementById('editSupplierProductInventoryUnitPreview')?.value || ''
+        });
+        closePurchaseUnitMenu();
+        PharmaUtils.toast.success(data.message || 'Purchase unit added.');
+    } catch (error) {
+        PharmaUtils.toast.error(error.message);
+    }
+}
+
 async function loadSupplierPurchasingUnitSelectors(saved = {}) {
     const response = await loadSharedMeasurementUnits();
     const sorted = context => measurementUnitsForContext(response.units, { context })
         .sort((left, right) => supplierUnitOptionLabel(left).localeCompare(supplierUnitOptionLabel(right)));
-    const purchaseUnits = sorted('purchase').filter(unit => ['box', 'carton'].includes(normalizedSupplierUnit(unit.unit_name)));
-    const savedPurchaseUnit = ['box', 'carton'].includes(normalizedSupplierUnit(saved.purchaseUnit)) ? saved.purchaseUnit : '';
-    populateSupplierUnitSelect('editSupplierProductPurchaseUnit', purchaseUnits, savedPurchaseUnit, 'Select Box or Carton...');
+    const purchaseUnits = dedupedPurchaseUnits(sorted('purchase'));
+    supplierPurchaseUnitRecords = purchaseUnits;
+    populateSupplierUnitSelect('editSupplierProductPurchaseUnit', purchaseUnits, saved.purchaseUnit, 'Select a purchase unit...');
+    syncPurchaseUnitSearch();
     populateSupplierUnitSelect('editSupplierProductInventoryUnitPreview', sorted('inventory'), saved.inventoryUnit, 'Select Inventory / Base Unit...');
     const inventoryUnit = document.getElementById('editSupplierProductInventoryUnitPreview');
     if (inventoryUnit) {
@@ -758,38 +941,120 @@ function updateSupplierProductConversionPreview() {
         document.getElementById('editSupplierProductUnitsPerPurchaseUnit').disabled = false;
     }
     contains = Math.max(1, Number(document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.value || 1));
+    const purchaseName = (purchaseUnit || 'pack').toLowerCase();
+    const baseName = quantityUnit(inventoryUnit || 'pcs', contains).toLowerCase();
     const purchaseLabel = document.getElementById('editSupplierDirectPurchaseUnit');
     const baseLabel = document.getElementById('editSupplierDirectBaseUnit');
-    if (purchaseLabel) purchaseLabel.textContent = purchaseUnit || 'Purchase Unit';
-    if (baseLabel) baseLabel.textContent = quantityUnit(inventoryUnit || 'Product Base Unit', contains);
-    const purchaseUnitAllowed = ['box', 'carton'].includes(normalizedSupplierUnit(purchaseUnit));
+    if (purchaseLabel) purchaseLabel.textContent = `1 ${purchaseName}`;
+    if (baseLabel) baseLabel.textContent = baseName;
+    const purchaseUnitAllowed = validSupplierUnitSelection('editSupplierProductPurchaseUnit');
     const quantityInput = document.getElementById('editSupplierProductUnitsPerPurchaseUnit');
     const draftValid = Number.isInteger(Number(quantityInput?.value)) && Number(quantityInput?.value) > 0;
     setHierarchyControlValidity(quantityInput, draftValid, 'Enter a positive whole-number contents quantity.');
-    if (!purchaseUnitAllowed || !inventoryUnit || !draftValid) {
-        const conversionMeaning = document.getElementById('editSupplierProductConversionMeaning');
-        if (conversionMeaning) conversionMeaning.innerHTML = `<strong>${purchaseUnitAllowed && inventoryUnit ? 'Enter the final number of Product Base Units in one Purchase Unit.' : 'Select Box or Carton and a valid Product Base Unit.'}</strong>`;
-        document.getElementById('editPreviewPurchaseUnit').textContent = purchaseUnit || 'Select Box or Carton';
-        document.getElementById('editPreviewInventoryReceived').textContent = 'Complete the final contents conversion';
-        return;
-    }
-    const preview = supplierPreviewDetails({
-        ...product,
-        purchase_unit: purchaseUnit,
-        purchase_unit_contains: contains,
-        inner_unit: '',
-        units_per_inner_unit: null,
-        units_per_purchase_unit: contains,
-        inventory_unit: inventoryUnit,
-        hierarchy_levels: []
-    });
-
-    document.getElementById('editPreviewPurchaseUnit').textContent = preview.purchaseUnit;
-    document.getElementById('editPreviewInventoryReceived').textContent = preview.conversion.summary;
+    const equation = `1 ${purchaseName} = ${formattedWholeQuantity(contains)} ${baseName}`;
     const conversionMeaning = document.getElementById('editSupplierProductConversionMeaning');
-    if (conversionMeaning) conversionMeaning.innerHTML = `<strong>${esc(preview.conversion.summary)}</strong>`;
-    setSupplierEditGroup('inventory-unit', preview.inventoryUnit);
-    setSupplierEditGroup('meaning', `Receiving 1 ${preview.purchaseUnit} adds ${formattedWholeQuantity(preview.conversion.baseQtyPerPurchaseUnit)} ${quantityUnit(preview.inventoryUnit, preview.conversion.baseQtyPerPurchaseUnit)} to Storage Inventory.`);
+    if (conversionMeaning) conversionMeaning.textContent = draftValid && purchaseUnit ? `Example: ${equation}.` : 'Example: 1 pack = 5 pcs.';
+    const previewPurchase = document.getElementById('editPreviewPurchaseUnit');
+    if (previewPurchase) previewPurchase.textContent = purchaseUnit ? purchaseName : 'Select a purchase unit';
+    const previewContents = document.getElementById('editPreviewInventoryReceived');
+    if (previewContents) previewContents.textContent = draftValid && purchaseUnit && inventoryUnit ? equation : 'Complete the pack content';
+    const packaging = cleanText(product.package_type || product.packaging);
+    const showPackaging = Boolean(packaging) && normalizedSupplierUnit(packaging) !== normalizedSupplierUnit(purchaseUnit);
+    const packagingHint = document.getElementById('editPreviewPurchaseUnitHint');
+    if (packagingHint) {
+        packagingHint.hidden = !showPackaging;
+        packagingHint.textContent = showPackaging ? packaging.toLowerCase() : '';
+    }
+    const packagingAlt = document.getElementById('editPreviewPackAlt');
+    if (packagingAlt) {
+        packagingAlt.hidden = !(showPackaging && draftValid);
+        packagingAlt.textContent = showPackaging && draftValid ? `1 ${packaging.toLowerCase()} = ${formattedWholeQuantity(contains)} ${baseName}` : '';
+    }
+    refreshSupplierQuotedCost(purchaseName, baseName, contains, draftValid && purchaseUnitAllowed && Boolean(inventoryUnit));
+    refreshSupplierEditDirtyState();
+    if (!purchaseUnitAllowed || !inventoryUnit || !draftValid) return;
+    setSupplierEditGroup('inventory-unit', baseName);
+    setSupplierEditGroup('meaning', 'Saving updates this supplier\'s purchasing terms only. Product Master and selling prices stay unchanged.');
+}
+
+function formatSetupMoney(amount) {
+    return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(amount) || 0);
+}
+
+function refreshSupplierQuotedCost(purchaseName, baseName, contains, ready) {
+    const cost = Number(document.getElementById('editSupplierProductCost')?.value);
+    const hasCost = Number.isFinite(cost) && cost > 0 && ready;
+    const perUnit = document.getElementById('editSupplierCostPerBase');
+    const planned = document.getElementById('editSupplierPlannedCost');
+    const formula = document.getElementById('editSupplierPlannedFormula');
+    const quoted = document.getElementById('editPreviewQuotedCost');
+    const plannedLabel = document.getElementById('editSupplierPlannedLabel');
+    const help = document.getElementById('editSupplierQuotedCostHelp');
+    if (help) help.textContent = `Supplier's price per ${purchaseName}.`;
+    if (plannedLabel) plannedLabel.textContent = `Planned cost per ${baseName}`;
+    if (perUnit) {
+        perUnit.hidden = !hasCost;
+        perUnit.textContent = hasCost ? `≈ ${formatSetupMoney(cost / contains)} per ${baseName}` : '';
+    }
+    if (planned) planned.textContent = hasCost ? formatSetupMoney(cost / contains) : 'Not set';
+    if (formula) formula.textContent = hasCost ? `${formatSetupMoney(cost)} ÷ ${formattedWholeQuantity(contains)} ${baseName}` : 'Add a quoted cost to calculate the planned unit cost.';
+    if (quoted) quoted.textContent = hasCost ? `${formatSetupMoney(cost)} per ${purchaseName}` : 'Not set';
+    const estimate = document.getElementById('editSupplierPriceEstimate');
+    const markup = Number(activeSupplierProductEdit?.category_markup_percentage);
+    if (estimate) {
+        const canEstimate = hasCost && Number.isFinite(markup) && markup >= 0 && contains > 0;
+        estimate.hidden = !canEstimate;
+        if (canEstimate) {
+            const perBase = cost / contains;
+            estimate.textContent = `Estimate only — not approved. ${formatSetupMoney(perBase * (1 + markup / 100))} per ${baseName} using the ${markup}% category markup on this quote.`;
+        }
+    }
+}
+
+let supplierEditBaseline = null;
+
+function supplierEditSnapshot() {
+    return [
+        document.getElementById('editSupplierProductPurchaseUnit')?.value || '',
+        document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.value || '',
+        document.getElementById('editSupplierProductCost')?.value || ''
+    ].join('|');
+}
+
+function captureSupplierEditBaseline() {
+    supplierEditBaseline = supplierEditSnapshot();
+    refreshSupplierEditDirtyState();
+}
+
+function refreshSupplierEditDirtyState() {
+    const note = document.getElementById('editSupplierUnsaved');
+    if (!note || supplierEditBaseline === null) return;
+    note.hidden = supplierEditSnapshot() === supplierEditBaseline;
+}
+
+function syncSupplierSetupChrome(step) {
+    const review = step === 'review';
+    document.getElementById('editSupplierCancelButton')?.classList.toggle('d-none', review);
+    document.getElementById('editSupplierContinueButton')?.classList.toggle('d-none', review);
+    document.getElementById('editSupplierBackButton')?.classList.toggle('d-none', !review);
+    document.getElementById('editSupplierSaveButton')?.classList.toggle('d-none', !review);
+    document.getElementById('editSupplierProductSetupTab')?.classList.toggle('is-complete', review);
+}
+
+function supplierPurchasingDraftError() {
+    const purchaseUnit = document.getElementById('editSupplierProductPurchaseUnit')?.value || '';
+    const inventoryUnit = document.getElementById('editSupplierProductInventoryUnitPreview')?.value?.trim() || '';
+    const unitsPerPurchaseUnit = Number(document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.value);
+    if (!validSupplierUnitSelection('editSupplierProductPurchaseUnit')) {
+        document.getElementById('editSupplierProductPurchaseUnit')?.classList.add('is-invalid');
+        syncPurchaseUnitSearch();
+        return 'Please select a purchase unit from the list, or customize one.';
+    }
+    if (!validSupplierUnitSelection('editSupplierProductInventoryUnitPreview')) return 'Inventory/Base Unit must be selected from the available unit list.';
+    if (!document.getElementById('editSupplierProductLinkId')?.value || !purchaseUnit || !inventoryUnit || !Number.isInteger(unitsPerPurchaseUnit) || unitsPerPurchaseUnit < 1) {
+        return 'Enter a valid Purchase Unit and final contents quantity.';
+    }
+    return '';
 }
 
 function selectedAddPackaging() {
@@ -1611,14 +1876,13 @@ async function openEditSupplierProduct(supplierProductId) {
     document.getElementById('editSupplierProductLinkId').value = product.supplier_product_id || '';
     document.getElementById('editSupplierProductId').value = product.product_id || '';
     document.getElementById('editSupplierProductSupplierId').value = product.supplier_id || '';
-    const retailPriceInput = document.getElementById('editSupplierProductRetailPrice');
-    if (retailPriceInput) retailPriceInput.value = compactPrice(product.price || product.selling_price || 0);
     const supplierCostInput = document.getElementById('editSupplierProductCost');
     if (supplierCostInput) supplierCostInput.value = product.supplier_cost_input === null || product.supplier_cost_input === undefined ? '' : compactPrice(product.supplier_cost_input);
     setSupplierEditText('editSupplierProductSupplierNameText', product.supplier_name);
     document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value = Math.max(1, Number(product.units_per_purchase_unit || product.purchase_unit_contains || 1));
     renderSupplierProductMasterDetails(product, [], product.specifications || []);
     updateSupplierProductConversionPreview();
+    captureSupplierEditBaseline();
 
     const editModal = document.getElementById('editSupplierProductModal');
     const setupTab = document.getElementById('editSupplierProductSetupTab');
@@ -1628,7 +1892,7 @@ async function openEditSupplierProduct(supplierProductId) {
 
     const attributes = document.getElementById('editSupplierProductAttributes');
     if (attributes && !(product.specifications || []).length) {
-        attributes.innerHTML = '<tr><td colspan="4" class="text-muted text-center"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading configured Product Master attributes...</td></tr>';
+        attributes.innerHTML = '<div class="sps-meta-row"><span>Product Master</span><strong>Loading…</strong></div>';
     }
 
     const detailRequest = fetchJson(endpoint(`products/get_product_details.php?product_id=${encodeURIComponent(product.product_id)}&t=${Date.now()}`), { cache: 'no-store' });
@@ -1659,6 +1923,7 @@ async function openEditSupplierProduct(supplierProductId) {
         : (product.specifications || []);
     renderSupplierProductMasterDetails(activeSupplierProductEdit, configuration.specifications || [], savedSpecifications, configuration.units || []);
     updateSupplierProductConversionPreview();
+    captureSupplierEditBaseline();
 
     if (detailResult.status === 'rejected' && configurationResult.status === 'rejected') {
         console.warn('Product Master details could not be refreshed; using the supplier catalog snapshot.');
@@ -1677,39 +1942,13 @@ async function submitEditSupplierProduct(event) {
         inventory_unit: document.getElementById('editSupplierProductInventoryUnitPreview').value.trim(),
         purchase_unit_contains: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value,
         units_per_purchase_unit: document.getElementById('editSupplierProductUnitsPerPurchaseUnit').value,
-        supplier_cost_input: document.getElementById('editSupplierProductCost')?.value || null,
-        product_price: document.getElementById('editSupplierProductRetailPrice')?.value || ''
+        supplier_cost_input: document.getElementById('editSupplierProductCost')?.value || null
     };
 
-    const unitsPerPurchaseUnit = Number(payload.purchase_unit_contains);
-    const productPrice = Number(payload.product_price);
-    if (!Number.isFinite(productPrice) || productPrice <= 0 || !/^\d+(?:\.\d{1,2})?$/.test(payload.product_price)) {
-        document.getElementById('editSupplierProductRetailPrice')?.classList.add('is-invalid');
-        PharmaUtils.toast.error('Enter a valid Product Master Base Price greater than zero, with up to 2 decimal places.');
-        return;
-    }
-    document.getElementById('editSupplierProductRetailPrice')?.classList.remove('is-invalid');
-    if (!['box', 'carton'].includes(normalizedSupplierUnit(payload.purchase_unit))) {
-        document.getElementById('editSupplierProductPurchaseUnit')?.classList.add('is-invalid');
-        PharmaUtils.toast.error('Purchase Unit must be Box or Carton.');
-        return;
-    }
-    if (!validSupplierUnitSelection('editSupplierProductPurchaseUnit')) {
-        PharmaUtils.toast.error('Please select a valid Purchase Unit.');
-        return;
-    }
-    if (!validSupplierUnitSelection('editSupplierProductInventoryUnitPreview')) {
-        PharmaUtils.toast.error('Inventory/Base Unit must be selected from the available unit list.');
-        return;
-    }
-    if (
-        !payload.supplier_product_id
-        || !payload.purchase_unit
-        || !payload.inventory_unit
-        || !Number.isInteger(unitsPerPurchaseUnit)
-        || unitsPerPurchaseUnit < 1
-    ) {
-        PharmaUtils.toast.error('Enter a valid Purchase Unit and final contents quantity.');
+    const draftError = supplierPurchasingDraftError();
+    if (draftError) {
+        PharmaUtils.toast.error(draftError);
+        bootstrap.Tab.getOrCreateInstance(document.getElementById('editSupplierProductSetupTab')).show();
         return;
     }
 
@@ -1861,9 +2100,76 @@ document.getElementById('editSupplierProductForm')?.addEventListener('submit', s
 });
 document.getElementById('editSupplierProductPurchaseUnit')?.addEventListener('change', event => {
     event.target.classList.remove('is-invalid');
+    syncPurchaseUnitSearch();
     updateSupplierProductConversionPreview();
 });
+const purchaseUnitSearch = document.getElementById('editSupplierPurchaseUnitSearch');
+purchaseUnitSearch?.addEventListener('focus', () => {
+    purchaseUnitSearch.select();
+    renderPurchaseUnitMenu('');
+});
+purchaseUnitSearch?.addEventListener('click', () => {
+    if (document.getElementById('editSupplierPurchaseUnitMenu')?.hidden !== false) renderPurchaseUnitMenu('');
+});
+purchaseUnitSearch?.addEventListener('input', () => renderPurchaseUnitMenu(purchaseUnitSearch.value));
+purchaseUnitSearch?.addEventListener('keydown', event => {
+    const options = [...(document.getElementById('editSupplierPurchaseUnitMenu')?.querySelectorAll('[data-purchase-unit]') || [])];
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (document.getElementById('editSupplierPurchaseUnitMenu')?.hidden) renderPurchaseUnitMenu(purchaseUnitSearch.value);
+        const listed = [...(document.getElementById('editSupplierPurchaseUnitMenu')?.querySelectorAll('[data-purchase-unit]') || [])];
+        if (!listed.length) return;
+        const next = event.key === 'ArrowDown' ? purchaseUnitMenuIndex + 1 : purchaseUnitMenuIndex - 1;
+        purchaseUnitMenuIndex = (next + listed.length) % listed.length;
+        listed.forEach((option, index) => {
+            option.classList.toggle('is-active', index === purchaseUnitMenuIndex);
+            option.setAttribute('aria-selected', index === purchaseUnitMenuIndex ? 'true' : 'false');
+        });
+        listed[purchaseUnitMenuIndex]?.scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'Enter') {
+        event.preventDefault();
+        const menu = document.getElementById('editSupplierPurchaseUnitMenu');
+        const exact = supplierPurchaseUnitRecords.find(unit => [unit.unit_name, unit.unit_symbol].some(value => normalizedSupplierUnit(value) === normalizedSupplierUnit(purchaseUnitSearch.value)));
+        if (menu?.hidden) {
+            if (exact) selectPurchaseUnit(exact.unit_name);
+            return;
+        }
+        const active = options[purchaseUnitMenuIndex];
+        if (active) selectPurchaseUnit(active.dataset.purchaseUnit);
+        else if (exact) selectPurchaseUnit(exact.unit_name);
+    } else if (event.key === 'Escape') {
+        closePurchaseUnitMenu();
+        syncPurchaseUnitSearch();
+    }
+});
+document.addEventListener('pointerdown', event => {
+    if (event.target.closest('#editSupplierPurchaseUnitMenu, #editSupplierPurchaseUnitSearch')) return;
+    if (document.getElementById('editSupplierPurchaseUnitMenu')?.hidden) return;
+    closePurchaseUnitMenu();
+    syncPurchaseUnitSearch();
+});
+document.addEventListener('scroll', event => {
+    if (event.target instanceof Element && event.target.closest('#editSupplierPurchaseUnitMenu')) return;
+    closePurchaseUnitMenu();
+}, true);
+window.addEventListener('resize', closePurchaseUnitMenu);
+document.getElementById('editSupplierProductModal')?.addEventListener('hidden.bs.modal', closePurchaseUnitMenu);
 document.getElementById('editSupplierProductUnitsPerPurchaseUnit')?.addEventListener('input', updateSupplierProductConversionPreview);
+document.getElementById('editSupplierProductCost')?.addEventListener('input', updateSupplierProductConversionPreview);
+document.getElementById('editSupplierContinueButton')?.addEventListener('click', () => {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('editSupplierProductReviewTab')).show();
+});
+document.getElementById('editSupplierBackButton')?.addEventListener('click', () => {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('editSupplierProductSetupTab')).show();
+});
+document.getElementById('editSupplierProductReviewTab')?.addEventListener('show.bs.tab', (event) => {
+    const draftError = supplierPurchasingDraftError();
+    if (!draftError) return;
+    event.preventDefault();
+    PharmaUtils.toast.error(draftError);
+});
+document.getElementById('editSupplierProductSetupTab')?.addEventListener('shown.bs.tab', () => syncSupplierSetupChrome('setup'));
+document.getElementById('editSupplierProductReviewTab')?.addEventListener('shown.bs.tab', () => syncSupplierSetupChrome('review'));
 document.getElementById('editSupplierProductUnit')?.addEventListener('change', updateSupplierProductConversionPreview);
 document.getElementById('editSupplierProductPackaging')?.addEventListener('change', updateSupplierProductConversionPreview);
 document.getElementById('supplierProductSearch')?.addEventListener('input', () => {
@@ -1926,6 +2232,8 @@ document.getElementById('viewSupplierAssignedProducts')?.addEventListener('click
 });
 document.getElementById('editSupplierProductModal')?.addEventListener('hidden.bs.modal', () => {
     activeSupplierProductEdit = null;
+    supplierEditBaseline = null;
+    syncSupplierSetupChrome('setup');
 });
 document.getElementById('addSupplierProductModal')?.addEventListener('show.bs.modal', () => {
     loadSuppliers();

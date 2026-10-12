@@ -76,10 +76,9 @@ $type = $pdo->query('SELECT type_id FROM product_types LIMIT 1')->fetchColumn();
 $supplier = $pdo->query('SELECT supplier_id FROM suppliers WHERE archived_at IS NULL LIMIT 1')->fetchColumn();
 $products = []; $requests = [];
 try {
-    foreach ([['Tablet', 'Carton', [['unit'=>'Box','quantity'=>5],['unit'=>'Blister Pack','quantity'=>10],['unit'=>'Tablet','quantity'=>10]], 'Box', 5, 500, 1],
+    foreach ([['Tablet', 'Carton', [['unit'=>'Box','quantity'=>5],['unit'=>'Blister Pack','quantity'=>10],['unit'=>'Tablet','quantity'=>10]], 'Carton', 1, 500, 1],
               ['Bottle', 'Case', [['unit'=>'Bottle','quantity'=>24]], 'Case', 2, 48, 2],
-              ['Tablet', 'Carton', [['unit'=>'Box','quantity'=>5],['unit'=>'Blister Pack','quantity'=>10],['unit'=>'Tablet','quantity'=>10]], 'Box', 5, 500, 0],
-              ['Tablet', 'Box', [['unit'=>'Blister Pack','quantity'=>10],['unit'=>'Tablet','quantity'=>10]], 'Box', 5, 500, 4]] as [$base,$purchase,$levels,$unit,$qty,$expected,$orderQty]) {
+              ['Tablet', 'Box', [['unit'=>'Blister Pack','quantity'=>10],['unit'=>'Tablet','quantity'=>10]], 'Box', 5, 500, 5]] as [$base,$purchase,$levels,$unit,$qty,$expected,$orderQty]) {
         $stmt = $pdo->prepare('SELECT measurement_unit_id FROM product_measurement_units WHERE unit_name=? LIMIT 1');
         $stmt->execute([$base]); $unitId = $stmt->fetchColumn();
         supplierEligibilityAssert((bool)$unitId, "Missing fixture unit {$base}");
@@ -94,8 +93,9 @@ try {
         $candidate = array_values(array_filter($candidates['body']['data'],fn($r)=>$r['product_id']===$product))[0];
         supplierEligibilityAssert(count($candidate['packaging_units'])===count($levels)+1,'Full hierarchy missing');
         if ($purchase==='Carton') {
-            $bad = supplierEligibilityApi('POST','purchase_requests/create_purchase_request.php',$manager,['items'=>[['product_id'=>$product,'requested_qty'=>7,'unit'=>$unit]]]);
-            supplierEligibilityAssert($bad['status']===422,'7 Boxes was not blocked');
+            $bad = supplierEligibilityApi('POST','purchase_requests/create_purchase_request.php',$manager,['items'=>[['product_id'=>$product,'requested_qty'=>7,'unit'=>'Box']]]);
+            if (($bad['body']['data']['pr_id'] ?? null) !== null) $requests[] = $bad['body']['data']['pr_id'];
+            supplierEligibilityAssert($bad['status']===422,'Non-purchase-unit Boxes were not blocked: '.json_encode($bad));
         }
         $created = supplierEligibilityApi('POST','purchase_requests/create_purchase_request.php',$manager,['submit'=>false,'items'=>[['product_id'=>$product,'requested_qty'=>$qty,'unit'=>$unit]]]);
         supplierEligibilityAssert($created['status']===201,'Create failed: '.json_encode($created));
@@ -108,25 +108,22 @@ try {
         supplierEligibilityAssert($read['status']===200,'Read failed: '.json_encode($read));
         $item=$read['body']['data']['requests'][0]['items'][0];
         supplierEligibilityAssert((float)$item['requested_qty']===$qty*1.0 && $item['unit']===$unit && (float)$item['requested_base_qty']===$expected*1.0,'Request quantity/unit lost');
-        $approved = supplierEligibilityApi('POST','purchase_requests/decide_purchase_request.php',$supervisor,['pr_id'=>$pr,'decision'=>'approve','approved_quantities'=>[['pr_item_id'=>$item['pr_item_id'],'approved_qty'=>($orderQty===0 || $orderQty===4 ? 4 : $qty)]]]);
+        $approved = supplierEligibilityApi('POST','purchase_requests/decide_purchase_request.php',$supervisor,['pr_id'=>$pr,'decision'=>'approve','approved_quantities'=>[['pr_item_id'=>$item['pr_item_id'],'approved_qty'=>$qty]]]);
         supplierEligibilityAssert($approved['status']===200,'Approve failed: '.json_encode($approved));
+        $approvedItem = $pdo->prepare('SELECT approved_qty,unit_label_at_request FROM purchase_request_items WHERE pr_item_id=?');
+        $approvedItem->execute([$item['pr_item_id']]);
+        $approvedRow = $approvedItem->fetch(PDO::FETCH_ASSOC);
+        supplierEligibilityAssert((float)$approvedRow['approved_qty']===$qty*1.0 && $approvedRow['unit_label_at_request']===$unit,'Supervisor approval changed the PR quantity or purchase unit');
         $payload=['pr_id'=>$pr,'items'=>[['pr_item_id'=>$item['pr_item_id'],'supplier_product_id'=>$sp]],'supplier_etas'=>[$supplier=>date('Y-m-d',time()+86400)]];
         $forbidden=supplierEligibilityApi('POST','purchase_requests/generate_purchase_orders.php',$supervisor,$payload);
         supplierEligibilityAssert($forbidden['status']===403,'Supervisor generated PO');
         $generated=supplierEligibilityApi('POST','purchase_requests/generate_purchase_orders.php',$manager,$payload);
-        if ($orderQty===0) {
-            supplierEligibilityAssert($generated['status']===409, 'Inexact Supervisor-approved quantity was rounded');
-            $stmt=$pdo->prepare('SELECT COUNT(*) FROM purchase_orders WHERE pr_id=?');$stmt->execute([$pr]);
-            supplierEligibilityAssert((int)$stmt->fetchColumn()===0, 'Failed generation wrote a PO');
-            continue;
-        }
-        if ($orderQty===4) $expected=400;
         supplierEligibilityAssert($generated['status']===201,'Generate failed: '.json_encode($generated));
         $po=$generated['body']['data']['purchase_orders'][0]['po_id'];
         $detail=supplierEligibilityApi('GET','purchase_orders/get_purchase_order.php?po_id='.$po,$manager);
         supplierEligibilityAssert($detail['status']===200,'PO detail failed: '.json_encode($detail));
-        $stmt=$pdo->prepare('SELECT purchase_qty,inventory_qty_ordered FROM purchase_order_items WHERE po_id=?');$stmt->execute([$po]);$row=$stmt->fetch();
-        supplierEligibilityAssert((int)$row['purchase_qty']===$orderQty && (int)$row['inventory_qty_ordered']===$expected,'PO conversion incorrect');
+        $stmt=$pdo->prepare('SELECT purchase_qty,purchase_unit_snapshot,units_per_purchase_unit_snapshot,inventory_qty_ordered FROM purchase_order_items WHERE po_id=?');$stmt->execute([$po]);$row=$stmt->fetch();
+        supplierEligibilityAssert((int)$row['purchase_qty']===$orderQty && $row['purchase_unit_snapshot']===$unit && (int)$row['units_per_purchase_unit_snapshot']*$orderQty===$expected && (int)$row['inventory_qty_ordered']===$expected,'PO purchase unit or conversion incorrect');
         $again=supplierEligibilityApi('POST','purchase_requests/generate_purchase_orders.php',$manager,$payload);
         supplierEligibilityAssert($again['status']===200 && $again['body']['data']['idempotent'],'Duplicate PO generated');
         $read=supplierEligibilityApi('GET','purchase_requests/get_purchase_requests.php?pr_id='.$pr,$manager);
@@ -134,7 +131,7 @@ try {
     }
     $setup=['purchase_unit'=>'Carton','inventory_unit'=>'Tablet','hierarchy_levels'=>[['unit'=>'Box','quantity'=>5],['unit'=>'Blister Pack','quantity'=>10],['unit'=>'Tablet','quantity'=>10]]];
     try { purchaseRequestExactOrderQuantity(4,'Box',$setup); throw new RuntimeException('Rounded approved quantity'); } catch (InvalidArgumentException $expectedError) {}
-    echo "PASS: medicine 5 Boxes -> 1 Carton / 500 Tablets; beverage 2 Cases -> 48 Bottles; invalid quantities; draft/save; supervisor approval; pending/role guards; changed approvals; independently purchasable Boxes; idempotency; ordered status.\n";
+    echo "PASS: medicine 1 Carton -> 1 Carton / 500 Tablets; beverage 2 Cases -> 48 Bottles; invalid purchase units; draft/save; supervisor approval; pending/role guards; purchase-unit Boxes; idempotency; ordered status.\n";
 } finally {
     foreach ($requests as $pr) {
         $pdo->prepare('DELETE FROM purchase_order_items WHERE po_id IN (SELECT po_id FROM purchase_orders WHERE pr_id=?)')->execute([$pr]);

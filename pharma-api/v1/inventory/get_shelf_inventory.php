@@ -3,6 +3,7 @@ $allowedRoles = ['super_admin','admin','manager','supervisor','salesclerk','Admi
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'expiry_status_helpers.php';
+require_once 'inventory_stock_summary.php';
 require_once '../settings/settings_helpers.php';
 
 function shelfDisplayBatchNumber(?string $batchNumber): string
@@ -15,6 +16,7 @@ function shelfDisplayBatchNumber(?string $batchNumber): string
 }
 
 try {
+    $activitySql = inventoryLastActivitySql();
     $statement = $pdo->query(
         "SELECT p.product_id,p.brand_name,p.product_name,p.barcode,p.status AS product_status,
                 pc.category_name,pt.type_name,
@@ -47,7 +49,8 @@ try {
                  LEFT JOIN product_type_specifications pts ON pts.type_id=p.type_id AND pts.specification_id=psv.specification_id
                  LEFT JOIN product_measurement_units spec_unit ON spec_unit.measurement_unit_id=psv.measurement_unit_id
                  WHERE psv.product_id=p.product_id
-                   AND LOWER(TRIM(ps.specification_name)) <> 'medicine classification') AS normalized_specification
+                   AND LOWER(TRIM(ps.specification_name)) <> 'medicine classification') AS normalized_specification,
+                activity.last_activity_at
          FROM product_selling_stock pss
          INNER JOIN product p ON p.product_id=pss.product_id
          LEFT JOIN product_inventory pi ON pi.inventory_id=pss.source_inventory_id
@@ -75,6 +78,7 @@ try {
                     SUM(CASE WHEN is_active=1 AND pos_enabled=1 THEN 1 ELSE 0 END) selling_unit_count
              FROM product_selling_options GROUP BY product_id
          ) so ON so.product_id=p.product_id
+         LEFT JOIN ({$activitySql}) activity ON activity.product_id=p.product_id
          WHERE pss.quantity_remaining>0
          GROUP BY p.product_id,p.brand_name,p.product_name,p.barcode,p.status,
                   pc.category_name,pt.type_name,pmu.unit_name,pmu.unit_symbol,p.price,
@@ -82,8 +86,9 @@ try {
                   md.strength,md.strength_value,md.strength_unit,
                   md.net_content_value,md.net_content_unit,md.dosage_form,md.package_type,
                   gd.package_type,gd.variant,gd.size,gd.net_weight,gd.unit,
-                  msd.variant,msd.size,msd.material,msd.sterile_status,msd.package_type,msd.pack_content
-         ORDER BY p.product_name,p.brand_name"
+                  msd.variant,msd.size,msd.material,msd.sterile_status,msd.package_type,msd.pack_content,
+                  activity.last_activity_at
+         ORDER BY activity.last_activity_at IS NULL, activity.last_activity_at DESC, p.product_name, p.brand_name"
     );
     $rows = array_map(static function(array $row): array {
         $expiry = $row['nearest_expiry_date'] ?? null;

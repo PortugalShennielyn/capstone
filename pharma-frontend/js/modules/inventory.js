@@ -144,9 +144,7 @@ function formatProductIdentity(parts) {
     return PharmaUtils.formatProductIdentity(parts);
 }
 
-function buildInventorySpecification(product) {
-    const normalizedSpecification = meaningful(cleanProductSpecificationText(product.normalized_specification));
-    if (normalizedSpecification) return normalizedSpecification;
+function specificationFromCategoryFields(product) {
     const category = meaningful(product.category_name).toLowerCase();
     let candidates;
 
@@ -177,7 +175,45 @@ function buildInventorySpecification(product) {
     }
 
     const parts = uniqueParts(candidates.map(meaningful));
-    return parts.join(PRODUCT_IDENTITY_SEPARATOR) || 'No specification available';
+    return parts.join(PRODUCT_IDENTITY_SEPARATOR);
+}
+
+function buildInventorySpecification(product) {
+    const normalizedSpecification = meaningful(cleanProductSpecificationText(product.normalized_specification));
+    if (normalizedSpecification) return normalizedSpecification;
+    return specificationFromCategoryFields(product) || 'No specification available';
+}
+
+function detailsHeaderSpecification(product) {
+    const saved = meaningful(cleanProductSpecificationText(product.normalized_specification));
+    const categoryFields = specificationFromCategoryFields({
+        ...product,
+        dosage_form: meaningful(product.recorded_form) || product.dosage_form,
+        package_type: meaningful(product.recorded_package_type) || product.package_type,
+        strength_value: meaningful(product.strength_value) || product.recorded_strength_value,
+        strength_unit: meaningful(product.strength_unit) || product.recorded_strength_unit
+    });
+    const packContent = joinedMeasurement(product.recorded_pack_content, product.recorded_pack_content_unit);
+    const candidates = [saved, categoryFields, packContent, product.pack_content]
+        .flatMap((value) => meaningful(value).split(/\s*•\s*/));
+    const parts = [];
+    for (const candidate of candidates) {
+        const value = meaningful(normalizeDisplayText(candidate));
+        if (!value) continue;
+        const key = value.toLowerCase().replace(/\s+/g, '');
+        if (parts.some((part) => {
+            const existing = part.toLowerCase().replace(/\s+/g, '');
+            return existing === key || (/^\d+(?:\.\d+)?$/.test(key) && existing.startsWith(key));
+        })) continue;
+        parts.push(value);
+    }
+    return parts.join(PRODUCT_IDENTITY_SEPARATOR);
+}
+
+function transferHistorySpecification(row) {
+    return specificationFromCategoryFields(row)
+        || meaningful(cleanProductSpecificationText(row.normalized_specification))
+        || 'No specification available';
 }
 
 function inventorySpecificationMarkup(product, searchTerm = '') {
@@ -460,7 +496,7 @@ function renderGlobalTransferHistory(rows) {
     }
     if (inventoryWrap) inventoryWrap.hidden = true;
     historyWrap.hidden = false;
-    historyWrap.innerHTML = `<table class="table table-hover align-middle inventory-table"><thead><tr><th>Date</th><th>Brand</th><th>Product</th><th>Specification</th><th>Movement</th><th>Selected Qty</th><th>Inventory Qty</th><th>Batch / Expiry Allocation</th></tr></thead><tbody>${rows.length ? rows.map((row) => `<tr><td>${esc(formatDateTime(row.created_at))}</td><td>${esc(row.brand_name || '-')}</td><td>${esc(productIdentityText(row, '-'))}</td><td><span class="history-specification">${esc(buildInventorySpecification(row))}</span></td><td><span class="status-badge status-safe">${esc(row.source_location)} → ${esc(row.destination_location)}</span></td><td>${esc(inventoryQuantityLabel(row.selected_quantity, row.selected_unit))}</td><td>${esc(inventoryQuantityLabel(row.base_quantity, row.base_unit))}</td><td>${transferAllocationMarkup(row.allocations)}</td></tr>`).join('') : '<tr><td class="empty-row" colspan="8">No inventory transfers recorded.</td></tr>'}</tbody></table>`;
+    historyWrap.innerHTML = `<table class="table table-hover align-middle inventory-table"><thead><tr><th>Date</th><th>Brand</th><th>Product</th><th>Specification</th><th>Movement</th><th>Selected Qty</th><th>Inventory Qty</th><th>Batch / Expiry Allocation</th></tr></thead><tbody>${rows.length ? rows.map((row) => `<tr><td>${esc(formatDateTime(row.created_at))}</td><td>${esc(row.brand_name || '-')}</td><td>${esc(productIdentityText(row, '-'))}</td><td><span class="history-specification">${esc(transferHistorySpecification(row))}</span></td><td><span class="status-badge status-safe">${esc(row.source_location)} → ${esc(row.destination_location)}</span></td><td>${esc(inventoryQuantityLabel(row.selected_quantity, row.selected_unit))}</td><td>${esc(inventoryQuantityLabel(row.base_quantity, row.base_unit))}</td><td>${transferAllocationMarkup(row.allocations)}</td></tr>`).join('') : '<tr><td class="empty-row" colspan="8">No inventory transfers recorded.</td></tr>'}</tbody></table>`;
     const historyTable = historyWrap.querySelector('table');
     const historyColumnClasses = ['inventory-history-col-date', 'inventory-history-col-brand', 'inventory-history-col-product', 'inventory-history-col-specification', 'inventory-history-col-movement', 'inventory-history-col-selected', 'inventory-history-col-base', 'inventory-history-col-allocation'];
     historyTable?.classList.add('inventory-history-table');
@@ -680,6 +716,85 @@ function infoItem(label, value) {
     return `<div class="inventory-info-item"><span>${esc(label)}</span><strong>${esc(cleanText(normalizeDisplayText(value), 'Not recorded'))}</strong></div>`;
 }
 
+let detailsBatchFilter = 'active';
+let expandedDetailsBatchId = '';
+
+function detailsBatchIsActive(batch) {
+    return String(batch.batch_status || '').toLowerCase() === 'active'
+        && batch.status !== 'Expired'
+        && Number(batch.storage_qty || 0) + Number(batch.shelf_qty || 0) > 0;
+}
+
+function detailsField(label, value) {
+    const display = cleanText(normalizeDisplayText(value), 'Not recorded');
+    return `<div class="inventory-detail-field"><dt>${esc(label)}</dt><dd class="${display === 'Not recorded' ? 'is-empty' : ''}">${esc(display)}</dd></div>`;
+}
+
+function detailsPackaging(row, inventoryUnit) {
+    const containers = new Set(['bag', 'blister pack', 'bottle', 'box', 'bundle', 'can', 'carton', 'case', 'jar', 'pack', 'pouch', 'roll', 'sachet', 'strip', 'tray', 'tube', 'vial']);
+    const recorded = meaningful(row.recorded_package_type) || meaningful(row.package_type);
+    const selling = meaningful(row.selling_package_unit);
+    const purchasing = meaningful(row.supplier_package_unit);
+    const type = recorded || selling || purchasing || (containers.has(inventoryUnit.toLowerCase()) ? inventoryUnit : '');
+    if (!type) return 'Not recorded';
+
+    const source = recorded ? 'product' : selling ? 'selling' : purchasing ? 'purchasing' : 'inventory';
+    const quantity = Number(source === 'product'
+        ? (row.recorded_pack_content || row.pack_content || row.medical_pack_content)
+        : source === 'selling' ? row.selling_package_quantity : row.supplier_package_quantity);
+    const contentUnit = source === 'product'
+        ? meaningful(row.recorded_pack_content_unit) || inventoryUnit
+        : inventoryUnit;
+    const label = pretty(type);
+    const conversion = Number.isInteger(quantity) && quantity > 1 && type.toLowerCase() !== inventoryUnit.toLowerCase()
+        ? `1 ${label} = ${quantityWithUnit(quantity, contentUnit)}`
+        : label;
+    return source === 'purchasing' ? `${conversion} (supplier purchase unit)` : conversion;
+}
+
+function detailsExpiryHint(value) {
+    if (!value) return 'No expiry recorded';
+    const expiry = new Date(String(value).slice(0, 10) + 'T00:00:00');
+    if (Number.isNaN(expiry.getTime())) return 'No expiry recorded';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = Math.ceil((expiry - today) / 86400000);
+    if (days < 0) return 'Expired';
+    if (days === 0) return 'Expires today';
+    return `${days} day${days === 1 ? '' : 's'}${days >= 30 ? ` · ~${Math.round(days / 30)} months` : ''}`;
+}
+
+function renderDetailsBatchList(row, inventoryUnit) {
+    const batches = row.batches || [];
+    const visible = batches.filter((batch) => detailsBatchFilter === 'all' || detailsBatchIsActive(batch));
+    const container = document.getElementById('inventoryDetailsBatchList');
+    if (!container) return;
+    container.innerHTML = visible.length ? visible.map((batch) => {
+        const id = String(batch.batch_id || '');
+        const expanded = expandedDetailsBatchId === id;
+        const storage = Number(batch.storage_qty || 0);
+        const shelf = Number(batch.shelf_qty || 0);
+        const total = storage + shelf;
+        const status = batch.status === 'Expired' ? 'Expired' : batch.batch_status;
+        return `<article class="inventory-detail-batch ${expanded ? 'is-expanded' : ''}">
+            <div class="inventory-detail-batch-row">
+                <div class="inventory-detail-batch-name"><div><strong title="${esc(batch.batch_number || id)}">${esc(batch.batch_number || id)}</strong><button type="button" data-details-batch-copy="${esc(batch.batch_number || id)}" aria-label="Copy batch number"><i class="fa-regular fa-copy" aria-hidden="true"></i></button></div>${batchPriorityMarkup(batch)}</div>
+                <div class="inventory-detail-batch-expiry"><strong>${esc(formatDate(batch.expiry_date, 'Not recorded'))}</strong><small>${esc(detailsExpiryHint(batch.expiry_date))}</small></div>
+                <div class="inventory-detail-batch-quantity"><strong>${esc(total)}</strong><small>${esc(inventoryUnitLabel(inventoryUnit, total))}</small></div>
+                <div class="inventory-detail-batch-storage">${esc(storage)}</div>
+                <div class="inventory-detail-batch-shelf">${esc(shelf)}</div>
+                <div class="inventory-detail-batch-status">${batchStatusBadge(status)}</div>
+                <button class="inventory-detail-batch-toggle" type="button" data-details-batch-toggle="${esc(id)}" aria-expanded="${expanded}" aria-label="${expanded ? 'Close' : 'View'} batch details for ${esc(batch.batch_number || id)}"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></button>
+            </div>
+            ${expanded ? `<div class="inventory-detail-batch-extra">
+                <div class="inventory-detail-batch-source"><div><small>PO reference</small><strong>${esc(cleanText(batch.po_number, 'Not recorded'))}</strong></div><div><small>Supplier</small><strong>${esc(cleanText(batch.supplier_name, 'Not recorded'))}</strong></div><div><small>Received</small><strong>${esc(formatDate(batch.received_date, 'Not recorded'))}</strong></div></div>
+                <div class="inventory-detail-batch-counts"><div><small>Storage qty</small><strong>${esc(quantityWithUnit(storage, inventoryUnit))}</strong></div><div><small>Shelf qty</small><strong>${esc(quantityWithUnit(shelf, inventoryUnit))}</strong></div><div><small>Damaged</small><strong>${esc(quantityWithUnit(batch.damaged_qty || 0, inventoryUnit))}</strong></div><div><small>Returned</small><strong>${esc(quantityWithUnit(batch.returned_qty || 0, inventoryUnit))}</strong></div></div>
+                <button class="inventory-detail-batch-history" type="button" data-details-batch-history="${esc(id)}"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> View stock movements for this batch</button>
+            </div>` : ''}
+        </article>`;
+    }).join('') : '<div class="inventory-detail-batch-empty">No batches match this view.</div>';
+}
+
 function batchPriorityMarkup(batch) {
     const badges = [];
     if (batch.use_first) badges.push(batchBadge('Use First', 'batch-use-first'));
@@ -698,90 +813,49 @@ function tableRows(rows, emptyText, renderer, colspan = 8) {
 function openDetails(productId, show = true) {
     const row = rowById(productId);
     if (!row) return;
+    if (show) {
+        detailsBatchFilter = 'active';
+        expandedDetailsBatchId = '';
+    }
     activeDetailsProductId = row.product_id;
     const productSpecification = buildInventorySpecification(row);
     const storageQty = Number(row.storage_quantity || 0);
     const shelfQty = Number(row.shelf_quantity || 0);
     const inventoryUnit = cleanText(row.inventory_unit_symbol || row.inventory_unit_name, 'unit');
     const damagedQty = Number(row.damaged_quantity || 0);
-    const returnedQty = (row.batches || []).reduce((total, batch) => total + Number(batch.returned_qty || 0), 0);
+    const returnedQty = Number(row.returned_quantity ?? (row.batches || []).reduce((total, batch) => total + Number(batch.returned_qty || 0), 0));
     const onHandQty = storageQty + shelfQty;
     const inactive = isInactiveProduct(row);
-    const hasReturned = returnedQty > 0 || (row.batches || []).some((batch) => Object.prototype.hasOwnProperty.call(batch, 'returned_qty'));
+    const activeBatches = (row.batches || []).filter(detailsBatchIsActive);
+    const allBatches = row.batches || [];
+    const storagePercent = onHandQty > 0 ? (storageQty / onHandQty * 100) : 0;
     const subtitle = document.getElementById('inventoryDetailsSubtitle');
-    if (subtitle) subtitle.textContent = formatProductIdentity([row.brand_name, productIdentityText(row), productSpecification]);
+    const title = document.getElementById('inventoryDetailsProductName');
+    if (title) title.textContent = cleanText(row.brand_name || row.product_name, 'Product');
+    if (subtitle) subtitle.innerHTML = `${esc(formatProductIdentity([row.generic_name || productIdentityText(row), detailsHeaderSpecification(row)]))}${isPrescriptionProduct(row) ? '<span class="inventory-details-rx">Rx</span>' : ''}<span class="inventory-details-category">${esc(row.category_name || 'Uncategorized')}</span>`;
     const statusContainer = document.getElementById('inventoryDetailsProductStatus');
     if (statusContainer) {
-        statusContainer.innerHTML = `<strong>Product Status:</strong> ${productStatusBadge(row.product_status, true)}`;
+        statusContainer.innerHTML = productStatusBadge(row.product_status, true);
     }
     document.getElementById('inventoryInactiveWarning')?.remove();
     if (statusContainer && inactive) {
         statusContainer.insertAdjacentHTML('afterend', '<div id="inventoryInactiveWarning" class="inventory-inactive-warning"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>This product is inactive and cannot be sold. Existing stock and batch records are retained for inventory tracking.</span></div>');
     }
-    const stockCards = document.getElementById('inventoryHeaderStockCards');
-    if (stockCards) {
-        stockCards.innerHTML = `
-            ${stockSummaryItem('Storage Stock', quantityWithUnit(storageQty, inventoryUnit), stockLevelTag(storageQty, 'storage'))}
-            ${stockSummaryItem('Shelf Stock', quantityWithUnit(shelfQty, inventoryUnit), stockLevelTag(shelfQty, 'shelf'))}
-            ${stockSummaryItem('On Hand', quantityWithUnit(onHandQty, inventoryUnit))}
-            ${stockSummaryItem('Damaged', quantityWithUnit(damagedQty, inventoryUnit))}
-            ${stockSummaryItem('Returned', quantityWithUnit(hasReturned ? returnedQty : 0, inventoryUnit))}
-            ${stockSummaryItem('Nearest Expiry', formatDate(row.nearest_expiry_date))}
-        `;
-    }
-
     document.getElementById('inventoryDetails').innerHTML = `
         <div class="inventory-details-record">
-            <section class="inventory-flat-section product-identity-section">
-                <h6>Product Information</h6>
-                <div class="inventory-info-grid">
-                    ${infoItem('Brand', row.brand_name)}
-                    ${infoItem('Product', productIdentityText(row))}
-                    ${infoItem('Generic Name', row.generic_name)}
-                    ${infoItem('Category', row.category_name)}
-                    ${infoItem('Product Type', row.type_name)}
-                    ${infoItem('Specification', productSpecification)}
-                    ${infoItem('Strength', meaningful(row.strength) || joinedMeasurement(row.strength_value, row.strength_unit))}
-                    ${infoItem('Net Content', joinedMeasurement(row.net_content_value, row.net_content_unit) || joinedMeasurement(row.net_weight, row.unit) || row.size)}
-                    ${infoItem('Dosage Form', row.dosage_form)}
-                    ${infoItem('Packaging', row.package_type)}
-                    ${infoItem('Selling / Inventory Unit', inventoryUnit)}
+            <div class="inventory-details-main">
+                <div class="inventory-details-overview">
+                    <section class="inventory-on-hand-card"><span>Total on hand</span><div><strong>${esc(Number(onHandQty).toLocaleString('en-PH'))}</strong><em>${esc(inventoryUnitLabel(inventoryUnit, onHandQty))}</em></div><div class="inventory-stock-bar" aria-hidden="true"><span style="width:${storagePercent}%"></span></div><div class="inventory-stock-legend"><span><i class="is-storage"></i>Storage <strong>${esc(storageQty)}</strong></span><span><i class="is-shelf"></i>Shelf <strong>${esc(shelfQty)}</strong></span></div></section>
+                    <section class="inventory-overview-card inventory-expiry-card"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span>Nearest expiry</span><strong>${esc(formatDate(row.nearest_expiry_date, 'Not recorded'))}</strong><small>${esc(detailsExpiryHint(row.nearest_expiry_date))}</small></section>
+                    <section class="inventory-overview-card inventory-damaged-card"><i class="fa-solid fa-diamond-turn-right" aria-hidden="true"></i><span>Damaged</span><strong>${esc(damagedQty)}</strong></section>
+                    <section class="inventory-overview-card inventory-returned-card"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span>Returned</span><strong>${esc(returnedQty)}</strong></section>
                 </div>
-            </section>
-
-            <section class="inventory-flat-section batch-inventory-section">
-                <h6>Batch Inventory</h6>
-                <div class="batch-table-wrapper">
-                <table class="table modal-table inventory-batch-table align-middle">
-                    <thead>
-                        <tr>
-                            <th class="batch-number-cell">Batch Number</th>
-                            <th class="po-reference-cell">PO Reference</th>
-                            <th class="supplier-cell">Supplier</th>
-                            <th class="received-date-cell">Received</th>
-                            <th class="expiry-date-cell">Expiry</th>
-                            <th>Storage</th>
-                            <th>Shelf</th>
-                            <th class="batch-status-column">Batch Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>${tableRows(row.batches, 'No active inventory batches found for this product.', (batch) => `
-                        <tr class="batch-status-${statusClass(batch.status)}">
-                            <td class="batch-number-cell"><div class="batch-primary"><strong title="${esc(batch.batch_number || batch.batch_id)}">${esc(batch.batch_number || batch.batch_id)}</strong>${batchPriorityMarkup(batch)}</div></td>
-                            <td class="po-reference-cell">${esc(meaningful(batch.po_number) || '-')}</td>
-                            <td class="supplier-cell">${esc(meaningful(batch.supplier_name) || '-')}</td>
-                            <td class="received-date-cell">${esc(formatDate(batch.received_date))}</td>
-                            <td class="expiry-date-cell">${esc(formatDate(batch.expiry_date))}</td>
-                            <td><span class="qty-number">${esc(batch.storage_qty ?? 0)}</span></td>
-                            <td><span class="qty-number">${esc(batch.shelf_qty ?? 0)}</span></td>
-                            <td class="batch-status-column">${batchStatusBadge(batch.batch_status)}</td>
-                        </tr>
-                    `, 8)}</tbody>
-                </table>
-                </div>
-            </section>
+                <section class="inventory-details-batches"><div class="inventory-batch-toolbar"><div><h3>Batches</h3><p>Sorted by expiry — first to expire is used first (FEFO).</p></div><div class="inventory-batch-filter" role="group" aria-label="Batch view"><button type="button" data-details-batch-filter="active" class="${detailsBatchFilter === 'active' ? 'is-active' : ''}">Active (${activeBatches.length})</button><button type="button" data-details-batch-filter="all" class="${detailsBatchFilter === 'all' ? 'is-active' : ''}">All (${allBatches.length})</button></div></div><div class="inventory-detail-batch-head"><span>Batch tracking no.</span><span>Expiry</span><span>Quantity</span><span>Storage</span><span>Shelf</span><span>Status</span><span>Action</span></div><div id="inventoryDetailsBatchList"></div></section>
+            </div>
+            <aside class="inventory-details-sidebar"><h6>Product Information</h6><dl>${detailsField('Brand', row.brand_name)}${detailsField('Product / Generic', row.generic_name || productIdentityText(row))}${detailsField('Category', row.category_name)}${detailsField('Form', row.recorded_form || row.dosage_form || row.type_name)}${detailsField('Strength', meaningful(row.strength) || joinedMeasurement(row.strength_value, row.strength_unit) || joinedMeasurement(row.recorded_strength_value, row.recorded_strength_unit))}${detailsField('Specification', productSpecification)}${detailsField('Selling / Inventory unit', inventoryUnit)}${detailsField('Packaging', detailsPackaging(row, inventoryUnit))}${detailsField('Product type', row.medicine_classification || row.type_name)}</dl></aside>
         </div>
     `;
+    renderDetailsBatchList(row, inventoryUnit);
 
     if (show) {
         const modal = document.getElementById('inventoryDetailsModal');
@@ -1193,7 +1267,7 @@ function bindHistoryControls() {
     });
 }
 
-async function loadHistory(productId) {
+async function loadHistory(productId, batchId = '') {
     const container = document.getElementById('stockHistory');
     if (!container) return;
     container.innerHTML = '<div class="stock-history-state"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Loading stock movements...</span></div>';
@@ -1207,7 +1281,13 @@ async function loadHistory(productId) {
         historyState.page = 1;
         container.innerHTML = `${historyProductSummary(historyState.product)}${historyFilterToolbar(historyState.movements, response.supported_types || [])}<div id="stockHistorySummary"></div><div id="stockHistoryResults"></div>`;
         bindHistoryControls();
-        renderHistoryResults();
+        const batchFilter = document.getElementById('historyBatchFilter');
+        if (batchId && batchFilter && Array.from(batchFilter.options).some((option) => option.value === batchId)) {
+            batchFilter.value = batchId;
+            applyHistoryFilters();
+        } else {
+            renderHistoryResults();
+        }
         bootstrap.Modal.getInstance(document.getElementById('stockHistoryModal'))?.handleUpdate();
     } catch (error) {
         container.innerHTML = '<div class="stock-history-state is-error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><span>Unable to load stock movement history. Please try again.</span><button class="btn btn-sm btn-outline-danger" id="historyRetry" type="button">Retry</button></div>';
@@ -1215,7 +1295,7 @@ async function loadHistory(productId) {
     }
 }
 
-function openHistory(productId) {
+function openHistory(productId, batchId = '') {
     if (!rowById(productId)) return;
     const modalElement = document.getElementById('stockHistoryModal');
     const dialog = modalElement?.querySelector('.stock-history-dialog');
@@ -1226,7 +1306,7 @@ function openHistory(productId) {
     });
     modalElement?.querySelector('.stock-history-body')?.scrollTo({ top: 0, left: 0 });
     bootstrap.Modal.getOrCreateInstance(modalElement, { backdrop: 'static', keyboard: true }).show();
-    loadHistory(productId);
+    loadHistory(productId, batchId);
 }
 
 function setTheme(theme) {
@@ -1241,12 +1321,12 @@ function setTheme(theme) {
 setTheme(localStorage.getItem('drpTheme') || 'light');
 configureResizableModal('inventoryDetailsModal', {
     variant: 'xlarge',
-    width: 1280,
-    height: 850,
+    width: 1450,
+    height: 900,
     minWidth: 760,
     minHeight: 520,
-    maxWidthRatio: 0.96,
-    maxHeightRatio: 0.94
+    maxWidthRatio: 0.98,
+    maxHeightRatio: 0.96
 });
 document.getElementById('themeToggle')?.addEventListener('click', () => setTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark'));
 document.getElementById('btnRefreshInventory')?.addEventListener('click', loadInventory);
@@ -1280,6 +1360,42 @@ document.getElementById('btnInventoryDetailsHistory')?.addEventListener('click',
     if (!activeDetailsProductId) return;
     bootstrap.Modal.getInstance(document.getElementById('inventoryDetailsModal'))?.hide();
     openHistory(activeDetailsProductId);
+});
+document.getElementById('inventoryDetails')?.addEventListener('click', (event) => {
+    const productId = activeDetailsProductId;
+    const row = productId ? rowById(productId) : null;
+    if (!row) return;
+    const filter = event.target.closest('[data-details-batch-filter]');
+    if (filter) {
+        detailsBatchFilter = filter.dataset.detailsBatchFilter;
+        document.querySelectorAll('[data-details-batch-filter]').forEach((button) => button.classList.toggle('is-active', button === filter));
+        renderDetailsBatchList(row, cleanText(row.inventory_unit_symbol || row.inventory_unit_name, 'unit'));
+        return;
+    }
+    const copy = event.target.closest('[data-details-batch-copy]');
+    if (copy) {
+        if (!navigator.clipboard?.writeText) {
+            PharmaUtils.toast.error('Clipboard is unavailable in this browser.');
+            return;
+        }
+        navigator.clipboard.writeText(copy.dataset.detailsBatchCopy || '')
+            .then(() => PharmaUtils.toast.success('Batch number copied.'))
+            .catch(() => PharmaUtils.toast.error('Unable to copy the batch number.'));
+        return;
+    }
+    const toggle = event.target.closest('[data-details-batch-toggle]');
+    if (toggle) {
+        expandedDetailsBatchId = expandedDetailsBatchId === toggle.dataset.detailsBatchToggle ? '' : toggle.dataset.detailsBatchToggle;
+        renderDetailsBatchList(row, cleanText(row.inventory_unit_symbol || row.inventory_unit_name, 'unit'));
+        document.querySelector(`[data-details-batch-toggle="${CSS.escape(toggle.dataset.detailsBatchToggle)}"]`)?.focus();
+        return;
+    }
+    const history = event.target.closest('[data-details-history], [data-details-batch-history]');
+    if (history) {
+        const batchId = history.dataset.detailsBatchHistory || '';
+        bootstrap.Modal.getInstance(document.getElementById('inventoryDetailsModal'))?.hide();
+        openHistory(productId, batchId);
+    }
 });
 document.getElementById('table-inventory')?.addEventListener('click', (event) => {
     const viewButton = event.target.closest('.view-inventory-btn');

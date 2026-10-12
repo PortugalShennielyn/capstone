@@ -85,9 +85,9 @@ try {
     $basis = latestAcceptedCostBasis($pdo, $candidate['product_id']);
     pricingAssert($basis !== null && $basis['unit_cost'] === 55.0, 'Latest accepted delivery is the actual 55.00 cost basis');
     pricingAssert($basis['supplier_id'] === $candidate['supplier_id'], 'Latest accepted supplier remains the pricing source instead of the cheaper quotation');
-    applyAcceptedDeliveryPricing($pdo, $candidate['product_id'], $basis);
+    $deliverySuggestion = applyAcceptedDeliveryPricing($pdo, $candidate['product_id'], $basis);
     $automaticPrice = (float) $pdo->query("SELECT price FROM product WHERE product_id = " . $pdo->quote($candidate['product_id']))->fetchColumn();
-    pricingAssert($automaticPrice === 88.0, 'Automatic receiving trigger updates active selling price to 88.00');
+    pricingAssert($automaticPrice === 10.0 && (float) $deliverySuggestion['calculated_selling_price'] === 88.0, 'Receiving exposes the 88.00 suggestion without changing the active selling price');
 
     $pdo->prepare("UPDATE product_categories SET pricing_behavior = 'review_required' WHERE category_id = :category_id")
         ->execute([':category_id' => $candidate['category_id']]);

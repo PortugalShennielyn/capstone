@@ -168,7 +168,9 @@ try {
                 COALESCE(NULLIF(poi.unit_snapshot,''),pmu.unit_name) AS inventory_unit,
                 COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
                 COALESCE(ROUND(piii.unit_cost * poi.purchase_qty, 2), NULLIF(poi.line_total, 0), COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) * COALESCE(poi.unit_price_snapshot, 0)) AS line_total,
-                COALESCE(piii.unit_cost / NULLIF(poi.units_per_purchase_unit_snapshot, 0), poi.unit_price_snapshot, 0) AS unit_price,
+                CASE WHEN piii.invoice_qty > 0 AND piii.unit_cost > 0
+                     THEN piii.unit_cost / NULLIF(poi.units_per_purchase_unit_snapshot, 0)
+                     ELSE 0 END AS unit_price,
                 COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
                 COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name) AS product_name,
                 CASE WHEN md.product_id IS NOT NULL OR LOWER(COALESCE(pc.category_name, '')) LIKE '%medicine%' THEN 1 ELSE 0 END AS requires_expiry
@@ -356,7 +358,7 @@ try {
         if ($allocated > $accepted) throw new InvalidArgumentException("Allocated inventory for {$productLabel} exceeds accepted inventory by " . ($allocated - $accepted) . ' units.');
         if ($allocated < $accepted) throw new InvalidArgumentException(($accepted - $allocated) . " accepted units for {$productLabel} remain to be allocated to inventory batches.");
 
-        // PO item unit_price_snapshot is the approved cost per base inventory unit.
+        // Only the recorded supplier invoice establishes an accepted cost basis.
         $unitPrice = (float) $poItems[$poItemId]['unit_price'];
         $claimUnitConversionId = $action > 0 ? $actionUnitConversionId : $damagedUnitConversionId;
         $storedClaimQuantity = $action > 0 ? $actionQuantity : $damagedQuantity;
@@ -504,7 +506,7 @@ try {
     $pricingResults = [];
     foreach ($acceptedPricingRows as $productId => $costBasis) {
         $latestBasis = latestAcceptedCostBasis($pdo, $productId) ?? $costBasis;
-        $pricingResults[$productId] = applyAcceptedDeliveryPricing($pdo, $productId, $latestBasis);
+        $pricingResults[$productId] = productPricingSnapshot($pdo, $productId, $latestBasis);
     }
     synchronizePurchaseOrderPaymentStatus($pdo, $poId, purchaseOrderEffectivePayable($pdo, $poId));
     $receivedByProduct = [];

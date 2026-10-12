@@ -3,11 +3,9 @@ import { ensurePageTabSession, tabToken } from "./auth_guard.js?v=27";
 import { primaryAccessRole } from "./rbac.js";
 import { formatProductSpecification as productSpecification } from "./product_specification.js?v=8";
 import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=1";
-import { loadMeasurementUnits } from "./measurement_units.js?v=2";
 
 let products = [];
 let requests = [];
-let quantityUnits = [];
 let inventoryRows = [];
 let actorRole = "";
 let sessionUser = null;
@@ -51,6 +49,12 @@ const compactPeso = (value) => {
         : rounded.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
     return `₱${number}`;
 };
+
+function productNameMarkup(product) {
+    const isRx = String(product?.category_name || "").trim().toLowerCase() === "medicine" &&
+        String(product?.medicine_classification || "").trim().toLowerCase() === "prescription (rx)";
+    return `<div class="catalog-product-heading"><strong>${esc(product?.brand_name || "-")}</strong>${isRx ? '<span class="pr-rx-badge" title="Prescription medicine">Rx</span>' : ""}</div><span>${esc(product?.product_name || "Product")}</span>`;
+}
 
 function canCreatePurchaseRequests() {
     return creatorRoles.has(actorRole);
@@ -115,7 +119,7 @@ function replenishmentType(productId) {
     if (!context.inventory || context.stockStatus === "New Product") return "new";
     if (context.stockStatus === "Out of Stock") return "out";
     if (context.stockStatus === "Low Stock") return "low";
-    return "";
+    return "healthy";
 }
 
 function normalizedRequestStatus(request) {
@@ -219,37 +223,29 @@ function baseUnitAllowsDecimal(product) {
 }
 
 function requestUnit(item, product) {
-    return item?.unit || product?.purchase_unit || "";
+    return configuredPurchaseUnit(product) || item?.unit || "";
 }
 
-function requestUnitOptions(product, item = null) {
-    const levels = product?.packaging_units || [];
-    const catalogTokens = new Set();
-    quantityUnits
-        .filter((unit) => Number(unit.is_active ?? 1) === 1)
-        .forEach((unit) => {
-            [unit.unit_name, unit.unit_symbol].forEach((label) => {
-                const token = String(label || "").trim().toLowerCase();
-                if (token) catalogTokens.add(token);
-            });
-        });
-    let options = levels.filter((level) => catalogTokens.has(String(level.unit || "").trim().toLowerCase()));
-    if (!options.length) options = levels;
-    const selectedUnit = requestUnit(item, product);
-    if (selectedUnit && !options.some((level) => String(level.unit).toLowerCase() === selectedUnit.toLowerCase())) {
-        const selectedLevel = levels.find((level) => String(level.unit).toLowerCase() === selectedUnit.toLowerCase());
-        if (selectedLevel) options = [...options, selectedLevel];
-    }
-    return options;
-}
-
-function requestUnitSelector(product, item = null, disabled = false) {
-    const options = requestUnitOptions(product, item);
+function configuredPurchaseUnit(product) {
+    const options = product?.supplier_options || [];
     if (!options.length) return "";
-    const selectedUnit = requestUnit(item, product);
-    return `<select class="form-select request-unit-select" data-request-unit="${esc(product.product_id)}" aria-label="Requested unit for ${esc(product.product_name || "product")}" ${disabled ? "disabled" : ""}>${options
-        .map((level) => `<option value="${esc(level.unit)}" ${String(level.unit).toLowerCase() === String(selectedUnit).toLowerCase() ? "selected" : ""}>${esc(level.unit)}</option>`)
-        .join("")}</select>`;
+    const first = options[0];
+    const unit = String(first.purchase_unit || "").trim();
+    const factor = Number(first.base_qty_per_purchase_unit || 0);
+    if (!unit || !Number.isInteger(factor) || factor <= 0) return "";
+    return options.every((option) => {
+        const level = (option.absolute_levels || []).find(
+            (candidate) => String(candidate.unit || "").trim().toLowerCase() === unit.toLowerCase(),
+        );
+        return String(option.purchase_unit || "").trim().toLowerCase() === unit.toLowerCase() &&
+            Number(option.base_qty_per_purchase_unit || 0) === factor &&
+            Number(level?.base_quantity || 0) === factor;
+    }) ? unit : "";
+}
+
+function requestUnitLabel(product) {
+    const unit = configuredPurchaseUnit(product);
+    return `<span class="requested-unit-label">${esc(unit || "Supplier purchase unit not configured")}</span>`;
 }
 
 function packageUnits(product) {
@@ -268,22 +264,10 @@ function packageError(product, value, unit) {
     const quantity = Number(value);
     if (!Number.isSafeInteger(quantity) || quantity <= 0)
         return "Enter a positive whole package quantity.";
-    const level = (product?.packaging_units || []).find((level) => level.unit === unit);
-    if (!level) return "Select a configured package unit.";
-    const valid = (product.supplier_options || []).some((option) => {
-        const selected = (option.absolute_levels || []).find(
-            (candidate) => candidate.unit === unit,
-        );
-        return (
-            selected &&
-            Number(selected.base_quantity) === Number(level.base_quantity) &&
-            (quantity * Number(level.base_quantity)) % Number(option.base_qty_per_purchase_unit) ===
-                0
-        );
-    });
-    return valid
-        ? ""
-        : `${quantity} ${unit} cannot be ordered using the supplier's configured purchase unit. ${(product.supplier_options || []).map((option) => option.summary).join("; ")}`;
+    const configured = configuredPurchaseUnit(product);
+    if (!configured) return "Supplier purchase unit not configured.";
+    return String(unit).toLowerCase() === configured.toLowerCase()
+        ? "" : "Requested quantity must use the supplier purchase unit.";
 }
 
 function packageEquivalent(product, item) {
@@ -305,6 +289,7 @@ function packageEquivalent(product, item) {
 
 function quantityUnitLabel(unit, quantity) {
     const clean = String(unit || "unit").trim();
+    if (/^pcs$/i.test(clean)) return "pcs";
     const display = clean ? clean.charAt(0).toUpperCase() + clean.slice(1) : "Unit";
     if (Number(quantity) === 1 || /s$/i.test(display)) return display;
     if (/(s|x|z|ch|sh)$/i.test(display)) return `${display}es`;
@@ -313,7 +298,7 @@ function quantityUnitLabel(unit, quantity) {
 }
 
 function packageContents(product) {
-    const purchaseUnit = String(product?.purchase_unit || "").trim();
+    const purchaseUnit = configuredPurchaseUnit(product);
     const levels = product?.packaging_units || [];
     const purchaseLevel = levels.find(
         (level) => String(level.unit).toLowerCase() === purchaseUnit.toLowerCase(),
@@ -365,6 +350,7 @@ function selectProduct(productId, requestedQty = null) {
         selectedItems.has(key) ||
         !hasActiveSupplierAssignment(product) ||
         !hasConfiguredBaseUnit(product) ||
+        !configuredPurchaseUnit(product) ||
         activeConflict(key, currentRequestId())
     )
         return;
@@ -372,7 +358,7 @@ function selectProduct(productId, requestedQty = null) {
     selectedItems.set(key, {
         product_id: key,
         requested_qty: quantity,
-        unit: product?.purchase_unit || "",
+        unit: configuredPurchaseUnit(product),
     });
     renderSelectionState();
 }
@@ -437,6 +423,10 @@ function selectedBaseUnitMessages() {
     });
     selectedItems.forEach((item) => {
         const product = productById.get(item.product_id);
+        if (!configuredPurchaseUnit(product)) {
+            messages.push(`${product?.product_name || "This product"}: Supplier purchase unit not configured.`);
+            return;
+        }
         if (Number(item.requested_qty) > MAX_PURCHASE_REQUEST_QTY) {
             messages.push(
                 `${product?.product_name || "This product"} quantity cannot exceed ${MAX_PURCHASE_REQUEST_QTY} per product line.`,
@@ -471,29 +461,28 @@ function visibleEligibleProducts(requiredType = "") {
         .trim()
         .toLowerCase();
     const filter = document.getElementById("replenishmentFilter")?.value || "all";
-    const rank = { "Out of Stock": 0, "Low Stock": 1, "New Product": 2 };
+    const rank = { "Out of Stock": 0, "Low Stock": 1, "New Product": 2, "In Stock": 3 };
     return products
         .filter(
             (product) =>
                 String(product.status || product.product_status || "Active").toLowerCase() ===
                 "active",
         )
-        .filter(hasActiveSupplierAssignment)
-        .filter((product) => !isHiddenApprovedConflict(product.product_id))
+        .filter((product) => Boolean(query) || !isHiddenApprovedConflict(product.product_id))
         .filter((product) => {
             const type = replenishmentType(product.product_id);
-            return (
-                Boolean(type) &&
-                (filter === "all" || type === filter) &&
-                (!requiredType || type === requiredType)
-            );
+            if (filter !== "all" && type !== filter) return false;
+            if (requiredType) return type === requiredType;
+            return filter !== "all" || Boolean(query) || type !== "healthy";
         })
         .filter(
             (product) =>
                 !query ||
                 [
                     product.product_name,
+                    product.master_product_name,
                     product.brand_name,
+                    product.generic_name,
                     productSpecification(product),
                     product.barcode,
                 ]
@@ -516,7 +505,9 @@ function syncVisibleSelectionCheckbox() {
     const visibleIds = visibleEligibleProducts()
         .filter(
             (product) =>
+                hasActiveSupplierAssignment(product) &&
                 hasConfiguredBaseUnit(product) &&
+                Boolean(configuredPurchaseUnit(product)) &&
                 !activeConflict(product.product_id, currentRequestId()),
         )
         .map((product) => String(product.product_id));
@@ -532,7 +523,7 @@ function renderProductCatalog() {
     const rows = visibleEligibleProducts();
     if (!rows.length) {
         body.innerHTML =
-            '<tr><td colspan="11" class="product-selector-empty">No eligible replenishment items match these filters.</td></tr>';
+            '<tr><td colspan="11" class="product-selector-empty">No matching products found.</td></tr>';
         syncVisibleSelectionCheckbox();
         return;
     }
@@ -543,9 +534,15 @@ function renderProductCatalog() {
             const selected = selectedItems.get(productId);
             const conflict = activeConflict(productId, currentRequestId());
             const missingBaseUnit = !hasConfiguredBaseUnit(product);
-            const disabled = missingBaseUnit || (conflict && !selected);
-            const disabledReason = missingBaseUnit
+            const missingSupplier = !hasActiveSupplierAssignment(product);
+            const missingPurchaseUnit = !configuredPurchaseUnit(product);
+            const disabled = missingSupplier || missingBaseUnit || missingPurchaseUnit || (conflict && !selected);
+            const disabledReason = missingSupplier
+                ? `${product.product_name || "This product"} cannot be requested because no supplier is assigned.`
+                : missingBaseUnit
                 ? `${product.product_name || "This product"} cannot be requested because its base inventory unit is not configured. Fix the Product Master configuration first.`
+                : missingPurchaseUnit
+                  ? "Supplier purchase unit not configured or supplier purchasing setups disagree."
                 : conflict
                   ? `Already requested in ${conflict.pr_number}`
                   : "";
@@ -555,29 +552,41 @@ function renderProductCatalog() {
                 conflict && !selected
                     ? `<span class="catalog-pending-badge" title="${esc(disabledReason)}">${esc(conflictBadgeLabel(conflict))}<small>${esc(conflict.pr_number || "Submitted PR")}</small></span>`
                     : `<input class="catalog-checkbox" type="checkbox" data-product-select="${esc(productId)}" ${selected ? "checked" : ""} ${disabled ? "disabled" : ""} aria-label="Select ${esc(product.product_name || "product")}" title="${esc(disabledReason || "Select product")}">`;
-            const quantityInput = `<input class="form-control catalog-qty" type="number" min="0" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="decimal" value="${selected ? esc(selected.requested_qty) : "0"}" data-selected-qty="${esc(productId)}" ${disabled ? "disabled" : ""} aria-label="Requested quantity for ${esc(product.product_name || "product")}">`;
+            const quantityInput = `<input class="form-control catalog-qty" type="number" min="1" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="numeric" value="${selected ? esc(selected.requested_qty) : "0"}" data-selected-qty="${esc(productId)}" ${disabled ? "disabled" : ""} aria-label="Requested quantity for ${esc(product.product_name || "product")}">`;
             const unitItem = selected || { unit: requestUnit(null, product) };
-            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${selectControl}</td><td class="catalog-product"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span></td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control">${quantityInput}${requestUnitSelector(product, unitItem, disabled)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, unitItem))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
+            return `<tr class="${selected ? "is-selected" : ""} ${disabled ? "is-unselectable" : ""}" ${disabled ? "" : `data-product-row="${esc(productId)}"`}><td>${selectControl}</td><td class="catalog-product">${productNameMarkup(product)}</td><td class="catalog-specification">${esc(productSpecification(product))}</td><td class="catalog-base-unit"><strong>${esc(unit || "Unit not configured")}</strong>${missingBaseUnit ? "<small>Fix in Product Master</small>" : ""}</td><td class="catalog-stock">${esc(context.shelf)}</td><td class="catalog-stock">${esc(context.storage)}</td><td class="catalog-stock"><strong>${esc(context.onHand)}${unit ? ` ${esc(unit)}` : ""}</strong></td><td><span class="request-stock-status ${stockStatusClass(context.stockStatus)}">${esc(context.stockStatus === "In Stock" ? "Healthy Stock" : context.stockStatus)}</span></td><td class="package-contents-cell">${esc(packageContents(product))}</td><td><div class="requested-qty-control"><div class="requested-qty-line">${quantityInput}${requestUnitLabel(product)}</div><small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, unitItem))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(productId)}">${esc(totalEquivalent(product, selected))}</td></tr>`;
         })
         .join("");
     syncVisibleSelectionCheckbox();
 }
 
 function bulkSelectProducts(type = "") {
-    visibleEligibleProducts(type).forEach((product) => {
+    const candidates = type
+        ? products.filter((product) =>
+            String(product.status || product.product_status || "Active").toLowerCase() === "active" &&
+            replenishmentType(product.product_id) === type,
+        )
+        : visibleEligibleProducts();
+    candidates.forEach((product) => {
         if (
+            hasActiveSupplierAssignment(product) &&
             hasConfiguredBaseUnit(product) &&
+            Boolean(configuredPurchaseUnit(product)) &&
             !activeConflict(product.product_id, currentRequestId())
         ) {
             const key = String(product.product_id);
             if (!selectedItems.has(key))
                 selectedItems.set(key, {
                     product_id: key,
-                    requested_qty: defaultRequestedQuantity(key),
-                    unit: productById.get(key)?.purchase_unit || "",
+                    requested_qty: suggestedRequestQuantity(product) || defaultRequestedQuantity(key),
+                    unit: configuredPurchaseUnit(productById.get(key)),
                 });
         }
     });
+    if (type) {
+        document.getElementById("productSelectorSearch").value = "";
+        document.getElementById("replenishmentFilter").value = type;
+    }
     renderSelectionState();
 }
 
@@ -585,7 +594,9 @@ function setVisibleProductsSelected(selected) {
     visibleEligibleProducts()
         .filter(
             (product) =>
+                hasActiveSupplierAssignment(product) &&
                 hasConfiguredBaseUnit(product) &&
+                Boolean(configuredPurchaseUnit(product)) &&
                 !activeConflict(product.product_id, currentRequestId()),
         )
         .forEach((product) => {
@@ -594,8 +605,8 @@ function setVisibleProductsSelected(selected) {
                 if (!selectedItems.has(key)) {
                     selectedItems.set(key, {
                         product_id: key,
-                        requested_qty: defaultRequestedQuantity(key),
-                        unit: productById.get(key)?.purchase_unit || "",
+                        requested_qty: suggestedRequestQuantity(product) || defaultRequestedQuantity(key),
+                        unit: configuredPurchaseUnit(productById.get(key)),
                     });
                 }
             } else {
@@ -615,7 +626,7 @@ function renderFinalizeItems() {
             const context = inventoryContext(item.product_id);
             const unit = baseInventoryUnit(product);
             const step = "1";
-            return `<tr data-finalize-product-id="${esc(item.product_id)}"><td>${index + 1}</td><td class="finalize-product-description"><strong>${esc(product.brand_name || "-")}</strong><span>${esc(product.product_name || "Product")}</span><small>${esc(productSpecification(product))}</small></td><td>${esc(unit || "Unit not configured")}</td><td>${esc(context.shelf)}</td><td>${esc(context.storage)}</td><td><strong>${esc(context.onHand)} ${esc(unit)}</strong></td><td><div class="requested-qty-control"><input class="form-control finalize-qty" type="number" min="0" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="decimal" value="${esc(item.requested_qty)}" data-finalize-qty="${esc(item.product_id)}" aria-label="Requested quantity for ${esc(product.product_name || "product")}">${requestUnitSelector(product, item)}<small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, item))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(item.product_id)}">${esc(totalEquivalent(product, item))}</td><td><button class="btn btn-sm btn-outline-danger remove-finalize-product" type="button" data-product-id="${esc(item.product_id)}" aria-label="Remove ${esc(product.product_name || "product")}"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
+            return `<tr data-finalize-product-id="${esc(item.product_id)}"><td>${index + 1}</td><td class="finalize-product-description">${productNameMarkup(product)}<small>${esc(productSpecification(product))}</small></td><td>${esc(unit || "Unit not configured")}</td><td>${esc(context.shelf)}</td><td>${esc(context.storage)}</td><td><strong>${esc(context.onHand)} ${esc(unit)}</strong></td><td><div class="requested-qty-control"><div class="requested-qty-line"><input class="form-control finalize-qty" type="number" min="1" max="${MAX_PURCHASE_REQUEST_QTY}" step="${step}" inputmode="numeric" value="${esc(item.requested_qty)}" data-finalize-qty="${esc(item.product_id)}" aria-label="Requested quantity for ${esc(product.product_name || "product")}">${requestUnitLabel(product)}</div><small class="suggested-request-qty">${esc(suggestedQuantityLabel(product, item))}</small></div></td><td class="total-equivalent-cell" data-total-equivalent="${esc(item.product_id)}">${esc(totalEquivalent(product, item))}</td><td><button class="btn btn-sm btn-outline-danger remove-finalize-product" type="button" data-product-id="${esc(item.product_id)}" aria-label="Remove ${esc(product.product_name || "product")}"><i class="fa-solid fa-xmark"></i></button></td></tr>`;
         })
         .join("");
 }
@@ -1326,19 +1337,29 @@ function openForm(request = null, selectedProductIds = []) {
     selectedItems.clear();
     document.getElementById("requestId").value = request?.pr_id || "";
     document.getElementById("productSelectorSearch").value = "";
+    document.getElementById("replenishmentFilter").value = "all";
     prepareRequestMetadata(request);
     const initialItems =
         request?.items || selectedProductIds.map((productId) => ({ product_id: productId }));
     initialItems.forEach((item) => {
-        const quantity = Number(item.requested_qty || defaultRequestedQuantity(item.product_id));
+        let quantity = Number(item.requested_qty || defaultRequestedQuantity(item.product_id));
         if (request) {
             const key = String(item.product_id || "");
             const product = productById.get(key);
+            const unit = configuredPurchaseUnit(product);
+            const previousUnit = String(item.unit || item.unit_label_at_request || unit);
+            if (unit && previousUnit.toLowerCase() !== unit.toLowerCase()) {
+                const levels = product?.packaging_units || [];
+                const previousFactor = Number(levels.find((level) => String(level.unit).toLowerCase() === previousUnit.toLowerCase())?.base_quantity || 0);
+                const purchaseFactor = Number(levels.find((level) => String(level.unit).toLowerCase() === unit.toLowerCase())?.base_quantity || 0);
+                const converted = previousFactor && purchaseFactor ? quantity * previousFactor / purchaseFactor : 0;
+                quantity = Number.isSafeInteger(converted) && converted > 0 ? converted : 0;
+            }
             if (key && hasConfiguredBaseUnit(product))
                 selectedItems.set(key, {
                     product_id: key,
                     requested_qty: quantity,
-                    unit: product?.purchase_unit || item.unit || item.unit_label_at_request || "",
+                    unit: unit || previousUnit,
                 });
         } else {
             selectProduct(item.product_id, quantity);
@@ -1601,17 +1622,15 @@ function maybeOpenInventoryShortcut() {
 
 async function load() {
     try {
-        const [prData, candidateData, measurementUnitData, settingsData] = await Promise.all([
+        const [prData, candidateData, settingsData] = await Promise.all([
             json(`${API_BASE_URL}/purchase_requests/get_purchase_requests.php?t=${Date.now()}`),
             json(`${API_BASE_URL}/purchase_requests/get_pr_candidates.php?t=${Date.now()}`),
-            loadMeasurementUnits({ forceRefresh: true }),
             json(`${API_BASE_URL}/settings/get_admin_settings.php?t=${Date.now()}`).catch(() => ({ prQuantityLimit: 50 })),
         ]);
         const configuredLimit = Number(settingsData?.prQuantityLimit);
         MAX_PURCHASE_REQUEST_QTY = Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 50;
         products = candidateData.data || [];
         requests = prData.data?.requests || [];
-        quantityUnits = measurementUnitData.units || [];
         inventoryRows = products;
         productById.clear();
         inventoryByProduct.clear();
@@ -1670,7 +1689,7 @@ document.getElementById("productSelectorRows")?.addEventListener("input", (event
     }
     const product = productById.get(productId);
     const total = document.querySelector(`[data-total-equivalent="${productId}"]`);
-    const unit = input.closest("tr")?.querySelector("[data-request-unit]")?.value || product?.purchase_unit || "";
+    const unit = configuredPurchaseUnit(product);
     if (product && total)
         total.textContent = totalEquivalent(product, {
             requested_qty: Number(input.value),
@@ -1678,17 +1697,6 @@ document.getElementById("productSelectorRows")?.addEventListener("input", (event
         });
 });
 document.getElementById("productSelectorRows")?.addEventListener("change", (event) => {
-    const unitSelect = event.target.closest("[data-request-unit]");
-    if (unitSelect) {
-        const productId = String(unitSelect.dataset.requestUnit);
-        if (!selectedItems.has(productId)) selectProduct(productId, 0);
-        const item = selectedItems.get(productId);
-        if (item) {
-            item.unit = unitSelect.value;
-            renderSelectionState();
-        }
-        return;
-    }
     const input = event.target.closest("[data-selected-qty]");
     if (!input || selectedItems.has(String(input.dataset.selectedQty))) return;
     const quantity = Number(input.value);
@@ -1730,14 +1738,6 @@ document.getElementById("finalizeRequestItems")?.addEventListener("click", (even
 document.getElementById("finalizeRequestItems")?.addEventListener("input", (event) => {
     if (event.target.matches("[data-finalize-qty]"))
         setRequestedQuantity(event.target.dataset.finalizeQty, event.target.value);
-});
-document.getElementById("finalizeRequestItems")?.addEventListener("change", (event) => {
-    const unitSelect = event.target.closest("[data-request-unit]");
-    if (!unitSelect) return;
-    const item = selectedItems.get(String(unitSelect.dataset.requestUnit));
-    if (!item) return;
-    item.unit = unitSelect.value;
-    renderSelectionState();
 });
 document
     .getElementById("saveDraftButton")

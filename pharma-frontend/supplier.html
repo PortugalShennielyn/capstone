@@ -24,7 +24,7 @@
         />
         <link href="./css/navbar.css?v=40" rel="stylesheet" />
         <link href="./css/suppliers.css?v=11" rel="stylesheet" />
-        <link href="./css/product_workflows.css?v=7" rel="stylesheet" />
+        <link href="./css/product_workflows.css?v=12" rel="stylesheet" />
         <script src="./js/navbar.js?v=94" defer></script>
         <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
         <style>
@@ -329,20 +329,23 @@
                 justify-content: center;
             }
             #editSupplierProductModal .supplier-product-edit-dialog {
-                width: 94vw;
-                max-width: 1360px;
-                height: 88vh;
+                width: min(980px, calc(100vw - 32px));
+                max-width: 980px;
+                height: auto;
                 min-width: 0;
-                margin: 6vh auto;
+                margin: 4vh auto;
             }
             #editSupplierProductModal .modal-content {
                 width: 100%;
-                height: 100%;
+                height: auto;
+                max-height: 92vh;
                 min-width: 0;
                 min-height: 0;
-                max-height: none;
                 resize: none;
                 overflow: hidden;
+                border: 0;
+                border-radius: 22px;
+                box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
             }
             #editSupplierProductModal form {
                 min-height: 0;
@@ -358,29 +361,29 @@
                 background: #fff;
             }
             #editSupplierProductModal .modal-header {
-                display: block;
-                padding: 18px 22px 0;
-                cursor: default;
-            }
-            #editSupplierProductModal .modal-title-row {
                 display: flex;
                 align-items: flex-start;
                 justify-content: space-between;
-                gap: 20px;
+                gap: 18px;
+                padding: 22px 22px 6px;
+                border-bottom: 0;
+                cursor: default;
             }
             #editSupplierProductModal .modal-body {
                 min-height: 0;
                 flex: 1 1 auto;
-                padding: 16px 22px 18px;
+                padding: 8px 22px 16px;
                 overflow-y: auto;
                 overflow-x: hidden;
                 overscroll-behavior: contain;
                 scrollbar-gutter: stable;
-                background: #fafbff;
+                background: #fff;
             }
             #editSupplierProductModal .modal-footer {
-                padding: 14px 22px;
-                border-top: 1px solid var(--border-soft);
+                justify-content: space-between;
+                gap: 16px;
+                padding: 14px 22px 18px;
+                border-top: 1px solid #eceff3;
             }
             .supplier-edit-tabs {
                 display: flex;
@@ -419,6 +422,400 @@
             }
             .supplier-edit-tab-grid > .supplier-product-edit-section {
                 min-width: 0;
+            }
+            .sps-heading h5 {
+                margin: 0;
+                color: #1f2430;
+                font-size: 1.35rem;
+                font-weight: 750;
+                letter-spacing: -0.02em;
+            }
+            .sps-heading p {
+                margin: 4px 0 0;
+                color: #8b93a3;
+                font-size: 0.92rem;
+            }
+            .sps-stepper {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-left: auto;
+            }
+            #editSupplierProductModal .sps-step.nav-link {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                border: 0;
+                border-radius: 999px;
+                background: transparent;
+                color: #98a2b3;
+                padding: 6px 10px;
+                font-size: 0.92rem;
+                font-weight: 650;
+                box-shadow: none;
+            }
+            #editSupplierProductModal .sps-step.nav-link.active {
+                background: #f3f0ff;
+                color: #6d28d9;
+            }
+            #editSupplierProductModal .sps-step.nav-link.is-complete {
+                color: #16a34a;
+                background: transparent;
+            }
+            .sps-step-index {
+                width: 22px;
+                height: 22px;
+                display: inline-grid;
+                place-items: center;
+                border: 1.5px solid #d0d5dd;
+                border-radius: 50%;
+                color: #98a2b3;
+                font-size: 0.75rem;
+                font-weight: 750;
+                line-height: 1;
+            }
+            .sps-step-index i { display: none; }
+            .sps-step-index::before { content: attr(data-step); }
+            #editSupplierProductModal .sps-step.nav-link.active .sps-step-index {
+                background: #6d28d9;
+                border-color: #6d28d9;
+                color: #fff;
+            }
+            #editSupplierProductModal .sps-step.nav-link.is-complete .sps-step-index {
+                background: #16a34a;
+                border-color: #16a34a;
+                color: #fff;
+            }
+            #editSupplierProductModal .sps-step.nav-link.is-complete .sps-step-index::before { content: ""; }
+            #editSupplierProductModal .sps-step.nav-link.is-complete .sps-step-index i { display: inline-block; font-size: 0.68rem; }
+            .sps-step-rule {
+                width: 28px;
+                height: 1px;
+                background: #e4e7ec;
+            }
+            .sps-stepper .btn-close {
+                margin-left: 8px;
+            }
+            .sps-layout {
+                display: grid;
+                grid-template-columns: minmax(0, 1.35fr) minmax(250px, 0.78fr);
+                gap: 22px;
+                align-items: start;
+            }
+            .sps-field {
+                display: grid;
+                grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+                gap: 18px;
+                align-items: center;
+                padding: 18px 0;
+                border-bottom: 1px solid #eef1f4;
+            }
+            .sps-field strong {
+                display: block;
+                color: #1f2430;
+                font-size: 0.98rem;
+            }
+            .sps-field p,
+            .sps-field .sps-help {
+                display: block;
+                margin: 3px 0 0;
+                color: #98a2b3;
+                font-size: 0.84rem;
+            }
+            .sps-control {
+                width: min(100%, 230px);
+                margin-left: auto;
+                min-height: 48px;
+                border-radius: 12px;
+                border-color: #e4e7ec;
+                color: #1f2430;
+                font-weight: 650;
+                box-shadow: none;
+            }
+            .sps-combo {
+                position: relative;
+                width: min(100%, 230px);
+                margin-left: auto;
+            }
+            .sps-combo .sps-control {
+                width: 100%;
+                margin-left: 0;
+            }
+            .sps-native-unit {
+                position: absolute !important;
+                width: 1px !important;
+                height: 1px !important;
+                padding: 0 !important;
+                margin: -1px !important;
+                overflow: hidden !important;
+                clip: rect(0, 0, 0, 0) !important;
+                white-space: nowrap !important;
+                border: 0 !important;
+            }
+            .sps-combo-menu {
+                position: fixed;
+                z-index: 2000;
+                max-height: 280px;
+                overflow: auto;
+                padding: 6px;
+                background: #fff;
+                border: 1px solid #e4e7ec;
+                border-radius: 12px;
+                box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+            }
+            .sps-combo-option,
+            .sps-combo-customize {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                width: 100%;
+                border: 0;
+                background: transparent;
+                border-radius: 8px;
+                padding: 8px 10px;
+                color: #1f2430;
+                font-weight: 650;
+                text-align: left;
+            }
+            .sps-combo-option.is-active,
+            .sps-combo-option:hover {
+                background: #f3f0ff;
+            }
+            .sps-combo-customize {
+                margin-top: 4px;
+                padding-top: 10px;
+                border-top: 1px solid #eef1f4;
+                border-radius: 0;
+                color: #6d28d9;
+            }
+            .sps-combo-empty {
+                margin: 6px 10px 8px;
+                color: #98a2b3;
+                font-size: 0.86rem;
+            }
+            .sps-combo-create {
+                display: flex;
+                gap: 8px;
+                padding: 8px;
+            }
+            .sps-combo-create[hidden] { display: none !important; }
+            .sps-combo-create .form-control { min-height: 40px; }
+            .sps-combo-create .btn { white-space: nowrap; }
+            .sps-equation {
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 10px;
+                color: #667085;
+                font-weight: 650;
+            }
+            .sps-pill,
+            .sps-unit {
+                min-height: 48px;
+                display: inline-flex;
+                align-items: center;
+                padding: 0 14px;
+                border-radius: 12px;
+                background: #f4f6f8;
+                color: #1f2430;
+                font-weight: 750;
+            }
+            .sps-equation input {
+                width: 76px;
+                min-height: 48px;
+                border-radius: 12px;
+                text-align: center;
+                font-weight: 750;
+            }
+            .sps-example {
+                margin: 8px 0 0;
+                text-align: right;
+                color: #98a2b3 !important;
+                font-size: 0.82rem !important;
+            }
+            .sps-cost {
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 12px;
+            }
+            .sps-peso {
+                width: min(100%, 180px);
+                min-height: 48px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 0 14px;
+                border: 1px solid #e4e7ec;
+                border-radius: 12px;
+                background: #fff;
+            }
+            .sps-peso span { color: #98a2b3; font-weight: 700; }
+            .sps-peso input {
+                border: 0;
+                padding: 0;
+                min-height: 44px;
+                box-shadow: none;
+                font-weight: 750;
+            }
+            .sps-peso input:focus { box-shadow: none; }
+            .sps-per-unit {
+                color: #667085;
+                font-size: 0.92rem;
+                font-weight: 650;
+                white-space: nowrap;
+            }
+            .sps-note {
+                display: flex;
+                gap: 8px;
+                margin: 16px 0 0;
+                color: #98a2b3;
+                font-size: 0.84rem;
+                line-height: 1.45;
+            }
+            .sps-note i { margin-top: 2px; }
+            .sps-note.sps-estimate {
+                color: #b54708;
+                background: #fffaeb;
+                border-radius: 10px;
+                padding: 8px 10px;
+            }
+            .sps-master {
+                min-height: 100%;
+                padding: 18px 18px 16px;
+                border-radius: 18px;
+                background: #fafbff;
+            }
+            .sps-master-kicker {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 16px;
+                color: #667085;
+                font-size: 0.92rem;
+                font-weight: 650;
+            }
+            .sps-master-brand {
+                color: #667085;
+                font-size: 0.95rem;
+            }
+            .sps-master-name {
+                margin-top: 2px;
+                color: #1f2430;
+                font-size: 1.35rem;
+                font-weight: 780;
+                letter-spacing: -0.02em;
+                line-height: 1.15;
+            }
+            .sps-master-status {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                margin: 10px 0 16px;
+                color: #98a2b3;
+                font-size: 0.9rem;
+                font-weight: 650;
+            }
+            .sps-master-status::before {
+                content: "";
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #d0d5dd;
+            }
+            .sps-master-status.is-active { color: #16a34a; }
+            .sps-master-status.is-active::before { background: #22c55e; }
+            .sps-meta-row {
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 9px 0;
+                color: #667085;
+                font-size: 0.92rem;
+            }
+            .sps-meta-row strong {
+                color: #1f2430;
+                font-weight: 750;
+                text-align: right;
+            }
+            .sps-master-note {
+                margin: 18px 0 0;
+                padding-top: 14px;
+                border-top: 1px solid #e7ebf0;
+                color: #98a2b3;
+                font-size: 0.82rem;
+                line-height: 1.45;
+            }
+            .sps-planned span {
+                display: block;
+                color: #667085;
+                font-size: 0.95rem;
+            }
+            .sps-planned strong {
+                display: block;
+                margin-top: 4px;
+                color: #1f2430;
+                font-size: 2rem;
+                font-weight: 780;
+                letter-spacing: -0.03em;
+            }
+            .sps-planned small {
+                display: block;
+                margin-top: 2px;
+                color: #98a2b3;
+            }
+            .sps-review-list { margin-top: 18px; }
+            .sps-review-row {
+                display: flex;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 14px 0;
+                border-top: 1px solid #eef1f4;
+            }
+            .sps-review-row span { color: #667085; }
+            .sps-review-row strong {
+                color: #1f2430;
+                font-weight: 750;
+                text-align: right;
+            }
+            .sps-review-row small {
+                display: block;
+                color: #98a2b3;
+                font-weight: 600;
+            }
+            .sps-save-note,
+            #editSupplierProductModal .supplier-review-impact {
+                margin: 8px 0 0;
+                color: #98a2b3;
+                font-size: 0.84rem;
+                line-height: 1.45;
+                background: transparent;
+                border: 0;
+                padding: 0;
+            }
+            .sps-unsaved {
+                color: #98a2b3;
+                font-size: 0.92rem;
+            }
+            .sps-footer-actions {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-left: auto;
+            }
+            .sps-text-btn {
+                border: 0;
+                background: transparent;
+                color: #344054;
+                font-weight: 700;
+                padding: 10px 14px;
+            }
+            .sps-text-btn:hover { color: #1f2430; }
+            #editSupplierProductModal .sps-primary {
+                min-width: 168px;
+                min-height: 44px;
+                border-radius: 12px;
+                font-weight: 750;
             }
             .supplier-product-readonly-grid {
                 display: grid;
@@ -978,9 +1375,21 @@
             @media (max-width: 575.98px) {
                 #editSupplierProductModal .supplier-product-edit-dialog {
                     width: calc(100vw - 16px);
-                    height: calc(100vh - 16px);
+                    height: auto;
                     margin: 8px auto;
                 }
+                .sps-layout,
+                .sps-field {
+                    grid-template-columns: 1fr;
+                }
+                .sps-example { grid-column: auto; text-align: left; }
+                .sps-combo,
+                .sps-control,
+                .sps-equation,
+                .sps-cost { width: 100%; margin-left: 0; justify-content: flex-start; }
+                #editSupplierProductModal .modal-header,
+                #editSupplierProductModal .modal-footer,
+                .sps-footer-actions { flex-wrap: wrap; }
                 #editSupplierProductModal .modal-header {
                     padding: 14px 14px 0;
                 }
@@ -2012,352 +2421,131 @@
             <div class="modal-dialog modal-dialog-centered supplier-product-edit-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <div class="modal-title-row">
-                            <div>
-                                <h5
-                                    class="modal-title fw-bold"
-                                    id="editSupplierProductModalTitle"
-                                    tabindex="-1"
-                                >
-                                    Edit Supplier Purchasing Setup
-                                </h5>
-                                <p class="text-muted small mb-0">
-                                    Product information comes from Product Master. Only supplier
-                                    purchasing terms are editable here.
-                                </p>
-                            </div>
-                            <button
-                                class="btn-close"
-                                type="button"
-                                data-bs-dismiss="modal"
-                                aria-label="Close edit supplier purchasing setup"
-                            ></button>
+                        <div class="sps-heading">
+                            <h5 class="modal-title" id="editSupplierProductModalTitle" tabindex="-1">Supplier purchasing setup</h5>
+                            <p id="editSupplierProductSubtitle">Product · Supplier</p>
                         </div>
-                        <ul
-                            class="nav nav-tabs supplier-edit-tabs"
-                            id="editSupplierProductTabs"
-                            role="tablist"
-                        >
-                            <li class="nav-item" role="presentation">
-                                <button
-                                    class="nav-link active"
-                                    id="editSupplierProductSetupTab"
-                                    data-bs-toggle="tab"
-                                    data-bs-target="#editSupplierProductSetupPane"
-                                    type="button"
-                                    role="tab"
-                                    aria-controls="editSupplierProductSetupPane"
-                                    aria-selected="true"
-                                >
-                                    1. Product &amp; Supplier Setup
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button
-                                    class="nav-link"
-                                    id="editSupplierProductReviewTab"
-                                    data-bs-toggle="tab"
-                                    data-bs-target="#editSupplierProductReviewPane"
-                                    type="button"
-                                    role="tab"
-                                    aria-controls="editSupplierProductReviewPane"
-                                    aria-selected="false"
-                                >
-                                    2. Purchase Review
-                                </button>
-                            </li>
-                        </ul>
+                        <div class="sps-stepper" id="editSupplierProductTabs" role="tablist">
+                            <button class="sps-step nav-link active" id="editSupplierProductSetupTab" data-bs-toggle="tab" data-bs-target="#editSupplierProductSetupPane" type="button" role="tab" aria-controls="editSupplierProductSetupPane" aria-selected="true">
+                                <span class="sps-step-index" data-step="1"><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+                                <span>Purchasing terms</span>
+                            </button>
+                            <span class="sps-step-rule" aria-hidden="true"></span>
+                            <button class="sps-step nav-link" id="editSupplierProductReviewTab" data-bs-toggle="tab" data-bs-target="#editSupplierProductReviewPane" type="button" role="tab" aria-controls="editSupplierProductReviewPane" aria-selected="false">
+                                <span class="sps-step-index" data-step="2"><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+                                <span>Review</span>
+                            </button>
+                            <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close edit supplier purchasing setup"></button>
+                        </div>
                     </div>
                     <form id="editSupplierProductForm" novalidate>
-                        <input type="hidden" id="editSupplierProductLinkId" /><input
-                            type="hidden"
-                            id="editSupplierProductId"
-                        /><input type="hidden" id="editSupplierProductSupplierId" />
+                        <input type="hidden" id="editSupplierProductLinkId" />
+                        <input type="hidden" id="editSupplierProductId" />
+                        <input type="hidden" id="editSupplierProductSupplierId" />
                         <div class="modal-body">
-                            <div class="tab-content" id="editSupplierProductTabContent">
-                                <div
-                                    class="tab-pane fade show active supplier-edit-tab-pane"
-                                    id="editSupplierProductSetupPane"
-                                    role="tabpanel"
-                                    aria-labelledby="editSupplierProductSetupTab"
-                                    tabindex="0"
-                                >
-                                    <div class="supplier-edit-tab-grid">
-                                        <section
-                                            class="supplier-product-edit-section supplier-compact-section"
-                                        >
-                                            <h6>Product Details</h6>
-                                            <table
-                                                class="supplier-compact-table"
-                                                aria-label="Read-only Product Master details"
-                                            >
-                                                <tbody>
-                                                    <tr>
-                                                        <th>Brand</th>
-                                                        <td id="editSupplierProductBrandText">
-                                                            Not set
-                                                        </td>
-                                                        <th>Product</th>
-                                                        <td id="editSupplierProductNameText">
-                                                            Not set
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <th>Category</th>
-                                                        <td id="editSupplierProductCategoryText">
-                                                            Not set
-                                                        </td>
-                                                        <th>Product Type</th>
-                                                        <td id="editSupplierProductTypeText">
-                                                            Not set
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <th>Status</th>
-                                                        <td id="editSupplierProductStatusText">
-                                                            Not set
-                                                        </td>
-                                                        <th>Barcode</th>
-                                                        <td id="editSupplierProductBarcodeText">
-                                                            Not set
-                                                        </td>
-                                                    </tr>
-                                                    <tr
-                                                        class="d-none"
-                                                        id="editSupplierProductSkuField"
-                                                    >
-                                                        <th>SKU</th>
-                                                        <td id="editSupplierProductSkuText">
-                                                            Not set
-                                                        </td>
-                                                        <th></th>
-                                                        <td></td>
-                                                    </tr>
-                                                </tbody>
-                                                <tbody
-                                                    id="editSupplierProductAttributes"
-                                                    aria-live="polite"
-                                                >
-                                                    <tr>
-                                                        <td
-                                                            colspan="4"
-                                                            class="text-muted text-center"
-                                                        >
-                                                            Loading configured product attributes...
-                                                        </td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </section>
-                                        <section
-                                            class="supplier-product-edit-section supplier-compact-section"
-                                        >
-                                            <h6>Purchasing Setup</h6>
-                                            <table class="supplier-compact-table">
-                                                <tbody>
-                                                    <tr>
-                                                        <th>Supplier</th>
-                                                        <td
-                                                            id="editSupplierProductSupplierNameText"
-                                                        >
-                                                            Not set
-                                                        </td>
-                                                        <th>
-                                                            <label
-                                                                for="editSupplierProductPurchaseUnit"
-                                                                >Purchase Unit</label
-                                                            >
-                                                        </th>
-                                                        <td>
-                                                            <select
-                                                                class="form-select"
-                                                                id="editSupplierProductPurchaseUnit"
-                                                                required
-                                                            >
-                                                                <option value="">
-                                                                    Select Purchase Unit...
-                                                                </option>
-                                                            </select>
-                                                            <div class="invalid-feedback">
-                                                                Invalid legacy unit — please select
-                                                                a valid Purchase Unit.
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                    <tr>
-                                                        <th>
-                                                            <label
-                                                                for="editSupplierProductInventoryUnitPreview"
-                                                                >Product Base Unit</label
-                                                            >
-                                                        </th>
-                                                        <td colspan="3">
-                                                            <select
-                                                                class="form-select"
-                                                                id="editSupplierProductInventoryUnitPreview"
-                                                                required
-                                                                disabled
-                                                                aria-readonly="true"
-                                                            >
-                                                                <option value="">
-                                                                    Select Product Base Unit...
-                                                                </option>
-                                                            </select>
-                                                            <div class="invalid-feedback">
-                                                                Invalid legacy unit — please select
-                                                                a valid Product Base Unit.
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                        </section>
-                                        <section
-                                            class="supplier-product-edit-section supplier-compact-section"
-                                        >
-                                            <h6>Pack Content per Purchase Unit</h6>
-                                            <table
-                                                class="supplier-compact-table supplier-hierarchy-table"
-                                                aria-label="Final purchase-unit conversion"
-                                            >
-                                                <thead>
-                                                    <tr>
-                                                        <th>Purchase Unit</th>
-                                                        <th>Pack Content</th>
-                                                        <th>Product Base Unit</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <tr>
-                                                        <td>
-                                                            <strong
-                                                                >1
-                                                                <span
-                                                                    id="editSupplierDirectPurchaseUnit"
-                                                                    >Purchase Unit</span
-                                                                ></strong
-                                                            >
-                                                        </td>
-                                                        <td>
-                                                            <label
-                                                                class="visually-hidden"
-                                                                for="editSupplierProductUnitsPerPurchaseUnit"
-                                                                >Product base units per purchase
-                                                                unit</label
-                                                            ><input
-                                                                class="form-control"
-                                                                id="editSupplierProductUnitsPerPurchaseUnit"
-                                                                type="number"
-                                                                min="1"
-                                                                step="1"
-                                                                required
-                                                            />
-                                                            <small class="form-text text-muted d-block mt-1">How many product base units are in one package? Example: 1 pack = 5 pcs.</small>
-                                                            <div class="invalid-feedback">
-                                                                Enter a positive whole number.
-                                                            </div>
-                                                        </td>
-                                                        <td>
-                                                            <strong id="editSupplierDirectBaseUnit"
-                                                                >Product Base Unit</strong
-                                                            >
-                                                        </td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
-                                            <div
-                                                class="supplier-compact-conversion"
-                                                id="editSupplierProductConversionMeaning"
-                                            >
-                                                <strong
-                                                    >1 Purchase Unit = 1 Product Base Unit</strong
-                                                >
+                            <div class="sps-layout">
+                                <div class="tab-content" id="editSupplierProductTabContent">
+                                    <div class="tab-pane fade show active" id="editSupplierProductSetupPane" role="tabpanel" aria-labelledby="editSupplierProductSetupTab" tabindex="0">
+                                        <section class="sps-field">
+                                            <div>
+                                                <strong>Purchase unit</strong>
+                                                <span class="sps-help" id="editSupplierPurchaseUnitHelp">How the supplier sells it to you.</span>
+                                            </div>
+                                            <div>
+                                                <div class="sps-combo">
+                                                    <input class="form-control sps-control" id="editSupplierPurchaseUnitSearch" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="editSupplierPurchaseUnitMenu" autocomplete="off" placeholder="Type to select a purchase unit" />
+                                                </div>
+                                                <select class="sps-native-unit" id="editSupplierProductPurchaseUnit" required tabindex="-1" aria-hidden="true">
+                                                    <option value="">Select a purchase unit...</option>
+                                                </select>
+                                                <div class="invalid-feedback">Invalid legacy unit — please select a valid Purchase Unit.</div>
                                             </div>
                                         </section>
-                                        <section class="supplier-product-edit-section supplier-compact-section">
-                                            <h6>Product Selling Price</h6>
-                                            <label class="form-label" for="editSupplierProductRetailPrice">Product Master Base Price</label>
-                                            <div class="input-group"><span class="input-group-text">₱</span><input class="form-control" id="editSupplierProductRetailPrice" type="number" min="0.01" step="0.01" inputmode="decimal" required></div>
-                                            <small class="form-text text-muted">Updates the product's base price. Configured Shelf Selling Prices used by POS are managed separately.</small>
+                                        <section class="sps-field">
+                                            <div>
+                                                <strong>Pack content</strong>
+                                                <span class="sps-help">Base units inside one pack.</span>
+                                            </div>
+                                            <div>
+                                                <div class="sps-equation">
+                                                    <span class="sps-pill" id="editSupplierDirectPurchaseUnit">1 pack</span>
+                                                    <span>=</span>
+                                                    <label class="visually-hidden" for="editSupplierProductUnitsPerPurchaseUnit">Product base units per purchase unit</label>
+                                                    <input class="form-control" id="editSupplierProductUnitsPerPurchaseUnit" type="number" min="1" step="1" required />
+                                                    <span class="sps-unit" id="editSupplierDirectBaseUnit">pcs</span>
+                                                </div>
+                                                <p class="sps-example" id="editSupplierProductConversionMeaning">Example: 1 pack = 5 pcs.</p>
+                                            </div>
                                         </section>
-                                        <section class="supplier-product-edit-section supplier-compact-section">
-                                            <h6>Supplier Price</h6>
-                                            <label class="form-label" for="editSupplierProductCost">Price per Purchase Unit</label>
-                                            <div class="input-group"><span class="input-group-text">₱</span><input class="form-control" id="editSupplierProductCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional"></div>
-                                            <small class="form-text text-muted">Supplier's quoted cost for one purchase unit. This does not change the product's retail selling price.</small>
+                                        <section class="sps-field">
+                                            <div>
+                                                <strong>Quoted cost</strong>
+                                                <span class="sps-help" id="editSupplierQuotedCostHelp">Supplier's price per purchase unit.</span>
+                                            </div>
+                                            <div class="sps-cost">
+                                                <label class="sps-peso" for="editSupplierProductCost"><span>₱</span><input class="form-control" id="editSupplierProductCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" /></label>
+                                                <span class="sps-per-unit" id="editSupplierCostPerBase" hidden></span>
+                                            </div>
                                         </section>
-                                    </div>
-                                </div>
-                                <div
-                                    class="tab-pane fade supplier-edit-tab-pane"
-                                    id="editSupplierProductReviewPane"
-                                    role="tabpanel"
-                                    aria-labelledby="editSupplierProductReviewTab"
-                                    tabindex="0"
-                                >
-                                    <div class="supplier-review-grid">
-                                        <section class="supplier-review-card">
-                                            <h6>Product Summary</h6>
-                                            <dl class="supplier-review-list">
-                                                <div class="supplier-review-row">
-                                                    <dt>Brand</dt>
-                                                    <dd data-edit-review="brand">Not set</dd>
-                                                </div>
-                                                <div class="supplier-review-row">
-                                                    <dt>Product</dt>
-                                                    <dd data-edit-review="product">Not set</dd>
-                                                </div>
-                                                <div class="supplier-review-row">
-                                                    <dt>Specification</dt>
-                                                    <dd data-edit-review="specification">
-                                                        Not set
-                                                    </dd>
-                                                </div>
-                                            </dl>
-                                        </section>
-                                        <section class="supplier-review-card">
-                                            <h6>Purchase Summary</h6>
-                                            <dl class="supplier-review-list">
-                                                <div class="supplier-review-row">
-                                                    <dt>Supplier</dt>
-                                                    <dd data-edit-review="supplier">Not set</dd>
-                                                </div>
-                                                <div class="supplier-review-row">
-                                                    <dt>Purchase Unit</dt>
-                                                    <dd id="editPreviewPurchaseUnit">
-                                                        Purchase Unit
-                                                    </dd>
-                                                </div>
-                                                <div class="supplier-review-row">
-                                                    <dt>Base Unit</dt>
-                                                    <dd data-edit-review="inventory-unit">
-                                                        Base Unit
-                                                    </dd>
-                                                </div>
-                                                <div class="supplier-review-row">
-                                                    <dt>Conversion</dt>
-                                                    <dd id="editPreviewInventoryReceived">
-                                                        1 Purchase Unit = 1 Base Unit
-                                                    </dd>
-                                                </div>
-                                            </dl>
-                                        </section>
-                                        <div
-                                            class="supplier-review-impact"
-                                            data-edit-review="meaning"
-                                        >
-                                            Receiving 1 Purchase Unit adds 1 Base Unit to Inventory
+                                        <p class="sps-note"><i class="fa-regular fa-circle-info" aria-hidden="true"></i><span>For purchase planning only. The supplier invoice records the actual cost, and selling prices change only after Admin approval in Product Master.</span></p>
+                                        <p class="sps-note sps-estimate" id="editSupplierPriceEstimate" hidden>Estimate only — not approved.</p>
+                                        <div class="visually-hidden">
+                                            <label for="editSupplierProductInventoryUnitPreview">Product Base Unit</label>
+                                            <select class="form-select" id="editSupplierProductInventoryUnitPreview" required disabled aria-readonly="true">
+                                                <option value="">Select Product Base Unit...</option>
+                                            </select>
+                                            <div class="invalid-feedback">Invalid legacy unit — please select a valid Product Base Unit.</div>
                                         </div>
                                     </div>
+                                    <div class="tab-pane fade" id="editSupplierProductReviewPane" role="tabpanel" aria-labelledby="editSupplierProductReviewTab" tabindex="0">
+                                        <div class="sps-planned">
+                                            <span id="editSupplierPlannedLabel">Planned cost per unit</span>
+                                            <strong id="editSupplierPlannedCost">Not set</strong>
+                                            <small id="editSupplierPlannedFormula">Add a quoted cost to calculate the planned unit cost.</small>
+                                        </div>
+                                        <div class="sps-review-list">
+                                            <div class="sps-review-row">
+                                                <span>Supplier</span>
+                                                <strong id="editSupplierProductSupplierNameText" data-edit-review="supplier">Not set</strong>
+                                            </div>
+                                            <div class="sps-review-row">
+                                                <span>Purchase unit</span>
+                                                <strong><span id="editPreviewPurchaseUnit">Purchase unit</span> <small id="editPreviewPurchaseUnitHint" hidden></small></strong>
+                                            </div>
+                                            <div class="sps-review-row">
+                                                <span>Pack content</span>
+                                                <strong><span id="editPreviewInventoryReceived">1 purchase unit = 1 base unit</span><small id="editPreviewPackAlt" hidden></small></strong>
+                                            </div>
+                                            <div class="sps-review-row">
+                                                <span>Quoted cost</span>
+                                                <strong id="editPreviewQuotedCost">Not set</strong>
+                                            </div>
+                                        </div>
+                                        <p class="supplier-review-impact" data-edit-review="meaning">Saving updates this supplier's purchasing terms only. Product Master and selling prices stay unchanged.</p>
+                                    </div>
                                 </div>
+                                <aside class="sps-master" aria-label="Read-only Product Master details">
+                                    <div class="sps-master-kicker"><i class="fa-regular fa-box" aria-hidden="true"></i> From Product Master</div>
+                                    <div class="sps-master-brand" id="editSupplierProductBrandText">Not set</div>
+                                    <div class="sps-master-name" id="editSupplierProductNameText">Not set</div>
+                                    <div class="sps-master-status" id="editSupplierProductStatusText">Not set</div>
+                                    <div class="sps-meta" id="editSupplierProductAttributes"></div>
+                                    <div class="sps-meta-row d-none" id="editSupplierProductSkuField"><span>SKU</span><strong id="editSupplierProductSkuText">Not set</strong></div>
+                                    <p class="sps-master-note">Product details are read-only here. Edit them in Product Master.</p>
+                                    <span class="d-none" id="editSupplierProductCategoryText"></span>
+                                    <span class="d-none" id="editSupplierProductTypeText"></span>
+                                    <span class="d-none" id="editSupplierProductBarcodeText"></span>
+                                </aside>
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button class="btn btn-light" type="button" data-bs-dismiss="modal">
-                                Cancel</button
-                            ><button class="btn btn-purple" type="submit">
-                                <i class="fa-solid fa-floppy-disk me-2"></i>Save Supplier Product
-                            </button>
+                            <span class="sps-unsaved" id="editSupplierUnsaved" hidden>You have unsaved changes.</span>
+                            <div class="sps-footer-actions">
+                                <button class="sps-text-btn" type="button" data-bs-dismiss="modal" id="editSupplierCancelButton">Cancel</button>
+                                <button class="sps-text-btn d-none" type="button" id="editSupplierBackButton"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back</button>
+                                <button class="btn btn-purple sps-primary" type="button" id="editSupplierContinueButton">Continue to review</button>
+                                <button class="btn btn-purple sps-primary d-none" type="submit" id="editSupplierSaveButton">Save supplier product</button>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -2422,8 +2610,8 @@
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-        <script type="module" src="./js/modules/suppliers.js?v=54"></script>
-        <script type="module" src="./js/modules/supplier_product_assignment.js?v=14"></script>
+        <script type="module" src="./js/modules/suppliers.js?v=61"></script>
+        <script type="module" src="./js/modules/supplier_product_assignment.js?v=17"></script>
         <script type="module">
             import verifySession from "./js/modules/auth.js?v=8";
             await verifySession();

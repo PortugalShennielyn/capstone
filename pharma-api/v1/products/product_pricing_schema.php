@@ -138,6 +138,126 @@ function calculatedSellingPrice(float $unitCost, float $markupPercentage): float
     return round($unitCost * (1 + ($markupPercentage / 100)), 2);
 }
 
+function acceptedCostSourceLabel(?array $basis): string
+{
+    if (!$basis || !is_numeric($basis['unit_cost'] ?? null) || (float) $basis['unit_cost'] <= 0) {
+        return 'Awaiting accepted cost';
+    }
+    $invoice = trim((string) ($basis['invoice_number'] ?? ''));
+    $purchaseUnit = trim((string) ($basis['accepted_purchase_unit'] ?? $basis['purchase_unit'] ?? ''));
+    $invoiceCost = $basis['invoice_unit_cost'] ?? null;
+    $conversion = (int) ($basis['accepted_conversion'] ?? $basis['units_per_purchase_unit'] ?? 0);
+    $baseUnit = trim((string) ($basis['inventory_unit'] ?? 'unit'));
+    $received = acceptedCostDateLabel($basis['received_date'] ?? null);
+    if ($invoice !== '' && is_numeric($invoiceCost) && $purchaseUnit !== '' && $conversion > 0) {
+        return trim(sprintf(
+            'Invoice %s · ₱%s per %s ÷ %d %s%s',
+            $invoice,
+            number_format((float) $invoiceCost, 2, '.', ''),
+            $purchaseUnit,
+            $conversion,
+            $baseUnit,
+            $received !== '' ? ' · received ' . $received : ''
+        ));
+    }
+    $poNumber = trim((string) ($basis['po_number'] ?? ''));
+    $label = $poNumber !== '' ? 'Accepted delivery ' . $poNumber : 'Latest accepted delivery';
+    return $received !== '' ? $label . ' · received ' . $received : $label;
+}
+
+function acceptedCostDateLabel($value): string
+{
+    $raw = trim((string) $value);
+    if ($raw === '') {
+        return '';
+    }
+    $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', substr($raw, 0, 19))
+        ?: DateTimeImmutable::createFromFormat('Y-m-d', substr($raw, 0, 10));
+    return $date ? $date->format('M j, Y') : '';
+}
+
+/** Current supplier quote for display. The latest accepted supplier is preferred.
+ * A single assignment is used only when no delivery has been confirmed. */
+function supplierQuoteReferences(PDO $pdo, array $productIds, array $preferredSupplierByProduct): array
+{
+    $productIds = array_values(array_unique(array_filter(array_map('cleanId', $productIds))));
+    if (!$productIds) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+    $statement = $pdo->prepare(
+        "SELECT sp.product_id, sp.supplier_id, s.supplier_name,
+                sp.supplier_cost_price, sp.supplier_cost_input,
+                sp.purchase_unit, sp.inventory_unit, sp.units_per_purchase_unit
+         FROM supplier_products sp
+         INNER JOIN suppliers s ON s.supplier_id = sp.supplier_id
+         WHERE sp.product_id IN ({$placeholders})
+           AND (COALESCE(sp.supplier_cost_price, 0) > 0 OR COALESCE(sp.supplier_cost_input, 0) > 0)
+         ORDER BY s.supplier_name ASC"
+    );
+    $statement->execute($productIds);
+    $grouped = [];
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $grouped[$row['product_id']][] = $row;
+    }
+    $references = [];
+    foreach ($grouped as $productId => $quotes) {
+        $preferred = $preferredSupplierByProduct[$productId] ?? null;
+        $chosen = null;
+        if ($preferred) {
+            foreach ($quotes as $quote) {
+                if ($quote['supplier_id'] === $preferred) {
+                    $chosen = $quote;
+                    break;
+                }
+            }
+        } elseif (count($quotes) === 1) {
+            $chosen = $quotes[0];
+        }
+        if (!$chosen) {
+            $references[$productId] = [
+                'available' => false,
+                'ambiguous' => $preferred === null && count($quotes) > 1,
+                'supplier_count' => count($quotes),
+                'label' => $preferred
+                    ? 'No current quote from the supplier on the latest confirmed delivery.'
+                    : 'Multiple supplier quotes. A confirmed delivery selects which supplier cost is used.',
+            ];
+            continue;
+        }
+        $conversion = max(1, (int) ($chosen['units_per_purchase_unit'] ?? 1));
+        $purchaseUnit = trim((string) ($chosen['purchase_unit'] ?? '')) ?: 'unit';
+        $baseUnit = trim((string) ($chosen['inventory_unit'] ?? '')) ?: 'unit';
+        $baseCost = is_numeric($chosen['supplier_cost_price'] ?? null) && (float) $chosen['supplier_cost_price'] > 0
+            ? round((float) $chosen['supplier_cost_price'], 2)
+            : round((float) $chosen['supplier_cost_input'] / $conversion, 2);
+        $purchaseCost = is_numeric($chosen['supplier_cost_input'] ?? null) && (float) $chosen['supplier_cost_input'] > 0
+            ? round((float) $chosen['supplier_cost_input'], 2)
+            : round($baseCost * $conversion, 2);
+        $references[$productId] = [
+            'available' => true,
+            'ambiguous' => false,
+            'estimated' => true,
+            'supplier_id' => $chosen['supplier_id'],
+            'supplier_name' => $chosen['supplier_name'],
+            'quoted_base_cost' => $baseCost,
+            'quoted_purchase_cost' => $purchaseCost,
+            'purchase_unit' => $purchaseUnit,
+            'inventory_unit' => $baseUnit,
+            'units_per_purchase_unit' => $conversion,
+            'label' => sprintf(
+                'Estimated · %s · ₱%s per %s ÷ %d %s',
+                $chosen['supplier_name'],
+                number_format($purchaseCost, 2, '.', ''),
+                $purchaseUnit,
+                $conversion,
+                $baseUnit
+            ),
+        ];
+    }
+    return $references;
+}
+
 function selectedPricingChangeWarning(float $currentPrice, float $calculatedPrice): ?string
 {
     if ($currentPrice <= 0) return 'Current selling price is invalid.';
@@ -189,17 +309,22 @@ function latestAcceptedCostBasis(PDO $pdo, string $productId): ?array
         "SELECT ib.batch_id, ib.po_id, ib.po_item_id, ib.supplier_id, ib.unit_cost,
                 ib.received_date, ib.created_at, s.supplier_name, po.po_number,
                 sp.purchase_unit, COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit,
+                accepted_invoice.invoice_number, accepted_invoice_item.unit_cost AS invoice_unit_cost,
+                accepted_line.purchase_unit_snapshot, accepted_line.units_per_purchase_unit_snapshot,
                 {$inventoryUnitSql} AS inventory_unit
          FROM inventory_batches ib
          LEFT JOIN suppliers s ON s.supplier_id = ib.supplier_id
          LEFT JOIN purchase_orders po ON po.po_id = ib.po_id
+         LEFT JOIN purchase_order_items accepted_line ON accepted_line.po_item_id = ib.po_item_id
+         LEFT JOIN purchase_order_invoice_items accepted_invoice_item ON accepted_invoice_item.po_item_id = ib.po_item_id
+         LEFT JOIN purchase_order_invoices accepted_invoice ON accepted_invoice.invoice_id = accepted_invoice_item.invoice_id
          LEFT JOIN supplier_products sp ON sp.product_id = ib.product_id AND sp.supplier_id = ib.supplier_id
          LEFT JOIN medicine_details md ON md.product_id = ib.product_id
          LEFT JOIN grocery_details gd ON gd.product_id = ib.product_id
          LEFT JOIN medical_supply_details msd ON msd.product_id = ib.product_id
          WHERE ib.product_id = :product_id
            AND (ib.received_qty - ib.damaged_qty - ib.returned_qty) > 0
-           AND ib.unit_cost IS NOT NULL
+           AND ib.unit_cost > 0
          ORDER BY ib.received_date DESC, ib.created_at DESC, ib.batch_id DESC
          LIMIT 1"
     );
@@ -210,7 +335,11 @@ function latestAcceptedCostBasis(PDO $pdo, string $productId): ?array
     }
     $row['unit_cost'] = round((float) $row['unit_cost'], 2);
     $row['units_per_purchase_unit'] = max(1, (int) $row['units_per_purchase_unit']);
-    $row['purchase_unit_cost'] = round($row['unit_cost'] * $row['units_per_purchase_unit'], 2);
+    $snapshotConversion = (int) ($row['units_per_purchase_unit_snapshot'] ?? 0);
+    $row['accepted_conversion'] = $snapshotConversion > 0 ? $snapshotConversion : $row['units_per_purchase_unit'];
+    $row['accepted_purchase_unit'] = trim((string) ($row['purchase_unit_snapshot'] ?? '')) ?: ($row['purchase_unit'] ?? null);
+    $row['invoice_unit_cost'] = is_numeric($row['invoice_unit_cost'] ?? null) ? round((float) $row['invoice_unit_cost'], 2) : null;
+    $row['purchase_unit_cost'] = round($row['unit_cost'] * $row['accepted_conversion'], 2);
     return $row;
 }
 
@@ -280,7 +409,12 @@ function productPricingSnapshot(PDO $pdo, string $productId, ?array $costBasis =
         'calculated_selling_price' => $calculated,
         'price_difference' => $difference,
         'price_status' => $status,
-        'price_source' => $basis ? 'Latest accepted delivery' : 'No accepted delivery',
+        'price_source' => acceptedCostSourceLabel($basis),
+        'supplier_quote' => supplierQuoteReferences(
+            $pdo,
+            [$productId],
+            $basis && !empty($basis['supplier_id']) ? [$productId => $basis['supplier_id']] : []
+        )[$productId] ?? null,
         'last_price_update' => $lastPriceUpdate['created_at'] ?? null,
     ];
 }
@@ -300,6 +434,8 @@ function productPricingSnapshots(PDO $pdo, array $productIds): array
                 cost.received_date, cost.created_at AS cost_created_at,
                 s.supplier_name, po.po_number, sp.purchase_unit,
                 COALESCE(sp.units_per_purchase_unit, 1) AS units_per_purchase_unit,
+                accepted_invoice.invoice_number, accepted_invoice_item.unit_cost AS invoice_unit_cost,
+                accepted_line.purchase_unit_snapshot, accepted_line.units_per_purchase_unit_snapshot,
                 last_pricing_update.created_at AS last_price_update
          FROM product p
          INNER JOIN product_categories pc ON pc.category_id = p.category_id
@@ -318,12 +454,15 @@ function productPricingSnapshots(PDO $pdo, array $productIds): array
                        ) AS row_number
                 FROM inventory_batches ib
                 WHERE (ib.received_qty - ib.damaged_qty - ib.returned_qty) > 0
-                  AND ib.unit_cost IS NOT NULL
+                  AND ib.unit_cost > 0
             ) ranked
             WHERE ranked.row_number = 1
          ) cost ON cost.product_id = p.product_id
          LEFT JOIN suppliers s ON s.supplier_id = cost.supplier_id
          LEFT JOIN purchase_orders po ON po.po_id = cost.po_id
+         LEFT JOIN purchase_order_items accepted_line ON accepted_line.po_item_id = cost.po_item_id
+         LEFT JOIN purchase_order_invoice_items accepted_invoice_item ON accepted_invoice_item.po_item_id = cost.po_item_id
+         LEFT JOIN purchase_order_invoices accepted_invoice ON accepted_invoice.invoice_id = accepted_invoice_item.invoice_id
          LEFT JOIN supplier_products sp ON sp.product_id = cost.product_id AND sp.supplier_id = cost.supplier_id
          LEFT JOIN (
             SELECT reference_id, MAX(created_at) AS created_at
@@ -334,8 +473,16 @@ function productPricingSnapshots(PDO $pdo, array $productIds): array
          WHERE p.product_id IN ({$placeholders})"
     );
     $statement->execute($productIds);
+    $products = $statement->fetchAll(PDO::FETCH_ASSOC);
+    $preferredSuppliers = [];
+    foreach ($products as $product) {
+        if (!empty($product['supplier_id'])) {
+            $preferredSuppliers[$product['product_id']] = $product['supplier_id'];
+        }
+    }
+    $supplierQuotes = supplierQuoteReferences($pdo, $productIds, $preferredSuppliers);
     $snapshots = [];
-    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $product) {
+    foreach ($products as $product) {
         $method = in_array($product['pricing_method'], PRODUCT_PRICING_METHODS, true) ? $product['pricing_method'] : 'manual';
         $storedMarkup = round((float) $product['default_markup_percentage'], 2);
         $normalizedCategory = strtolower(trim((string) $product['category_name']));
@@ -348,14 +495,20 @@ function productPricingSnapshots(PDO $pdo, array $productIds): array
         $basis = null;
         if (!empty($product['batch_id'])) {
             $unitsPerPurchaseUnit = max(1, (int) $product['units_per_purchase_unit']);
+            $snapshotConversion = (int) ($product['units_per_purchase_unit_snapshot'] ?? 0);
+            $acceptedConversion = $snapshotConversion > 0 ? $snapshotConversion : $unitsPerPurchaseUnit;
             $unitCost = round((float) $product['unit_cost'], 2);
             $basis = [
                 'batch_id' => $product['batch_id'], 'po_id' => $product['po_id'], 'po_item_id' => $product['po_item_id'],
                 'supplier_id' => $product['supplier_id'], 'unit_cost' => $unitCost,
                 'received_date' => $product['received_date'], 'created_at' => $product['cost_created_at'],
                 'supplier_name' => $product['supplier_name'], 'po_number' => $product['po_number'],
+                'invoice_number' => $product['invoice_number'] ?? null,
+                'invoice_unit_cost' => is_numeric($product['invoice_unit_cost'] ?? null) ? round((float) $product['invoice_unit_cost'], 2) : null,
                 'purchase_unit' => $product['purchase_unit'], 'units_per_purchase_unit' => $unitsPerPurchaseUnit,
-                'purchase_unit_cost' => round($unitCost * $unitsPerPurchaseUnit, 2),
+                'accepted_purchase_unit' => trim((string) ($product['purchase_unit_snapshot'] ?? '')) ?: $product['purchase_unit'],
+                'accepted_conversion' => $acceptedConversion,
+                'purchase_unit_cost' => round($unitCost * $acceptedConversion, 2),
                 'inventory_unit' => $product['default_inventory_unit'],
             ];
         }
@@ -388,7 +541,8 @@ function productPricingSnapshots(PDO $pdo, array $productIds): array
             'inventory_unit' => $basis['inventory_unit'] ?? $product['default_inventory_unit'],
             'latest_cost_basis' => $basis, 'calculated_selling_price' => $calculated,
             'price_difference' => $difference, 'price_status' => $status,
-            'price_source' => $basis ? 'Latest accepted delivery' : 'No accepted delivery',
+            'price_source' => acceptedCostSourceLabel($basis),
+            'supplier_quote' => $supplierQuotes[$product['product_id']] ?? null,
             'last_price_update' => $product['last_price_update'],
             'category_pricing_eligible' => $categoryPricingEligible,
             'category_pricing_status' => $categoryPricingStatus,
@@ -399,31 +553,7 @@ function productPricingSnapshots(PDO $pdo, array $productIds): array
 
 function applyAcceptedDeliveryPricing(PDO $pdo, string $productId, array $costBasis): array
 {
-    $snapshot = productPricingSnapshot($pdo, $productId, $costBasis);
-    if ($snapshot['pricing_method'] === 'manual' || $snapshot['pricing_behavior'] !== 'automatic' || $snapshot['calculated_selling_price'] === null) {
-        return $snapshot;
-    }
-
-    $oldPrice = $snapshot['active_selling_price'];
-    $newPrice = $snapshot['calculated_selling_price'];
-    if (abs($newPrice - $oldPrice) < 0.005) {
-        return $snapshot;
-    }
-
-    $update = $pdo->prepare('UPDATE product SET price = :price WHERE product_id = :product_id');
-    $update->execute([':price' => $newPrice, ':product_id' => $productId]);
-    syncProductDefaultSellingPrice($pdo, $productId, (float)$newPrice);
-    recordActivityLog($pdo, 'Pricing', 'Automatic delivery update', json_encode([
-        'previous_cost_basis' => latestAcceptedCostBasisExcludingBatch($pdo, $productId, $costBasis['batch_id'] ?? ''),
-        'new_cost_basis' => $costBasis['unit_cost'],
-        'previous_selling_price' => $oldPrice,
-        'new_selling_price' => $newPrice,
-        'applied_markup_percentage' => $snapshot['applied_markup_percentage'],
-        'price_source' => 'Latest accepted delivery',
-        'po_id' => $costBasis['po_id'] ?? null,
-        'supplier_id' => $costBasis['supplier_id'] ?? null,
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $productId);
-
+    // Receiving updates the cost basis only. Admin applies suggested selling prices separately.
     return productPricingSnapshot($pdo, $productId, $costBasis);
 }
 
@@ -656,6 +786,9 @@ function selectedCategoryPricingPreview(PDO $pdo, array $productIds, bool $lockF
             'existing_pricing_method' => $snapshot['pricing_method'],
             'current_cost_basis' => $basis['unit_cost'] ?? null,
             'inventory_unit' => $sellingUnit ?: $snapshot['inventory_unit'],
+            'accepted_purchase_unit' => $conversion['accepted_purchase_unit'] ?? null,
+            'accepted_conversion' => isset($conversion['accepted_conversion']) ? (int) $conversion['accepted_conversion'] : null,
+            'accepted_inventory_unit' => $conversion['accepted_inventory_unit'] ?? null,
             'applied_markup_percentage' => $snapshot['category_markup_percentage'],
             'markup_source' => $snapshot['category_markup_source'],
             'current_selling_price' => $current,
