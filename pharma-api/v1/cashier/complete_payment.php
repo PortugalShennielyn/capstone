@@ -19,7 +19,16 @@ try {
 
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);
-    $amountPaid = cashierMoney($payload['amount_paid'] ?? $payload['cash_received'] ?? 0);
+    $paymentMethod = strtolower(trim((string) ($payload['payment_method'] ?? 'cash')));
+    $paymentAmountProvided = array_key_exists('amount_paid', $payload) || array_key_exists('cash_received', $payload);
+    $paymentAmountRaw = $payload['amount_paid'] ?? $payload['cash_received'] ?? '';
+    if (!$paymentAmountProvided || !is_numeric($paymentAmountRaw) || trim((string) $paymentAmountRaw) === '') {
+        throw new InvalidArgumentException('Enter a valid payment amount before completing checkout.');
+    }
+    $amountPaid = cashierMoney($paymentAmountRaw);
+    $gcashConfirmed = filter_var($payload['gcash_confirmed'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    $gcashReferenceNo = trim((string) ($payload['gcash_reference_no'] ?? ''));
+    if (mb_strlen($gcashReferenceNo) > 100) throw new InvalidArgumentException('GCash reference number must be 100 characters or fewer.');
     $cashierDiscountType = strtolower(trim((string) ($payload['cashier_discount_type'] ?? 'none')));
     $cashierDiscountAmount = cashierMoney($payload['cashier_discount_amount'] ?? 0);
     $beneficiaryName = trim((string) ($payload['beneficiary_name'] ?? ''));
@@ -32,6 +41,9 @@ try {
         http_response_code(400);
         echo json_encode(['status' => 'error', 'message' => 'Missing order_id.']);
         exit();
+    }
+    if (!in_array($paymentMethod, ['cash', 'gcash'], true)) {
+        throw new InvalidArgumentException('Choose Cash or GCash as the payment method.');
     }
 
     $cashierId = cashierCurrentUserId();
@@ -76,11 +88,19 @@ try {
         $eligibleGross
     );
     $totalAmount = $totals['final_amount'];
-    if ($amountPaid <= 0) {
-        $amountPaid = cashierMoney($order['cash_received'] ?? 0);
+    if ($amountPaid < 0) {
+        throw new InvalidArgumentException('Payment amount cannot be negative.');
     }
-    if ($amountPaid < $totalAmount) {
-        throw new RuntimeException('Cash must be equal to or greater than the total amount.');
+    if ($paymentMethod === 'gcash') {
+        if ($gcashReferenceNo === '') throw new InvalidArgumentException('Enter the GCash transaction reference number.');
+        if (!$gcashConfirmed) throw new RuntimeException('Confirm that the customer payment was received in GCash.');
+        if (abs($amountPaid - $totalAmount) > 0.009) throw new RuntimeException('GCash payment must match the final amount due.');
+        $changeAmount = 0.00;
+        $drawerCashReceived = 0.00;
+    } else {
+        if ($amountPaid + 0.00001 < $totalAmount) throw new RuntimeException('Cash received must be equal to or greater than the total amount.');
+        $changeAmount = cashierMoney($amountPaid - $totalAmount);
+        $drawerCashReceived = $amountPaid;
     }
 
     $existsStmt = $pdo->prepare(
@@ -98,18 +118,19 @@ try {
 
     cashierDeductShelfStock($pdo, $orderId);
 
-    $changeAmount = cashierMoney($amountPaid - $totalAmount);
-    cashierPersistCashReceived($pdo, $orderId, $amountPaid, $totalAmount);
+    cashierPersistCashReceived($pdo, $orderId, $drawerCashReceived, $totalAmount);
 
     $payment = $pdo->prepare(
         "INSERT INTO sales_payments
-            (order_id, cashier_id, payment_method, total_amount, sales_clerk_discount, cashier_discount_type, cashier_discount_amount, final_amount, vat_exempt_sales, vat_exemption_amount, beneficiary_name, beneficiary_id, amount_paid, change_amount, payment_status, paid_at)
+            (order_id, cashier_id, payment_method, gcash_reference_no, total_amount, sales_clerk_discount, cashier_discount_type, cashier_discount_amount, final_amount, vat_exempt_sales, vat_exemption_amount, beneficiary_name, beneficiary_id, amount_paid, change_amount, payment_status, paid_at)
          VALUES
-            (:order_id, :cashier_id, 'cash', :total_amount, :sales_clerk_discount, :cashier_discount_type, :cashier_discount_amount, :final_amount, :vat_exempt_sales, :vat_exemption_amount, :beneficiary_name, :beneficiary_id, :amount_paid, :change_amount, 'paid', NOW())"
+            (:order_id, :cashier_id, :payment_method, :gcash_reference_no, :total_amount, :sales_clerk_discount, :cashier_discount_type, :cashier_discount_amount, :final_amount, :vat_exempt_sales, :vat_exemption_amount, :beneficiary_name, :beneficiary_id, :amount_paid, :change_amount, 'paid', NOW())"
     );
     $payment->execute([
         ':order_id' => $orderId,
         ':cashier_id' => $cashierId,
+        ':payment_method' => $paymentMethod,
+        ':gcash_reference_no' => $paymentMethod === 'gcash' ? $gcashReferenceNo : null,
         ':total_amount' => $totalAmount,
         ':sales_clerk_discount' => $totals['sales_clerk_discount'],
         ':cashier_discount_type' => $totals['discount_type'],
@@ -128,7 +149,7 @@ try {
         "INSERT INTO sales_receipts
             (order_id, receipt_no, customer_name, sales_clerk_id, cashier_id, total_amount, payment_method, printed_at, created_at)
          VALUES
-            (:order_id, :receipt_no, :customer_name, :sales_clerk_id, :cashier_id, :total_amount, 'cash', NOW(), NOW())"
+            (:order_id, :receipt_no, :customer_name, :sales_clerk_id, :cashier_id, :total_amount, :payment_method, NOW(), NOW())"
     );
     $receipt->execute([
         ':order_id' => $orderId,
@@ -137,6 +158,7 @@ try {
         ':sales_clerk_id' => $order['sales_clerk_id'],
         ':cashier_id' => $cashierId,
         ':total_amount' => $totalAmount,
+        ':payment_method' => $paymentMethod,
     ]);
 
     $update = $pdo->prepare(
@@ -175,7 +197,9 @@ try {
     $salesEventDetails = [
         'order_id' => $orderId, 'order_no' => (string) $order['order_no'],
         'transaction_id' => $receiptNo, 'amount' => $totalAmount,
-        'payment_method' => 'cash', 'discount_type' => $cashierDiscountType,
+        'payment_method' => $paymentMethod,
+        'gcash_manual_confirmation' => $paymentMethod === 'gcash' ? true : null,
+        'discount_type' => $cashierDiscountType,
         'discount_amount' => $discountAmount,
         'sales_clerk_discount' => cashierMoney($totals['sales_clerk_discount'] ?? 0),
         'cashier_discount_amount' => cashierMoney($totals['discount_amount'] ?? 0),

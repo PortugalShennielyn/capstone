@@ -1355,6 +1355,15 @@ async function initializeNavbar(container) {
 
             if (accessRole === "cashier") {
                 container.querySelector(".sidebar-brand")?.setAttribute("href", "cashier_pos.html");
+                const dashboardLink = container.querySelector(".sidebar-nav [data-nav-page='dashboard']");
+                if (dashboardLink) {
+                    dashboardLink.href = "cashier_dashboard.html";
+                    dashboardLink.title = "Cashier Dashboard";
+                    const dashboardLabel = dashboardLink.querySelector(".nav-label");
+                    if (dashboardLabel) dashboardLabel.textContent = "Cashier Dashboard";
+                    dashboardLink.classList.remove("d-none");
+                    dashboardLink.setAttribute("aria-hidden", "false");
+                }
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
                     const isUserSettings = link.dataset.navPage === "user-settings";
                     link.classList.toggle("d-none", !isUserSettings);

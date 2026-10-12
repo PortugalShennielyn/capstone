@@ -5,12 +5,12 @@ body[data-cashier-page="dashboard"] {
     --dashboard-muted: #737d91;
     min-height: 100vh;
     color: #17213f;
-    background: var(--dashboard-navy);
+    background: #f6f8fc;
 }
 
 body[data-cashier-page="dashboard"] #mainWrapper {
     min-height: 100vh;
-    background: var(--dashboard-navy);
+    background: #f6f8fc;
 }
 
 body[data-cashier-page="dashboard"] .dashboard-topbar {
@@ -18,13 +18,19 @@ body[data-cashier-page="dashboard"] .dashboard-topbar {
     top: 0;
     min-height: 70px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 18px;
     padding: 12px 26px;
-    color: #f4f6fb;
-    background: var(--dashboard-navy-light);
-    border-bottom: 1px solid rgba(255, 255, 255, .08);
-    box-shadow: 0 8px 22px rgba(4, 9, 25, .12);
+    color: #fff;
+    background: #101936;
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
+    box-shadow: 0 4px 14px rgba(16, 25, 54, .06);
+}
+
+body[data-cashier-page="dashboard"] #mainWrapper > .dashboard-topbar.drp-shared-topbar {
+    border-bottom: 1px solid rgba(255, 255, 255, .07) !important;
+    background: #101936 !important;
+    color: #fff !important;
 }
 
 .dashboard-topbar-left,
@@ -36,23 +42,23 @@ body[data-cashier-page="dashboard"] .dashboard-topbar {
 }
 
 .dashboard-topbar-left .icon-btn {
-    color: #d8def0;
-    background: rgba(255, 255, 255, .07);
-    border: 1px solid rgba(255, 255, 255, .1);
+    color: #4b5563;
+    background: #f1f4fa;
+    border: 1px solid #e1e6ef;
 }
 
-.dashboard-topbar .brand-tile {
-    width: 38px;
-    height: 38px;
-    flex-basis: 38px;
-    border-radius: 8px;
-    background: #7146e8;
-    box-shadow: 0 8px 18px rgba(113, 70, 232, .25);
+body[data-cashier-page="dashboard"] .dashboard-topbar .icon-btn {
+    border-color: rgba(255, 255, 255, .12) !important;
+    color: rgba(255, 255, 255, .9) !important;
+    background: rgba(255, 255, 255, .06) !important;
 }
 
 .dashboard-topbar .title-wrap { min-width: 0; }
-.dashboard-topbar .title-wrap strong { color: #f8f9fc; font-size: 15px; font-weight: 800; }
-.dashboard-topbar .title-wrap span { color: #9ba7c0; font-size: 11px; font-weight: 600; }
+.dashboard-topbar .title-wrap strong { color: #fff !important; font-size: 15px; font-weight: 800; }
+.dashboard-topbar .title-wrap span { color: rgba(255, 255, 255, .68); font-size: 11px; font-weight: 600; }
+
+body[data-cashier-page="dashboard"] .dashboard-topbar .topbar-clock span { color: rgba(255, 255, 255, .68) !important; }
+body[data-cashier-page="dashboard"] .dashboard-topbar .topbar-clock strong { color: #fff !important; }
 
 .today-control {
     min-height: 36px;
@@ -113,6 +119,39 @@ body[data-cashier-page="dashboard"] .cashier-page {
     width: min(1700px, 100%);
     margin: 0 auto;
     padding: 25px clamp(14px, 2vw, 30px) 36px;
+    color: #17213f;
+}
+
+body[data-cashier-page="dashboard"] .cashier-welcome {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 18px;
+    padding: 2px 0;
+}
+
+body[data-cashier-page="dashboard"] .cashier-welcome h1 {
+    margin: 0;
+    min-height: 34px;
+    color: #0f172a;
+    font-family: Inter, Manrope, "Segoe UI", sans-serif;
+    font-size: clamp(27px, 2vw, 31px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -.7px;
+}
+
+body[data-cashier-page="dashboard"] .cashier-welcome-name { color: #7047eb; }
+body[data-cashier-page="dashboard"] .cashier-welcome-name.is-loading { opacity: 0; }
+body[data-cashier-page="dashboard"] .cashier-welcome p { margin: 5px 0 0; color: #64748b; font-size: 13px; font-weight: 500; }
+
+@media (max-width: 900px) {
+    body[data-cashier-page="dashboard"] .cashier-welcome { align-items: flex-start; }
+}
+
+@media (max-width: 520px) {
+    body[data-cashier-page="dashboard"] .cashier-welcome h1 { font-size: clamp(24px, 7vw, 28px); }
 }
 
 .dashboard-heading {
@@ -121,11 +160,11 @@ body[data-cashier-page="dashboard"] .cashier-page {
     justify-content: space-between;
     gap: 18px;
     margin-bottom: 18px;
-    color: #f8f9fc;
+    color: #17213f;
 }
 
 .dashboard-heading h1 { margin: 0; font-size: 22px; font-weight: 850; }
-.dashboard-heading p { margin: 5px 0 0; color: #aab4ca; font-size: 12px; font-weight: 600; }
+.dashboard-heading p { margin: 5px 0 0; color: #737d91; font-size: 12px; font-weight: 600; }
 .new-sale-button {
     min-height: 40px;
     display: inline-flex;
@@ -158,7 +197,7 @@ body[data-cashier-page="dashboard"] .dashboard-summary {
     padding: 15px;
     border-color: #e7eaf2;
     border-radius: 8px;
-    box-shadow: 0 8px 20px rgba(6, 12, 30, .12);
+    box-shadow: 0 4px 14px rgba(16, 25, 54, .06);
 }
 
 .dashboard-card-icon {
@@ -192,7 +231,7 @@ body[data-cashier-page="dashboard"] .panel {
     border-color: #e7eaf2;
     border-radius: 8px;
     background: #fff;
-    box-shadow: 0 8px 20px rgba(6, 12, 30, .12);
+    box-shadow: 0 4px 14px rgba(16, 25, 54, .06);
 }
 
 body[data-cashier-page="dashboard"] .panel-head {
@@ -285,10 +324,13 @@ body[data-cashier-page="dashboard"] .panel-head p { color: #858da0; font-size: 1
 }
 
 @media (max-width: 720px) {
-    body[data-cashier-page="dashboard"] .dashboard-topbar { min-height: 62px; padding: 9px 12px; }
+    body[data-cashier-page="dashboard"] .dashboard-topbar { min-height: 62px; padding: 9px 12px; grid-template-columns: minmax(0, 1fr); }
     .dashboard-topbar-left, .dashboard-topbar-meta { gap: 8px; }
-    .dashboard-topbar .brand-tile { display: none; }
-    .dashboard-topbar .title-wrap span, .topbar-date, .topbar-status { display: none; }
+    .dashboard-topbar .topbar-right { grid-column: 1; justify-content: flex-end; }
+    .dashboard-topbar .topbar-status,
+    .dashboard-topbar .topbar-clock { display: flex !important; }
+    .dashboard-topbar .topbar-clock span { display: block !important; }
+    .dashboard-topbar .title-wrap span { display: none; }
     .dashboard-topbar .title-wrap strong { font-size: 13px; }
     body[data-cashier-page="dashboard"] .cashier-page { padding: 17px 12px 25px; }
     .dashboard-heading { align-items: flex-start; }

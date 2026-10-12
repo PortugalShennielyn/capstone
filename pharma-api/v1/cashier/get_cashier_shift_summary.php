@@ -32,6 +32,7 @@ function shiftSummaryEmptyData(
         'cashier_name' => $cashierName,
         'is_admin_view' => $isAdmin,
         'cashiers' => $isAdmin ? $cashiers : [],
+        'reconciliation' => null,
         'has_records' => false,
         'summary' => [
             'total_completed_sales' => 0.0,
@@ -39,6 +40,12 @@ function shiftSummaryEmptyData(
             'change_given' => 0.0,
             'net_cash_sales' => 0.0,
             'cash_paid_sales' => 0.0,
+            'gcash_paid_sales' => 0.0,
+            'cash_refunds' => 0.0,
+            'gcash_refunds' => 0.0,
+            'net_cash_collected' => 0.0,
+            'net_gcash_collected' => 0.0,
+            'total_payments_collected' => 0.0,
             'cash_variance' => 0.0,
             'completed_transactions' => 0,
             'cancelled_voided_transactions' => 0,
@@ -178,13 +185,16 @@ try {
             order_id,
             MAX(cashier_id) AS cashier_id,
             COALESCE(NULLIF(MAX(payment_method), ''), 'cash') AS payment_method,
-            SUM(amount_paid) AS amount_paid,
-            SUM(change_amount) AS change_amount,
+            SUM(CASE WHEN payment_status = 'paid' THEN amount_paid ELSE 0 END) AS amount_paid,
+            SUM(CASE WHEN payment_status = 'paid' THEN change_amount ELSE 0 END) AS change_amount,
             MAX(COALESCE(sales_clerk_discount, 0)) AS sales_clerk_discount,
             MAX(COALESCE(cashier_discount_amount, 0)) AS cashier_discount_amount,
-            MAX(paid_at) AS paid_at
+            MAX(paid_at) AS paid_at,
+            SUM(CASE WHEN payment_status = 'paid' THEN COALESCE(NULLIF(final_amount, 0), total_amount) ELSE 0 END) AS paid_final_amount,
+            SUM(CASE WHEN payment_status IN ('paid', 'refunded') THEN COALESCE(NULLIF(final_amount, 0), total_amount) ELSE 0 END) AS collected_sale_amount
          FROM sales_payments
-         WHERE payment_status = 'paid'
+         WHERE payment_status IN ('paid', 'refunded')
+           AND LOWER(payment_method) IN ('cash', 'gcash')
          GROUP BY order_id";
 
     $summaryStmt = $pdo->prepare(
@@ -195,7 +205,8 @@ try {
             COALESCE(SUM(COALESCE(o.discount, 0) + COALESCE(p.cashier_discount_amount, 0)), 0) AS discounts,
             COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'cash' THEN p.amount_paid ELSE 0 END), 0) AS cash_tendered,
             COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'cash' THEN p.change_amount ELSE 0 END), 0) AS change_given,
-            COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'cash' THEN o.total_amount ELSE 0 END), 0) AS cash_paid_sales,
+            COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'cash' THEN p.collected_sale_amount ELSE 0 END), 0) AS cash_paid_sales,
+            COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'gcash' THEN p.collected_sale_amount ELSE 0 END), 0) AS gcash_paid_sales,
             MIN(o.completed_at) AS first_transaction_time,
             MAX(o.completed_at) AS last_transaction_time,
             COUNT(DISTINCT DATE(o.completed_at)) AS active_days
@@ -228,10 +239,13 @@ try {
     $refundStmt = $pdo->prepare(
         "SELECT
             COUNT(DISTINCT p.order_id) AS refunded_transactions,
-            COALESCE(SUM(COALESCE(NULLIF(p.final_amount, 0), p.total_amount)), 0) AS refunded_amount
+            COALESCE(SUM(COALESCE(NULLIF(p.final_amount, 0), p.total_amount)), 0) AS refunded_amount,
+            COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'cash' THEN COALESCE(NULLIF(p.final_amount, 0), p.total_amount) ELSE 0 END), 0) AS cash_refunded_amount,
+            COALESCE(SUM(CASE WHEN LOWER(p.payment_method) = 'gcash' THEN COALESCE(NULLIF(p.final_amount, 0), p.total_amount) ELSE 0 END), 0) AS gcash_refunded_amount
          FROM sales_payments p
          INNER JOIN sales_orders o ON o.order_id = p.order_id
          WHERE p.payment_status = 'refunded'
+           AND LOWER(p.payment_method) IN ('cash', 'gcash')
            AND p.cashier_id = :cashier_id
            AND COALESCE(p.paid_at, p.created_at) >= :date_start
            AND COALESCE(p.paid_at, p.created_at) < :date_end"
@@ -240,12 +254,14 @@ try {
     $refundRow = $refundStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $refundedTransactions = (int) ($refundRow['refunded_transactions'] ?? 0);
     $refunds = cashierMoney($refundRow['refunded_amount'] ?? 0);
+    $cashRefunds = cashierMoney($refundRow['cash_refunded_amount'] ?? 0);
+    $gcashRefunds = cashierMoney($refundRow['gcash_refunded_amount'] ?? 0);
 
     $paymentStmt = $pdo->prepare(
         "SELECT
             p.payment_method,
             COUNT(DISTINCT o.order_id) AS transaction_count,
-            COALESCE(SUM(o.total_amount), 0) AS amount
+            COALESCE(SUM(p.collected_sale_amount), 0) AS amount
          FROM sales_orders o
          INNER JOIN ($paidPaymentAggregate) p ON p.order_id = o.order_id
          WHERE o.status = 'completed'
@@ -269,14 +285,21 @@ try {
             o.order_id,
             o.order_no,
             COALESCE(NULLIF(o.customer_name, ''), 'Walk-in Customer') AS customer_name,
+            o.subtotal,
+            o.discount,
             o.total_amount,
             o.status,
             o.completed_at,
             p.payment_method,
-            r.receipt_no
+            p.cashier_discount_amount,
+            r.receipt_no,
+            p.paid_final_amount,
+            COALESCE(items.item_count, 0) AS item_count,
+            COALESCE((SELECT SUM(COALESCE(NULLIF(rp.final_amount, 0), rp.total_amount)) FROM sales_payments rp WHERE rp.order_id = o.order_id AND rp.payment_status = 'refunded' AND LOWER(rp.payment_method) IN ('cash', 'gcash')), 0) AS refund_amount
          FROM sales_orders o
          INNER JOIN ($paidPaymentAggregate) p ON p.order_id = o.order_id
          LEFT JOIN sales_receipts r ON r.order_id = o.order_id
+         LEFT JOIN (SELECT order_id, COUNT(*) AS item_count FROM sales_order_items GROUP BY order_id) items ON items.order_id = o.order_id
          WHERE o.status = 'completed'
            AND o.assigned_cashier_id = :cashier_id
            AND o.completed_at >= :date_start
@@ -294,6 +317,12 @@ try {
             'customer_name' => cashierDisplay($row['customer_name'] ?? '', 'Walk-in Customer'),
             'payment_method' => cashierDisplay($row['payment_method'] ?? '', 'cash'),
             'total_amount' => cashierMoney($row['total_amount'] ?? 0),
+            'gross_amount' => cashierMoney($row['subtotal'] ?? ((float) ($row['total_amount'] ?? 0) + (float) ($row['discount'] ?? 0))),
+            'discount_amount' => cashierMoney((float) ($row['discount'] ?? 0) + (float) ($row['cashier_discount_amount'] ?? 0)),
+            'refund_amount' => cashierMoney($row['refund_amount'] ?? 0),
+            'final_amount' => cashierMoney($row['paid_final_amount'] ?? $row['total_amount'] ?? 0),
+            'net_amount' => cashierMoney((float) ($row['total_amount'] ?? 0) - (float) ($row['refund_amount'] ?? 0)),
+            'item_count' => (int) ($row['item_count'] ?? 0),
             'status_code' => (string) ($row['status'] ?? ''),
             'status' => salesStatusLabel((string) ($row['status'] ?? '')),
             'completed_at' => $row['completed_at'] ?? null,
@@ -304,8 +333,10 @@ try {
     $completedSales = cashierMoney($summary['total_completed_sales'] ?? 0);
     $cashTendered = cashierMoney($summary['cash_tendered'] ?? 0);
     $changeGiven = cashierMoney($summary['change_given'] ?? 0);
-    $netCashSales = cashierMoney($cashTendered - $changeGiven);
     $cashPaidSales = cashierMoney($summary['cash_paid_sales'] ?? 0);
+    $gcashPaidSales = cashierMoney($summary['gcash_paid_sales'] ?? 0);
+    $netCashSales = cashierMoney($cashPaidSales - $cashRefunds);
+    $netGcashSales = cashierMoney($gcashPaidSales - $gcashRefunds);
 
     $data = shiftSummaryEmptyData($startDate, $endDate, $isAdminView, $cashiers, $targetCashierId, $cashierName);
     $data['has_records'] = $completedTransactions > 0 || $cancelledVoided > 0 || $refundedTransactions > 0 || $refunds > 0;
@@ -315,6 +346,12 @@ try {
         'change_given' => $changeGiven,
         'net_cash_sales' => $netCashSales,
         'cash_paid_sales' => $cashPaidSales,
+        'gcash_paid_sales' => $gcashPaidSales,
+        'cash_refunds' => $cashRefunds,
+        'gcash_refunds' => $gcashRefunds,
+        'net_gcash_collected' => $netGcashSales,
+        'total_payments_collected' => cashierMoney($netCashSales + $netGcashSales),
+        'net_cash_collected' => $netCashSales,
         'cash_variance' => cashierMoney($netCashSales - $cashPaidSales),
         'completed_transactions' => $completedTransactions,
         'cancelled_voided_transactions' => $cancelledVoided,
@@ -332,12 +369,44 @@ try {
         'discounts' => cashierMoney($summary['discounts'] ?? 0),
         'refunds' => $refunds,
         'refunds_supported' => true,
-        'net_completed_sales' => $completedSales,
+        'net_completed_sales' => cashierMoney($completedSales - $refunds),
         'average_transaction_value' => $completedTransactions > 0
             ? cashierMoney($completedSales / $completedTransactions)
             : 0.0,
     ];
     $data['recent_transactions'] = $recentTransactions;
+
+    if ($startDate === $endDate) {
+        $reconciliationStmt = $pdo->prepare(
+            'SELECT beginning_cash, actual_cash, variance_remarks, status, updated_at
+             FROM cashier_shift_reconciliations
+             WHERE cashier_id = :cashier_id AND shift_date = :shift_date
+             LIMIT 1'
+        );
+        $reconciliationStmt->execute([':cashier_id' => $targetCashierId, ':shift_date' => $startDate]);
+        $reconciliation = $reconciliationStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $beginningCash = $reconciliation ? cashierMoney($reconciliation['beginning_cash']) : null;
+        $actualCash = $reconciliation && $reconciliation['actual_cash'] !== null ? cashierMoney($reconciliation['actual_cash']) : null;
+        $cashIn = 0.0;
+        $cashOut = 0.0;
+        $expectedCash = $beginningCash === null ? null : cashierMoney($beginningCash + $cashPaidSales - $cashOut - $cashRefunds);
+        $data['reconciliation'] = [
+            'beginning_cash' => $beginningCash,
+            'cash_sales' => $cashPaidSales,
+            'cash_in' => $cashIn,
+            'cash_in_supported' => false,
+            'cash_out' => $cashOut,
+            'cash_out_supported' => false,
+            'cash_refunds_paid' => $cashRefunds,
+            'expected_cash' => $expectedCash,
+            'actual_cash' => $actualCash,
+            'cash_variance' => $actualCash === null || $expectedCash === null ? null : cashierMoney($actualCash - $expectedCash),
+            'variance_remarks' => $reconciliation['variance_remarks'] ?? '',
+            'status' => $reconciliation['status'] ?? 'not_counted',
+            'updated_at' => $reconciliation['updated_at'] ?? null,
+            'editable' => !$isAdminView && $targetCashierId === $authenticatedUserId,
+        ];
+    }
 
     $settingsStmt = $pdo->query("SELECT pharmacy_name, pharmacy_address, timezone FROM system_settings ORDER BY setting_id ASC LIMIT 1");
     $settings = $settingsStmt->fetch(PDO::FETCH_ASSOC) ?: [];

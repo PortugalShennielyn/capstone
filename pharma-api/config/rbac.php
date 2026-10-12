@@ -47,6 +47,7 @@ function managerApiRequestAllowed(string $scriptName): bool
         'sales/get_sales_history.php',
         'cashier/get_cashier_shift_summary.php',
         'cashier/get_cashier_order.php',
+        'cashier/get_cashier_report.php',
     ], true);
 }
 

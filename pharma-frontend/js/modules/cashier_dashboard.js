@@ -15,15 +15,32 @@ function setText(id, value) {
     if (node) node.textContent = value;
 }
 
+function renderWelcome(session) {
+    const nameNode = document.getElementById('cashierWelcomeName');
+    if (!nameNode || !session) return;
+
+    const fullName = String(session.full_name || '').trim();
+    const firstName = String(session.first_name || '').trim();
+    const lastName = String(session.last_name || '').trim();
+    const displayName = fullName || [firstName, lastName].filter(Boolean).join(' ') || firstName || String(session.username || '').trim();
+    if (!displayName) return;
+
+    nameNode.textContent = displayName;
+    nameNode.classList.remove('is-loading');
+}
+
+window.addEventListener('pharma:session-ready', (event) => renderWelcome(event.detail));
+if (window.__drpSession) renderWelcome(window.__drpSession);
+if (window.__drpSessionReadyPromise && typeof window.__drpSessionReadyPromise.then === 'function') {
+    window.__drpSessionReadyPromise.then(() => renderWelcome(window.__drpSession)).catch(() => {});
+}
+
 function localDateKey(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function updateClock() {
     const now = new Date();
-    setText('dashboardDate', now.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }));
-    setText('topbarDate', now.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' }));
-    setText('topbarClock', now.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' }));
     const today = localDateKey(now);
     const query = new URLSearchParams({ start_date: today, end_date: today });
     const reportLink = document.getElementById('salesReportLink');
@@ -198,25 +215,9 @@ async function loadDashboard() {
     renderCharts(data.charts || {});
 }
 
-function bindNotifications() {
-    const button = document.getElementById('dashboardNotifications');
-    const popover = document.getElementById('notificationPopover');
-    if (!button || !popover) return;
-    button.addEventListener('click', () => {
-        popover.hidden = !popover.hidden;
-        button.setAttribute('aria-expanded', String(!popover.hidden));
-    });
-    document.addEventListener('click', (event) => {
-        if (popover.hidden || event.target.closest('.notification-wrap')) return;
-        popover.hidden = true;
-        button.setAttribute('aria-expanded', 'false');
-    });
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     updateClock();
     window.setInterval(updateClock, 30000);
-    bindNotifications();
     loadDashboard().catch((error) => {
         console.error(error);
         const tbody = document.getElementById('dashboardTransactions');
