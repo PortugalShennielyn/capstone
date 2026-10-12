@@ -28,7 +28,7 @@ const tones={
     purple:'#7c3aed',blue:'#2563eb',teal:'#0f9f92',indigo:'#4f46e5',green:'#16a34a',amber:'#d97706',red:'#dc2626',gray:'#64748b',
     sales:'#5b4cf0',inventory:'#0f9f92',purchases:'#4f46e5',expiry:'#dc2626'
 };
-const statusColors={Healthy:'green',Completed:'green',Delivered:'green',Paid:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Draft:'gray',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal',Arrived:'indigo',Watch:'amber','Waiting for cashier':'amber','Accepted by cashier':'indigo','Processing payment':'teal',Rejected:'red',Other:'gray'};
+const statusColors={Healthy:'green',Completed:'green',Delivered:'green',Paid:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Draft:'gray',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal',Arrived:'indigo',Watch:'amber','Waiting for cashier':'amber','Waiting for a cashier':'amber','Accepted by cashier':'indigo','Waiting for payment':'indigo','Processing payment':'teal','Payment in progress':'teal','Not sent yet':'gray',Rejected:'red',Other:'gray'};
 const money=new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}),number=new Intl.NumberFormat('en-PH');
 const qs=s=>document.querySelector(s),qsa=s=>[...document.querySelectorAll(s)];
 const state={category:'sales',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity',initialPeriodSet:false,period:'30',roleConfigured:false,comparisonMode:'previous',tableController:null};
@@ -65,7 +65,7 @@ const format=(v,type)=>type==='currency'?money.format(Number(v||0)):type==='perc
 
 function initialQuery(){
     const query=new URLSearchParams(location.search);if(categories[query.get('category')])state.category=query.get('category');
-    if(state.category==='inventory')qs('.report-layout').classList.add('inventory-expanded');
+    if((reportViews[state.category]||[]).length<=1)qs('.report-layout').classList.add('inventory-expanded');
     if(['previous','year','none'].includes(query.get('comparison_mode')))state.comparisonMode=query.get('comparison_mode');
     qs('#reportComparisonMode').value=state.comparisonMode;
     if(state.category==='expiry'&&!query.has('expiry_days'))qs('[name="expiry_days"]').value='365';
@@ -76,7 +76,7 @@ function initialQuery(){
     if(state.category==='inventory'){
         reportViews.inventory=['Inventory Overview'];
         form.elements.report_view.dataset.initial='Inventory Overview';
-        qs('.report-layout').classList.add('inventory-expanded');
+        if((reportViews[state.category]||[]).length<=1)qs('.report-layout').classList.add('inventory-expanded');
     }
     if(!state.explicitDates){const today=reportToday('Asia/Manila');form.elements.start_date.value=shiftDate(today,-29);form.elements.end_date.value=today;state.initialPeriodSet=true;}
 }
@@ -106,8 +106,18 @@ function renderViewMenu(){
     qs('#reportViewMenu').innerHTML=(reportViews[state.category]||[]).map(view=>`<button class="report-view-item ${view===selected?'active':''}" type="button" data-view="${esc(view)}"><strong>${esc(view)}</strong><small>${esc(viewDescriptions[view]||'Analyze current pharmacy records.')}</small></button>`).join('');
     qs('#reportViewTitle').textContent=selected;qs('#reportViewDescription').textContent=viewDescriptions[selected]||description;
     qs('#reportViewIcon').innerHTML=`<i class="fa-solid ${categoryIcons[state.category]||'fa-chart-simple'}"></i>`;
+    renderQuickViewSwitch(selected);
     qs('.report-search').hidden=!['Product Sales','Cashier Sales','Current Inventory','Inventory Overview','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation','Expiring Products','Expired / Wastage','Batch Traceability','PR / PO Summary','Purchase History','Invoice & Payment'].includes(selected);
     qs('#reportSearch').placeholder=selected==='Batch Traceability'?'Search batch number or product':selected==='PR / PO Summary'?'Search PO or PR number':state.category==='purchases'?'Search PO, PR or supplier':'Search product or batch';
+}
+function renderQuickViewSwitch(selected){
+    const views=reportViews[state.category]||[];
+    let select=qs('#quickReportView');
+    if(views.length<=1){if(select)select.hidden=true;return;}
+    if(!select){select=document.createElement('select');select.id='quickReportView';select.className='form-select form-select-sm';select.setAttribute('aria-label','Report view');qs('.report-heading-actions').prepend(select);}
+    select.hidden=false;
+    const markup=views.map(view=>`<option ${view===selected?'selected':''}>${esc(view)}</option>`).join('');
+    if(select.innerHTML!==markup)select.innerHTML=markup;
 }
 function setSelect(select,items,placeholder){
     const previous=select.dataset.initial??select.value;delete select.dataset.initial;
@@ -148,7 +158,7 @@ function syncDependentOptions(clearInvalid=true){
 }
 function updateVisibleFilters(){
     const view=qs('[name="report_view"]'),previous=view.dataset.initial||view.value;view.innerHTML=reportViews[state.category].map(x=>`<option>${x}</option>`).join('');if(reportViews[state.category].includes(previous))view.value=previous;delete view.dataset.initial;
-    qs('.report-layout').classList.toggle('inventory-expanded',state.category==='inventory'&&reportViews.inventory?.length===1);
+    qs('.report-layout').classList.toggle('inventory-expanded',(reportViews[state.category]||[]).length<=1);
     const inventoryView=view.value;
     const salesFields={
         'Sales Summary':['view','dates'],
@@ -226,11 +236,9 @@ function comparisonRangeLabel(data){
 }
 function salesComparisonBadge(card){
     const comparison=card.comparison;
-    if(comparison?.state==='disabled')return `<small class="summary-change is-neutral" title="Comparison has been turned off">Comparison off</small>`;
+    if(comparison?.state==='disabled'||!comparison||comparison.state==='unavailable'||comparison.state==='no_activity')return '';
     if(comparison?.state==='no_prior_snapshot'||comparison?.state==='tracking_started'){const baseline=comparison.snapshot_date?reportDate(comparison.snapshot_date,{month:'short',day:'numeric',year:'numeric'}):'today';return `<small class="summary-change is-baseline" title="Daily inventory history starts ${esc(baseline)}. A percentage will appear when the comparison period includes a saved inventory snapshot.">Tracking since: ${esc(baseline)}</small>`;}
-    if(!comparison||comparison.state==='unavailable')return `<small class="summary-change is-neutral" title="A comparable value could not be calculated for the previous period">Comparison unavailable</small>`;
     if(comparison.is_new||comparison.state==='new')return `<small class="summary-change is-good" aria-label="This metric was zero in the previous period and is present now">↗ New</small>`;
-    if(comparison.state==='no_activity')return `<small class="summary-change is-neutral" title="There was no activity in either period">No activity</small>`;
     const change=Number(comparison.percent),direction=change>0?'up':change<0?'down':'flat';
     const arrow=change>0?'↗':change<0?'↘':'→';
     return `<small class="summary-change is-${direction}" aria-label="${Math.abs(change).toFixed(1)} percent ${direction} from the previous period">${arrow} ${Math.abs(change).toFixed(1)}%</small>`;
@@ -239,9 +247,9 @@ function reportContextBadge(card,data){
     if(card.comparison)return salesComparisonBadge(card);
     const view=qs('[name="report_view"]').value;
     const snapshotOverviewMetrics=['Inventory Cost','Cost at Risk','Total On Hand','Shelf Stock','Storage Stock','Low-Stock Products','Out-of-Stock Products'];
-    if(card.report_context){const snapshot=card.report_context==='snapshot',hasValue=card.value!==null&&card.value!==undefined;return `<small class="summary-change is-neutral" title="${snapshot?(hasValue?'Current inventory value. Daily inventory history is now being saved for future period comparisons.':'No current inventory value is available.'):'Compared with the matching previous date range.'}">${snapshot?(hasValue?'Live snapshot':'No prior data'):'Selected period'}</small>`;}
+    if(card.report_context){const snapshot=card.report_context==='snapshot',hasValue=card.value!==null&&card.value!==undefined;if(!(snapshot&&hasValue))return '';return `<small class="summary-change is-snapshot" title="Current inventory value. Daily inventory history is now being saved for future period comparisons.">Live snapshot</small>`;}
     const liveSnapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||state.category==='expiry'||(state.category==='overview'&&snapshotOverviewMetrics.includes(card.title));
-    return `<small class="summary-change is-neutral" title="${liveSnapshot?'This measure is a current inventory snapshot; historical snapshots are not stored.':'A comparable value could not be calculated for the previous period.'}">${liveSnapshot?'Live snapshot':'Comparison unavailable'}</small>`;
+    return liveSnapshot?`<small class="summary-change is-snapshot" title="This measure is a current inventory snapshot; historical snapshots are not stored.">Live snapshot</small>`:'';
 }
 function comparisonPeriodNote(data){const range=comparisonRangeLabel(data);return range?`<span class="summary-period-note">vs ${esc(range)}</span>`:'';}
 function selectedPeriodNote(data){
@@ -252,11 +260,12 @@ function selectedPeriodNote(data){
 function cardComparisonPeriodNote(card,data){return state.category==='inventory'&&card.report_context==='snapshot'?'':comparisonPeriodNote(data);}
 function cardSelectedPeriodNote(card,data){return state.category==='inventory'&&card.report_context==='snapshot'?'':selectedPeriodNote(data);}
 function reportAccountScope(data){
-    if(data?.account_scope)return data.account_scope;
-    if(data?.access?.cashier)return 'Sales assigned to your cashier account';
-    if(data?.access?.sales_clerk)return 'Sales orders assigned to your sales clerk account';
-    if(data?.access?.supervisor)return 'Records available to your supervisor account';
-    return 'All accounts, limited by the filters shown';
+    const access=data?.access||{},view=qs('[name="report_view"]')?.value||'';
+    if(access.management)return 'All accounts';
+    if(access.supervisor)return 'Your supervisor records';
+    if((access.sales_clerk&&state.category==='products')||(access.cashier&&view==='Product Sales'))return 'All accounts';
+    if(access.cashier||access.sales_clerk)return 'Your completed payments';
+    return 'All accounts';
 }
 function reportPrintMetaNode(id,label){
     const section=qs('.report-print-metadata');if(!section)return null;
@@ -301,7 +310,7 @@ function renderComparisonLegend(data){
     const target=qs('#reportComparisonLegend');
     const show=Boolean(data.comparison_period)&&state.comparisonMode!=='none';
     target.hidden=!show;
-    target.textContent=show?'Comparison: percentages compare the selected range with the period shown. “New” means the previous value was zero; “No activity” means both periods were zero; “Comparison unavailable” means a matching historical value could not be calculated.':'';
+    target.textContent=show?'Comparison: percentages compare the selected range with the period shown. “New” means the previous value was zero.':'';
 }
 function renderDataQualityNotice(data){
     const target=qs('#reportQualityNotice'),profit=(data.summary||[]).find(card=>['Gross Profit','Estimated Gross Profit'].includes(card.title));
@@ -383,17 +392,17 @@ function renderSummaryCards(data){
     target.classList.toggle('purchase-summary',Boolean(purchaseSummary));
     target.classList.toggle('inventory-overview-summary',state.category==='inventory'&&view==='Inventory Overview');
     if(purchaseSummary){
-        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${comparisonPeriodNote(data)}${data.comparison_period?selectedPeriodNote(data):index===0?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${index===0?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>`:''}</article>`).join('');
+        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${index===0?comparisonPeriodNote(data):''}${index===0&&!data.comparison_period?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${index===0?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>`:''}</article>`).join('');
         return;
     }
-    if(!salesSummary){const inventoryOverview=state.category==='inventory'&&view==='Inventory Overview',inventoryPriority={'On Hand Units':0,'Storage':1,'Total Inventory Cost':2},cards=inventoryOverview?[...(data.summary||[])].sort((a,b)=>(inventoryPriority[a.title]??Number.MAX_SAFE_INTEGER)-(inventoryPriority[b.title]??Number.MAX_SAFE_INTEGER)):orderFinancialCards(data.summary);target.innerHTML=cards.map((card,index)=>{const inventoryHighlight=inventoryOverview&&['Storage','Total Inventory Cost'].includes(card.title),inventoryFeatured=inventoryOverview&&['On Hand Units','Storage','Total Inventory Cost'].includes(card.title),inventoryDescription=card.title==='Storage'?'Units currently kept in Storage rather than on the Shelf.':card.title==='Total Inventory Cost'?'Recorded cost of active, unexpired stock currently on hand.':'';return `<article class="summary-card tone-${esc(card.tone||'purple')} ${index===0?'report-primary-metric':''} ${isFinancialHighlight(card)||inventoryHighlight?'report-highlight-metric':''} ${inventoryFeatured?'inventory-featured-metric':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}" aria-hidden="true"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${cardComparisonPeriodNote(card,data)}${data.comparison_period?cardSelectedPeriodNote(card,data):index===0?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${inventoryHighlight?`<p class="financial-metric-description">${esc(inventoryDescription)}</p>`:''}${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0&&!isFinancialHighlight(card)?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}`:''}</article>`;}).join('');return;}
-    const rangeStart=new Date(`${data.system.date_range.start}T00:00:00`),rangeEnd=new Date(`${data.system.date_range.end}T00:00:00`),period=data.comparison_period||{days:Math.max(1,Math.round((rangeEnd-rangeStart)/86400000)+1)},currentRange=qs('#reportDateRange')?.textContent?.trim()||'selected period';
-    target.innerHTML=orderFinancialCards(data.summary,true).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''} ${isFinancialHighlight(card)?'sales-metric-highlight':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${comparisonPeriodNote(data)}${index===0?`<span>for ${esc(currentRange)}</span>`:selectedPeriodNote(data)}</div>${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0?`${salesTrendIndicator(data,card)}<p class="summary-explanation">${card.title==='Gross Sales'?'Sales before discounts': 'Completed sales after discounts and refunds'} over ${period.days} day${period.days===1?'':'s'}</p>`:''}</article>`).join('');
+    if(!salesSummary){const inventoryOverview=state.category==='inventory'&&view==='Inventory Overview',inventoryPriority={'On Hand Units':0,'Storage':1,'Total Inventory Cost':2},cards=inventoryOverview?[...(data.summary||[])].sort((a,b)=>(inventoryPriority[a.title]??Number.MAX_SAFE_INTEGER)-(inventoryPriority[b.title]??Number.MAX_SAFE_INTEGER)):orderFinancialCards(data.summary);target.innerHTML=cards.map((card,index)=>{const inventoryHighlight=inventoryOverview&&['Storage','Total Inventory Cost'].includes(card.title),inventoryFeatured=inventoryOverview&&['On Hand Units','Storage','Total Inventory Cost'].includes(card.title),inventoryDescription=card.title==='Storage'?'Units currently kept in Storage rather than on the Shelf.':card.title==='Total Inventory Cost'?'Recorded cost of active, unexpired stock currently on hand.':'';return `<article class="summary-card tone-${esc(card.tone||'purple')} ${index===0?'report-primary-metric':''} ${isFinancialHighlight(card)||inventoryHighlight?'report-highlight-metric':''} ${inventoryFeatured?'inventory-featured-metric':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}" aria-hidden="true"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${index===0?cardComparisonPeriodNote(card,data):''}${index===0&&!data.comparison_period?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${inventoryHighlight?`<p class="financial-metric-description">${esc(inventoryDescription)}</p>`:''}${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0&&!isFinancialHighlight(card)?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}`:''}</article>`;}).join('');return;}
+    const rangeStart=new Date(`${data.system.date_range.start}T00:00:00`),rangeEnd=new Date(`${data.system.date_range.end}T00:00:00`),period=data.comparison_period||{days:Math.max(1,Math.round((rangeEnd-rangeStart)/86400000)+1)};
+    target.innerHTML=orderFinancialCards(data.summary,true).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''} ${isFinancialHighlight(card)?'sales-metric-highlight':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${index===0?comparisonPeriodNote(data):''}</div>${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0?`${salesTrendIndicator(data,card)}<p class="summary-explanation">${card.title==='Gross Sales'?'Sales before discounts': 'Completed sales after discounts and refunds'} over ${period.days} day${period.days===1?'':'s'}</p>`:''}</article>`).join('');
 }
 function renderReport(data){
     qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.remove('d-none');
     qs('#summaryCards').hidden=false;qs('#reportCharts').hidden=false;
-    qs('.report-layout').classList.toggle('inventory-expanded',state.category==='inventory'&&reportViews.inventory?.length===1);
+    qs('.report-layout').classList.toggle('inventory-expanded',(reportViews[state.category]||[]).length<=1);
     qs('#reportContent').classList.toggle('is-overview',state.category==='overview');
     state.defaultStart=data.system.date_range.start;state.defaultEnd=data.system.date_range.end;const form=qs('#reportFilters');if(!form.elements.start_date.value)form.elements.start_date.value=state.defaultStart;if(!form.elements.end_date.value)form.elements.end_date.value=state.defaultEnd;
     const generated=new Date(data.system.generated_at);qs('#reportGenerated').textContent=`Generated ${generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} · ${reportTimezoneLabel(data.system.timezone)} · ${data.system.generated_by}`;updateReportFreshness(data,generated);
@@ -404,7 +413,7 @@ function renderReport(data){
 
     qs('#reportPeriodLabel').textContent=state.category==='inventory'&&qs('[name="report_view"]').value==='Inventory Overview'?'Live inventory + selected period':state.category==='inventory'&&qs('[name="report_view"]').value!=='Stock Movement'&&qs('[name="report_view"]').value!=='Fast / Slow Moving'?'Live inventory snapshot':state.period==='custom'?'Custom date range':state.period==='month'?'This month':state.period==='today'?'Today':state.period==='yesterday'?'Yesterday':`Last ${state.period} days`;
     setPeriodSelection(state.period);
-    renderViewMenu();renderReferenceControls();
+    renderViewMenu();const scopeLabel=reportAccountScope(data),viewLabel=viewDescriptions[qs('[name="report_view"]').value]||qs('#reportViewDescription').textContent;qs('#reportViewDescription').textContent=scopeLabel?`${viewLabel} ${scopeLabel}.`:viewLabel;renderReferenceControls();
     const categoryName=(qs('#reportGroupTitle').textContent || 'Pharmacy').replace(/\s+reports?$/i,'');
     qs('#reportPrintTitle').textContent=state.category==='overview'?(data.access?.supervisor?'INVENTORY OVERVIEW REPORT':'OVERALL PHARMACY REPORT'):`${categoryName} Report`.toUpperCase();
     qs('#reportPrintCategory').textContent=state.category==='overview'?(data.access?.supervisor?'Inventory supervisor summary':'Pharmacy operations summary'):qs('#reportViewTitle').textContent || 'Report details';
@@ -431,20 +440,29 @@ function renderRanking(data){
     if(state.category==='purchases'&&view==='PR / PO Summary'){
         const orders=data.top_purchase_orders||[],max=Math.max(1,...orders.map(order=>Number(order.value)||0));
         target.hidden=false;
-        target.innerHTML=`<div class="ranking-heading"><h2>Top 5 by total</h2><p>Within the current filters</p></div><div class="ranking-list">${orders.length?orders.map(order=>`<div class="ranking-item"><div><span>${esc(order.label)}</span><strong>${esc(money.format(Number(order.value)||0))}</strong></div><div class="ranking-track"><span style="width:${100*(Number(order.value)||0)/max}%"></span></div></div>`).join(''):'<p class="ranking-empty">No purchase orders in this period.</p>'}</div>`;
+        target.innerHTML=`<div class="ranking-heading"><h2>Highest purchase orders</h2><p>Within the current filters</p></div><div class="ranking-list">${orders.length?orders.map(order=>`<div class="ranking-item"><div><span>${esc(order.label)}</span><strong>${esc(money.format(Number(order.value)||0))}</strong></div><div class="ranking-track"><span style="width:${100*(Number(order.value)||0)/max}%"></span></div></div>`).join(''):'<p class="ranking-empty">No purchase orders in this period.</p>'}</div>`;
         return;
     }
-    if(!chart||view==='Batch Traceability'||state.category==='overview'){target.hidden=true;target.innerHTML='';return;}
-    const topTwentyProductSales=state.category==='sales'&&view==='Product Sales'&&Boolean(data.access?.management),topTwentyInventory=state.category==='inventory'&&view==='Inventory Overview',rowLimit=topTwentyProductSales||topTwentyInventory?20:5;
-    const rows=chart.rows.map(row=>({...row,rankValue:Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))})).filter(row=>row.rankValue>0).sort((a,b)=>b.rankValue-a.rankValue).slice(0,rowLimit);
+    if(!chart||chart.id==='daily-net-sales'||state.category==='products'||view==='Batch Traceability'||state.category==='overview'){target.hidden=true;target.innerHTML='';return;}
+    const salesRanking=state.category==='sales',productRanking=state.category==='products',topTwentyInventory=state.category==='inventory'&&view==='Inventory Overview',staffRanking=state.category==='staff',supplierRanking=state.category==='supplier',dailyNetSales=chart.id==='daily-net-sales',rowLimit=dailyNetSales?chart.rows.length:salesRanking||productRanking||topTwentyInventory?20:staffRanking?10:5;
+    const ranked=chart.rows.map(row=>({...row,rankValue:Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))})).filter(row=>row.rankValue>0);
+    const rows=(dailyNetSales?ranked.sort((a,b)=>String(a.raw_date||a.label).localeCompare(String(b.raw_date||b.label))):ranked.sort((a,b)=>b.rankValue-a.rankValue)).slice(0,rowLimit);
     if(!rows.length){target.hidden=true;target.innerHTML='';return;}
     const currency=/sales|cost|value|revenue|paid|payable|purchase/i.test(chart.title),metric=currency?value=>money.format(value):value=>number.format(value);
-    const rankingTitle=topTwentyProductSales?'Top 20 products by sales':topTwentyInventory?'Top 20 by on-hand units by product':`Top ${rows.length} by ${chart.title.toLowerCase()}`;
-    target.hidden=false;target.innerHTML=`<div class="ranking-heading"><div><h2>${esc(rankingTitle)}</h2><p>Within the current filters</p></div></div><div class="ranking-chart-box" style="height:${Math.max(160,rows.length*(topTwentyInventory?28:topTwentyProductSales?40:44))}px"><canvas id="reportRankingChart" role="img" aria-label="${esc(rankingTitle)}"></canvas></div>`;
+    const staffTitles={'Shift Reports':'Peak collection days','Transaction History':'Highest sales days','Audit Activity':'Busiest modules','Staff Performance Summary':'Highest sales'};
+    const rankingTitle=salesRanking&&view==='Product Sales'?'Products with sales':topTwentyInventory?'Products on hand':productRanking?chart.title:dailyNetSales?'Daily net sales':salesRanking?chart.title:staffRanking?(staffTitles[view]||chart.title):supplierRanking?`Top 5 by ${chart.title.toLowerCase()}`:chart.title;
+    const rankingNote=dailyNetSales?'Completed payments for each day in the selected dates.':'Within the current filters';
+    target.hidden=false;target.innerHTML=`<div class="ranking-heading"><div><h2>${esc(rankingTitle)}</h2><p>${esc(rankingNote)}</p></div></div><div class="ranking-chart-box" style="height:${dailyNetSales?270:Math.max(160,rows.length*(salesRanking||productRanking||topTwentyInventory?32:44))}px"><canvas id="reportRankingChart" role="img" aria-label="${esc(rankingTitle)}"></canvas></div>`;
     if(typeof Chart==='undefined')return;
-    const values=rows.map(row=>row.rankValue),labels=rows.map(row=>row.label),colors=semanticChartColors(rows,chart.tone);
-    const dataset={label:chart.title,data:values,backgroundColor:colors,borderRadius:7,borderSkipped:false,maxBarThickness:28};
-    const instance=new Chart(qs('#reportRankingChart'),{type:'bar',data:{labels,datasets:[dataset]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:160},plugins:{legend:{display:false},tooltip:{callbacks:{label:context=>metric(context.raw)}}},scales:{x:{beginAtZero:true,grid:{color:'rgba(148,163,184,.16)'},ticks:{callback:value=>currency?money.format(value):number.format(value)}},y:{grid:{display:false},ticks:{autoSkip:false}}}}});
+    const values=rows.map(row=>row.rankValue),labels=dailyNetSales?rows.map(row=>reportDate(row.raw_date||row.label,{month:'short',day:'numeric'})):rows.map(row=>row.label),colors=semanticChartColors(rows,chart.tone);
+    const lineFill=context=>{const area=context.chart.chartArea;if(!area)return 'rgba(91,76,240,.14)';const gradient=context.chart.ctx.createLinearGradient(0,area.top,0,area.bottom);gradient.addColorStop(0,'rgba(91,76,240,.25)');gradient.addColorStop(1,'rgba(91,76,240,.015)');return gradient;};
+    const dataset=dailyNetSales
+        ?{label:'Net sales',data:values,backgroundColor:lineFill,borderColor:tones.sales,borderWidth:3,fill:true,tension:.35,pointRadius:4,pointHoverRadius:7,pointBackgroundColor:'#fff',pointBorderColor:tones.sales,pointBorderWidth:2}
+        :{label:chart.title,data:values,backgroundColor:colors,borderRadius:7,borderSkipped:false,maxBarThickness:28};
+    const chartOptions=dailyNetSales
+        ?{type:'line',data:{labels,datasets:[dataset]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},animation:{duration:160},plugins:{legend:{display:false},tooltip:{displayColors:false,callbacks:{label:context=>`Net sales: ${metric(context.raw)}`}}},scales:{x:{grid:{display:false},ticks:{autoSkip:true,maxRotation:0}},y:{beginAtZero:true,grid:{color:'rgba(148,163,184,.16)'},ticks:{callback:value=>metric(value)}}}}}
+        :{type:'bar',data:{labels,datasets:[dataset]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:160},plugins:{legend:{display:false},tooltip:{callbacks:{label:context=>metric(context.raw)}}},scales:{x:{beginAtZero:true,grid:{color:'rgba(148,163,184,.16)'},ticks:{callback:value=>currency?money.format(value):number.format(value)}},y:{grid:{display:false},ticks:{autoSkip:false}}}}};
+    const instance=new Chart(qs('#reportRankingChart'),chartOptions);
     state.charts.set(`ranking:${chart.id}`,instance);
 }
 function renderReferenceControls(){
@@ -498,23 +516,66 @@ function reportDate(value,options={month:'short',day:'numeric'}){
     const match=String(value??'').match(/^(\d{4})-(\d{2})-(\d{2})/);if(!match)return String(value??'');
     return new Intl.DateTimeFormat('en-PH',options).format(new Date(Number(match[1]),Number(match[2])-1,Number(match[3])));
 }
+function orderStatusSentence(rows){
+    const clause={'Waiting for payment':n=>`${n} ${n===1?'order is':'orders are'} still waiting for payment`,'Payment in progress':n=>`${n} ${n===1?'order is':'orders are'} in the middle of payment`,'Paid':n=>`${n} ${n===1?'order is':'orders are'} already paid`,'Waiting for a cashier':n=>`${n} ${n===1?'order is':'orders are'} waiting for a cashier`,'Not sent yet':n=>`${n} ${n===1?'order has':'orders have'} not been sent yet`,'Cancelled':n=>`${n} ${n===1?'order was':'orders were'} cancelled`,'Rejected':n=>`${n} ${n===1?'order was':'orders were'} rejected`};
+    const parts=rows.map(row=>{const n=Number(row.value);return clause[row.label]?clause[row.label](n):`${number.format(n)} ${row.label}`;});
+    if(parts.length<2)return `${parts[0]||'No orders in this period'}.`;
+    return `${parts.slice(0,-1).join(', ')}, and ${parts.at(-1)}.`;
+}
+function mergedProductRows(charts){
+    const quantity=charts.find(chart=>chart.id==='top-qty'),revenue=charts.find(chart=>chart.id==='top-revenue');
+    if(!quantity||!revenue)return [];
+    const rows=new Map();
+    (quantity.rows||[]).forEach(row=>{const value=Number(row.value)||0;if(value>0)rows.set(row.label,{label:row.label,quantity:value,revenue:0});});
+    (revenue.rows||[]).forEach(row=>{const value=Number(row.value)||0;if(value<=0)return;const entry=rows.get(row.label)||{label:row.label,quantity:0,revenue:0};entry.revenue=value;rows.set(row.label,entry);});
+    return [...rows.values()].filter(row=>row.quantity>0||row.revenue>0);
+}
+function drawProductReportChart(){
+    const card=qs('#productModeChart')?.closest('.chart-card');
+    if(!card)return;
+    const mode=state.productMode==='revenue'?'revenue':'quantity',currency=mode==='revenue';
+    const rows=[...(state.productRows||[])].sort((a,b)=>b[mode]-a[mode]).filter(row=>row[mode]>0).slice(0,20);
+    card.querySelectorAll('[data-product-mode]').forEach(button=>{const active=button.dataset.productMode===mode;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+    const context=card.querySelector('.product-chart-context');if(context)context.textContent=currency?'Ranked by net sales':'Ranked by units sold';
+    const summary=card.querySelector('.chart-summary');
+    const existing=state.charts.get('product-mode');if(existing){existing.destroy();state.charts.delete('product-mode');}
+    if(!rows.length){if(summary)summary.textContent='No completed sales for the selected period.';return;}
+    const top=rows[0],topQty=Number(top.quantity)||0;
+    if(summary)summary.textContent=`${top.label} is highest at ${currency?money.format(top.revenue):`${number.format(topQty)} ${topQty===1?'unit':'units'}`}.`;
+    const canvas=qs('#productModeChart'),box=canvas.closest('.chart-box');
+    if(box)box.style.height=`${Math.min(280,Math.max(180,rows.length*46))}px`;
+    const instance=new Chart(canvas,{type:'bar',data:{labels:rows.map(row=>row.label),datasets:[{label:currency?'Net sales':'Units sold',data:rows.map(row=>row[mode]),backgroundColor:currency?tones.sales:tones.inventory,borderRadius:7,borderSkipped:false,maxBarThickness:28}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:160},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{const row=rows[ctx.dataIndex],qty=Number(row.quantity)||0;return currency?`${money.format(row.revenue)} net sales · ${number.format(qty)} ${qty===1?'unit':'units'} sold`:`${number.format(qty)} ${qty===1?'unit':'units'} sold · ${money.format(row.revenue)} net sales`;}}}},scales:{x:{beginAtZero:true,grid:{color:'rgba(148,163,184,.16)'},ticks:{callback:value=>currency?money.format(value):number.format(value)}},y:{grid:{display:false},ticks:{autoSkip:false}}}}});
+    state.charts.set('product-mode',instance);
+}
 function renderCharts(charts){
     // ✅ FIX: guard against undefined/non-array
     charts = Array.isArray(charts) ? charts : [];
-    const useful=charts.filter(chart=>chart && (chart.id==='my-order-status'||(chart.rows||[]).some(r=>Number(r.value)>0||Number(r.paid)>0||Number(r.outstanding)>0)||chart.href));
-    const target=qs('#reportCharts');target.classList.toggle('single-chart',useful.length===1);
-    target.innerHTML=useful.map((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0),heading=`<div class="panel-heading"><h2>${esc(chart.title)}</h2>${chart.href?`<a class="report-link" href="${esc(chart.href)}">${esc(chart.link_label||'View Report')} <i class="fa-solid fa-arrow-right"></i></a>`:''}</div>`;if(chart.type==='stacked-bar'){const max=Math.max(1,...chart.rows.map(r=>Number(r.paid||0)+Number(r.outstanding||0)));return `<article class="chart-card">${heading}<div class="payment-chart-legend"><span><i></i>Paid</span><span><i></i>Outstanding</span></div><div class="payment-chart">${chart.rows.map(r=>`<div class="payment-chart-row"><span>${esc(r.label)}</span><div class="payment-chart-track"><i style="width:${100*Number(r.paid||0)/max}%"></i><b style="width:${100*Number(r.outstanding||0)/max}%"></b></div></div>`).join('')}</div></article>`;}if(positive.length===0)return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="compact-empty">No records in the selected period.</div></article>`;if((positive.length===1&&chart.type!=='bar'&&chart.type!=='line')||chart.type==='doughnut'&&positive.length<2){const row=positive[0],singleSummary=chart.overview_trend?`Net sales were ${money.format(row.value)} on ${reportDate(row.raw_date||row.label,{month:'long',day:'numeric',year:'numeric'})}, from ${number.format(row.secondary)} completed transaction${Number(row.secondary)===1?'':'s'}.`:'Only one meaningful category is available, so a compact summary replaces the chart.';return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="ranked-insight"><span>${esc(row.label)}</span><strong>${esc(format(row.value,/sales|cost|revenue|payable/i.test(chart.title)?'currency':'number'))}</strong></div><p class="chart-summary">${esc(singleSummary)}</p></article>`;}const chartHeight=chart.orientation==='horizontal'?Math.max(270,positive.length*36):270;return `<article class="chart-card">${heading}<div class="chart-box" style="height:${chartHeight}px"><canvas id="reportChart${index}" role="img" aria-label="${esc(chart.title)}"></canvas></div><p class="chart-summary" id="chartSummary${index}"></p></article>`;}).join('');
+    const productRows=state.category==='products'?mergedProductRows(charts):[];
+    const combineProducts=productRows.length>0;
+    state.productRows=combineProducts?productRows:[];
+    const source=combineProducts?charts.filter(chart=>chart.id!=='top-qty'&&chart.id!=='top-revenue'):charts;
+    const useful=source.filter(chart=>chart && (chart.id==='my-order-status'||(chart.rows||[]).some(r=>Number(r.value)>0||Number(r.paid)>0||Number(r.outstanding)>0)||chart.href));
+    const paired=state.category==='sales'&&qs('[name="report_view"]')?.value==='Sales Summary'&&useful.length>1;
+    const target=qs('#reportCharts');target.classList.toggle('single-chart',useful.length===1);target.classList.toggle('chart-pair',paired);
+    target.innerHTML=useful.map((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0),heading=`<div class="panel-heading"><div class="chart-heading-copy"><h2>${esc(chart.title)}</h2>${chart.caption?`<p class="chart-caption">${esc(chart.caption)}</p>`:''}</div>${chart.href?`<a class="report-link" href="${esc(chart.href)}">${esc(chart.link_label||'View Report')} <i class="fa-solid fa-arrow-right"></i></a>`:''}</div>`;if(chart.type==='stacked-bar'){const max=Math.max(1,...chart.rows.map(r=>Number(r.paid||0)+Number(r.outstanding||0)));return `<article class="chart-card">${heading}<div class="payment-chart-legend"><span><i></i>Paid</span><span><i></i>Outstanding</span></div><div class="payment-chart">${chart.rows.map(r=>`<div class="payment-chart-row"><span>${esc(r.label)}</span><div class="payment-chart-track"><i style="width:${100*Number(r.paid||0)/max}%"></i><b style="width:${100*Number(r.outstanding||0)/max}%"></b></div></div>`).join('')}</div></article>`;}if(positive.length===0)return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="compact-empty">No records in the selected period.</div></article>`;const onePointLine=chart.type==='line'&&!(state.category==='inventory'&&qs('[name="report_view"]')?.value==='Inventory Overview')&&positive.length<2;if(onePointLine||(positive.length===1&&chart.type!=='bar'&&chart.type!=='line')||(chart.type==='doughnut'&&positive.length<2)){const row=positive[0],currency=/sales|cost|revenue|payable|value/i.test(chart.title),when=reportDate(row.raw_date||row.label,{month:'long',day:'numeric',year:'numeric'}),amount=format(row.value,currency?'currency':'number'),dated=onePointLine&&(row.raw_date||/^\d{4}-\d{2}-\d{2}/.test(String(row.label))),singleSummary=onePointLine?'':(chart.overview_trend?`Net sales were ${money.format(row.value)} on ${when}, from ${number.format(row.secondary)} completed transaction${Number(row.secondary)===1?'':'s'}.`:'Only one meaningful category is available, so a compact summary replaces the chart.');return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="ranked-insight"><span>${esc(dated?when:row.label)}</span><strong>${esc(amount)}</strong></div>${singleSummary?`<p class="chart-summary">${esc(singleSummary)}</p>`:''}</article>`;}const chartHeight=paired?200:chart.id==='my-sold-products'?Math.max(320,(chart.rows||[]).length*32):chart.id==='my-order-status'?Math.max(168,positive.length*72):chart.orientation==='horizontal'?Math.max(270,positive.length*36):270;return `<article class="chart-card">${heading}<div class="chart-box" style="height:${chartHeight}px"><canvas id="reportChart${index}" role="img" aria-label="${esc(chart.title)}"></canvas></div><p class="chart-summary" id="chartSummary${index}"></p></article>`;}).join('');
     useful.forEach((chart,index)=>{
         const positive=(chart.rows||[]).filter(row=>Number(row.value)>0);
         if(chart.type==='stacked-bar'||positive.length===0||!qs(`#reportChart${index}`)||typeof Chart==='undefined')return;
-        const inventoryOverview=state.category==='inventory'&&qs('[name="report_view"]').value==='Inventory Overview',line=chart.type==='line'||inventoryOverview,plotRows=line?chart.rows:positive,values=plotRows.map(row=>Number(row.value)),rawLabels=plotRows.map(row=>row.label),labels=chart.overview_trend?rawLabels.map(label=>reportDate(label)):rawLabels,currency=/sales|cost|revenue|payable|value/i.test(chart.title),horizontal=!inventoryOverview&&chart.orientation==='horizontal',chartType=line?'line':chart.type;
+        const inventoryOverview=state.category==='inventory'&&qs('[name="report_view"]').value==='Inventory Overview',singleDay=chart.type==='line'&&!inventoryOverview&&positive.length<2,line=(chart.type==='line'||inventoryOverview)&&!singleDay,plotRows=chart.id==='my-sold-products'?(chart.rows||[]):(line?chart.rows:positive),values=plotRows.map(row=>Number(row.value)),rawLabels=plotRows.map(row=>row.label),labels=chart.overview_trend||singleDay?rawLabels.map(label=>reportDate(label,{month:'short',day:'numeric'})):rawLabels,currency=/sales|cost|revenue|payable|value/i.test(chart.title),horizontal=!inventoryOverview&&chart.orientation==='horizontal',chartType=line?'line':singleDay?'bar':chart.type;
         const colors=semanticChartColors(plotRows,chart.tone),seriesColor=inventoryOverview?tones.inventory:(colors[0]||tones.sales),lineFill=context=>{const area=context.chart.chartArea,fillTop=inventoryOverview?'rgba(15,159,146,.24)':'rgba(91,76,240,.25)',fillBottom=inventoryOverview?'rgba(15,159,146,.015)':'rgba(91,76,240,.015)';if(!area)return inventoryOverview?'rgba(15,159,146,.14)':'rgba(91,76,240,.14)';const gradient=context.chart.ctx.createLinearGradient(0,area.top,0,area.bottom);gradient.addColorStop(0,fillTop);gradient.addColorStop(1,fillBottom);return gradient;},dataset={label:chart.title,data:values,backgroundColor:line?lineFill:colors,borderColor:line?seriesColor:colors,borderWidth:line?3:1,borderRadius:chartType==='bar'?5:0,borderSkipped:false,maxBarThickness:chartType==='bar'?34:undefined};
         if(line)Object.assign(dataset,{fill:true,tension:.35,pointRadius:4,pointHoverRadius:7,pointBackgroundColor:'#fff',pointBorderColor:seriesColor,pointBorderWidth:2,pointHoverBackgroundColor:seriesColor,pointHoverBorderColor:'#fff',pointHoverBorderWidth:2});
-        const chartHeight=chart.type==='line'&&plotRows.length>12?Math.max(320,Math.min(520,plotRows.length*24)):undefined;
+        const chartHeight=!paired&&chart.type==='line'&&plotRows.length>12?Math.max(320,Math.min(520,plotRows.length*24)):undefined;
         const canvasCard=qs(`#reportChart${index}`)?.closest('.chart-box');if(canvasCard&&chartHeight)canvasCard.style.height=`${chartHeight}px`;
         const instance=new Chart(qs(`#reportChart${index}`),{type:chartType,data:{labels,datasets:[dataset]},options:{responsive:true,maintainAspectRatio:false,indexAxis:horizontal?'y':'x',interaction:line?{mode:'index',intersect:false}:undefined,animation:{duration:350},plugins:{legend:{display:chartType==='doughnut',position:'bottom'},tooltip:{backgroundColor:line?'#201a52':undefined,titleColor:line?'#ddd6fe':undefined,bodyColor:line?'#fff':undefined,padding:line?12:undefined,cornerRadius:line?10:undefined,displayColors:line?false:undefined,callbacks:{title:items=>chart.overview_trend?reportDate(plotRows[items[0].dataIndex].raw_date||rawLabels[items[0].dataIndex],{month:'long',day:'numeric',year:'numeric'}):items[0].label,label:ctx=>{const row=plotRows[ctx.dataIndex],metric=/net sales/i.test(chart.title)?'Net sales':chart.title,lines=[`${metric}: ${currency?money.format(ctx.raw):number.format(ctx.raw)}`];if(row.secondary!==undefined)lines.push(`Completed transactions: ${number.format(row.secondary)}`);return lines;}}}},scales:chartType==='doughnut'?{}:{x:{beginAtZero:horizontal,grid:{display:line?false:!horizontal},ticks:{autoSkip:line,callback:function(value){if(horizontal)return currency?money.format(value):number.format(value);return this.getLabelForValue(value);}}},y:{beginAtZero:line||!horizontal,grid:{display:line},ticks:{callback:function(value){if(line)return currency?money.format(value):number.format(value);if(!horizontal&&currency)return money.format(value);return this.getLabelForValue(value);}}}}}});
-        state.charts.set(chart.id,instance);const max=Math.max(...positive.map(row=>Number(row.value))),maxIndex=positive.findIndex(row=>Number(row.value)===max),label=positive[maxIndex].label;qs(`#chartSummary${index}`).textContent=chart.overview_trend?`Highest net sales were ${money.format(max)} on ${reportDate(positive[maxIndex].raw_date||label,{month:'long',day:'numeric',year:'numeric'})}.`:`${label} is highest at ${currency?money.format(max):number.format(max)}.`;
+        if(chart.id==='my-order-status'&&instance.options.scales?.x){instance.options.scales.x.ticks.precision=0;instance.options.scales.x.ticks.stepSize=1;instance.options.plugins.tooltip.callbacks.label=ctx=>`${number.format(ctx.raw)} ${Number(ctx.raw)===1?'order':'orders'}`;instance.update();}
+        if(chart.id==='my-sold-products'&&instance.options.scales?.y){instance.options.scales.y.ticks.autoSkip=false;instance.update();}
+        state.charts.set(chart.id,instance);const max=Math.max(...positive.map(row=>Number(row.value))),maxIndex=positive.findIndex(row=>Number(row.value)===max),label=positive[maxIndex].label;qs(`#chartSummary${index}`).textContent=chart.id==='my-sold-products'?`${label} has the highest sales at ${money.format(max)}. This list shows ${number.format((chart.rows||[]).length)} products.`:chart.id==='my-order-status'?orderStatusSentence(positive):chart.overview_trend?`Highest net sales were ${money.format(max)} on ${reportDate(positive[maxIndex].raw_date||label,{month:'long',day:'numeric',year:'numeric'})}.`:`${label} is highest at ${currency?money.format(max):number.format(max)}.`;
     });
+    if(!combineProducts)return;
+    const mode=state.productMode==='revenue'?'revenue':'quantity';
+    target.insertAdjacentHTML('afterbegin',`<article class="chart-card"><div class="panel-heading"><div class="chart-heading-copy"><h2>Products</h2></div><div class="mini-toggle" role="group" aria-label="Rank products"><button class="${mode==='quantity'?'active':''}" type="button" data-product-mode="quantity" aria-pressed="${mode==='quantity'}">By Quantity</button><button class="${mode==='revenue'?'active':''}" type="button" data-product-mode="revenue" aria-pressed="${mode==='revenue'}">By Revenue</button></div></div><p class="product-chart-context">${mode==='revenue'?'Ranked by net sales':'Ranked by units sold'}</p><div class="chart-box" style="height:200px"><canvas id="productModeChart" role="img" aria-label="Products ranked by the selected measure"></canvas></div><p class="chart-summary"></p></article>`);
+    target.classList.toggle('single-chart',useful.length===0);target.classList.remove('chart-pair');
+    drawProductReportChart();
 }
 function renderInsights(data){
     const cards=[];
@@ -522,6 +583,18 @@ function renderInsights(data){
     (data.actions||[]).forEach(action=>cards.push(`<article class="insight-card tone-${esc(action.tone||'blue')}"><h2>${esc(action.title)}</h2><p class="insight-action-description">${esc(action.description)}</p><a class="insight-action-link" href="${esc(action.href)}">${esc(action.label)} <i class="fa-solid fa-arrow-right"></i></a></article>`));
     if(data.attention)cards.push(`<article class="attention-card"><h2><i class="fa-solid fa-triangle-exclamation"></i> Pharmacy Attention</h2>${data.attention.map(x=>{const label=Number(x.value)===1?x.singular:x.plural;return `<a class="attention-row tone-${esc(x.tone)}" href="${esc(x.href)}"><i class="attention-icon fa-solid ${esc(x.icon)}"></i><span>${esc(label)}</span><strong>${esc(format(x.value,x.format))}</strong><i class="fa-solid fa-arrow-right"></i></a>`;}).join('')}</article>`);
     qs('#reportInsights').innerHTML=cards.join('');
+    tuckInsightsUnderCompactChart();
+}
+function tuckInsightsUnderCompactChart(){
+    const charts=qs('#reportCharts'),insights=qs('#reportInsights');
+    if(!charts||!insights)return;
+    const compact=charts.querySelector(':scope > .chart-card.compact-insight');
+    if(!(charts.classList.contains('chart-pair')&&compact&&insights.children.length)){insights.hidden=!insights.children.length;return;}
+    const stack=document.createElement('div');
+    stack.className='chart-stack';
+    compact.replaceWith(stack);
+    stack.append(compact,...insights.children);
+    insights.hidden=true;
 }
 function overviewPanelHeading(title,href,label){return `<div class="panel-heading"><h2>${esc(title)}</h2><a class="report-link" href="${esc(href)}">${esc(label)} <i class="fa-solid fa-arrow-right"></i></a></div>`;}
 function overviewChart(id,type,labels,values,colors,{horizontal=false,label='Records',tooltip,valueFormatter,showValueLabels=false}={}){
@@ -562,12 +635,25 @@ function renderOverview(previews){
       ${overviewStaffPanel('Sales Clerk Activity',staff.sales_clerks||[],'teal',staff.href,'overviewClerkActivity')}
       <div class="staff-supporting-metrics"><div><span>Active cashiers</span><strong>${number.format(staff.active_cashiers)}</strong></div><div><span>Active sales clerks</span><strong>${number.format(staff.active_sales_clerks)}</strong></div><div><span>Completed transactions</span><strong>${number.format(staff.completed_transactions)}</strong></div><div><span>Average transaction</span><strong>${money.format(staff.average_transaction)}</strong></div></div>`;
     const palette={green:'#16a34a',amber:'#d97706',red:'#dc2626','dark-red':'#991b1b','red-orange':'#ea580c',yellow:'#ca8a04',gray:'#64748b',teal:'#0d9488',indigo:'#4f46e5',purple:'#5b4cf0',blue:'#2563eb'};
-    if(sortedProducts.length){const labels=sortedProducts.map(row=>`${row.brand_name?`${row.brand_name} — `:''}${row.product_name}`),values=sortedProducts.map(row=>Number(row[productField])||0);overviewChart('overviewTopProducts','bar',labels,values,labels.map(()=>palette.blue),{horizontal:true,label:productMode==='revenue'?'Net sales':'Units sold',valueFormatter:productMode==='revenue'?value=>money.format(value):value=>`${number.format(value)} units`,showValueLabels:true,tooltip:ctx=>{const row=sortedProducts[ctx.dataIndex];return `${productMode==='revenue'?money.format(row.net_revenue):`${number.format(row.quantity_sold)} units sold`} · ${money.format(row.net_revenue)} net sales`;}});}
+    if(sortedProducts.length){const labels=sortedProducts.map(row=>`${row.brand_name?`${row.brand_name} — `:''}${row.product_name}`),values=sortedProducts.map(row=>Number(row[productField])||0);overviewChart('overviewTopProducts','bar',labels,values,labels.map(()=>palette.blue),{horizontal:true,label:productMode==='revenue'?'Net sales':'Units sold',valueFormatter:productMode==='revenue'?value=>money.format(value):value=>`${number.format(value)} ${Number(value)===1?'unit':'units'}`,showValueLabels:true,tooltip:ctx=>{const row=sortedProducts[ctx.dataIndex];const qty=Number(row.quantity_sold)||0;return `${productMode==='revenue'?money.format(row.net_revenue):`${number.format(qty)} ${qty===1?'unit':'units'} sold`} · ${money.format(row.net_revenue)} net sales`;}});}
     overviewChart('overviewInventoryHealth','doughnut',healthRows.map(row=>row[0]),healthRows.map(row=>Number(row[1])||0),healthRows.map(row=>palette[row[2]]),{label:'Products',tooltip:ctx=>`${ctx.label}: ${number.format(ctx.raw)} products`});
     if(expiry.expired+expiry.within_30>0){const riskRows=expiryRows.filter(row=>Number(row.batch_count)>0);overviewChart('overviewExpiryRisk','bar',riskRows.map(row=>row.label),riskRows.map(row=>Number(row.batch_count)||0),riskRows.map(row=>palette[row.tone]),{horizontal:true,label:'Active batches',tooltip:ctx=>{const row=riskRows[ctx.dataIndex];return `${row.label}: ${number.format(row.batch_count)} batches · ${number.format(row.quantity_at_risk)} units · ${money.format(row.cost_at_risk)}`;}});}
     if(poRows.length)overviewChart('overviewPurchaseStatus','doughnut',poRows.map(row=>row.label),poRows.map(row=>Number(row.value)||0),poRows.map(row=>palette[row.tone]),{label:'Purchase orders',tooltip:ctx=>`${ctx.label}: ${number.format(ctx.raw)} purchase orders`});
     const renderStaff=(id,rows,color)=>{if(!rows.length)return;const labels=rows.map(row=>row.name),values=rows.map(row=>Number(row.transactions)||0);overviewChart(id,'bar',labels,values,labels.map(()=>color),{horizontal:true,label:'Completed transactions',tooltip:ctx=>{const row=rows[ctx.dataIndex];return `${number.format(row.transactions)} transactions · ${money.format(row.net_sales)} net sales`;}});};
     renderStaff('overviewCashierActivity',staff.cashiers||[],'#4f46e5');renderStaff('overviewClerkActivity',staff.sales_clerks||[],'#0d9488');
+}
+function refreshOverviewProductChart(){
+    const previews=state.data?.overview_previews,panel=qs('#overviewGrid .overview-panel.tone-sales');
+    if(!previews?.top_products||!panel)return;
+    const productMode=state.productMode,productField=productMode==='revenue'?'net_revenue':'quantity_sold',products=previews.top_products.rows||[],sortedProducts=[...products].sort((a,b)=>Number(b[productField])-Number(a[productField])).slice(0,5);
+    panel.querySelectorAll('[data-product-mode]').forEach(button=>{const active=button.dataset.productMode===productMode;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+    const context=panel.querySelector('.product-chart-context');if(context)context.textContent=`Ranked by ${productMode==='revenue'?'net sales':'units sold'} · ${reportDate(state.data?.system?.date_range?.start||state.defaultStart,{month:'short',day:'numeric'})} – ${reportDate(state.data?.system?.date_range?.end||state.defaultEnd,{month:'short',day:'numeric',year:'numeric'})}`;
+    const summary=panel.querySelector('.visual-summary');if(summary)summary.textContent=`Bar-end labels show ${productMode==='revenue'?'net sales in pesos':'units sold'}; hover for both measures.`;
+    const existing=state.charts.get('overview-overviewTopProducts');if(existing){existing.destroy();state.charts.delete('overview-overviewTopProducts');}
+    if(!sortedProducts.length)return;
+    const labels=sortedProducts.map(row=>`${row.brand_name?`${row.brand_name} — `:''}${row.product_name}`),values=sortedProducts.map(row=>Number(row[productField])||0);
+    overviewChart('overviewTopProducts','bar',labels,values,labels.map(()=>'#2563eb'),{horizontal:true,label:productMode==='revenue'?'Net sales':'Units sold',valueFormatter:productMode==='revenue'?value=>money.format(value):value=>`${number.format(value)} ${Number(value)===1?'unit':'units'}`,showValueLabels:true,tooltip:ctx=>{const row=sortedProducts[ctx.dataIndex];const qty=Number(row.quantity_sold)||0;return `${productMode==='revenue'?money.format(row.net_revenue):`${number.format(qty)} ${qty===1?'unit':'units'} sold`} · ${money.format(row.net_revenue)} net sales`;}});
+    if(state.data)renderOverviewPrint(state.data);
 }
 function overviewPrintTable(headers,rows,numericColumns=[]){
     const head=headers.map((label,index)=>`<th class="${numericColumns.includes(index)?'numeric':''}">${esc(label)}</th>`).join('');
@@ -630,7 +716,7 @@ function openRecordDetail(index){
     qs('#reportDetailPrevious').disabled=index<=0;qs('#reportDetailNext').disabled=index>=rows.length-1;
     const dialog=qs('#reportDetail');if(!dialog.open)dialog.showModal();
 }
-function renderNotes(notes){qs('#formulaNotes').innerHTML=notes.length?`<h2><i class="fa-solid fa-circle-info"></i> Calculation notes</h2><ul>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:'';}
+function renderNotes(notes){qs('#formulaNotes').innerHTML=notes.length?`<details class="formula-notes-details"><summary><i class="fa-solid fa-circle-info"></i> Calculation notes</summary><ul>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:'';}
 function displayValue(key,value){
     const select=qs(`[name="${key}"]`);if(select?.selectedOptions[0])return select.selectedOptions[0].textContent;
     if(key==='expiry_days')return `Within ${value} days`;return value;
@@ -674,6 +760,7 @@ qs('#reportDetailClose').addEventListener('click',()=>qs('#reportDetail').close(
 qs('#reportFilters').addEventListener('submit',event=>{event.preventDefault();state.page=1;state.explicitDates=true;state.period='custom';loadReport();});
 qs('#clearFilters').addEventListener('click',resetFilters);qs('#reportRefresh').addEventListener('click',loadReport);qs('#reportPrint').addEventListener('click',()=>{setPrintTimestamp();window.print();});qs('#reportPdf').addEventListener('click',()=>{setPrintTimestamp();window.print();});window.addEventListener('beforeprint',setPrintTimestamp);qs('#reportExport').addEventListener('click',exportCsv);
 qs('#reportViewMenu').addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(!button)return;qs('#reportSearch').value='';qs('[name="report_view"]').value=button.dataset.view;setFilterExpanded(['expiry','purchases'].includes(state.category)?false:button.dataset.view!=='Sales Summary');qs('[name="report_view"]').dispatchEvent(new Event('change'));renderViewMenu();});
+qs('.report-heading-actions').addEventListener('change',event=>{if(event.target.id!=='quickReportView')return;qs('#reportSearch').value='';qs('[name="report_view"]').value=event.target.value;setFilterExpanded(['expiry','purchases'].includes(state.category)?false:event.target.value!=='Sales Summary');qs('[name="report_view"]').dispatchEvent(new Event('change'));});
 qs('.report-presets').addEventListener('click',event=>{const button=event.target.closest('[data-period]');if(!button)return;const period=button.dataset.period;if(period==='custom'){setPeriodSelection('custom');state.explicitDates=true;updateVisibleFilters();return;}const today=reportToday(state.data?.system?.timezone),end=period==='yesterday'?shiftDate(today,-1):today,start=period==='month'?`${today.slice(0,7)}-01`:period==='7'?shiftDate(end,-6):period==='30'?shiftDate(end,-29):end;qs('[name="start_date"]').value=start;qs('[name="end_date"]').value=end;setPeriodSelection(period);state.explicitDates=true;state.page=1;updateVisibleFilters();loadReport();});
 qs('#reportComparisonMode').addEventListener('change',event=>{state.comparisonMode=event.target.value;state.page=1;loadReport();});
 qs('#reportMonthShortcut').addEventListener('change',event=>{const value=event.target.value;if(!/^\d{4}-\d{2}$/.test(value))return;const [year,month]=value.split('-').map(Number),lastDay=new Date(year,month,0).getDate();qs('[name="start_date"]').value=`${year}-${String(month).padStart(2,'0')}-01`;qs('[name="end_date"]').value=`${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;state.period='custom';state.explicitDates=true;state.page=1;setPeriodSelection('custom');updateVisibleFilters();loadReport();});
@@ -683,7 +770,8 @@ qs('#reportSearch').addEventListener('input',()=>{clearTimeout(state.searchTimer
 qs('#reportTableHead').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.direction=state.sort===button.dataset.sort&&state.direction==='asc'?'desc':'asc';state.sort=button.dataset.sort;state.page=1;loadReport();});
 qs('#moreFiltersToggle').addEventListener('click',event=>{const panel=qs('#secondaryFilters'),expanded=panel.hidden;panel.hidden=!expanded;event.currentTarget.setAttribute('aria-expanded',String(expanded));event.currentTarget.lastElementChild.className=`fa-solid fa-chevron-${expanded?'up':'down'}`;});
 qs('#filterChips').addEventListener('click',event=>{const chip=event.target.closest('[data-remove-filter]');if(!chip)return;const field=qs(`[name="${chip.dataset.removeFilter}"]`);if(field){field.value='';if(field.name==='category_id')qs('[name=secondary_category_id]').value='';if(field.name==='supplier_id')qs('[name=secondary_supplier_id]').value='';syncDependentOptions(true);}state.page=1;loadReport();});
-qs('#overviewGrid').addEventListener('click',event=>{const button=event.target.closest('[data-product-mode]');if(!button||!state.data?.overview_previews)return;state.productMode=button.dataset.productMode;renderOverview(state.data.overview_previews);});
+qs('#overviewGrid').addEventListener('click',event=>{const button=event.target.closest('[data-product-mode]');if(!button||!state.data?.overview_previews||button.dataset.productMode===state.productMode)return;state.productMode=button.dataset.productMode;refreshOverviewProductChart();});
+qs('#reportCharts').addEventListener('click',event=>{const button=event.target.closest('[data-product-mode]');if(!button||!state.productRows?.length||button.dataset.productMode===state.productMode)return;state.productMode=button.dataset.productMode;drawProductReportChart();});
 ['category_id','secondary_category_id','type_id','brand'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{if(name.includes('category')){qs('[name=category_id]').value=event.target.value;qs('[name=secondary_category_id]').value=event.target.value;}syncDependentOptions(true);}));
 qs('[name="product_id"]').addEventListener('change',event=>{const product=state.options?.products.find(x=>x.id===event.target.value);if(!product)return;qs('[name=category_id]').value=qs('[name=secondary_category_id]').value=product.category_id;qs('[name=type_id]').value=product.type_id;qs('[name=brand]').value=product.brand;syncDependentOptions(false);qs('[name=product_id]').value=product.id;});
 ['supplier_id','secondary_supplier_id'].forEach(name=>qs(`[name="${name}"]`).addEventListener('change',event=>{qs('[name=supplier_id]').value=qs('[name=secondary_supplier_id]').value=event.target.value;}));

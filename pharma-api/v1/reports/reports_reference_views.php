@@ -109,7 +109,8 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
     if (!in_array($view, ['Sales Summary', 'Product Sales', 'Category Sales', 'Cashier Sales'], true)) return $base;
 
     if ($view === 'Product Sales') {
-        $product = productReport($pdo, $filters, $role);
+        $cashierProducts = !empty($role['cashier']) && empty($role['management']);
+        $product = productReport($pdo, $filters, $role, $cashierProducts, $cashierProducts);
         $classifications=reportRows($pdo,"SELECT psv.product_id,MAX(psv.value_text) classification
             FROM product_specification_values psv INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
             WHERE LOWER(TRIM(ps.specification_name))='medicine classification' GROUP BY psv.product_id");
@@ -127,7 +128,7 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
             reportCard('Top Seller', $product['charts'][1]['rows'][0]['label']??'—', 'text', 'fa-star', 'blue'),
         ];
         $product['charts'] = [$product['charts'][1]];
-        $product['charts'][0]['title'] = !empty($role['management']) ? 'Top 20 products by sales' : 'Top products by sales';
+        $product['charts'][0]['title'] = 'Products with sales';
         // Rx/OTC is applied by productReport; omit the indicator if that
         // classification filter cannot be represented by the daily series.
         $product['trend_series'] = ($filters['rx_filter'] ?? '') === '' ? $trendSeries : [];
@@ -231,7 +232,7 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
                     'gross_profit'=>isset($trend['gross_profit'])?(float)$trend['gross_profit']:null];
             }, $rows))
         ]];
-        $workflowChart = reportMyOrderStatusChart($pdo, $filters, $role);
+        $workflowChart = reportMySoldProductsChart($pdo, $filters, $role);
         if ($workflowChart !== null) $base['charts'][] = $workflowChart;
         [$base['rows'], $base['pagination']] = referenceReportPage($rows, $filters);
         $base['columns'] = ['report_date'=>'Date', 'transactions'=>'Transactions', 'items_sold'=>'Items Sold', 'gross_sales'=>'Gross Sales', 'discounts'=>'Discounts', 'returns_cancelled'=>'Returns / Refunded', 'net_sales'=>'Net Sales'];
@@ -255,7 +256,7 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
         }
         if ($totalVatCard !== null) $base['notes'][] = 'Total VAT Collected is the saved VAT from completed paid sales in the selected date range and filters, reduced proportionally for recorded refunds.';
         if (!empty($role['management'])) $base['notes'][] = 'Gross Profit uses recorded batch costs. Unknown costs are estimated from the all-time cost-to-sales ratio of reliably costed sales, and the card is labeled Estimated Gross Profit.';
-        if ($workflowChart !== null) $base['notes'][] = 'My orders by status counts orders created in the selected date range and assigned to your account.';
+        if ($workflowChart !== null) $base['notes'][] = 'Products with sales lists products that have a completed payment in the selected dates, up to 20 products.';
         return $base;
     }
 

@@ -236,7 +236,7 @@ function salesReport(PDO $pdo, array $f, array $role): array
     $topProducts = reportRows($pdo, "SELECT CONCAT(p.brand_name,' — ',p.product_name) label,SUM(i.quantity) value
         FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id INNER JOIN sales_order_items i ON i.order_id=o.order_id
         INNER JOIN product p ON p.product_id=i.product_id WHERE {$where}{$topFilter}
-        GROUP BY p.product_id,p.brand_name,p.product_name ORDER BY value DESC LIMIT 5", $topParams);
+        GROUP BY p.product_id,p.brand_name,p.product_name ORDER BY value DESC LIMIT 20", $topParams);
     $paymentParams = $params;
     $paymentShare = '1';
     $paymentScopeJoin = '';
@@ -285,8 +285,8 @@ function salesReport(PDO $pdo, array $f, array $role): array
         ORDER BY {$sort} {$f['direction']} LIMIT :limit OFFSET :offset", $rowParams);
 
     $charts = [$groupChart];
-    if ($group !== 'product') $charts[] = ['id'=>'top-products','title'=>'Top five products by units sold','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>$topProducts];
-    $workflowChart = reportMyOrderStatusChart($pdo, $f, $role);
+    if ($group !== 'product') $charts[] = ['id'=>'top-products','title'=>'Products by units sold','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>$topProducts];
+    $workflowChart = reportMySoldProductsChart($pdo, $f, $role);
     if ($workflowChart !== null) $charts[] = $workflowChart;
     $cashierReport = !$role['management'] && $role['cashier'];
     $paymentSales = array_column($payment, 'value', 'label');
@@ -383,7 +383,7 @@ function salesReport(PDO $pdo, array $f, array $role): array
         'Total VAT Collected is the saved VAT from completed paid sales in the selected date range and filters, reduced proportionally for recorded refunds; it covers the sold items in those transactions.',
     ];
     if ($role['management']) $notes[] = 'Gross Profit = completed net sales after recorded refunds, excluding VAT, minus actual batch costs. When checkout allocations are missing, costs are reconstructed only if every recorded batch for that product has the same positive unit cost. Remaining unknown costs are estimated using the all-time cost-to-sales ratio from sales with reliable cost records and the card is labeled Estimated Gross Profit.';
-    if ($workflowChart !== null) $notes[] = 'My orders by status counts orders created in the selected date range and assigned to your account.';
+    if ($workflowChart !== null) $notes[] = 'Products with sales lists products that have a completed payment in the selected dates, up to 20 products.';
     $actions = [];
     if (!empty($role['cashier'])) $actions[] = ['title'=>'Shift reconciliation','description'=>'Review recorded payments and reconcile your cashier shift.','href'=>'cashier_shift_summary.html','label'=>'Open shift summary','tone'=>'teal'];
     if (!empty($role['sales_clerk'])) $actions[] = ['title'=>'Order follow-up','description'=>'Review your open, waiting, and completed sales orders.','href'=>'sales_clerk_orders.html','label'=>'Open order queue','tone'=>'indigo'];
@@ -637,9 +637,9 @@ function supervisorExpiryReport(PDO $pdo, array $filters): array
 {
     return supervisorExpiryPayload(expiryReport($pdo, $filters));
 }
-function productReport(PDO $pdo,array $f,array $role): array
+function productReport(PDO $pdo,array $f,array $role,bool $storeWide=false,bool $soldOnly=false): array
 {
-    [$where,$params]=reportSalesWhere($f,$role);$paid=reportPaidSalesSubquery();$productParams=$params;$filter=reportProductFilterSql($f,$productParams);$spec=reportProductSpecificationSql();
+    [$where,$params]=reportSalesWhere($f,$role,'o',$storeWide);$paid=reportPaidSalesSubquery();$productParams=$params;$filter=reportProductFilterSql($f,$productParams);$spec=reportProductSpecificationSql();
     if(($f['rx_filter']??'')!==''){$filter.=" AND EXISTS (SELECT 1 FROM product_specification_values class_value INNER JOIN product_specifications class_spec ON class_spec.specification_id=class_value.specification_id WHERE class_value.product_id=p.product_id AND LOWER(TRIM(class_spec.specification_name))='medicine classification' AND ".($f['rx_filter']==='rx'?"LOWER(TRIM(class_value.value_text))='prescription (rx)'":"LOWER(TRIM(class_value.value_text))<>'prescription (rx)'").")";}
     $sales=reportRows($pdo,"SELECT p.product_id,p.brand_name,p.product_name,{$spec} specification,COALESCE(pc.category_name,'Uncategorized') category,
       COALESCE(SUM(i.quantity),0) sold_qty,COALESCE(SUM(CASE WHEN o.subtotal>0 THEN i.line_total/o.subtotal*pay.final_amount ELSE 0 END),0) revenue,MAX(o.completed_at) last_sale
@@ -652,13 +652,14 @@ function productReport(PDO $pdo,array $f,array $role): array
     foreach($sales as &$r){$r['sold_qty']=(int)$r['sold_qty'];$r['revenue']=(float)$r['revenue'];$r['on_hand']=$map[$r['product_id']]??0;$r['sell_through_rate']=$r['sold_qty']+$r['on_hand']>0?round(100*$r['sold_qty']/($r['sold_qty']+$r['on_hand']),1):0;$r['days_since_last_sale']=$r['last_sale']!==null?(int)((new DateTime($r['last_sale']))->diff(new DateTime())->days):null;
       if($r['on_hand']>0&&$r['sold_qty']===0)$r['performance_status']='No Sales';elseif($r['on_hand']>=$avgStock&&$r['sold_qty']<=$avgSales*.25)$r['performance_status']='High Stock / Low Sales';elseif($r['sold_qty']>0&&$r['sold_qty']<=$avgSales*.25)$r['performance_status']='Slow Moving';elseif(count($selling)>1&&$r['sold_qty']>=$avgSales)$r['performance_status']='Fast Moving';else $r['performance_status']='Steady';}unset($r);
     usort($sales,fn($a,$b)=>$b['revenue']<=>$a['revenue']);$topQty=$sales;$topRevenue=$sales;usort($topQty,fn($a,$b)=>$b['sold_qty']<=>$a['sold_qty']);
-    $chartLimit=!empty($role['management'])?20:5;$chart=static fn($rows,$field)=>array_map(fn($r)=>['label'=>$r['brand_name'].' — '.$r['product_name'],'value'=>$r[$field]],array_slice(array_values(array_filter($rows,fn($r)=>$r[$field]>0)),0,$chartLimit));
+    $chartLimit=20;$chart=static fn($rows,$field)=>array_map(fn($r)=>['label'=>$r['brand_name'].' — '.$r['product_name'],'value'=>$r[$field]],array_slice(array_values(array_filter($rows,fn($r)=>$r[$field]>0)),0,$chartLimit));
     $s=['sold'=>array_sum(array_column($sales,'sold_qty')),'revenue'=>array_sum(array_column($sales,'revenue')),'no'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='No Sales')),'slow'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='Slow Moving')),'high'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='High Stock / Low Sales')),'fast'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='Fast Moving'))];
+    if($soldOnly)$sales=array_values(array_filter($sales,static fn(array $row): bool => (int)$row['sold_qty']>0 || (float)$row['revenue']>0));
     $sales=reportSortArray($sales,$f);
     return ['summary'=>[
         reportCard('Units Sold',$s['sold'],'number','fa-box','teal'),reportCard('Product Revenue',$s['revenue'],'currency','fa-chart-column','blue'),
         reportCard('Products with No Sales',$s['no'],'number','fa-circle-minus','gray'),reportCard('Slow-Moving Products',$s['slow'],'number','fa-gauge-low','amber'),reportCard('High Stock / Low Sales',$s['high'],'number','fa-boxes-stacked','red'),reportCard('Fast-Moving Products',$s['fast'],'number','fa-gauge-high','green')],
-        'charts'=>[['id'=>'top-qty','title'=>'Top five products by sold quantity','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>$chart($topQty,'sold_qty')],['id'=>'top-revenue','title'=>'Top five products by revenue','type'=>'bar','orientation'=>'horizontal','tone'=>'sales','rows'=>$chart($topRevenue,'revenue')]],
+        'charts'=>[['id'=>'top-qty','title'=>'Products by quantity sold','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>$chart($topQty,'sold_qty')],['id'=>'top-revenue','title'=>'Products by revenue','type'=>'bar','orientation'=>'horizontal','tone'=>'sales','rows'=>$chart($topRevenue,'revenue')]],
         'columns'=>['brand_name'=>'Brand','product_name'=>'Product','specification'=>'Specification','category'=>'Category','sold_qty'=>'Sold Qty','revenue'=>'Revenue','on_hand'=>'On Hand','sell_through_rate'=>'Sell-Through Rate','days_since_last_sale'=>'Days Since Last Sale','performance_status'=>'Performance Status'],
         'numeric_columns'=>['sold_qty','on_hand','sell_through_rate','days_since_last_sale'],'currency_columns'=>['revenue'],'rows'=>array_slice($sales,$f['offset'],$f['page_size']),'pagination'=>reportPagination(count($sales),$f),
         'notes'=>['Revenue allocates each completed transaction’s final paid amount proportionally to product line subtotal.','Sell-Through Rate = sold quantity ÷ (sold quantity + current on-hand) × 100.','Slow Moving = positive sold quantity at or below 25% of the selling-product average. Fast Moving requires more than one selling product and sold quantity at or above that average. Thresholds recalculate for the selected period.']];
@@ -897,7 +898,7 @@ try {
     // also be routed through the view-aware report builder. Its queries still
     // apply reportSalesWhere() with the current role scope.
     $referenceSalesLayout=($_GET['layout']??'')==='reference';
-    $report=match($category){'sales'=>($referenceSalesLayout?referenceSalesReport($pdo,$f,$role):salesReport($pdo,$f,$role)),'inventory'=>(!empty($role['supervisor'])?supervisorInventoryReport($pdo,$f):($referenceLayout?referenceInventoryReport($pdo,$f,$role):inventoryReport($pdo,$f))),'purchases'=>(!empty($role['supervisor'])?supervisorPurchaseRequestReport($pdo,$f):($referenceLayout?referencePurchasingReport($pdo,$f):purchasesReport($pdo,$f))),'expiry'=>(!empty($role['supervisor'])?supervisorExpiryReport($pdo,$f):($referenceLayout?referenceExpiryReport($pdo,$f):expiryReport($pdo,$f))),'supplier'=>referenceSupplierReport($pdo,$f),'products'=>(!empty($role['supervisor'])?supervisorProductReport($pdo,$f,$role):productReport($pdo,$f,$role)),'staff'=>($referenceLayout?referenceStaffReport($pdo,$f):staffReport($pdo,$f,$role)),default=>overviewReport($pdo,$f,$role)};
+    $report=match($category){'sales'=>($referenceSalesLayout?referenceSalesReport($pdo,$f,$role):salesReport($pdo,$f,$role)),'inventory'=>(!empty($role['supervisor'])?supervisorInventoryReport($pdo,$f):($referenceLayout?referenceInventoryReport($pdo,$f,$role):inventoryReport($pdo,$f))),'purchases'=>(!empty($role['supervisor'])?supervisorPurchaseRequestReport($pdo,$f):($referenceLayout?referencePurchasingReport($pdo,$f):purchasesReport($pdo,$f))),'expiry'=>(!empty($role['supervisor'])?supervisorExpiryReport($pdo,$f):($referenceLayout?referenceExpiryReport($pdo,$f):expiryReport($pdo,$f))),'supplier'=>referenceSupplierReport($pdo,$f),'products'=>(!empty($role['supervisor'])?supervisorProductReport($pdo,$f,$role):productReport($pdo,$f,$role,!empty($role['sales_clerk'])&&empty($role['management']))),'staff'=>($referenceLayout?referenceStaffReport($pdo,$f):staffReport($pdo,$f,$role)),default=>overviewReport($pdo,$f,$role)};
 
     // Add a like-for-like comparison to every date-based report summary. Snapshot
     // reports (current inventory and expiry exposure) have no historical snapshot
@@ -918,7 +919,7 @@ try {
         $previousReport = match($category) {
             'sales' => ($referenceSalesLayout ? referenceSalesReport($pdo,$previousFilters,$role) : salesReport($pdo,$previousFilters,$role)),
             'purchases' => (!empty($role['supervisor']) ? supervisorPurchaseRequestReport($pdo,$previousFilters) : ($referenceLayout ? referencePurchasingReport($pdo,$previousFilters) : purchasesReport($pdo,$previousFilters))),
-            'products' => (!empty($role['supervisor']) ? supervisorProductReport($pdo,$previousFilters,$role) : productReport($pdo,$previousFilters,$role)),
+            'products' => (!empty($role['supervisor']) ? supervisorProductReport($pdo,$previousFilters,$role) : productReport($pdo,$previousFilters,$role,!empty($role['sales_clerk'])&&empty($role['management']))),
             'staff' => ($referenceLayout ? referenceStaffReport($pdo,$previousFilters) : staffReport($pdo,$previousFilters,$role)),
             'supplier' => referenceSupplierReport($pdo,$previousFilters),
             'inventory' => ($referenceLayout ? referenceInventoryReport($pdo,$previousFilters,$role) : inventoryReport($pdo,$previousFilters)),
@@ -965,13 +966,13 @@ try {
         foreach ($report['summary'] ?? [] as &$card) $card['comparison'] = ['state'=>'disabled'];
         unset($card);
     }
-    $report['account_scope'] = !empty($role['cashier'])
-        ? 'Sales assigned to your cashier account'
-        : (!empty($role['sales_clerk'])
-            ? 'Sales orders assigned to your sales clerk account'
-            : (!empty($role['supervisor'])
-                ? 'Records available to your supervisor account'
-                : 'All accounts, limited by the filters shown'));
+    $personalSales = (empty($role['management']) && !empty($role['cashier']) && ($f['report_view'] ?? '') !== 'Product Sales')
+        || (empty($role['management']) && !empty($role['sales_clerk']) && $category !== 'products');
+    $report['account_scope'] = !empty($role['management']) || !$personalSales && empty($role['supervisor'])
+        ? 'All accounts'
+        : (!empty($role['supervisor']) && empty($role['management'])
+            ? 'Your supervisor records'
+            : 'Your completed payments');
     echo json_encode(['status'=>'success','category'=>$category,'access'=>$role,'system'=>reportSystem($pdo,$role,$f),'filters'=>reportFilterOptions($pdo,$role)]+$report,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 } catch(InvalidArgumentException $e){http_response_code(422);echo json_encode(['status'=>'error','message'=>$e->getMessage()]);}
 catch(Throwable $e){error_log('Reports error: '.$e->getMessage());http_response_code(500);echo json_encode(['status'=>'error','message'=>'Unable to generate the selected report.']);}

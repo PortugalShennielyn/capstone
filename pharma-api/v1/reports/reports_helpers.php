@@ -43,34 +43,30 @@ function reportRoleContext(): array
     ];
 }
 
-function reportMyOrderStatusChart(PDO $pdo, array $filters, array $role): ?array
+function reportMySoldProductsChart(PDO $pdo, array $filters, array $role): ?array
 {
-    if (!empty($role['management']) || !empty($role['supervisor']) || (empty($role['cashier']) && empty($role['sales_clerk']))) return null;
+    if (!empty($role['supervisor']) || (empty($role['management']) && empty($role['cashier']) && empty($role['sales_clerk']))) return null;
     if (!in_array($filters['report_view'] ?? '', ['', 'Sales Summary'], true)) return null;
-    $params = [':workflow_start'=>$filters['start_date'], ':workflow_end'=>$filters['date_end_exclusive']];
-    $scope = [];
-    if (!empty($role['sales_clerk'])) {
-        $scope[] = 'o.sales_clerk_id=:workflow_clerk_id';
-        $params[':workflow_clerk_id'] = $role['user_id'];
-    }
-    if (!empty($role['cashier'])) {
-        $scope[] = "(o.status='waiting_cashier' OR o.assigned_cashier_id=:workflow_cashier_id OR EXISTS (SELECT 1 FROM sales_payments wp WHERE wp.order_id=o.order_id AND wp.cashier_id=:workflow_payment_cashier_id))";
-        $params[':workflow_cashier_id'] = $role['user_id'];
-        $params[':workflow_payment_cashier_id'] = $role['user_id'];
-    }
-    $rows = reportRows($pdo, "SELECT CASE o.status
-        WHEN 'draft' THEN 'Draft' WHEN 'waiting_cashier' THEN 'Waiting for cashier'
-        WHEN 'accepted_by_cashier' THEN 'Accepted by cashier' WHEN 'processing_payment' THEN 'Processing payment'
-        WHEN 'completed' THEN 'Completed' WHEN 'cancelled' THEN 'Cancelled' WHEN 'rejected' THEN 'Rejected'
-        ELSE 'Other' END label, COUNT(*) value
-        FROM sales_orders o
-        WHERE o.created_at>=:workflow_start AND o.created_at<:workflow_end
-          AND (".implode(' OR ', $scope).")
-        GROUP BY o.status ORDER BY value DESC", $params);
+    $params = [':sold_start'=>$filters['start_date'], ':sold_end'=>$filters['date_end_exclusive']];
+    $productFilter = reportProductFilterSql($filters, $params);
+    $paid = reportPaidSalesSubquery();
+    $rows = reportRows($pdo, "SELECT CONCAT(p.brand_name,' — ',p.product_name) label,
+        ROUND(COALESCE(sold.amount,0),2) value
+        FROM product p
+        LEFT JOIN (
+            SELECT i.product_id, SUM(CASE WHEN o.subtotal>0 THEN i.line_total/o.subtotal*pay.final_amount ELSE 0 END) amount
+            FROM sales_orders o
+            INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id
+            INNER JOIN sales_order_items i ON i.order_id=o.order_id
+            WHERE o.status='completed' AND o.completed_at>=:sold_start AND o.completed_at<:sold_end
+            GROUP BY i.product_id
+        ) sold ON sold.product_id=p.product_id
+        WHERE p.status='Active' AND sold.amount>0{$productFilter}
+        ORDER BY value DESC, p.product_name ASC
+        LIMIT 20", $params);
     return [
-        'id'=>'my-order-status','title'=>'My orders by status','type'=>'bar','orientation'=>'horizontal','tone'=>'status','rows'=>$rows,
-        'href'=>!empty($role['cashier'])?'cashier_transaction_history.html':'sales_clerk_orders.html',
-        'link_label'=>!empty($role['cashier'])?'Open transactions':'Open order queue',
+        'id'=>'my-sold-products','title'=>'Products with sales','type'=>'bar','orientation'=>'horizontal','tone'=>'sales','rows'=>$rows,
+        'caption'=>'Completed payments from all accounts in the selected dates. A product appears after it has a completed payment.',
     ];
 }
 
@@ -234,11 +230,11 @@ function reportKnownCostToSalesRatio(PDO $pdo): ?float
     return (float)($row['known_cost_of_goods'] ?? 0) / $netSales;
 }
 
-function reportSalesWhere(array $filters, array $role, string $alias = 'o'): array
+function reportSalesWhere(array $filters, array $role, string $alias = 'o', bool $storeWide = false): array
 {
     $where = ["{$alias}.status = 'completed'", "{$alias}.completed_at >= :start_date", "{$alias}.completed_at < :end_date"];
     $params = [':start_date' => $filters['start_date'], ':end_date' => $filters['date_end_exclusive']];
-    if (!$role['management'] && empty($role['supervisor'])) {
+    if (!$storeWide && !$role['management'] && empty($role['supervisor'])) {
         if ($role['cashier']) {
             $where[] = "COALESCE({$alias}.assigned_cashier_id, pay.cashier_id) = :scope_user";
         } else {

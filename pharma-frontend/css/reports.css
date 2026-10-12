@@ -196,6 +196,19 @@ body { background:var(--mp-bg); }
 .summary-card:first-child span { color:#e7e4ff; font-size:13px; }.summary-card:first-child strong,.report-main:has(.reference-filters) .summary-card:first-child strong { margin-top:10px; color:#fff; font-size:38px; line-height:1.15; }
 .summary-card:first-child .summary-icon { display:none; }.summary-card:not(:first-child) span { color:var(--mp-muted); font-size:12px; }.summary-card:not(:first-child) strong { color:#222b3c; font-size:20px; }
 .charts-grid { grid-template-columns:1fr; gap:16px; margin-bottom:16px; }.chart-card { padding:20px; border:1px solid var(--mp-line); border-radius:14px; box-shadow:none; }.chart-card h2 { font-size:14px; }.chart-box { height:270px; max-height:none; }.chart-summary { margin-bottom:0; }
+.charts-grid.chart-pair { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:stretch; }
+.charts-grid.chart-pair .chart-card { height:auto; padding:14px 16px; }
+.charts-grid.chart-pair .chart-box { height:200px; max-height:200px; }
+.charts-grid.chart-pair .chart-caption,.charts-grid.chart-pair .chart-summary { margin-top:6px; }
+.charts-grid.chart-pair .chart-card.compact-insight { align-self:start; height:auto; min-height:0; padding:14px 16px 12px; }
+.charts-grid.chart-pair .compact-insight .ranked-insight { min-height:0; margin-top:8px; padding:0; background:transparent; }
+.charts-grid.chart-pair .compact-insight .ranked-insight span { color:#64748b; font-size:13px; font-weight:600; }
+.charts-grid.chart-pair .compact-insight .ranked-insight strong { font-size:1.15rem; font-weight:750; }
+.charts-grid.chart-pair:has(.chart-stack) { align-items:start; }
+.chart-stack { display:flex; flex-direction:column; gap:12px; min-width:0; }
+.chart-stack > .insight-card,.chart-stack > .attention-card { margin:0; }
+.report-insights:empty,.report-insights[hidden] { display:none; }
+@media(max-width:760px){ .charts-grid.chart-pair { grid-template-columns:1fr; } }
 .report-ranking { margin-bottom:21px; padding:21px; border:1px solid var(--mp-line); border-radius:14px; background:#fff; }.report-ranking[hidden] { display:none; }.ranking-heading h2 { margin:0; font-size:14px; font-weight:750; }.ranking-heading p { margin:4px 0 20px; color:var(--mp-muted); font-size:12px; }
 .ranking-list { display:grid; gap:14px; }.ranking-item>div:first-child { display:flex; justify-content:space-between; gap:14px; margin-bottom:7px; font-size:12px; }.ranking-item span { color:#354054; }.ranking-item strong { color:#202a3c; font-weight:700; }.ranking-track { height:8px; overflow:hidden; border-radius:10px; background:#f0eff8; }.ranking-track span { display:block; height:100%; border-radius:inherit; background:var(--mp-purple); }
 .report-table-card { margin-bottom:12px; overflow:visible; border:0; background:transparent; }.table-toolbar { display:flex; padding:0 0 13px; border:0; }.table-toolbar h2 { font-size:16px; }.table-toolbar p { display:none; }.report-table-scroll { max-height:none; overflow:auto; border:1px solid var(--mp-line); border-radius:14px 14px 0 0; background:#fff; }
@@ -362,8 +375,8 @@ body { background:var(--mp-bg); }
 }
 
 /* Purchase request / purchase order summary. */
-.report-filter-card.purchase-filters { position:relative; row-gap:16px; }
-.purchase-filters::before { position:absolute; top:60px; right:16px; left:16px; height:1px; background:var(--mp-line); content:""; }
+.report-filter-card.purchase-filters { position:relative; row-gap:8px; }
+.purchase-filters::before { content:none; }
 .purchase-filters .report-search { width:240px; }
 .purchase-filters .report-search input { width:100%; }
 .purchase-filters #referenceQuickFilters { flex-wrap:nowrap; gap:8px; }
@@ -813,9 +826,64 @@ body { background:var(--mp-bg); }
 .report-detail-fields dd .cell-text{max-width:none;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
 .report-presets #comparisonControl,.report-presets #monthControl{display:none!important}
 
-/* Inventory has a single report view, so let its content use the full workspace. */
-.report-layout.inventory-expanded{grid-template-columns:minmax(0,1fr)}
-.report-layout.inventory-expanded>.report-side{display:none}
+/* Every report category uses the full workspace. The side view list is not shown. */
+.report-layout,.report-layout.inventory-expanded{grid-template-columns:minmax(0,1fr)}
+.report-layout>.report-side,.report-layout.inventory-expanded>.report-side{display:none}
+.report-heading-actions #quickReportView{width:auto;min-width:168px;max-width:230px;min-height:35px;border-color:var(--mp-line);border-radius:8px;background:#fff;font-size:12px}
+.report-heading-actions #quickReportView[hidden]{display:none}
+
+/* Compact report pages: one date range, no duplicate chart, page scroll instead of a table scrollbar. */
+.report-layout{padding-top:16px;padding-bottom:32px}
+.report-heading{margin-bottom:12px}
+.report-heading-title>span{width:40px;height:40px;flex-basis:40px;border-radius:11px;font-size:16px}
+.report-heading h1{font-size:20px}
+.report-freshness,.report-generated{margin:2px 0 0;font-size:12px}
+.report-filter-card{margin-bottom:14px;padding:10px 12px}
+.filter-card-heading h2{display:none}
+.report-filter-card:not(.reference-filters){align-items:center;gap:8px}
+.report-filter-card:not(.reference-filters) .filter-card-heading{order:2;width:auto;margin-left:auto}
+.report-filter-card:not(.reference-filters) .report-presets{order:1}
+.summary-grid,.report-main:has(.reference-filters) .summary-grid{margin-top:14px;margin-bottom:14px;gap:10px}
+.charts-grid,.report-ranking,.report-insights,.overview-grid{margin-bottom:12px}
+.report-table-scroll{max-width:100%;max-height:none;overflow:visible}
+.report-table,.report-table.product-sales-detail-table{width:100%;max-width:100%;min-width:0;table-layout:fixed}
+.report-table th,.report-table td,.report-table.product-sales-detail-table th,.report-table.product-sales-detail-table td{width:auto;overflow-wrap:break-word;word-break:normal;text-overflow:clip;white-space:normal}
+.report-table .sort-button{white-space:normal;text-align:left}
+.report-table .cell-text{max-width:none;overflow:visible;text-overflow:clip;white-space:normal}
+.table-toolbar{padding-bottom:8px}
+#reportComparisonLegend{display:none}
+.formula-notes{margin-top:8px;padding:0;border:0;background:transparent}
+.formula-notes-details{border:1px solid var(--mp-line);border-radius:10px;background:#fff}
+.formula-notes-details summary{cursor:pointer;padding:10px 14px;color:#526074;font-size:12px;font-weight:700}
+.formula-notes-details ul{margin:0;padding:0 16px 12px 32px}
+.formula-notes-details li{margin:0 0 6px;color:#526074;font-size:12px;line-height:1.4}
+.summary-grid.inventory-overview-summary .summary-card:not(.inventory-featured-metric) .summary-change.is-baseline{display:none}
+@media print{
+    #reportComparisonLegend:not([hidden]){display:block}
+    .formula-notes-details{border:0}
+    .formula-notes-details summary{display:none}
+    .formula-notes-details ul{display:block;padding-left:18px}
+}
+
+/* Sales reconciliation copy stays inside the card and wraps with the table. */
+.sales-reconciliation.table-insight-card{overflow:visible}
+.sales-reconciliation>p,.sales-reconciliation>small{display:block;max-width:100%;margin:0;padding:10px 16px 12px;white-space:normal;overflow-wrap:break-word;line-height:1.5}
+.sales-reconciliation>p{padding-bottom:8px;color:#5c6b82;font-size:12px}
+.sales-reconciliation>small{padding-top:10px;color:#5c6b82;font-size:12px}
+.sales-reconciliation .report-table-scroll{max-width:100%;overflow:visible;border-radius:0}
+.sales-reconciliation .report-table.compact{width:100%;min-width:0;table-layout:auto}
+.sales-reconciliation .report-table th,.sales-reconciliation .report-table td{white-space:normal;overflow-wrap:break-word}
+.sales-reconciliation .report-table th.numeric,.sales-reconciliation .report-table td.numeric{width:9rem;text-align:right;white-space:nowrap}
+
+.chart-heading-copy{min-width:0}
+.chart-caption{margin:4px 0 0;max-width:42rem;color:#5c6b82;font-size:12px;font-weight:500;line-height:1.45}
+
+.summary-change.is-snapshot,
+.summary-card:first-child .summary-context .summary-change.is-snapshot,
+.summary-grid .report-highlight-metric .summary-change.is-snapshot,
+.sales-summary .sales-metric-highlight .summary-change.is-snapshot,
+.sales-metric-primary .summary-change.is-snapshot{background:#e0f2fe;color:#0369a1}
+.reference-filters #referenceSnapshotLabel,.reference-filters #referenceSnapshotLabel i{color:#0369a1}
 
 /* Keep Inventory Overview charts compact in three columns on wide screens. */
 @media(min-width:1101px){
