@@ -11,10 +11,13 @@ const INVENTORY_SHELF_MINIMUM_THRESHOLD = 10;
  * comes from active inventory batches, while shelf stock comes from the live
  * product_selling_stock balance because sales decrement quantity_remaining.
  */
-function inventoryStockSummarySql(): string
+function inventoryStockSummarySql(?array $thresholds = null): string
 {
     $threshold = INVENTORY_LOW_STOCK_THRESHOLD;
     $shelfMinimum = INVENTORY_SHELF_MINIMUM_THRESHOLD;
+    if (is_array($thresholds) && array_key_exists('shelfLow', $thresholds)) {
+        $shelfMinimum = max(0, (int) $thresholds['shelfLow']);
+    }
 
     return "SELECT
             totals.*,

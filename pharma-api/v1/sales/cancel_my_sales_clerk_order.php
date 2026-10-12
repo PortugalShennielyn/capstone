@@ -13,6 +13,7 @@ try {
     }
 
     ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
 
     $payload = salesReadJsonBody();
     $orderId = (int) ($payload['order_id'] ?? 0);

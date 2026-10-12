@@ -16,6 +16,7 @@ $payload = json_decode(file_get_contents('php://input'), true);
 $supplierId = cleanId($payload['supplier_id'] ?? null);
 $productId = cleanId($payload['product_id'] ?? null);
 $purchaseUnit = trim((string) ($payload['purchase_unit'] ?? ''));
+$supplierCostInput = $payload['supplier_cost_input'] ?? null;
 $unitsPerPurchaseUnitRaw = $payload['units_per_purchase_unit'] ?? null;
 
 if ($purchaseUnit === '') {
@@ -38,6 +39,14 @@ try {
     $conversion = supplierPurchasingSetupFromPayload($pdo, $payload, $inventoryUnit);
     $purchaseUnit = $conversion['purchase_unit'];
     $unitsPerPurchaseUnit = $conversion['base_qty_per_purchase_unit'];
+    if ($supplierCostInput !== null && $supplierCostInput !== '') {
+        if (!is_numeric($supplierCostInput) || !is_finite((float) $supplierCostInput) || (float) $supplierCostInput < 0) {
+            throw new InvalidArgumentException('Supplier Price must be a valid amount greater than or equal to zero.');
+        }
+        $supplierCostInput = (float) $supplierCostInput;
+    } else {
+        $supplierCostInput = null;
+    }
 
     $supplierCheck = $pdo->prepare('SELECT COUNT(*) FROM suppliers WHERE supplier_id = :supplier_id AND archived_at IS NULL');
     $supplierCheck->execute([':supplier_id' => $supplierId]);
@@ -73,12 +82,14 @@ try {
 
     $pdo->beginTransaction();
     $statement = $pdo->prepare(
-        'INSERT INTO supplier_products (supplier_id, product_id, purchase_unit, purchase_unit_contains, inner_unit, units_per_inner_unit, inventory_unit, units_per_purchase_unit)
-         VALUES (:supplier_id, :product_id, :purchase_unit, :purchase_unit_contains, :inner_unit, :units_per_inner_unit, :inventory_unit, :units_per_purchase_unit)'
+        'INSERT INTO supplier_products (supplier_id, product_id, supplier_cost_price, supplier_cost_input, supplier_cost_basis, purchase_unit, purchase_unit_contains, inner_unit, units_per_inner_unit, inventory_unit, units_per_purchase_unit)
+         VALUES (:supplier_id, :product_id, :supplier_cost_price, :supplier_cost_input, \'purchase\', :purchase_unit, :purchase_unit_contains, :inner_unit, :units_per_inner_unit, :inventory_unit, :units_per_purchase_unit)'
     );
     $statement->execute([
         ':supplier_id' => $supplierId,
         ':product_id' => $productId,
+        ':supplier_cost_price' => $supplierCostInput === null ? null : $supplierCostInput / max(1, (int) $unitsPerPurchaseUnit),
+        ':supplier_cost_input' => $supplierCostInput,
         ':purchase_unit' => $purchaseUnit !== '' ? $purchaseUnit : null,
         ':purchase_unit_contains' => $conversion['contains'],
         ':inner_unit' => $conversion['inner_unit'] ?: null,

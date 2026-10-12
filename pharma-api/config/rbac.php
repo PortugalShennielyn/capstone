@@ -143,8 +143,16 @@ function salesClerkApiRequestAllowed(string $scriptName, string $requestMethod =
         return $method === 'GET';
     }
 
+    if ($method === 'GET' && in_array($relativePath, [
+        'dashboard/get_dashboard_summary.php',
+        'settings/get_admin_settings.php',
+    ], true)) {
+        return true;
+    }
+
     return in_array($relativePath, [
             'sales/get_sales_clerk_dashboard.php',
+            'sales/get_sales_clerk_reports.php',
             'sales/get_my_sales_clerk_order.php',
             'sales/get_my_sales_clerk_orders.php',
             'sales/cancel_my_sales_clerk_order.php',

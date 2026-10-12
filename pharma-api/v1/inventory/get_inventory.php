@@ -2,6 +2,7 @@
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';
+require_once '../settings/settings_helpers.php';
 require_once 'inventory_stock_summary.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -31,7 +32,8 @@ function inventoryDateStatus(?string $expiryDate): string
 }
 
 try {
-    $inventoryStockSql = inventoryStockSummarySql();
+    $stockThresholds = fetchStockThresholds($pdo);
+    $inventoryStockSql = inventoryStockSummarySql($stockThresholds);
     $statement = $pdo->prepare(
         "SELECT
             p.product_id,
@@ -351,7 +353,8 @@ try {
 
     echo json_encode([
         'status' => 'success',
-        'data' => $rows
+        'data' => $rows,
+        'stockThresholds' => $stockThresholds,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     http_response_code(500);

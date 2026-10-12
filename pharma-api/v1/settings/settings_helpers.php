@@ -254,14 +254,81 @@ function deleteBusinessHourException(PDO $pdo, string $date): void
     $stmt->execute([':exception_date' => normalizeExceptionDate($date)]);
 }
 
+function ensureStockThresholdColumns(PDO $pdo): void
+{
+    $columns = [
+        'storage_low_stock_threshold' => 'INT NOT NULL DEFAULT 30',
+        'shelf_low_stock_threshold' => 'INT NOT NULL DEFAULT 10',
+        'critical_stock_threshold' => 'INT NOT NULL DEFAULT 15',
+    ];
+
+    foreach ($columns as $name => $definition) {
+        $check = $pdo->prepare(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'system_settings'
+               AND COLUMN_NAME = :column_name"
+        );
+        $check->execute([':column_name' => $name]);
+        if ((int) $check->fetchColumn() === 0) {
+            $pdo->exec('ALTER TABLE system_settings ADD COLUMN `' . $name . '` ' . $definition);
+        }
+    }
+}
+
+function fetchStockThresholds(PDO $pdo): array
+{
+    ensureStockThresholdColumns($pdo);
+    $row = $pdo->query(
+        'SELECT storage_low_stock_threshold, shelf_low_stock_threshold, critical_stock_threshold
+         FROM system_settings
+         ORDER BY setting_id ASC
+         LIMIT 1'
+    )->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    return [
+        'storageLow' => max(0, (int) ($row['storage_low_stock_threshold'] ?? 30)),
+        'shelfLow' => max(0, (int) ($row['shelf_low_stock_threshold'] ?? 10)),
+        'critical' => max(0, (int) ($row['critical_stock_threshold'] ?? 15)),
+    ];
+}
+
+function saveStockThresholds(PDO $pdo, int $storageLow, int $shelfLow, int $critical): array
+{
+    ensureStockThresholdColumns($pdo);
+    $statement = $pdo->prepare(
+        'INSERT INTO system_settings (
+            setting_id,
+            storage_low_stock_threshold,
+            shelf_low_stock_threshold,
+            critical_stock_threshold
+         ) VALUES (1, :storage_low, :shelf_low, :critical)
+         ON DUPLICATE KEY UPDATE
+            storage_low_stock_threshold = VALUES(storage_low_stock_threshold),
+            shelf_low_stock_threshold = VALUES(shelf_low_stock_threshold),
+            critical_stock_threshold = VALUES(critical_stock_threshold),
+            updated_at = NOW()'
+    );
+    $statement->execute([
+        ':storage_low' => $storageLow,
+        ':shelf_low' => $shelfLow,
+        ':critical' => $critical,
+    ]);
+
+    return fetchStockThresholds($pdo);
+}
+
 function fetchSystemSettings(PDO $pdo): array
 {
+    ensurePurchaseRequestQuantityLimitColumn($pdo);
+    ensureStockThresholdColumns($pdo);
     $desiredColumns = [
         'pharmacy_name', 'pharmacy_email', 'contact_number', 'tin_license_number',
         'pharmacy_address', 'website', 'timezone', 'logo_path',
         'grn_received_by_name', 'grn_approved_by_name',
         'pr_prepared_name', 'pr_prepared_role', 'pr_reviewed_name', 'pr_reviewed_role',
         'po_prepared_name', 'po_prepared_role', 'po_approved_name', 'po_approved_role',
+        'pr_quantity_limit',
     ];
     $availableColumns = array_column($pdo->query('SHOW COLUMNS FROM system_settings')->fetchAll(PDO::FETCH_ASSOC), 'Field');
     $selectedColumns = array_values(array_intersect($desiredColumns, $availableColumns));
@@ -273,6 +340,7 @@ function fetchSystemSettings(PDO $pdo): array
     ));
 
     $row = $stmt->fetch() ?: [];
+    $thresholds = fetchStockThresholds($pdo);
 
     return [
         'name' => (string) ($row['pharmacy_name'] ?? 'Dr. R Pharmacy'),
@@ -293,7 +361,31 @@ function fetchSystemSettings(PDO $pdo): array
         'poPreparedRole' => trim((string) ($row['po_prepared_role'] ?? '')) ?: 'Manager',
         'poApprovedName' => (string) ($row['po_approved_name'] ?? ''),
         'poApprovedRole' => trim((string) ($row['po_approved_role'] ?? '')) ?: 'Supervisor',
+        'prQuantityLimit' => max(1, (int) ($row['pr_quantity_limit'] ?? 50)),
+        'storageLowStock' => $thresholds['storageLow'],
+        'shelfLowStock' => $thresholds['shelfLow'],
+        'criticalStock' => $thresholds['critical'],
     ];
+}
+
+function ensurePurchaseRequestQuantityLimitColumn(PDO $pdo): void
+{
+    $check = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'system_settings'
+           AND COLUMN_NAME = 'pr_quantity_limit'"
+    );
+    if ((int) $check->fetchColumn() === 0) {
+        $pdo->exec('ALTER TABLE system_settings ADD COLUMN pr_quantity_limit INT NOT NULL DEFAULT 50 AFTER po_approved_role');
+    }
+}
+
+function fetchPurchaseRequestQuantityLimit(PDO $pdo): int
+{
+    ensurePurchaseRequestQuantityLimitColumn($pdo);
+    $limit = (int) ($pdo->query('SELECT pr_quantity_limit FROM system_settings ORDER BY setting_id ASC LIMIT 1')->fetchColumn() ?: 50);
+    return max(1, $limit);
 }
 
 ?>

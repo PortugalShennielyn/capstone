@@ -317,6 +317,7 @@ body { background:var(--mp-bg); }
 .summary-change { display:inline-flex; align-items:center; padding:3px 9px; border-radius:999px; background:#e5f7ee; color:#07875d; font-size:11px; font-weight:750; line-height:1.2; white-space:nowrap; }
 .summary-change.is-down { background:#fce8e8; color:#b93838; }
 .summary-change.is-flat,.summary-change.is-neutral { background:#eef0f5; color:#64718a; }
+.summary-change.is-baseline { background:#e5f3ff; color:#2563a6; }
 .summary-change.is-good { background:#e5f7ee; color:#07875d; }
 .summary-change.is-warning { background:#fff4d6; color:#a45b00; }
 .summary-change.is-risk { background:#fce8e8; color:#b93838; }
@@ -344,6 +345,12 @@ body { background:var(--mp-bg); }
 .report-primary-metric .summary-trend-indicator.is-empty small { color:#f0edff; }
 .report-primary-metric .summary-trend-indicator.is-empty { right:auto; left:12px; width:calc(100% - 24px); }
 .purchase-metric-primary .summary-trend-indicator.is-empty { right:auto; left:12px; width:calc(100% - 24px); }
+.report-primary-metric .summary-explanation,.purchase-metric-primary .summary-explanation { position:absolute; z-index:1; bottom:10px; left:12px; width:39%; margin:0; color:#f0edff; font-size:10px; font-weight:600; line-height:1.4; }
+.report-primary-metric .summary-context,.purchase-metric-primary .summary-context { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:2px; }
+.report-primary-metric .summary-context-range,.purchase-metric-primary .summary-context-range { color:#e2deff; font-size:10px; font-weight:650; line-height:1.3; }
+.report-primary-metric .summary-trend-indicator.is-empty { right:10px; left:auto; width:48%; }
+.report-primary-metric .summary-trend-indicator.is-empty small { right:0; left:auto; width:100%; color:#f0edff; text-align:right; }
+.purchase-summary .purchase-order-count { margin-top:7px; }
 @media(max-width:1100px) {
     .summary-grid.sales-summary,.report-main:has(.reference-filters) .summary-grid.sales-summary { grid-template-columns:repeat(3,minmax(0,1fr)); }
     .sales-summary .sales-metric-primary,.report-main:has(.reference-filters) .sales-summary .sales-metric-primary { grid-column:1/-1; grid-row:auto; min-height:180px; }
@@ -454,6 +461,7 @@ body { background:var(--mp-bg); }
 .summary-grid .report-highlight-metric .financial-metric-description { position:relative; z-index:1; max-width:32ch; margin:10px 0 0; color:#e8e5ff; font-size:12px; line-height:1.45; }
 .summary-grid .report-highlight-metric .summary-context { position:relative; z-index:1; margin-top:12px; }
 .summary-grid .report-highlight-metric .summary-change { background:rgba(255,255,255,.2); color:#fff; }
+.summary-grid .report-highlight-metric .summary-change.is-baseline { background:#e5f3ff; color:#2563a6; }
 .sales-summary .sales-metric-highlight { min-height:116px; padding:17px 18px; border:0; background:linear-gradient(118deg,#5c4be8,#6350ec 65%,#5947db); color:#fff; }
 .sales-summary .sales-metric-highlight > span { color:#e7e4ff; }
 .sales-summary .sales-metric-highlight > strong { color:#fff; font-size:26px; }
@@ -647,7 +655,7 @@ body { background:var(--mp-bg); }
   body:has(#reportContent.is-overview) .report-print-header { border-bottom:0 !important; padding-bottom:2mm !important; }
   body:has(#reportContent.is-overview) .report-print-header > strong { color:#111827 !important; font-size:15pt !important; letter-spacing:.03em; }
   body:has(#reportContent.is-overview) .report-print-header > p:not([hidden]) { color:#4b5563 !important; font-size:8.5pt !important; }
-  body:has(#reportContent.is-overview) .report-print-metadata { padding:3mm 0 !important; border-top:1px solid #9ca3af !important; border-bottom:1px solid #9ca3af !important; }
+  body:has(#reportContent.is-overview) .report-print-metadata { padding:3mm 0 !important; border-top:0 !important; border-bottom:1px solid #9ca3af !important; }
   body:has(#reportContent.is-overview) .report-print-metadata h2 { color:#111827 !important; font-size:14pt !important; }
   body:has(#reportContent.is-overview) .report-print-metadata p,
   body:has(#reportContent.is-overview) .report-print-metadata small { color:#374151 !important; font-size:8pt !important; }
@@ -693,4 +701,125 @@ body { background:var(--mp-bg); }
 }
 @media(max-width:460px) {
     .summary-grid:not(.sales-summary),.summary-grid.sales-summary,.report-main:has(.reference-filters) .summary-grid.sales-summary { grid-template-columns:1fr; }
+}
+
+/* Keep the primary metric description and trend together like Sales Summary. */
+.summary-grid .report-primary-metric .financial-metric-description { position:absolute; z-index:1; bottom:10px; left:12px; width:39%; margin:0; color:#f0edff; font-size:10px; line-height:1.4; }
+.summary-grid .report-primary-metric .financial-trend-indicator { position:absolute; right:0; bottom:4px; width:53%; height:56px; margin:0; }
+
+/* Shared report masthead, styled to match the purchase-order print header. */
+@media print {
+    .report-print-header,
+    body:has(#reportContent.is-overview) .report-print-header {
+        display:block !important;
+        margin:0 0 5mm !important;
+        padding:0 0 3mm !important;
+        border-bottom:1px solid #111827 !important;
+        text-align:left !important;
+        color:#111827 !important;
+        break-inside:avoid !important;
+    }
+    .report-print-masthead { position:relative; display:flex; min-height:25mm; align-items:center; justify-content:center; }
+    .report-print-brand { display:flex !important; min-width:0; flex-direction:column; align-items:center; gap:1mm !important; text-align:center; }
+    .report-print-brand > strong,
+    body:has(#reportContent.is-overview) .report-print-brand > strong { color:#6941c6 !important; font-size:20pt !important; font-weight:900 !important; line-height:1.05; letter-spacing:.12em !important; }
+    .report-print-brand > span { color:#111827 !important; font-size:8pt !important; font-weight:800; letter-spacing:.12em; }
+    .report-print-brand > b { color:#111827 !important; font-size:10pt; font-weight:800; letter-spacing:.04em; }
+    .report-print-brand > small { color:#334155 !important; font-size:7.5pt !important; line-height:1.3; }
+    .report-print-status { position:absolute; top:13mm; right:0; padding:1mm 3mm; border:1px solid #94a3b8; border-radius:5mm; color:#334155; font-size:7pt; font-weight:800; letter-spacing:.06em; }
+    .report-print-branch { display:flex; justify-content:space-between; gap:8mm; margin-top:2mm; padding-top:2mm; color:#111827; font-size:8pt; }
+    .report-print-branch b { margin-right:1mm; font-weight:800; }
+}
+/* Shared report context and comparison details. */
+.report-freshness{margin:-10px 0 14px;color:var(--text-muted);font-size:11px;line-height:1.4}.summary-context,.summary-comparison{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.summary-period-note{color:var(--text-muted);font-size:10px;font-weight:650;line-height:1.35}.sales-summary .summary-period-note{color:#dedaff}.sales-metric-highlight .summary-period-note{color:#e5e1ff}.report-print-extra{overflow-wrap:anywhere}.sales-reconciliation>p{margin:0 0 10px;color:var(--text-muted);font-size:11px}.sales-reconciliation>small{display:block;margin-top:9px;color:var(--text-muted);font-size:10px;line-height:1.45}
+@media print{.report-freshness{display:none!important}.report-print-extra{display:block!important;margin:1.5mm 0 0!important;color:#475569!important;font-size:8pt!important;text-align:center;overflow-wrap:anywhere}.report-print-metadata>p[hidden]{display:none!important}#tableInsights:has(.sales-reconciliation){display:block!important;margin-top:3mm!important}.sales-reconciliation{break-inside:avoid}.sales-reconciliation>p,.sales-reconciliation>small{color:#374151!important;font-size:8pt!important}.sales-reconciliation .report-table th,.sales-reconciliation .report-table td{padding:1.5mm 2mm!important;font-size:8pt!important}}
+.summary-period-current{color:var(--text-muted);font-size:10px;font-weight:650;line-height:1.35}.sales-summary .summary-period-current,.sales-metric-highlight .summary-period-current{color:#e5e1ff}
+/* Long comparison ranges need room before the primary metric's sparkline. */
+.summary-grid:not(.sales-summary) .report-primary-metric:not(.report-highlight-metric) .summary-explanation{position:relative;inset:auto;width:auto;max-width:100%;margin:12px 0 52px;color:#f0edff;font-size:11px;line-height:1.4;overflow-wrap:anywhere}.summary-grid:not(.sales-summary) .report-primary-metric:not(.report-highlight-metric){min-height:210px;padding-bottom:16px}.summary-grid:not(.sales-summary) .report-primary-metric:not(.report-highlight-metric) .summary-trend-indicator{right:10px;bottom:8px;width:48%;height:38px}
+.report-presets .report-comparison-control,.report-presets .report-month-control{display:inline-flex;align-items:center;gap:6px;margin:0 4px;padding:3px 7px;border-left:1px solid var(--border-soft);color:var(--report-muted);font-size:11px;font-weight:700}.report-presets .report-comparison-control select,.report-presets .report-month-control select{max-width:190px;min-height:31px;padding:4px 25px 4px 8px;border:1px solid var(--border-soft);border-radius:6px;background:#fff;color:var(--report-ink);font-size:11px}.report-comparison-legend,.report-quality-notice{margin:-2px 0 14px;padding:10px 13px;border:1px solid var(--border-soft);border-radius:8px;background:var(--panel);color:var(--report-muted);font-size:11px;line-height:1.45}.report-quality-notice.is-warning{border-color:#f5d89a;background:#fffbeb;color:#8a4b08}.report-quality-notice.is-info{border-color:#cbd5e1;background:#f8fafc;color:#475569}.report-comparison-legend[hidden],.report-quality-notice[hidden]{display:none!important}
+@media(max-width:760px){.report-presets .report-comparison-control,.report-presets .report-month-control{flex:1 1 100%;justify-content:space-between;margin:3px 0;padding:5px 7px;border-left:0;border-top:1px solid var(--border-soft)}.report-presets .report-comparison-control select,.report-presets .report-month-control select{flex:1;max-width:none}.report-comparison-legend,.report-quality-notice{font-size:10px}}
+@media print{.report-presets .report-comparison-control,.report-presets .report-month-control,.report-comparison-legend{display:none!important}.report-quality-notice{margin:3mm 0;padding:2mm 3mm;border-color:#9ca3af!important;background:#fff!important;color:#111827!important;font-size:8pt!important}#tableInsights:has(.monthly-sales-totals){display:block!important;margin-top:3mm!important}.monthly-sales-totals{break-inside:avoid}.monthly-sales-totals .report-table th,.monthly-sales-totals .report-table td{padding:1.5mm 2mm!important;font-size:8pt!important}}
+
+/* Keep comparison and month controls aligned on mid-size report pages (including Purchasing). */
+@media (min-width:761px) and (max-width:1100px){.report-presets .report-comparison-control,.report-presets .report-month-control{flex:1 1 260px;justify-content:space-between;min-width:0}.report-presets .report-comparison-control select,.report-presets .report-month-control select{flex:1;min-width:0;max-width:260px}.report-presets #reportDateRange{flex:0 1 auto;white-space:nowrap}}
+
+/* Avoid divider rules crossing wrapped preset controls on Purchasing and other report views. */
+@media(max-width:1100px){.report-presets{row-gap:7px}.report-presets .report-comparison-control,.report-presets .report-month-control{border:0!important;border-top:0!important;border-left:0!important;margin:2px 4px;padding:5px 7px}}
+
+/* The fixed-position divider crossed the expanded purchasing date controls. */
+.purchase-filters::before{display:none!important;content:none!important}
+
+/* Keep the month shortcut beside Compare when the report toolbar has room. */
+@media(min-width:761px) and (max-width:1600px){.report-presets .report-month-control{flex:0 1 225px;gap:4px;margin-left:0;padding-right:4px;padding-left:4px}.report-presets .report-month-control select{flex:1;min-width:0;max-width:155px}}
+
+/* Reserve enough space for Month to stay on the Compare row across report pages. */
+@media(min-width:761px) and (max-width:1600px){.report-presets button{padding-right:8px;padding-left:8px}.report-presets .report-comparison-control select{max-width:175px}.report-presets #monthControl{flex:0 0 auto!important;gap:4px;margin:0;padding-right:4px;padding-left:4px;border-left:0}.report-presets #monthControl select{width:150px!important;max-width:150px!important;min-width:150px!important}}
+
+/* Make comparison and selected-period descriptions readable on white sales cards. */
+.sales-summary .summary-comparison>.summary-period-note,.sales-summary .summary-comparison>.summary-period-current{color:#475569!important}.sales-summary .sales-metric-primary .summary-period-note,.sales-summary .sales-metric-primary .summary-period-current,.sales-summary .sales-metric-highlight .summary-period-note,.sales-summary .sales-metric-highlight .summary-period-current{color:#e5e1ff!important}
+
+/* Keep comparison and period labels high-contrast on Overview's purple cards. */
+.summary-grid .report-highlight-metric .summary-period-note,.summary-grid .report-highlight-metric .summary-period-current,.summary-grid .report-primary-metric .summary-period-note,.summary-grid .report-primary-metric .summary-period-current{color:#f1efff!important}
+
+/* Keep the Inventory Overview summary compact and aligned instead of letting
+   the On Hand card span two rows and stretch every neighboring tile. */
+.summary-grid.inventory-overview-summary,
+.report-main:has(.reference-filters) .summary-grid.inventory-overview-summary { grid-template-columns:repeat(6,minmax(0,1fr))!important; grid-auto-rows:minmax(120px,auto); align-items:start; gap:10px; }
+.summary-grid.inventory-overview-summary>.summary-card,
+.report-main:has(.reference-filters) .summary-grid.inventory-overview-summary>.summary-card { grid-column:auto!important; grid-row:auto!important; height:150px; min-height:150px; padding:12px 14px; display:flex; flex-direction:column; align-items:flex-start; }
+.summary-grid.inventory-overview-summary>.inventory-featured-metric,
+.report-main:has(.reference-filters) .summary-grid.inventory-overview-summary>.inventory-featured-metric { grid-column:span 2!important; height:185px; min-height:185px; padding:16px; }
+.summary-grid.inventory-overview-summary>.summary-card>span { min-height:18px; }
+.summary-grid.inventory-overview-summary>.summary-card>strong { margin-top:3px; line-height:1.15; }
+.summary-grid.inventory-overview-summary>.summary-card .summary-context { width:100%; margin-top:6px; gap:4px 6px; }
+.summary-grid.inventory-overview-summary>.summary-card .summary-period-note,
+.summary-grid.inventory-overview-summary>.summary-card .summary-period-current { flex:1 1 100%; }
+.summary-grid.inventory-overview-summary>.summary-card .summary-change { align-self:flex-start; }
+.summary-grid.inventory-overview-summary>.inventory-featured-metric>strong { margin-top:8px; font-size:30px; }
+.summary-grid.inventory-overview-summary>.inventory-featured-metric .summary-context { margin-top:9px; }
+.summary-grid.inventory-overview-summary>.inventory-featured-metric .financial-metric-description { margin-top:8px; font-size:12px; line-height:1.4; }
+.summary-grid.inventory-overview-summary>.inventory-featured-metric.report-primary-metric,
+.report-main:has(.reference-filters) .summary-grid.inventory-overview-summary>.inventory-featured-metric.report-primary-metric { padding-bottom:52px; }
+.summary-grid.inventory-overview-summary>.report-primary-metric .summary-explanation,
+.report-main:has(.reference-filters) .summary-grid.inventory-overview-summary>.report-primary-metric .summary-explanation { position:absolute; bottom:10px; left:16px; width:43%; margin:0; }
+@media(max-width:1100px) {
+    .summary-grid.inventory-overview-summary,
+    .report-main:has(.reference-filters) .summary-grid.inventory-overview-summary { grid-template-columns:repeat(4,minmax(0,1fr))!important; }
+}
+@media(max-width:760px) {
+    .summary-grid.inventory-overview-summary,
+    .report-main:has(.reference-filters) .summary-grid.inventory-overview-summary { grid-template-columns:repeat(2,minmax(0,1fr))!important; }
+}
+@media(max-width:460px) {
+    .summary-grid.inventory-overview-summary,
+    .report-main:has(.reference-filters) .summary-grid.inventory-overview-summary { grid-template-columns:1fr!important; }
+    .summary-grid.inventory-overview-summary>.inventory-featured-metric,
+    .report-main:has(.reference-filters) .summary-grid.inventory-overview-summary>.inventory-featured-metric { grid-column:span 1!important; }
+}
+
+/* Keep Product Sales detail columns aligned when paging through different products. */
+.report-table.product-sales-detail-table{width:1500px;min-width:1500px;table-layout:fixed}
+.report-table.product-sales-detail-table th,.report-table.product-sales-detail-table td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.report-table.product-sales-detail-table th:nth-child(1),.report-table.product-sales-detail-table td:nth-child(1){width:140px}
+.report-table.product-sales-detail-table th:nth-child(2),.report-table.product-sales-detail-table td:nth-child(2){width:140px}
+.report-table.product-sales-detail-table th:nth-child(3),.report-table.product-sales-detail-table td:nth-child(3){width:280px}
+.report-table.product-sales-detail-table th:nth-child(4),.report-table.product-sales-detail-table td:nth-child(4){width:140px}
+.report-table.product-sales-detail-table th:nth-child(5),.report-table.product-sales-detail-table td:nth-child(5){width:90px}
+.report-table.product-sales-detail-table th:nth-child(6),.report-table.product-sales-detail-table td:nth-child(6){width:110px}
+.report-table.product-sales-detail-table th:nth-child(7),.report-table.product-sales-detail-table td:nth-child(7){width:90px}
+.report-table.product-sales-detail-table th:nth-child(8),.report-table.product-sales-detail-table td:nth-child(8){width:155px}
+.report-table.product-sales-detail-table th:nth-child(9),.report-table.product-sales-detail-table td:nth-child(9){width:170px}
+.report-table.product-sales-detail-table th:nth-child(10),.report-table.product-sales-detail-table td:nth-child(10){width:185px}
+.report-detail-fields dd .cell-text{max-width:none;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
+.report-presets #comparisonControl,.report-presets #monthControl{display:none!important}
+
+/* Inventory has a single report view, so let its content use the full workspace. */
+.report-layout.inventory-expanded{grid-template-columns:minmax(0,1fr)}
+.report-layout.inventory-expanded>.report-side{display:none}
+
+/* Keep Inventory Overview charts compact in three columns on wide screens. */
+@media(min-width:1101px){
+    .report-visuals.inventory-overview-grid{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+    .report-visuals.inventory-overview-grid>#reportCharts{display:contents}
+    .report-visuals.inventory-overview-grid>.report-ranking{height:auto;min-width:0;align-self:stretch}
 }

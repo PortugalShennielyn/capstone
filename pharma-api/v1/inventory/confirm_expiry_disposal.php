@@ -3,6 +3,7 @@ require_once '../../config/db_connection.php';
 $allowedRoles = ['super_admin', 'admin', 'manager', 'supervisor', 'inventory_manager', 'Admin', 'Supervisor', 'Inventory Manager', 'ro-super-admin', 'ro-admin', 'ro-manager', 'ro-supervisor', 'ro-inventory-manager', 'ro_inventory_manager'];
 require_once '../../config/require_auth.php';
 require_once '../activity_log_helpers.php';
+require_once '../../config/audit_log.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 
@@ -43,6 +44,7 @@ try {
     }
 
     ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     $pdo->beginTransaction();
     $batchStmt = $pdo->prepare(
         'SELECT batch_id, product_id, legacy_inventory_id, storage_qty, expiry_action_status
@@ -66,6 +68,9 @@ try {
     $available = (int) $batch['storage_qty'];
     foreach ($shelfRows as $shelfRow) $available += (int) $shelfRow['quantity_remaining'];
     if ($quantity > $available) throw new InvalidArgumentException('Disposal quantity exceeds the remaining batch quantity.');
+    $totalBeforeStmt = $pdo->prepare('SELECT COALESCE((SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id=:storage_id),0) + COALESCE((SELECT SUM(quantity_remaining) FROM product_selling_stock WHERE product_id=:shelf_id),0)');
+    $totalBeforeStmt->execute([':storage_id' => $batch['product_id'], ':shelf_id' => $batch['product_id']]);
+    $totalStockBefore = (int) $totalBeforeStmt->fetchColumn();
 
     $remaining = $quantity;
     $storageDisposed = min($remaining, (int) $batch['storage_qty']);
@@ -126,7 +131,17 @@ try {
         $remarks !== '' ? $remarks : 'None',
         trim((string) ($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'Authorized user'))
     );
-    if (!recordActivityLog($pdo, 'Expiry Monitoring', 'Disposal Confirmed', $description, $batchId)) {
+    $productNameStmt = $pdo->prepare('SELECT product_name FROM product WHERE product_id=:product_id LIMIT 1');
+    $productNameStmt->execute([':product_id' => $batch['product_id']]);
+    $productName = trim((string) $productNameStmt->fetchColumn()) ?: 'Product';
+    $newStock = $totalStockBefore - $quantity;
+    recordInventoryAudit($pdo, 'STOCK_ADJUSTED', "{$productName}: stock changed from {$totalStockBefore} to {$newStock}. Difference: -{$quantity}. Expiry disposal.", (string) $batch['product_id'], [
+        'product_id' => $batch['product_id'], 'product_name' => $productName,
+        'previous_stock' => $totalStockBefore, 'new_stock' => $newStock, 'difference' => -$quantity,
+        'reason' => 'Expiry disposal', 'batch_id' => $batchId, 'storage_quantity' => $storageDisposed,
+        'shelf_quantity' => $shelfDisposed, 'disposal_reason' => $reason, 'disposal_date' => $disposalDate,
+    ]);
+    if (!recordActivityLog($pdo, 'Expiry Monitoring', 'Disposal Confirmed', $description, $batchId, null, null, false)) {
         throw new RuntimeException('Unable to write disposal confirmation to the audit history.');
     }
     $pdo->commit();

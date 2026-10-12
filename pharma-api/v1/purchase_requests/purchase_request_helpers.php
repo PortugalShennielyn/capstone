@@ -140,6 +140,15 @@ function positivePurchaseRequestQuantity($value, string $baseInventoryUnit = '')
     return purchaseRequestUnitAllowsDecimals($baseInventoryUnit) ? round($quantity, 2) : (int) $quantity;
 }
 
+function assertPurchaseRequestQuantityLimit($quantity, PDO $pdo): void
+{
+    require_once __DIR__ . '/../settings/settings_helpers.php';
+    $limit = fetchPurchaseRequestQuantityLimit($pdo);
+    if ((float) $quantity > $limit) {
+        throw new InvalidArgumentException('Requested quantity cannot exceed ' . number_format($limit) . ' per product line.');
+    }
+}
+
 function purchaseRequestBaseInventoryUnit(PDO $pdo, string $productId): ?string
 {
     $stmt = $pdo->prepare(
@@ -530,6 +539,7 @@ function purchaseRequestSupplierOptions(PDO $pdo, array $productIds, bool $forUp
     $stmt = $pdo->prepare(
         "SELECT sp.supplier_product_id, sp.product_id, sp.supplier_id, s.supplier_name,
                 s.address AS supplier_address, s.phone AS supplier_phone, s.email AS supplier_email,
+                sp.supplier_cost_price, sp.supplier_cost_input, sp.supplier_cost_basis,
                 sp.purchase_unit, sp.purchase_unit_contains, sp.inner_unit, sp.units_per_inner_unit,
                 sp.inventory_unit, sp.units_per_purchase_unit
          FROM supplier_products sp
@@ -544,7 +554,14 @@ function purchaseRequestSupplierOptions(PDO $pdo, array $productIds, bool $forUp
     $hierarchies = supplierProductPurchasingHierarchies($pdo, array_column($rows, 'supplier_product_id'));
     foreach ($rows as $row) {
         $row = array_replace($row, $hierarchies[$row['supplier_product_id']] ?? []);
-        $options[(string) $row['product_id']][] = enrichSupplierPurchasingSetup($row);
+        $enriched = enrichSupplierPurchasingSetup($row);
+        $enriched['supplier_price_available'] = $row['supplier_cost_input'] !== null
+            || $row['supplier_cost_price'] !== null;
+        $enriched['supplier_price_per_purchase_unit'] = strtolower((string) ($enriched['supplier_cost_basis'] ?? 'inventory')) === 'purchase'
+            && $row['supplier_cost_input'] !== null
+                ? round((float) $row['supplier_cost_input'], 2)
+                : (float) ($enriched['estimated_purchase_unit_cost'] ?? 0);
+        $options[(string) $row['product_id']][] = $enriched;
     }
     return $options;
 }

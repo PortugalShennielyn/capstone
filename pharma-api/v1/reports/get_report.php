@@ -104,15 +104,15 @@ function salesReport(PDO $pdo, array $f, array $role): array
     $comparisonPeriod = null;
     $previousSummary = [];
     $previousPaymentValues = [];
-    if (in_array($f['report_view'] ?? '', ['', 'Sales Summary', 'Management Overview'], true)) {
-    $periodStart = new DateTimeImmutable($f['start_date']);
-    $periodDays = $periodStart->diff(new DateTimeImmutable($f['end_date']))->days + 1;
-    $previousStart = $periodStart->modify('-'.$periodDays.' days');
-    $previousEnd = $periodStart->modify('-1 day');
+    $comparisonRange = reportComparisonRange($f['start_date'], $f['end_date'], $f['comparison_mode'] ?? 'previous');
+    if (in_array($f['report_view'] ?? '', ['', 'Sales Summary', 'Management Overview'], true) && $comparisonRange !== null) {
+    $previousStart = new DateTimeImmutable($comparisonRange['start']);
+    $previousEnd = new DateTimeImmutable($comparisonRange['end']);
+    $periodDays = $comparisonRange['days'];
     $previousFilters = $f;
     $previousFilters['start_date'] = $previousStart->format('Y-m-d');
     $previousFilters['end_date'] = $previousEnd->format('Y-m-d');
-    $previousFilters['date_end_exclusive'] = $periodStart->format('Y-m-d');
+    $previousFilters['date_end_exclusive'] = date('Y-m-d', strtotime($comparisonRange['end'].' +1 day'));
     [$previousWhere, $previousParams] = reportSalesWhere($previousFilters, $role);
     $previousBaseParams = $previousParams;
     if ($itemScoped) {
@@ -389,6 +389,16 @@ function salesReport(PDO $pdo, array $f, array $role): array
     if (!empty($role['sales_clerk'])) $actions[] = ['title'=>'Order follow-up','description'=>'Review your open, waiting, and completed sales orders.','href'=>'sales_clerk_orders.html','label'=>'Open order queue','tone'=>'indigo'];
     return [
       'summary'=>$summaryCards,
+        'reconciliation'=>[
+            'rows'=>[
+                ['label'=>'Gross sales / subtotal','value'=>(float)($summary['subtotal']??0)],
+                ['label'=>'Discounts','value'=>(float)($summary['discounts']??0)],
+                ['label'=>'Refunds','value'=>(float)($summary['refunds']??0)],
+                ['label'=>'Net sales','value'=>(float)($summary['net_sales']??0)],
+                ['label'=>'VAT included in sales','value'=>(float)($summary['vat']??0)],
+            ],
+            'note'=>'Net sales reflects completed paid amounts after recorded refunds. VAT is shown as a component of sales, not added on top. Totals follow this account’s access scope and active filters.',
+        ],
         'charts'=>$charts,
         'insights'=>[['title'=>'Payment methods','tone'=>'sales','rows'=>$payment,'format'=>'currency']],
         'comparison_period'=>$comparisonPeriod,
@@ -642,7 +652,7 @@ function productReport(PDO $pdo,array $f,array $role): array
     foreach($sales as &$r){$r['sold_qty']=(int)$r['sold_qty'];$r['revenue']=(float)$r['revenue'];$r['on_hand']=$map[$r['product_id']]??0;$r['sell_through_rate']=$r['sold_qty']+$r['on_hand']>0?round(100*$r['sold_qty']/($r['sold_qty']+$r['on_hand']),1):0;$r['days_since_last_sale']=$r['last_sale']!==null?(int)((new DateTime($r['last_sale']))->diff(new DateTime())->days):null;
       if($r['on_hand']>0&&$r['sold_qty']===0)$r['performance_status']='No Sales';elseif($r['on_hand']>=$avgStock&&$r['sold_qty']<=$avgSales*.25)$r['performance_status']='High Stock / Low Sales';elseif($r['sold_qty']>0&&$r['sold_qty']<=$avgSales*.25)$r['performance_status']='Slow Moving';elseif(count($selling)>1&&$r['sold_qty']>=$avgSales)$r['performance_status']='Fast Moving';else $r['performance_status']='Steady';}unset($r);
     usort($sales,fn($a,$b)=>$b['revenue']<=>$a['revenue']);$topQty=$sales;$topRevenue=$sales;usort($topQty,fn($a,$b)=>$b['sold_qty']<=>$a['sold_qty']);
-    $chart=static fn($rows,$field)=>array_map(fn($r)=>['label'=>$r['brand_name'].' — '.$r['product_name'],'value'=>$r[$field]],array_slice(array_values(array_filter($rows,fn($r)=>$r[$field]>0)),0,5));
+    $chartLimit=!empty($role['management'])?20:5;$chart=static fn($rows,$field)=>array_map(fn($r)=>['label'=>$r['brand_name'].' — '.$r['product_name'],'value'=>$r[$field]],array_slice(array_values(array_filter($rows,fn($r)=>$r[$field]>0)),0,$chartLimit));
     $s=['sold'=>array_sum(array_column($sales,'sold_qty')),'revenue'=>array_sum(array_column($sales,'revenue')),'no'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='No Sales')),'slow'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='Slow Moving')),'high'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='High Stock / Low Sales')),'fast'=>count(array_filter($sales,fn($r)=>$r['performance_status']==='Fast Moving'))];
     $sales=reportSortArray($sales,$f);
     return ['summary'=>[
@@ -888,6 +898,80 @@ try {
     // apply reportSalesWhere() with the current role scope.
     $referenceSalesLayout=($_GET['layout']??'')==='reference';
     $report=match($category){'sales'=>($referenceSalesLayout?referenceSalesReport($pdo,$f,$role):salesReport($pdo,$f,$role)),'inventory'=>(!empty($role['supervisor'])?supervisorInventoryReport($pdo,$f):($referenceLayout?referenceInventoryReport($pdo,$f,$role):inventoryReport($pdo,$f))),'purchases'=>(!empty($role['supervisor'])?supervisorPurchaseRequestReport($pdo,$f):($referenceLayout?referencePurchasingReport($pdo,$f):purchasesReport($pdo,$f))),'expiry'=>(!empty($role['supervisor'])?supervisorExpiryReport($pdo,$f):($referenceLayout?referenceExpiryReport($pdo,$f):expiryReport($pdo,$f))),'supplier'=>referenceSupplierReport($pdo,$f),'products'=>(!empty($role['supervisor'])?supervisorProductReport($pdo,$f,$role):productReport($pdo,$f,$role)),'staff'=>($referenceLayout?referenceStaffReport($pdo,$f):staffReport($pdo,$f,$role)),default=>overviewReport($pdo,$f,$role)};
+
+    // Add a like-for-like comparison to every date-based report summary. Snapshot
+    // reports (current inventory and expiry exposure) have no historical snapshot
+    // table, so their cards must not be given a fabricated percentage.
+    $comparisonEligible = ($f['comparison_mode'] ?? 'previous') !== 'none' && (in_array($category, ['sales','purchases','products','staff','supplier','overview'], true)
+        || ($category === 'inventory' && empty($role['supervisor']) && $referenceLayout
+            && in_array($f['report_view'] ?? '', ['Stock Movement','Fast / Slow Moving'], true)));
+    if ($category === 'overview' && !empty($role['supervisor'])) $comparisonEligible = false;
+    if ($comparisonEligible) {
+        $comparisonRange = reportComparisonRange($f['start_date'], $f['end_date'], $f['comparison_mode'] ?? 'previous');
+        $previousStart = new DateTimeImmutable($comparisonRange['start']);
+        $previousEnd = new DateTimeImmutable($comparisonRange['end']);
+        $report['comparison_period'] = $comparisonRange;
+        $previousFilters = $f;
+        $previousFilters['start_date'] = $previousStart->format('Y-m-d');
+        $previousFilters['end_date'] = $previousEnd->format('Y-m-d');
+        $previousFilters['date_end_exclusive'] = date('Y-m-d', strtotime($comparisonRange['end'].' +1 day'));
+        $previousReport = match($category) {
+            'sales' => ($referenceSalesLayout ? referenceSalesReport($pdo,$previousFilters,$role) : salesReport($pdo,$previousFilters,$role)),
+            'purchases' => (!empty($role['supervisor']) ? supervisorPurchaseRequestReport($pdo,$previousFilters) : ($referenceLayout ? referencePurchasingReport($pdo,$previousFilters) : purchasesReport($pdo,$previousFilters))),
+            'products' => (!empty($role['supervisor']) ? supervisorProductReport($pdo,$previousFilters,$role) : productReport($pdo,$previousFilters,$role)),
+            'staff' => ($referenceLayout ? referenceStaffReport($pdo,$previousFilters) : staffReport($pdo,$previousFilters,$role)),
+            'supplier' => referenceSupplierReport($pdo,$previousFilters),
+            'inventory' => ($referenceLayout ? referenceInventoryReport($pdo,$previousFilters,$role) : inventoryReport($pdo,$previousFilters)),
+            default => overviewReport($pdo,$previousFilters,$role),
+        };
+        $previousByTitle = [];
+        foreach (($previousReport['summary'] ?? []) as $previousCard) {
+            if (isset($previousCard['title']) && is_numeric($previousCard['value'] ?? null)) $previousByTitle[$previousCard['title']] = (float)$previousCard['value'];
+        }
+        foreach ($report['summary'] as &$card) {
+            $title = (string)($card['title'] ?? '');
+            $currentValue = $card['value'] ?? null;
+            $previousValue = $previousByTitle[$title] ?? null;
+            // Profit may switch between these labels when one period has complete
+            // batch costs and the other period needs an estimate.
+            if ($previousValue === null && in_array($title, ['Gross Profit','Estimated Gross Profit'], true)) {
+                $previousProfitTitle = $title === 'Gross Profit' ? 'Estimated Gross Profit' : 'Gross Profit';
+                $previousValue = $previousByTitle[$previousProfitTitle] ?? null;
+            }
+            // Overview contains live inventory/expiry values alongside date-range
+            // metrics. Only compare its time-based values.
+            if ($category === 'overview' && in_array($title, ['Inventory Cost','Cost at Risk'], true)) continue;
+            if (!is_numeric($currentValue) || $previousValue === null) {
+                $card['comparison'] = ['state'=>'unavailable'];
+                continue;
+            }
+            if ($previousValue <= 0) {
+                $card['comparison'] = (float)$currentValue > 0
+                    ? ['state'=>'new','is_new'=>true,'previous_value'=>0]
+                    : ['state'=>'no_activity','percent'=>0,'previous_value'=>0];
+                continue;
+            }
+            $card['comparison'] = [
+                'state' => 'available',
+                'percent' => round(100 * ((float)$currentValue - $previousValue) / $previousValue, 1),
+                'previous_value' => $previousValue,
+            ];
+        }
+        unset($card);
+    }
+    $report['comparison_mode'] = $f['comparison_mode'] ?? 'previous';
+    if (($f['comparison_mode'] ?? 'previous') === 'none') {
+        $report['comparison_period'] = null;
+        foreach ($report['summary'] ?? [] as &$card) $card['comparison'] = ['state'=>'disabled'];
+        unset($card);
+    }
+    $report['account_scope'] = !empty($role['cashier'])
+        ? 'Sales assigned to your cashier account'
+        : (!empty($role['sales_clerk'])
+            ? 'Sales orders assigned to your sales clerk account'
+            : (!empty($role['supervisor'])
+                ? 'Records available to your supervisor account'
+                : 'All accounts, limited by the filters shown'));
     echo json_encode(['status'=>'success','category'=>$category,'access'=>$role,'system'=>reportSystem($pdo,$role,$f),'filters'=>reportFilterOptions($pdo,$role)]+$report,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);
 } catch(InvalidArgumentException $e){http_response_code(422);echo json_encode(['status'=>'error','message'=>$e->getMessage()]);}
 catch(Throwable $e){error_log('Reports error: '.$e->getMessage());http_response_code(500);echo json_encode(['status'=>'error','message'=>'Unable to generate the selected report.']);}

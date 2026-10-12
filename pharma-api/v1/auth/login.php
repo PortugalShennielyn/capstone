@@ -9,9 +9,9 @@ function sendInvalidLoginResponse(PDO $pdo, string $username = '', ?string $user
         recordLoginAttempt($pdo, $username, $userId, false, $reason);
         auditAuthenticationEvent($pdo, 'LOGIN_FAILED', [
             'success' => false,
-            'user_id' => $userId,
-            'user_name' => $userId ? $username : 'System / Unknown',
-            'details' => 'Failed login attempt for username: ' . $username,
+            'actor_authenticated' => false,
+            'user_name' => 'Unauthenticated',
+            'details' => 'Login failed because the supplied credentials were not accepted.',
         ]);
     }
 
@@ -27,8 +27,10 @@ function sendLockoutResponse(PDO $pdo, string $username): void
 {
     auditAuthenticationEvent($pdo, 'LOGIN_FAILED', [
         'success' => false,
-        'user_name' => 'System / Unknown',
-        'details' => 'Failed login attempt for username: ' . $username,
+        'event_status' => 'Denied',
+        'actor_authenticated' => false,
+        'user_name' => 'Unauthenticated',
+        'details' => 'Login blocked by the authentication rate limit.',
     ]);
     http_response_code(429);
     echo json_encode([
@@ -43,9 +45,10 @@ function sendInactiveAccountResponse(PDO $pdo, string $username, string $userId)
     recordLoginAttempt($pdo, $username, $userId, false, 'inactive_account');
     auditAuthenticationEvent($pdo, 'LOGIN_FAILED', [
         'success' => false,
-        'user_id' => $userId,
-        'user_name' => $username,
-        'details' => 'Failed login attempt for username: ' . $username,
+        'event_status' => 'Denied',
+        'actor_authenticated' => false,
+        'user_name' => 'Unauthenticated',
+        'details' => 'Login denied because the account is inactive.',
     ]);
     http_response_code(403);
     echo json_encode([
@@ -105,7 +108,7 @@ try {
     }
 
     $statement = $pdo->prepare(
-        "SELECT user_id, username, email, contact_number, password, password_hash, role, status, full_name, first_name, last_name
+        "SELECT user_id, username, email, contact_number, password, password_hash, must_change_password, role, status, full_name, first_name, last_name
          FROM users
          WHERE username = :username
            AND COALESCE(is_deleted, 0) = 0
@@ -144,22 +147,54 @@ try {
     }
 
     $role = normalizeUserRole((string) ($user['role'] ?? ''));
-    $redirects = [
-        'super_admin' => 'dashboard.html',
-        'admin' => 'dashboard.html',
-        'manager' => 'dashboard.html',
-        'supervisor' => 'supervisor_dashboard.html',
-        'cashier' => 'cashier_dashboard.html',
-        'salesclerk' => 'sales_clerk_dashboard.html'
-    ];
+    $dashboardPath = userDashboardPath($role);
 
-    if (!isset($redirects[$role])) {
+    if ($dashboardPath === null) {
         sendInvalidLoginResponse($pdo, $username, $user['user_id'], 'role_not_allowed');
+    }
+
+    if ((int) ($user['must_change_password'] ?? 0) === 1) {
+        // Retain only a server-side, password-change-only session. No normal
+        // tab token or auth_sessions row is issued at this stage.
+        if (tableExists($pdo, 'auth_sessions')) {
+            $revoke = $pdo->prepare(
+                'UPDATE auth_sessions
+                 SET is_revoked = 1, revoked_at = NOW(), revoked_reason = "first_login_password_change_required",
+                     is_active = 0, updated_at = NOW()
+                 WHERE user_id = :user_id AND is_revoked = 0'
+            );
+            $revoke->execute([':user_id' => $user['user_id']]);
+        }
+        $_SESSION = [];
+        session_regenerate_id(true);
+        $_SESSION['restricted_password_change_user_id'] = (string) $user['user_id'];
+        $_SESSION['restricted_password_change_username'] = (string) $user['username'];
+        $_SESSION['restricted_password_change_started_at'] = time();
+        $_SESSION['restricted_password_change_nonce'] = bin2hex(random_bytes(24));
+        auditAuthenticationEvent($pdo, 'FIRST_LOGIN_PASSWORD_CHANGE_REQUIRED', [
+            'user_id' => (string) $user['user_id'],
+            'user_name' => $user['full_name'] ?: $user['username'],
+            'role' => $role,
+            'details' => 'First-login password change required before system access.',
+        ]);
+        recordLoginAttempt($pdo, $username, (string) $user['user_id'], true, null);
+        resetLoginAttempts($pdo, $username);
+        $lastLoginStmt = $pdo->prepare('UPDATE users SET last_login = NOW(), updated_at = NOW() WHERE user_id = :user_id');
+        $lastLoginStmt->execute([':user_id' => $user['user_id']]);
+
+        echo json_encode([
+            'status' => 'success',
+            'must_change_password' => true,
+            'password_change_token' => $_SESSION['restricted_password_change_nonce'],
+            'message' => 'Change your temporary password before continuing.',
+        ]);
+        exit();
     }
 
     $accountContext = loadPrimaryAccountContext($pdo, $user['user_id'], $user['role']);
 
     authDiagnosticLog('Session regeneration', ['function' => 'login']);
+    $_SESSION = [];
     session_regenerate_id(true);
 
     $_SESSION['user_id'] = $user['user_id'];
@@ -172,7 +207,7 @@ try {
     $_SESSION['first_name'] = $user['first_name'];
     $_SESSION['last_name'] = $user['last_name'];
     $_SESSION['roles'] = [$role];
-    $_SESSION['role_identifiers'] = $accountContext['role_identifiers'];
+    $_SESSION['role_identifiers'] = [legacyRoleIdentifier($role)];
     $_SESSION['account_id'] = $accountContext['account_id'];
     $_SESSION['account_type'] = $accountContext['account_type'];
     $_SESSION['tenant_id'] = $accountContext['tenant_id'];
@@ -199,7 +234,7 @@ try {
     echo json_encode([
         'status' => 'success',
         'message' => 'Login successful.',
-        'redirect' => $redirects[$role],
+        'redirect' => $dashboardPath,
         'tab_token' => $tabToken,
         'session' => currentSessionPayload()
     ]);

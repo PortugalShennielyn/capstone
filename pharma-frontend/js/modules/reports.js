@@ -1,12 +1,13 @@
 import API_BASE_URL from '../config/config.js';
 import { ensurePageTabSession as verifySession } from './auth_guard.js?v=21';
+import { createLiveSync } from './live_data.js?v=1';
 
 const categories={sales:'Sales',inventory:'Inventory',expiry:'Expiry & Batch',purchases:'Purchasing',supplier:'Supplier & Receiving',staff:'Cashier & Audit',products:'Product Performance',overview:'Overview'};
 const categoryIcons={sales:'fa-chart-line',inventory:'fa-cubes-stacked',expiry:'fa-calendar-days',purchases:'fa-cart-shopping',supplier:'fa-truck',staff:'fa-shield-halved',products:'fa-box',overview:'fa-gauge'};
 const reportViews={
     overview:['Management Overview'],
     sales:['Sales Summary','Product Sales','Category Sales','Cashier Sales'],
-    inventory:['Current Inventory','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation'],
+    inventory:['Inventory Overview'],
     purchases:['PR / PO Summary','Purchase History','Invoice & Payment'],
     supplier:['Supplier Performance','Delivery / Receiving','Returns & Damage','Supplier Credits'],
     expiry:['Expiring Products','Expired / Wastage','Batch Traceability'],
@@ -30,7 +31,7 @@ const tones={
 const statusColors={Healthy:'green',Completed:'green',Delivered:'green',Paid:'green','Fully Paid':'green',Accepted:'green','Low Stock':'amber','Expiring Soon':'amber',Draft:'gray',Pending:'amber','Partially Paid':'amber','Not Yet Payable':'gray','Out of Stock':'red',Expired:'red',Critical:'red',Cancelled:'red','Negative Stock — Data Issue':'red','High Stock / Low Sales':'red','Slow Moving':'amber','No Sales':'gray','Fast Moving':'green',Steady:'teal',Arrived:'indigo',Watch:'amber','Waiting for cashier':'amber','Accepted by cashier':'indigo','Processing payment':'teal',Rejected:'red',Other:'gray'};
 const money=new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}),number=new Intl.NumberFormat('en-PH');
 const qs=s=>document.querySelector(s),qsa=s=>[...document.querySelectorAll(s)];
-const state={category:'sales',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity',initialPeriodSet:false,period:'30',roleConfigured:false};
+const state={category:'sales',page:1,data:null,controller:null,charts:new Map(),options:null,searchTimer:null,defaultStart:'',defaultEnd:'',sort:'',direction:'desc',explicitDates:false,needsInitialFilterReload:false,productMode:'quantity',initialPeriodSet:false,period:'30',roleConfigured:false,comparisonMode:'previous',tableController:null};
 const viewDescriptions={
     'Sales Summary':'Gross to net sales, transactions and basket size.',
     'Product Sales':'Best-selling products, with Rx and OTC classification.',
@@ -39,6 +40,7 @@ const viewDescriptions={
     'Staff Sales':'Completed sales grouped by the staff account assigned to each sale.',
     'Payment and Discount':'Sales totals grouped by payment method with recorded discounts, VAT, and refunds.',
     'Current Inventory':'Storage, Shelf and On Hand by product.',
+    'Inventory Overview':'Current stock, movement, reorder needs and valuation in one view.',
     'Stock Movement':'Receiving, transfers, sales and adjustments.',
     'Low / Out of Stock':'Products at or below the reorder level.',
     'Fast / Slow Moving':'Movement class from units sold and current stock.',
@@ -63,22 +65,32 @@ const format=(v,type)=>type==='currency'?money.format(Number(v||0)):type==='perc
 
 function initialQuery(){
     const query=new URLSearchParams(location.search);if(categories[query.get('category')])state.category=query.get('category');
+    if(state.category==='inventory')qs('.report-layout').classList.add('inventory-expanded');
+    if(['previous','year','none'].includes(query.get('comparison_mode')))state.comparisonMode=query.get('comparison_mode');
+    qs('#reportComparisonMode').value=state.comparisonMode;
     if(state.category==='expiry'&&!query.has('expiry_days'))qs('[name="expiry_days"]').value='365';
     state.explicitDates=query.has('start_date')||query.has('end_date');
     if(state.explicitDates)state.period='custom';
     const form=qs('#reportFilters'),staticFields=new Set(['start_date','end_date','expiry_days','rx_filter']);
     ['report_view','group_by','start_date','end_date','category_id','type_id','product_id','brand','supplier_id','cashier_id','sales_clerk_id','payment_method','po_status','stock_status','rx_filter','expiry_days','payment_state'].forEach(key=>{if(query.has(key)){const field=form.elements[key];if(field){if(staticFields.has(key)||field.type==='hidden')field.value=query.get(key);else{field.dataset.initial=query.get(key);state.needsInitialFilterReload=true;}}}});
+    if(state.category==='inventory'){
+        reportViews.inventory=['Inventory Overview'];
+        form.elements.report_view.dataset.initial='Inventory Overview';
+        qs('.report-layout').classList.add('inventory-expanded');
+    }
+    if(!state.explicitDates){const today=reportToday('Asia/Manila');form.elements.start_date.value=shiftDate(today,-29);form.elements.end_date.value=today;state.initialPeriodSet=true;}
 }
 function reportToday(timezone){
     const parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone||'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
     const value=Object.fromEntries(parts.map(part=>[part.type,part.value]));return `${value.year}-${value.month}-${value.day}`;
 }
+function reportTimezoneLabel(timezone){return timezone==='Asia/Manila'?'Philippine Time · Cagayan de Oro City':timezone||'Philippine Time';}
 function shiftDate(date,days){const [year,month,day]=date.split('-').map(Number),value=new Date(Date.UTC(year,month-1,day+days));return value.toISOString().slice(0,10);}
 function setPeriodSelection(period){
     state.period=period;
     qs('.report-presets').querySelectorAll('button[data-period]').forEach(button=>{const active=button.dataset.period===period;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
     setFilterExpanded(period==='custom');
-    const view=qs('[name="report_view"]')?.value||'',inventorySnapshot=state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view);
+    const view=qs('[name="report_view"]')?.value||'',inventorySnapshot=state.category==='inventory'&&!['Inventory Overview','Stock Movement','Fast / Slow Moving'].includes(view);
     const periodLabel=qs('#reportPeriodLabel');if(periodLabel)periodLabel.textContent=inventorySnapshot?'Live inventory snapshot':({custom:'Custom date range',month:'This month',today:'Today',yesterday:'Yesterday','7':'Last 7 days','30':'Last 30 days'}[period]||`Last ${period} days`);
 }
 function setPrintTimestamp(){
@@ -94,7 +106,7 @@ function renderViewMenu(){
     qs('#reportViewMenu').innerHTML=(reportViews[state.category]||[]).map(view=>`<button class="report-view-item ${view===selected?'active':''}" type="button" data-view="${esc(view)}"><strong>${esc(view)}</strong><small>${esc(viewDescriptions[view]||'Analyze current pharmacy records.')}</small></button>`).join('');
     qs('#reportViewTitle').textContent=selected;qs('#reportViewDescription').textContent=viewDescriptions[selected]||description;
     qs('#reportViewIcon').innerHTML=`<i class="fa-solid ${categoryIcons[state.category]||'fa-chart-simple'}"></i>`;
-    qs('.report-search').hidden=!['Product Sales','Cashier Sales','Current Inventory','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation','Expiring Products','Expired / Wastage','Batch Traceability','PR / PO Summary','Purchase History','Invoice & Payment'].includes(selected);
+    qs('.report-search').hidden=!['Product Sales','Cashier Sales','Current Inventory','Inventory Overview','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation','Expiring Products','Expired / Wastage','Batch Traceability','PR / PO Summary','Purchase History','Invoice & Payment'].includes(selected);
     qs('#reportSearch').placeholder=selected==='Batch Traceability'?'Search batch number or product':selected==='PR / PO Summary'?'Search PO or PR number':state.category==='purchases'?'Search PO, PR or supplier':'Search product or batch';
 }
 function setSelect(select,items,placeholder){
@@ -136,6 +148,7 @@ function syncDependentOptions(clearInvalid=true){
 }
 function updateVisibleFilters(){
     const view=qs('[name="report_view"]'),previous=view.dataset.initial||view.value;view.innerHTML=reportViews[state.category].map(x=>`<option>${x}</option>`).join('');if(reportViews[state.category].includes(previous))view.value=previous;delete view.dataset.initial;
+    qs('.report-layout').classList.toggle('inventory-expanded',state.category==='inventory'&&reportViews.inventory?.length===1);
     const inventoryView=view.value;
     const salesFields={
         'Sales Summary':['view','dates'],
@@ -146,6 +159,7 @@ function updateVisibleFilters(){
         'Payment and Discount':['view','dates','payment']
     };
     const inventoryFields={
+        'Inventory Overview':['view','dates','primary-category','primary-stock','product','brand','secondary-supplier'],
         'Current Inventory':['view','primary-category','primary-stock','product','secondary-supplier'],
         'Stock Movement':['view','dates','primary-category','product'],
         'Low / Out of Stock':['view','primary-category','product'],
@@ -163,48 +177,151 @@ function updateVisibleFilters(){
     syncDependentOptions(false);renderViewMenu();
 }
 function buildParams(overrides={}){
-    syncMirrors();const params=new URLSearchParams({category:state.category,layout:'reference',page:String(state.page),page_size:'10'});
+    syncMirrors();const params=new URLSearchParams({category:state.category,layout:'reference',page:String(state.page),page_size:'10',comparison_mode:state.comparisonMode});
     new FormData(qs('#reportFilters')).forEach((value,key)=>{if(!key.startsWith('secondary_')&&String(value)!=='')params.set(key,value);});
     const search=qs('#reportSearch').value.trim();if(search)params.set('search',search);if(state.sort){params.set('sort',state.sort);params.set('direction',state.direction);}
     Object.entries(overrides).forEach(([k,v])=>params.set(k,String(v)));return params;
 }
-async function loadReport(){
-    state.controller?.abort();
+async function loadTablePage(page){
+    const pagination=state.data?.pagination;if(!pagination||page<1||page>pagination.pages)return;
+    const loadedPage=pagination.page;state.page=page;state.tableController?.abort();
+    const controller=new AbortController();state.tableController=controller;
+    qs('#previousPage').disabled=true;qs('#nextPage').disabled=true;
+    try{
+        const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams({page})}`,{credentials:'include',cache:'no-store',signal:controller.signal});
+        const data=await response.json();
+        if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to load these records.');
+        if(state.tableController!==controller)return;
+        state.data={...state.data,rows:data.rows,pagination:data.pagination};
+        renderTable(state.data);syncUrl();
+    }catch(error){
+        if(error.name==='AbortError'||state.tableController!==controller)return;
+        state.page=loadedPage;
+        renderTable(state.data);
+        qs('#pageSummary').textContent=`Could not load that page: ${error.message}`;
+    }finally{if(state.tableController===controller)state.tableController=null;}
+}
+async function loadReport({silent=false}={}){
+    state.tableController?.abort();state.tableController=null;state.controller?.abort();
     const form=qs('#reportFilters'),startDate=form.elements.start_date.value,endDate=form.elements.end_date.value;
-    if(startDate&&endDate&&startDate>endDate){state.controller=null;qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.add('d-none');qs('#reportError').textContent='Start date cannot be after end date.';qs('#reportError').classList.remove('d-none');return;}
-    state.controller=new AbortController();destroyCharts();qs('#reportContent').classList.add('d-none');qs('#reportError').classList.add('d-none');qs('#reportLoading').classList.remove('d-none');
+    if(startDate&&endDate&&startDate>endDate){state.controller=null;if(!silent){qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.add('d-none');qs('#reportError').textContent='Start date cannot be after end date.';qs('#reportError').classList.remove('d-none');}return;}
+    state.controller=new AbortController();if(!silent||!state.data)destroyCharts();if(!silent||!state.data){qs('#reportContent').classList.add('d-none');qs('#reportError').classList.add('d-none');qs('#reportLoading').classList.remove('d-none');}
     try{const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams()}`,{credentials:'include',cache:'no-store',signal:state.controller.signal});const data=await response.json();if(response.status===403&&data.access?.available_categories?.length){state.category=data.access.available_categories[0];state.page=1;updateVisibleFilters();return loadReport();}if(!response.ok||data.status!=='success')throw new Error(data.message||'Unable to generate this report.');
         if(!state.initialPeriodSet&&!state.explicitDates){state.initialPeriodSet=true;const today=reportToday(data.system.timezone);qs('[name="start_date"]').value=shiftDate(today,-29);qs('[name="end_date"]').value=today;return loadReport();}
-        state.initialPeriodSet=true;state.data=data;if(data.access?.supervisor){categories.overview='Inventory Overview';categories.purchases='Purchase Requests';reportViews.overview=['Inventory Overview'];reportViews.purchases=['Purchase Request Summary'];visibility.purchases=['view','dates'];}
-        if(!state.roleConfigured){state.roleConfigured=true;if(!data.access.management){reportViews.sales=['Sales Summary','Product Sales','Staff Sales','Payment and Discount'];reportViews.inventory=['Inventory Summary','Stock Health'];reportViews.staff=['Staff Performance Summary'];}updateVisibleFilters();}
+        state.initialPeriodSet=true;if(silent&&state.data)destroyCharts();state.data=data;if(data.access?.supervisor){categories.overview='Inventory Overview';categories.purchases='Purchase Requests';reportViews.overview=['Inventory Overview'];reportViews.purchases=['Purchase Request Summary'];visibility.purchases=['view','dates'];}
+        if(!state.roleConfigured){state.roleConfigured=true;const previousView=qs('[name="report_view"]').value;if(data.access.management||data.access.supervisor){reportViews.inventory=['Inventory Overview'];}else{reportViews.sales=['Sales Summary','Product Sales','Staff Sales','Payment and Discount'];reportViews.inventory=['Inventory Overview'];reportViews.staff=['Staff Performance Summary'];}updateVisibleFilters();if(qs('[name="report_view"]').value!==previousView)return loadReport();}
         if(!state.options){populateBaseOptions(data.filters||{});if(state.needsInitialFilterReload){state.needsInitialFilterReload=false;return loadReport();}}if(!data.access.available_categories.includes(state.category)){state.category=data.access.available_categories[0];updateVisibleFilters();return loadReport();}renderTabs(data.access.available_categories);renderReport(data);syncUrl();}
-    catch(error){if(error.name==='AbortError')return;qs('#reportLoading').classList.add('d-none');qs('#reportError').classList.remove('d-none');qs('#reportError').textContent=error.message;}
+    catch(error){if(error.name==='AbortError')return;if(silent&&state.data){console.warn('Could not refresh reports with the latest sales.',error);return;}qs('#reportLoading').classList.add('d-none');qs('#reportError').classList.remove('d-none');qs('#reportError').textContent=error.message;}
 }
 function syncUrl(){
     const params=buildParams();if(!state.explicitDates&&params.get('start_date')===state.defaultStart)params.delete('start_date');if(!state.explicitDates&&params.get('end_date')===state.defaultEnd)params.delete('end_date');
-    if(params.get('expiry_days')==='30'&&state.category!=='expiry')params.delete('expiry_days');if(params.get('group_by')==='day')params.delete('group_by');params.delete('report_view');params.delete('page_size');if(params.get('page')==='1')params.delete('page');
+    if(params.get('expiry_days')==='30'&&state.category!=='expiry')params.delete('expiry_days');if(params.get('group_by')==='day')params.delete('group_by');if(params.get('comparison_mode')==='previous')params.delete('comparison_mode');params.delete('report_view');params.delete('page_size');if(params.get('page')==='1')params.delete('page');
     params.set('category',state.category);if(qs('[name="report_view"]').value!==reportViews[state.category]?.[0])params.set('report_view',qs('[name="report_view"]').value);params.delete('layout');history.replaceState(null,'',`${location.pathname}?${params}`);
+}
+function comparisonRangeLabel(data){
+    const range=data?.comparison_period;if(!range?.start||!range?.end)return '';
+    const start=reportDate(range.start,{month:'short',day:'numeric',...(range.start.slice(0,4)===range.end.slice(0,4)?{}:{year:'numeric'})});
+    const end=reportDate(range.end,{month:'short',day:'numeric',year:'numeric'});
+    return `${start}–${end}`;
 }
 function salesComparisonBadge(card){
     const comparison=card.comparison;
-    if(!comparison)return `<small class="summary-change is-neutral">${Number(card.value)>0?'New this period':'No prior data'}</small>`;
+    if(comparison?.state==='disabled')return `<small class="summary-change is-neutral" title="Comparison has been turned off">Comparison off</small>`;
+    if(comparison?.state==='no_prior_snapshot'||comparison?.state==='tracking_started'){const baseline=comparison.snapshot_date?reportDate(comparison.snapshot_date,{month:'short',day:'numeric',year:'numeric'}):'today';return `<small class="summary-change is-baseline" title="Daily inventory history starts ${esc(baseline)}. A percentage will appear when the comparison period includes a saved inventory snapshot.">Tracking since: ${esc(baseline)}</small>`;}
+    if(!comparison||comparison.state==='unavailable')return `<small class="summary-change is-neutral" title="A comparable value could not be calculated for the previous period">Comparison unavailable</small>`;
+    if(comparison.is_new||comparison.state==='new')return `<small class="summary-change is-good" aria-label="This metric was zero in the previous period and is present now">↗ New</small>`;
+    if(comparison.state==='no_activity')return `<small class="summary-change is-neutral" title="There was no activity in either period">No activity</small>`;
     const change=Number(comparison.percent),direction=change>0?'up':change<0?'down':'flat';
     const arrow=change>0?'↗':change<0?'↘':'→';
     return `<small class="summary-change is-${direction}" aria-label="${Math.abs(change).toFixed(1)} percent ${direction} from the previous period">${arrow} ${Math.abs(change).toFixed(1)}%</small>`;
 }
-function reportContextBadge(card){
+function reportContextBadge(card,data){
     if(card.comparison)return salesComparisonBadge(card);
     const view=qs('[name="report_view"]').value;
+    const snapshotOverviewMetrics=['Inventory Cost','Cost at Risk','Total On Hand','Shelf Stock','Storage Stock','Low-Stock Products','Out-of-Stock Products'];
+    if(card.report_context){const snapshot=card.report_context==='snapshot',hasValue=card.value!==null&&card.value!==undefined;return `<small class="summary-change is-neutral" title="${snapshot?(hasValue?'Current inventory value. Daily inventory history is now being saved for future period comparisons.':'No current inventory value is available.'):'Compared with the matching previous date range.'}">${snapshot?(hasValue?'Live snapshot':'No prior data'):'Selected period'}</small>`;}
+    const liveSnapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||state.category==='expiry'||(state.category==='overview'&&snapshotOverviewMetrics.includes(card.title));
+    return `<small class="summary-change is-neutral" title="${liveSnapshot?'This measure is a current inventory snapshot; historical snapshots are not stored.':'A comparable value could not be calculated for the previous period.'}">${liveSnapshot?'Live snapshot':'Comparison unavailable'}</small>`;
+}
+function comparisonPeriodNote(data){const range=comparisonRangeLabel(data);return range?`<span class="summary-period-note">vs ${esc(range)}</span>`:'';}
+function selectedPeriodNote(data){
+    if(!data?.comparison_period&&data?.comparison_mode!=='none')return '';
+    const range=qs('#reportDateRange')?.textContent?.trim();
+    return range?`<span class="summary-period-current">selected ${esc(range)}</span>`:'';
+}
+function cardComparisonPeriodNote(card,data){return state.category==='inventory'&&card.report_context==='snapshot'?'':comparisonPeriodNote(data);}
+function cardSelectedPeriodNote(card,data){return state.category==='inventory'&&card.report_context==='snapshot'?'':selectedPeriodNote(data);}
+function reportAccountScope(data){
+    if(data?.account_scope)return data.account_scope;
+    if(data?.access?.cashier)return 'Sales assigned to your cashier account';
+    if(data?.access?.sales_clerk)return 'Sales orders assigned to your sales clerk account';
+    if(data?.access?.supervisor)return 'Records available to your supervisor account';
+    return 'All accounts, limited by the filters shown';
+}
+function reportPrintMetaNode(id,label){
+    const section=qs('.report-print-metadata');if(!section)return null;
+    let node=qs(`#${id}`);if(!node){const line=document.createElement('p');line.className='report-print-extra';line.append(`${label}: `);node=document.createElement('span');node.id=id;line.append(node);section.append(line);}
+    return node;
+}
+function updateReportFreshness(data,generated){
+    let line=qs('#reportFreshness');
+    if(!line){line=document.createElement('p');line.id='reportFreshness';line.className='report-freshness';qs('#reportGenerated').insertAdjacentElement('afterend',line);}
+    const timestamp=generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    line.textContent=`Updated ${timestamp} · ${reportTimezoneLabel(data.system.timezone)} · ${reportAccountScope(data)}`;
+}
+function updateReportPrintContext(data){
+    const filters=qsa('#filterChips .filter-chip').map(chip=>chip.textContent.trim().replace(/\s*×$/,'')).filter(Boolean).join('; ')||'Default filters';
+    const printedFilters=reportPrintMetaNode('reportPrintFilters','Applied filters');
+    const printedScope=reportPrintMetaNode('reportPrintScope','Account scope');
+    if(printedFilters)printedFilters.textContent=filters;
+    if(printedScope)printedScope.textContent=reportAccountScope(data);
+    const printedComparison=reportPrintMetaNode('reportPrintComparison','Comparison');
+    if(printedComparison){const range=comparisonRangeLabel(data);printedComparison.parentElement.hidden=state.comparisonMode!=='none'&&!range;printedComparison.textContent=state.comparisonMode==='none'?'Off':range||'Unavailable';}
+}
+function updateDateRangeExtras(data){
+    const view=qs('[name="report_view"]').value,categoryHasDate=['sales','purchases','supplier','products','staff','overview'].includes(state.category)||(state.category==='inventory'&&['Inventory Overview','Stock Movement','Fast / Slow Moving'].includes(view));
+    const compareEligible=categoryHasDate&&!(data.access?.supervisor&&state.category==='overview');
+    qs('#comparisonControl').hidden=!compareEligible;
+    qs('#reportComparisonMode').value=state.comparisonMode;
+    qs('#monthControl').hidden=!categoryHasDate;
+    if(!categoryHasDate)return;
+    const select=qs('#reportMonthShortcut'),today=reportToday(data.system.timezone),currentMonth=today.slice(0,7),months=[];
+    let [year,month]=currentMonth.split('-').map(Number);
+    for(let i=0;i<=120;i++){
+        const key=`${year}-${String(month).padStart(2,'0')}`,date=new Date(`${key}-01T00:00:00`);
+        months.push(`<option value="${key}">${new Intl.DateTimeFormat('en-PH',{month:'long',year:'numeric'}).format(date)}</option>`);
+        month--;if(month<1){month=12;year--;}
+    }
+    select.innerHTML='<option value="">Choose month…</option>'+months.join('');
+    const start=qs('[name="start_date"]').value,end=qs('[name="end_date"]').value;
+    const fullMonth=start&&end&&start.slice(0,7)===end.slice(0,7)&&start.endsWith('-01')&&Number(end.slice(8,10))===new Date(Number(end.slice(0,4)),Number(end.slice(5,7)),0).getDate();
+    select.value=fullMonth?start.slice(0,7):'';
+}
+function renderComparisonLegend(data){
+    const target=qs('#reportComparisonLegend');
+    const show=Boolean(data.comparison_period)&&state.comparisonMode!=='none';
+    target.hidden=!show;
+    target.textContent=show?'Comparison: percentages compare the selected range with the period shown. “New” means the previous value was zero; “No activity” means both periods were zero; “Comparison unavailable” means a matching historical value could not be calculated.':'';
+}
+function renderDataQualityNotice(data){
+    const target=qs('#reportQualityNotice'),profit=(data.summary||[]).find(card=>['Gross Profit','Estimated Gross Profit'].includes(card.title));
+    if(state.category!=='sales'){target.hidden=true;target.textContent='';target.className='report-quality-notice';return;}
+    const notices=['Sales totals include completed, paid transactions in this account scope and selected date range. Cancelled, unpaid, and incomplete orders are excluded.'];
+    let level='info';
+    if(profit&&String(profit.value).toLowerCase()==='incomplete history'){
+        level='warning';notices.push('Gross profit is incomplete because some sold units do not have enough recorded batch-cost history.');
+    }else if(profit?.title==='Estimated Gross Profit'){
+        level='warning';notices.push('Estimated gross profit uses recorded costs where available and estimates costs for items with missing batch history.');
+    }
+    target.hidden=false;target.className=`report-quality-notice is-${level}`;target.textContent=notices.join(' ');
+}
+function reportContextLabel(){
+    const view=qs('[name="report_view"]').value;
     const liveSnapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||state.category==='expiry';
-    const title=String(card.title||'').toLowerCase(),value=Number(card.value)||0;
-    let tone='neutral';
-    if(/expired|expir|wastage|risk|out of stock|negative stock|damage|shortage|unpaid|outstanding|pending|rejected|no sales|slow-moving|low stock/.test(title)){
-        tone=value>0?(/expir|risk|out of stock|negative stock|wastage|rejected/.test(title)?'risk':'warning'):'good';
-    }else if(['green','teal'].includes(card.tone))tone='good';
-    else if(card.tone==='amber')tone='warning';
-    else if(card.tone==='red')tone='risk';
-    else if(value>0)tone='good';
-    return `<small class="summary-change is-${tone}">${liveSnapshot?'Live snapshot':'Selected period'}</small>`;
+    if(view==='Inventory Overview')return `current snapshot and ${qs('#reportDateRange')?.textContent?.trim()||'selected period'}`;
+    if(liveSnapshot)return `as of ${qs('#reportToday')?.textContent||'today'}`;
+    const range=qs('#reportDateRange')?.textContent?.trim();
+    return range?`for ${range}`:'for the selected period';
 }
 function isFinancialHighlight(card){return ['Total VAT Collected','Gross Profit','Estimated Gross Profit'].includes(String(card?.title||''));}
 function financialCardDescription(card){
@@ -241,41 +358,51 @@ function salesTrendIndicator(data,card){
     const description=periodComparison?`${seriesLabel} compared with the previous period`:`Daily ${seriesLabel.toLowerCase()} trend for the selected period`;
     return `<div class="summary-trend-indicator financial-trend-indicator" role="img" aria-label="${description}"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg></div>`;
 }
-function reportSummaryIndicator(data){
+function reportSummaryChart(data){
     const charts=data.charts||[];
-    const chart=charts.find(item=>Array.isArray(item.rows)&&item.rows.length>0)||charts.find(item=>Array.isArray(item.rows));
+    return charts.find(item=>Array.isArray(item.rows)&&item.rows.length>0)||charts.find(item=>Array.isArray(item.rows));
+}
+function reportSummaryCaption(data){
+    const chart=reportSummaryChart(data);
+    return chart?.title||`${qs('[name="report_view"]').value||'Report'} summary for the selected filters`;
+}
+function reportSummaryIndicator(data){
+    const chart=reportSummaryChart(data);
     const values=(chart?.rows||[]).map(row=>Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))).filter(value=>Number.isFinite(value)&&value>=0);
     const title=chart?.title||'Current report data';
-    if(!values.length)return `<div class="summary-trend-indicator is-empty"><small>No indicator data for the selected filters.</small></div>`;
+    if(!values.length)return `<div class="summary-trend-indicator is-empty" role="img" aria-label="No indicator data for the selected filters"><small>No indicator data</small></div>`;
     const width=180,height=38,pad=3,min=Math.min(0,...values),max=Math.max(...values),span=max-min||1;
     const points=values.length===1?`${width/2-12},${height/2} ${width/2+12},${height/2}`:values.map((value,index)=>`${pad+index*(width-2*pad)/Math.max(1,values.length-1)},${height-pad-(value-min)*(height-2*pad)/span}`).join(' ');
-    return `<div class="summary-trend-indicator has-caption" role="img" aria-label="Indicator for ${esc(title)}"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg><small>${esc(title)}</small></div>`;
+    return `<div class="summary-trend-indicator" role="img" aria-label="Indicator for ${esc(title)}"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg></div>`;
 }
 function renderSummaryCards(data){
     const target=qs('#summaryCards'),view=qs('[name="report_view"]').value,
-        salesSummary=state.category==='sales'&&view==='Sales Summary'&&data.comparison_period,
+        salesSummary=state.category==='sales'&&view==='Sales Summary'&&(data.comparison_period||data.comparison_mode==='none'),
         purchaseSummary=state.category==='purchases'&&view==='PR / PO Summary'&&data.purchase_order_count!==undefined;
     target.classList.toggle('sales-summary',Boolean(salesSummary));
     target.classList.toggle('purchase-summary',Boolean(purchaseSummary));
+    target.classList.toggle('inventory-overview-summary',state.category==='inventory'&&view==='Inventory Overview');
     if(purchaseSummary){
-        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card)}</div>${index===0?`${reportSummaryIndicator(data)}<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>`:''}</article>`).join('');
+        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${comparisonPeriodNote(data)}${data.comparison_period?selectedPeriodNote(data):index===0?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${index===0?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>`:''}</article>`).join('');
         return;
     }
-    if(!salesSummary){target.innerHTML=orderFinancialCards(data.summary).map((card,index)=>`<article class="summary-card tone-${esc(card.tone||'purple')} ${index===0?'report-primary-metric':''} ${isFinancialHighlight(card)?'report-highlight-metric':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}" aria-hidden="true"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong>${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>`:''}<div class="summary-context">${reportContextBadge(card)}</div>${isFinancialHighlight(card)?salesTrendIndicator(data,card):''}${index===0?(state.category==='sales'&&Array.isArray(data.trend_series)&&!isFinancialHighlight(card)?salesTrendIndicator(data,card):reportSummaryIndicator(data)):''}</article>`).join('');return;}
-    const period=data.comparison_period,previousRange=`${reportDate(period.start,{month:'short',day:'numeric'})} – ${reportDate(period.end,{month:'short',day:'numeric',year:'numeric'})}`;
-    target.innerHTML=orderFinancialCards(data.summary,true).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''} ${isFinancialHighlight(card)?'sales-metric-highlight':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${index===0?`<span>vs ${esc(previousRange)}</span>`:''}</div>${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0?`${salesTrendIndicator(data,card)}<p class="summary-explanation">${card.title==='Gross Sales'?'Sales before discounts': 'Completed sales after discounts and refunds'} over ${period.days} day${period.days===1?'':'s'}</p>`:''}</article>`).join('');
+    if(!salesSummary){const inventoryOverview=state.category==='inventory'&&view==='Inventory Overview',inventoryPriority={'On Hand Units':0,'Storage':1,'Total Inventory Cost':2},cards=inventoryOverview?[...(data.summary||[])].sort((a,b)=>(inventoryPriority[a.title]??Number.MAX_SAFE_INTEGER)-(inventoryPriority[b.title]??Number.MAX_SAFE_INTEGER)):orderFinancialCards(data.summary);target.innerHTML=cards.map((card,index)=>{const inventoryHighlight=inventoryOverview&&['Storage','Total Inventory Cost'].includes(card.title),inventoryFeatured=inventoryOverview&&['On Hand Units','Storage','Total Inventory Cost'].includes(card.title),inventoryDescription=card.title==='Storage'?'Units currently kept in Storage rather than on the Shelf.':card.title==='Total Inventory Cost'?'Recorded cost of active, unexpired stock currently on hand.':'';return `<article class="summary-card tone-${esc(card.tone||'purple')} ${index===0?'report-primary-metric':''} ${isFinancialHighlight(card)||inventoryHighlight?'report-highlight-metric':''} ${inventoryFeatured?'inventory-featured-metric':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}" aria-hidden="true"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${cardComparisonPeriodNote(card,data)}${data.comparison_period?cardSelectedPeriodNote(card,data):index===0?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${inventoryHighlight?`<p class="financial-metric-description">${esc(inventoryDescription)}</p>`:''}${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0&&!isFinancialHighlight(card)?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}`:''}</article>`;}).join('');return;}
+    const rangeStart=new Date(`${data.system.date_range.start}T00:00:00`),rangeEnd=new Date(`${data.system.date_range.end}T00:00:00`),period=data.comparison_period||{days:Math.max(1,Math.round((rangeEnd-rangeStart)/86400000)+1)},currentRange=qs('#reportDateRange')?.textContent?.trim()||'selected period';
+    target.innerHTML=orderFinancialCards(data.summary,true).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''} ${isFinancialHighlight(card)?'sales-metric-highlight':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${comparisonPeriodNote(data)}${index===0?`<span>for ${esc(currentRange)}</span>`:selectedPeriodNote(data)}</div>${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0?`${salesTrendIndicator(data,card)}<p class="summary-explanation">${card.title==='Gross Sales'?'Sales before discounts': 'Completed sales after discounts and refunds'} over ${period.days} day${period.days===1?'':'s'}</p>`:''}</article>`).join('');
 }
 function renderReport(data){
     qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.remove('d-none');
     qs('#summaryCards').hidden=false;qs('#reportCharts').hidden=false;
+    qs('.report-layout').classList.toggle('inventory-expanded',state.category==='inventory'&&reportViews.inventory?.length===1);
     qs('#reportContent').classList.toggle('is-overview',state.category==='overview');
     state.defaultStart=data.system.date_range.start;state.defaultEnd=data.system.date_range.end;const form=qs('#reportFilters');if(!form.elements.start_date.value)form.elements.start_date.value=state.defaultStart;if(!form.elements.end_date.value)form.elements.end_date.value=state.defaultEnd;
-    const generated=new Date(data.system.generated_at);qs('#reportGenerated').textContent=`Generated ${generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} · ${data.system.timezone} · ${data.system.generated_by}`;
+    const generated=new Date(data.system.generated_at);qs('#reportGenerated').textContent=`Generated ${generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} · ${reportTimezoneLabel(data.system.timezone)} · ${data.system.generated_by}`;updateReportFreshness(data,generated);
     qs('#reportToday').textContent=generated.toLocaleDateString('en-PH',{timeZone:data.system.timezone,weekday:'short',year:'numeric',month:'short',day:'numeric'});
     const rangeStart=data.system.date_range.start,rangeEnd=data.system.date_range.end;
     qs('#reportDateRange').textContent=`${reportDate(rangeStart,{month:'short',day:'numeric',...(rangeStart.slice(0,4)===rangeEnd.slice(0,4)?{}:{year:'numeric'})})} – ${reportDate(rangeEnd,{month:'short',day:'numeric',year:'numeric'})}`;
+    updateDateRangeExtras(data);
 
-    qs('#reportPeriodLabel').textContent=state.category==='inventory'&&qs('[name="report_view"]').value!=='Stock Movement'&&qs('[name="report_view"]').value!=='Fast / Slow Moving'?'Live inventory snapshot':state.period==='custom'?'Custom date range':state.period==='month'?'This month':state.period==='today'?'Today':state.period==='yesterday'?'Yesterday':`Last ${state.period} days`;
+    qs('#reportPeriodLabel').textContent=state.category==='inventory'&&qs('[name="report_view"]').value==='Inventory Overview'?'Live inventory + selected period':state.category==='inventory'&&qs('[name="report_view"]').value!=='Stock Movement'&&qs('[name="report_view"]').value!=='Fast / Slow Moving'?'Live inventory snapshot':state.period==='custom'?'Custom date range':state.period==='month'?'This month':state.period==='today'?'Today':state.period==='yesterday'?'Yesterday':`Last ${state.period} days`;
     setPeriodSelection(state.period);
     renderViewMenu();renderReferenceControls();
     const categoryName=(qs('#reportGroupTitle').textContent || 'Pharmacy').replace(/\s+reports?$/i,'');
@@ -287,14 +414,16 @@ function renderReport(data){
     qs('#reportPrintPeriod').textContent=periodLabel;
     qs('#reportPrintGenerated').textContent=generated.toLocaleString('en-PH',{timeZone:data.system.timezone,year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});
     qs('#reportPrintPreparedBy').textContent=data.system.generated_by || '';
-    const printAddress=qs('#reportPrintAddress');printAddress.textContent='Capistrano corner Cruz Taal Street, Barangay 08, Cagayan de Oro City';printAddress.hidden=false;
+    const printAddress=qs('#reportPrintAddress');if(printAddress){printAddress.textContent='Capistrano corner Cruz Taal Street, Barangay 08, Cagayan de Oro City';printAddress.hidden=false;}
     renderSummaryCards(data);
+    renderComparisonLegend(data);renderDataQualityNotice(data);
     renderCharts(data.charts||[]);renderRanking(data);renderInsights(data);
+    qs('.report-visuals').classList.toggle('inventory-overview-grid',state.category==='inventory'&&form.elements.report_view.value==='Inventory Overview');
     if(state.category==='purchases'&&form.elements.report_view.value==='PR / PO Summary'){
         qs('#reportCharts .chart-card h2')?.insertAdjacentHTML('afterend',`<small class="chart-date-caption">${esc(qs('#reportDateRange').textContent)}</small>`);
     }
     if(state.category==='overview'){const attention=qs('#reportInsights .attention-card');if(attention){qs('#reportCharts').appendChild(attention);qs('#reportCharts').classList.remove('single-chart');}}
-    renderOverview(data.overview_previews);renderOverviewPrint(data);renderTableInsights(data.table_insights||[]);renderTable(data);qs('.report-table-card').hidden=state.category==='overview'||form.elements.report_view.value==='Batch Traceability';renderNotes(data.notes||[]);renderFilterChips();
+    renderOverview(data.overview_previews);renderOverviewPrint(data);renderTableInsights(data.table_insights||[],data);renderTable(data);qs('.report-table-card').hidden=state.category==='overview'||form.elements.report_view.value==='Batch Traceability';renderNotes(data.notes||[]);renderFilterChips();updateReportPrintContext(data);
     if(form.elements.report_view.value==='Batch Traceability')renderBatchTrace(data.trace);
 }
 function renderRanking(data){
@@ -306,18 +435,21 @@ function renderRanking(data){
         return;
     }
     if(!chart||view==='Batch Traceability'||state.category==='overview'){target.hidden=true;target.innerHTML='';return;}
-    const rows=chart.rows.map(row=>({...row,rankValue:Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))})).filter(row=>row.rankValue>0).sort((a,b)=>b.rankValue-a.rankValue).slice(0,5);
+    const topTwentyProductSales=state.category==='sales'&&view==='Product Sales'&&Boolean(data.access?.management),topTwentyInventory=state.category==='inventory'&&view==='Inventory Overview',rowLimit=topTwentyProductSales||topTwentyInventory?20:5;
+    const rows=chart.rows.map(row=>({...row,rankValue:Number(row.value??(Number(row.paid||0)+Number(row.outstanding||0)))})).filter(row=>row.rankValue>0).sort((a,b)=>b.rankValue-a.rankValue).slice(0,rowLimit);
     if(!rows.length){target.hidden=true;target.innerHTML='';return;}
     const currency=/sales|cost|value|revenue|paid|payable|purchase/i.test(chart.title),metric=currency?value=>money.format(value):value=>number.format(value);
-    target.hidden=false;target.innerHTML=`<div class="ranking-heading"><div><h2>Top ${rows.length} by ${esc(chart.title.toLowerCase())}</h2><p>Within the current filters</p></div></div><div class="ranking-chart-box" style="height:${Math.max(160,rows.length*44)}px"><canvas id="reportRankingChart" role="img" aria-label="Top ${rows.length} by ${esc(chart.title)}"></canvas></div>`;
+    const rankingTitle=topTwentyProductSales?'Top 20 products by sales':topTwentyInventory?'Top 20 by on-hand units by product':`Top ${rows.length} by ${chart.title.toLowerCase()}`;
+    target.hidden=false;target.innerHTML=`<div class="ranking-heading"><div><h2>${esc(rankingTitle)}</h2><p>Within the current filters</p></div></div><div class="ranking-chart-box" style="height:${Math.max(160,rows.length*(topTwentyInventory?28:topTwentyProductSales?40:44))}px"><canvas id="reportRankingChart" role="img" aria-label="${esc(rankingTitle)}"></canvas></div>`;
     if(typeof Chart==='undefined')return;
     const values=rows.map(row=>row.rankValue),labels=rows.map(row=>row.label),colors=semanticChartColors(rows,chart.tone);
-    const instance=new Chart(qs('#reportRankingChart'),{type:'bar',data:{labels,datasets:[{label:chart.title,data:values,backgroundColor:colors,borderRadius:7,borderSkipped:false,maxBarThickness:28}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:160},plugins:{legend:{display:false},tooltip:{callbacks:{label:context=>metric(context.raw)}}},scales:{x:{beginAtZero:true,grid:{color:'rgba(148,163,184,.16)'},ticks:{callback:value=>currency?money.format(value):number.format(value)}},y:{grid:{display:false},ticks:{autoSkip:false}}}}});
+    const dataset={label:chart.title,data:values,backgroundColor:colors,borderRadius:7,borderSkipped:false,maxBarThickness:28};
+    const instance=new Chart(qs('#reportRankingChart'),{type:'bar',data:{labels,datasets:[dataset]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:160},plugins:{legend:{display:false},tooltip:{callbacks:{label:context=>metric(context.raw)}}},scales:{x:{beginAtZero:true,grid:{color:'rgba(148,163,184,.16)'},ticks:{callback:value=>currency?money.format(value):number.format(value)}},y:{grid:{display:false},ticks:{autoSkip:false}}}}});
     state.charts.set(`ranking:${chart.id}`,instance);
 }
 function renderReferenceControls(){
     const special=Boolean(state.data?.access?.management)&&['sales','inventory','expiry','purchases','supplier','staff'].includes(state.category),view=qs('[name="report_view"]').value,card=qs('.report-filter-card');
-    const snapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||(state.category==='expiry'&&view!=='Expired / Wastage');
+    const snapshot=(state.category==='inventory'&&!['Inventory Overview','Stock Movement','Fast / Slow Moving'].includes(view))||(state.category==='expiry'&&view!=='Expired / Wastage');
     card.classList.toggle('reference-filters',special);card.classList.toggle('snapshot-filters',snapshot);
     card.classList.toggle('purchase-filters',special&&state.category==='purchases'&&view==='PR / PO Summary');
     let target=qs('#referenceQuickFilters');if(!target){target=document.createElement('div');target.id='referenceQuickFilters';card.appendChild(target);}
@@ -334,7 +466,7 @@ function renderReferenceControls(){
     const select=(id,options)=>`<select id="${id}" class="form-select form-select-sm" aria-label="${id.replace('quick','')} filter">${options}</select>`;
     let controls='';
     if(state.category==='sales')controls=view==='Product Sales'?select('quickCategory',categoriesOptions):view==='Cashier Sales'?select('quickCashier',cashierOptions):'';
-    if(state.category==='inventory')controls=select('quickCategory',categoriesOptions)+(view==='Current Inventory'||view==='Inventory Valuation'?select('quickSupplier',supplierOptions):'')+(view==='Current Inventory'||view==='Low / Out of Stock'?select('quickStock',stockOptions):'');
+    if(state.category==='inventory')controls=select('quickCategory',categoriesOptions)+(view==='Current Inventory'||view==='Inventory Valuation'||view==='Inventory Overview'?select('quickSupplier',supplierOptions):'')+(view==='Current Inventory'||view==='Low / Out of Stock'||view==='Inventory Overview'?select('quickStock',stockOptions):'');
     if(view==='Expiring Products')controls=select('quickExpiry',`<option value="365" ${qs('[name="expiry_days"]').value==='365'?'selected':''}>All windows</option><option value="30" ${qs('[name="expiry_days"]').value==='30'?'selected':''}>Within 30 days</option><option value="90" ${qs('[name="expiry_days"]').value==='90'?'selected':''}>Within 90 days</option><option value="180" ${qs('[name="expiry_days"]').value==='180'?'selected':''}>Within 6 months</option>`);
     if(view==='Expired / Wastage')controls=select('quickSupplier',supplierOptions);
     if(view==='Batch Traceability')controls='<button type="button" class="btn btn-purple" id="quickTrace">Trace batch</button>';
@@ -371,9 +503,18 @@ function renderCharts(charts){
     charts = Array.isArray(charts) ? charts : [];
     const useful=charts.filter(chart=>chart && (chart.id==='my-order-status'||(chart.rows||[]).some(r=>Number(r.value)>0||Number(r.paid)>0||Number(r.outstanding)>0)||chart.href));
     const target=qs('#reportCharts');target.classList.toggle('single-chart',useful.length===1);
-    target.innerHTML=useful.map((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0),heading=`<div class="panel-heading"><h2>${esc(chart.title)}</h2>${chart.href?`<a class="report-link" href="${esc(chart.href)}">${esc(chart.link_label||'View Report')} <i class="fa-solid fa-arrow-right"></i></a>`:''}</div>`;if(chart.type==='stacked-bar'){const max=Math.max(1,...chart.rows.map(r=>Number(r.paid||0)+Number(r.outstanding||0)));return `<article class="chart-card">${heading}<div class="payment-chart-legend"><span><i></i>Paid</span><span><i></i>Outstanding</span></div><div class="payment-chart">${chart.rows.map(r=>`<div class="payment-chart-row"><span>${esc(r.label)}</span><div class="payment-chart-track"><i style="width:${100*Number(r.paid||0)/max}%"></i><b style="width:${100*Number(r.outstanding||0)/max}%"></b></div></div>`).join('')}</div></article>`;}if(positive.length===0)return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="compact-empty">No records in the selected period.</div></article>`;if((positive.length===1&&chart.type!=='bar'&&chart.type!=='line')||chart.type==='doughnut'&&positive.length<2){const row=positive[0],singleSummary=chart.overview_trend?`Net sales were ${money.format(row.value)} on ${reportDate(row.raw_date||row.label,{month:'long',day:'numeric',year:'numeric'})}, from ${number.format(row.secondary)} completed transaction${Number(row.secondary)===1?'':'s'}.`:'Only one meaningful category is available, so a compact summary replaces the chart.';return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="ranked-insight"><span>${esc(row.label)}</span><strong>${esc(format(row.value,/sales|cost|revenue|payable/i.test(chart.title)?'currency':'number'))}</strong></div><p class="chart-summary">${esc(singleSummary)}</p></article>`;}return `<article class="chart-card">${heading}<div class="chart-box"><canvas id="reportChart${index}" role="img" aria-label="${esc(chart.title)}"></canvas></div><p class="chart-summary" id="chartSummary${index}"></p></article>`;}).join('');
-    useful.forEach((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0);if(chart.type==='stacked-bar'||positive.length===0||!qs(`#reportChart${index}`)||typeof Chart==='undefined')return;const values=positive.map(r=>Number(r.value)),rawLabels=positive.map(r=>r.label),labels=chart.overview_trend?rawLabels.map(label=>reportDate(label)):rawLabels,currency=/sales|cost|revenue|payable|value/i.test(chart.title),horizontal=chart.orientation==='horizontal',chartType=chart.type==='line'?'bar':chart.type;
-        const colors=semanticChartColors(positive,chart.tone);const instance=new Chart(qs(`#reportChart${index}`),{type:chartType,data:{labels,datasets:[{label:chart.title,data:values,backgroundColor:colors,borderColor:colors,borderWidth:1,borderRadius:chartType==='bar'?5:0,borderSkipped:false,maxBarThickness:chartType==='bar'?34:undefined}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:horizontal?'y':'x',animation:{duration:160},plugins:{legend:{display:chartType==='doughnut',position:'bottom'},tooltip:{callbacks:{title:items=>chart.overview_trend?reportDate(positive[items[0].dataIndex].raw_date||rawLabels[items[0].dataIndex],{month:'long',day:'numeric',year:'numeric'}):items[0].label,label:ctx=>{const row=positive[ctx.dataIndex],metric=/net sales/i.test(chart.title)?'Net sales':chart.title,lines=[`${metric}: ${currency?money.format(ctx.raw):number.format(ctx.raw)}`];if(row.secondary!==undefined)lines.push(`Completed transactions: ${number.format(row.secondary)}`);return lines;}}}},scales:chartType==='doughnut'?{}:{x:{beginAtZero:horizontal,grid:{display:!horizontal},ticks:{callback:function(value){if(horizontal)return currency?money.format(value):number.format(value);return this.getLabelForValue(value);}}},y:{beginAtZero:!horizontal,grid:{display:false},ticks:{callback:function(value){if(!horizontal&&currency)return money.format(value);return this.getLabelForValue(value);}}}}}});state.charts.set(chart.id,instance);const max=Math.max(...values),maxIndex=values.indexOf(max),label=rawLabels[maxIndex],summary=chart.overview_trend?`Highest net sales were ${money.format(max)} on ${reportDate(positive[maxIndex].raw_date||label,{month:'long',day:'numeric',year:'numeric'})}.`:`${label} is highest at ${currency?money.format(max):number.format(max)}.`;qs(`#chartSummary${index}`).textContent=summary;});
+    target.innerHTML=useful.map((chart,index)=>{const positive=(chart.rows||[]).filter(r=>Number(r.value)>0),heading=`<div class="panel-heading"><h2>${esc(chart.title)}</h2>${chart.href?`<a class="report-link" href="${esc(chart.href)}">${esc(chart.link_label||'View Report')} <i class="fa-solid fa-arrow-right"></i></a>`:''}</div>`;if(chart.type==='stacked-bar'){const max=Math.max(1,...chart.rows.map(r=>Number(r.paid||0)+Number(r.outstanding||0)));return `<article class="chart-card">${heading}<div class="payment-chart-legend"><span><i></i>Paid</span><span><i></i>Outstanding</span></div><div class="payment-chart">${chart.rows.map(r=>`<div class="payment-chart-row"><span>${esc(r.label)}</span><div class="payment-chart-track"><i style="width:${100*Number(r.paid||0)/max}%"></i><b style="width:${100*Number(r.outstanding||0)/max}%"></b></div></div>`).join('')}</div></article>`;}if(positive.length===0)return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="compact-empty">No records in the selected period.</div></article>`;if((positive.length===1&&chart.type!=='bar'&&chart.type!=='line')||chart.type==='doughnut'&&positive.length<2){const row=positive[0],singleSummary=chart.overview_trend?`Net sales were ${money.format(row.value)} on ${reportDate(row.raw_date||row.label,{month:'long',day:'numeric',year:'numeric'})}, from ${number.format(row.secondary)} completed transaction${Number(row.secondary)===1?'':'s'}.`:'Only one meaningful category is available, so a compact summary replaces the chart.';return `<article class="chart-card compact-insight tone-${esc(chart.tone||'gray')}">${heading}<div class="ranked-insight"><span>${esc(row.label)}</span><strong>${esc(format(row.value,/sales|cost|revenue|payable/i.test(chart.title)?'currency':'number'))}</strong></div><p class="chart-summary">${esc(singleSummary)}</p></article>`;}const chartHeight=chart.orientation==='horizontal'?Math.max(270,positive.length*36):270;return `<article class="chart-card">${heading}<div class="chart-box" style="height:${chartHeight}px"><canvas id="reportChart${index}" role="img" aria-label="${esc(chart.title)}"></canvas></div><p class="chart-summary" id="chartSummary${index}"></p></article>`;}).join('');
+    useful.forEach((chart,index)=>{
+        const positive=(chart.rows||[]).filter(row=>Number(row.value)>0);
+        if(chart.type==='stacked-bar'||positive.length===0||!qs(`#reportChart${index}`)||typeof Chart==='undefined')return;
+        const inventoryOverview=state.category==='inventory'&&qs('[name="report_view"]').value==='Inventory Overview',line=chart.type==='line'||inventoryOverview,plotRows=line?chart.rows:positive,values=plotRows.map(row=>Number(row.value)),rawLabels=plotRows.map(row=>row.label),labels=chart.overview_trend?rawLabels.map(label=>reportDate(label)):rawLabels,currency=/sales|cost|revenue|payable|value/i.test(chart.title),horizontal=!inventoryOverview&&chart.orientation==='horizontal',chartType=line?'line':chart.type;
+        const colors=semanticChartColors(plotRows,chart.tone),seriesColor=inventoryOverview?tones.inventory:(colors[0]||tones.sales),lineFill=context=>{const area=context.chart.chartArea,fillTop=inventoryOverview?'rgba(15,159,146,.24)':'rgba(91,76,240,.25)',fillBottom=inventoryOverview?'rgba(15,159,146,.015)':'rgba(91,76,240,.015)';if(!area)return inventoryOverview?'rgba(15,159,146,.14)':'rgba(91,76,240,.14)';const gradient=context.chart.ctx.createLinearGradient(0,area.top,0,area.bottom);gradient.addColorStop(0,fillTop);gradient.addColorStop(1,fillBottom);return gradient;},dataset={label:chart.title,data:values,backgroundColor:line?lineFill:colors,borderColor:line?seriesColor:colors,borderWidth:line?3:1,borderRadius:chartType==='bar'?5:0,borderSkipped:false,maxBarThickness:chartType==='bar'?34:undefined};
+        if(line)Object.assign(dataset,{fill:true,tension:.35,pointRadius:4,pointHoverRadius:7,pointBackgroundColor:'#fff',pointBorderColor:seriesColor,pointBorderWidth:2,pointHoverBackgroundColor:seriesColor,pointHoverBorderColor:'#fff',pointHoverBorderWidth:2});
+        const chartHeight=chart.type==='line'&&plotRows.length>12?Math.max(320,Math.min(520,plotRows.length*24)):undefined;
+        const canvasCard=qs(`#reportChart${index}`)?.closest('.chart-box');if(canvasCard&&chartHeight)canvasCard.style.height=`${chartHeight}px`;
+        const instance=new Chart(qs(`#reportChart${index}`),{type:chartType,data:{labels,datasets:[dataset]},options:{responsive:true,maintainAspectRatio:false,indexAxis:horizontal?'y':'x',interaction:line?{mode:'index',intersect:false}:undefined,animation:{duration:350},plugins:{legend:{display:chartType==='doughnut',position:'bottom'},tooltip:{backgroundColor:line?'#201a52':undefined,titleColor:line?'#ddd6fe':undefined,bodyColor:line?'#fff':undefined,padding:line?12:undefined,cornerRadius:line?10:undefined,displayColors:line?false:undefined,callbacks:{title:items=>chart.overview_trend?reportDate(plotRows[items[0].dataIndex].raw_date||rawLabels[items[0].dataIndex],{month:'long',day:'numeric',year:'numeric'}):items[0].label,label:ctx=>{const row=plotRows[ctx.dataIndex],metric=/net sales/i.test(chart.title)?'Net sales':chart.title,lines=[`${metric}: ${currency?money.format(ctx.raw):number.format(ctx.raw)}`];if(row.secondary!==undefined)lines.push(`Completed transactions: ${number.format(row.secondary)}`);return lines;}}}},scales:chartType==='doughnut'?{}:{x:{beginAtZero:horizontal,grid:{display:line?false:!horizontal},ticks:{autoSkip:line,callback:function(value){if(horizontal)return currency?money.format(value):number.format(value);return this.getLabelForValue(value);}}},y:{beginAtZero:line||!horizontal,grid:{display:line},ticks:{callback:function(value){if(line)return currency?money.format(value):number.format(value);if(!horizontal&&currency)return money.format(value);return this.getLabelForValue(value);}}}}}});
+        state.charts.set(chart.id,instance);const max=Math.max(...positive.map(row=>Number(row.value))),maxIndex=positive.findIndex(row=>Number(row.value)===max),label=positive[maxIndex].label;qs(`#chartSummary${index}`).textContent=chart.overview_trend?`Highest net sales were ${money.format(max)} on ${reportDate(positive[maxIndex].raw_date||label,{month:'long',day:'numeric',year:'numeric'})}.`:`${label} is highest at ${currency?money.format(max):number.format(max)}.`;
+    });
 }
 function renderInsights(data){
     const cards=[];
@@ -456,7 +597,14 @@ function renderOverviewPrint(data){
     const notes=(data.notes||[]).map(note=>`<li>${esc(note)}</li>`).join('');
     target.innerHTML=`${sections.join('')}${notes?`<section class="overview-print-notes"><h3>Notes</h3><ul>${notes}</ul></section>`:''}`;
 }
-function renderTableInsights(insights){qs('#tableInsights').innerHTML=insights.map(insight=>`<article class="table-insight-card"><h2>${esc(insight.title)}</h2><div class="report-table-scroll"><table class="report-table compact"><thead><tr>${Object.values(insight.columns).map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${insight.rows.map(row=>`<tr>${Object.keys(insight.columns).map(key=>`<td class="${(insight.currency_columns||[]).includes(key)||(insight.numeric_columns||[]).includes(key)?'numeric':''}">${esc((insight.currency_columns||[]).includes(key)?money.format(Number(row[key]||0)):row[key]??'—')}</td>`).join('')}</tr>`).join('')||`<tr class="empty-table"><td colspan="${Object.keys(insight.columns).length}">No completed supplier deliveries in this period.</td></tr>`}</tbody></table></div></article>`).join('');}
+function renderTableInsights(insights,data={}){
+    const tables=insights.map(insight=>`<article class="table-insight-card ${insight.title==='Monthly sales totals'?'monthly-sales-totals':''}"><h2>${esc(insight.title)}</h2><div class="report-table-scroll"><table class="report-table compact"><thead><tr>${Object.values(insight.columns).map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${insight.rows.map(row=>`<tr>${Object.keys(insight.columns).map(key=>`<td class="${(insight.currency_columns||[]).includes(key)||(insight.numeric_columns||[]).includes(key)?'numeric':''}">${esc((insight.currency_columns||[]).includes(key)?money.format(Number(row[key]||0)):row[key]??'—')}</td>`).join('')}</tr>`).join('')||`<tr class="empty-table"><td colspan="${Object.keys(insight.columns).length}">No completed supplier deliveries in this period.</td></tr>`}</tbody></table></div></article>`).join('');
+    let reconciliation='';
+    if(state.category==='sales'&&qs('[name="report_view"]').value==='Sales Summary'&&data.reconciliation?.rows?.length){
+        reconciliation=`<article class="table-insight-card sales-reconciliation"><h2>Sales reconciliation</h2><p>Gross-to-net totals for the selected dates and account scope.</p><div class="report-table-scroll"><table class="report-table compact"><thead><tr><th>Sales component</th><th class="numeric">Amount</th></tr></thead><tbody>${data.reconciliation.rows.map(row=>`<tr><td>${esc(row.label)}</td><td class="numeric">${esc(money.format(Number(row.value)||0))}</td></tr>`).join('')}</tbody></table></div><small>${esc(data.reconciliation.note||'')}</small></article>`;
+    }
+    qs('#tableInsights').innerHTML=reconciliation+tables;
+}
 function statusClass(value){return statusColors[String(value)]||(/paid|healthy|complete|accept/i.test(value)?'green':/cancel|expired|out of stock|data issue/i.test(value)?'red':/pending|partial|low|damage|slow/i.test(value)?'amber':'gray');}
 function cellHtml(key,value,row){
     if(value===null||value==='')return key==='tracked_gross_profit'?'<span class="cell-text" title="Sales from this purchase order do not have complete batch-cost tracking yet.">Not tracked</span>':'—';
@@ -466,6 +614,7 @@ function cellHtml(key,value,row){
 }
 function renderTable(data){
     let columns=Object.entries(data.columns||{});if(!data.access.management&&data.access.cashier)columns=columns.filter(([key])=>key!=='sales_clerk');
+    qs('#reportTableHead').closest('table').classList.toggle('product-sales-detail-table',state.category==='sales'&&qs('[name="report_view"]').value==='Product Sales');
     qs('#tableTitle').textContent='Detailed records';qs('#reportTableHead').innerHTML=`<tr>${columns.map(([key,label])=>`<th class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}"><button class="sort-button" type="button" data-sort="${esc(key)}">${esc(label)}${state.sort===key?` <i class="fa-solid fa-sort-${state.direction==='asc'?'up':'down'}"></i>`:''}</button></th>`).join('')}</tr>`;
     qs('#reportTableBody').innerHTML=data.rows?.length?data.rows.map((row,index)=>`<tr class="report-detail-row" data-row-index="${index}" tabindex="0" aria-label="Open details for ${esc(String(row[columns[0]?.[0]]??'record'))}">${columns.map(([key])=>`<td class="${data.numeric_columns.includes(key)||data.currency_columns.includes(key)?'numeric':''}">${cellHtml(key,row[key],row)}</td>`).join('')}</tr>`).join(''):`<tr class="empty-table"><td colspan="${columns.length}">${esc(data.empty_message||'No records were found for the selected filters.')}</td></tr>`;
     window.PharmacySearchHighlight?.apply(qs('#reportTableBody'),qs('#reportSearch')?.value||'');
@@ -501,7 +650,10 @@ async function exportCsv(){
     if(!state.data)return;const button=qs('#reportExport');button.disabled=true;
     try{const first=state.data,exportParams=buildParams({page:1,page_size:100}),firstResponse=await fetch(`${API_BASE_URL}/reports/get_report.php?${exportParams}`,{credentials:'include',cache:'no-store'}),firstPayload=await firstResponse.json();if(!firstResponse.ok)throw new Error(firstPayload.message||'Export failed.');const rows=[...firstPayload.rows];for(let page=2;page<=firstPayload.pagination.pages;page++){const response=await fetch(`${API_BASE_URL}/reports/get_report.php?${buildParams({page,page_size:100})}`,{credentials:'include',cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(payload.message||'Export failed.');rows.push(...payload.rows);}
         const columns=Object.entries(first.columns),applied=qsa('.filter-chip').map(x=>x.textContent.trim().replace(/\s*×$/,'')).join('; ')||'Default period';
-        const lines=[[first.system.pharmacy_name],[`${qs('[name=report_view]').value} Report`],[`Date range: ${first.system.date_range.start} to ${first.system.date_range.end}`],[`Applied filters: ${applied}`],[`Generated: ${first.system.generated_at}`],[`Generated by: ${first.system.generated_by}`],[],['Summary'],...first.summary.map(x=>[x.title,format(x.value,x.format)]),[],columns.map(([,label])=>label)];
+        const compare=first.comparison_mode==='none'?'Off':first.comparison_period?`${first.comparison_period.start} to ${first.comparison_period.end}`:'Not available for this report';
+        const lines=[[first.system.pharmacy_name],[`${qs('[name=report_view]').value} Report`],[`Date range: ${first.system.date_range.start} to ${first.system.date_range.end}`],[`Comparison period: ${compare}`],[`Account scope: ${reportAccountScope(first)}`],[`Applied filters: ${applied}`],[`Generated: ${first.system.generated_at}`],[`Generated by: ${first.system.generated_by}`],[],['Summary'],...first.summary.map(x=>[x.title,format(x.value,x.format)]),[],columns.map(([,label])=>label)];
+        if(first.reconciliation?.rows?.length){lines.push([],['Sales reconciliation'],['Sales component','Amount'],...first.reconciliation.rows.map(row=>[row.label,money.format(Number(row.value)||0)]),[first.reconciliation.note||'']);}
+        for(const insight of first.table_insights||[]){lines.push([], [insight.title], Object.values(insight.columns), ...insight.rows.map(row=>Object.keys(insight.columns).map(key=>(insight.currency_columns||[]).includes(key)?money.format(Number(row[key])||0):row[key]??'')));}
         rows.forEach(row=>lines.push(columns.map(([key])=>row[key]??'')));const blob=new Blob(['\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`${state.category}-report-${first.system.date_range.end}.csv`;document.body.appendChild(link);link.click();const url=link.href;link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch(error){alert(error.message);}finally{button.disabled=false;}
 }
@@ -518,12 +670,15 @@ qs('#reportFinderResults').addEventListener('click',event=>{const button=event.t
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();if(!qs('#reportFinder').open)openFinder();}if(event.key==='Escape'&&qs('#reportDetail').open)qs('#reportDetail').close();});
 qs('#reportTableBody').addEventListener('click',event=>{const row=event.target.closest('[data-row-index]');if(row)openRecordDetail(Number(row.dataset.rowIndex));});
 qs('#reportTableBody').addEventListener('keydown',event=>{if(!['Enter',' '].includes(event.key))return;const row=event.target.closest('[data-row-index]');if(row){event.preventDefault();openRecordDetail(Number(row.dataset.rowIndex));}});
-qs('#reportDetailClose').addEventListener('click',()=>qs('#reportDetail').close());qs('#reportDetailPrevious').addEventListener('click',()=>openRecordDetail(state.detailIndex-1));qs('#reportDetailNext').addEventListener('click',()=>openRecordDetail(state.detailIndex+1));
+qs('#reportDetailClose').addEventListener('click',()=>qs('#reportDetail').close());qs('#reportDetail').addEventListener('click',event=>{if(event.target===event.currentTarget)event.currentTarget.close();});qs('#reportDetailPrevious').addEventListener('click',()=>openRecordDetail(state.detailIndex-1));qs('#reportDetailNext').addEventListener('click',()=>openRecordDetail(state.detailIndex+1));
 qs('#reportFilters').addEventListener('submit',event=>{event.preventDefault();state.page=1;state.explicitDates=true;state.period='custom';loadReport();});
 qs('#clearFilters').addEventListener('click',resetFilters);qs('#reportRefresh').addEventListener('click',loadReport);qs('#reportPrint').addEventListener('click',()=>{setPrintTimestamp();window.print();});qs('#reportPdf').addEventListener('click',()=>{setPrintTimestamp();window.print();});window.addEventListener('beforeprint',setPrintTimestamp);qs('#reportExport').addEventListener('click',exportCsv);
 qs('#reportViewMenu').addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(!button)return;qs('#reportSearch').value='';qs('[name="report_view"]').value=button.dataset.view;setFilterExpanded(['expiry','purchases'].includes(state.category)?false:button.dataset.view!=='Sales Summary');qs('[name="report_view"]').dispatchEvent(new Event('change'));renderViewMenu();});
 qs('.report-presets').addEventListener('click',event=>{const button=event.target.closest('[data-period]');if(!button)return;const period=button.dataset.period;if(period==='custom'){setPeriodSelection('custom');state.explicitDates=true;updateVisibleFilters();return;}const today=reportToday(state.data?.system?.timezone),end=period==='yesterday'?shiftDate(today,-1):today,start=period==='month'?`${today.slice(0,7)}-01`:period==='7'?shiftDate(end,-6):period==='30'?shiftDate(end,-29):end;qs('[name="start_date"]').value=start;qs('[name="end_date"]').value=end;setPeriodSelection(period);state.explicitDates=true;state.page=1;updateVisibleFilters();loadReport();});
-qs('#previousPage').addEventListener('click',()=>{state.page--;loadReport();});qs('#nextPage').addEventListener('click',()=>{state.page++;loadReport();});
+qs('#reportComparisonMode').addEventListener('change',event=>{state.comparisonMode=event.target.value;state.page=1;loadReport();});
+qs('#reportMonthShortcut').addEventListener('change',event=>{const value=event.target.value;if(!/^\d{4}-\d{2}$/.test(value))return;const [year,month]=value.split('-').map(Number),lastDay=new Date(year,month,0).getDate();qs('[name="start_date"]').value=`${year}-${String(month).padStart(2,'0')}-01`;qs('[name="end_date"]').value=`${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;state.period='custom';state.explicitDates=true;state.page=1;setPeriodSelection('custom');updateVisibleFilters();loadReport();});
+qsa('#reportFilters [name="start_date"],#reportFilters [name="end_date"]').forEach(input=>input.addEventListener('change',()=>{qs('#reportMonthShortcut').value='';}));
+qs('#previousPage').addEventListener('click',()=>loadTablePage(state.page-1));qs('#nextPage').addEventListener('click',()=>loadTablePage(state.page+1));
 qs('#reportSearch').addEventListener('input',()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(()=>{state.page=1;loadReport();},350);});
 qs('#reportTableHead').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.direction=state.sort===button.dataset.sort&&state.direction==='asc'?'desc':'asc';state.sort=button.dataset.sort;state.page=1;loadReport();});
 qs('#moreFiltersToggle').addEventListener('click',event=>{const panel=qs('#secondaryFilters'),expanded=panel.hidden;panel.hidden=!expanded;event.currentTarget.setAttribute('aria-expanded',String(expanded));event.currentTarget.lastElementChild.className=`fa-solid fa-chevron-${expanded?'up':'down'}`;});
@@ -536,6 +691,9 @@ qs('[name="report_view"]').addEventListener('change',event=>{const form=qs('#rep
 qs('.report-filter-card').addEventListener('change',event=>{const id=event.target.id;if(id==='quickExpiry')qs('[name="expiry_days"]').value=event.target.value;else if(id==='quickSupplier')qs('[name="supplier_id"]').value=qs('[name="secondary_supplier_id"]').value=event.target.value;else if(id==='quickCategory')qs('[name="category_id"]').value=qs('[name="secondary_category_id"]').value=event.target.value;else if(id==='quickStock')qs('[name="stock_status"]').value=event.target.value;else if(id==='quickCashier')qs('[name="cashier_id"]').value=event.target.value;else if(id==='quickStatus')qs('[name="po_status"]').value=event.target.value;else if(id==='quickPayment')qs('[name="payment_state"]').value=event.target.value;else return;state.page=1;loadReport();});
 qs('.report-filter-card').addEventListener('click',event=>{if(event.target.closest('#quickTrace'))loadReport();});
 qs('#filterCollapse').addEventListener('click',()=>setFilterExpanded(qs('#reportFilters').classList.contains('is-collapsed')));
+window.addEventListener('storage',event=>{if(event.key==='pharmacy-user-list-updated'&&state.data?.access?.management&&['sales','staff'].includes(state.category))loadReport();});
+
+createLiveSync({interval:30000,events:['payment-completed'],sync:()=>loadReport({silent:true})});
 
 await verifySession();initialQuery();renderTabs();updateVisibleFilters();if(state.category==='overview')clearCategoryFilters();
 if(matchMedia('(max-width:991.98px)').matches){qs('#reportFilters').classList.add('is-collapsed');qs('#filterCollapse').setAttribute('aria-expanded','false');qs('#filterCollapse span').textContent='Show filters';qs('#filterCollapse i').className='fa-solid fa-chevron-down';}

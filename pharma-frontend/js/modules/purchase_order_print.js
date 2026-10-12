@@ -1,5 +1,5 @@
 import API_BASE_URL from '../config/config.js';
-import { renderPurchaseOrderDocument } from './purchase_order_document.js?v=8';
+import { renderPurchaseOrderDocument } from './purchase_order_document.js?v=12';
 
 const params = new URLSearchParams(location.search);
 if (params.get('embed') === '1') document.body.classList.add('embed');

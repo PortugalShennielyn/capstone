@@ -44,11 +44,13 @@ if ($email !== '') {
 $hash = password_hash($password, PASSWORD_DEFAULT);
 $stmt = $pdo->prepare(
     'INSERT INTO users
-        (user_id, full_name, username, password, password_hash, role, status, email, contact_number, created_at, updated_at)
+        (user_id, full_name, username, password, password_hash, must_change_password, role, status, email, contact_number, created_at, updated_at)
      VALUES
-        (:user_id, :full_name, :username, :password, :password_hash, :role, :status, :email, :contact_number, NOW(), NOW())'
+        (:user_id, :full_name, :username, :password, :password_hash, 1, :role, :status, :email, :contact_number, NOW(), NOW())'
 );
 $userId = newUuid($pdo);
+$pdo->beginTransaction();
+try {
 $stmt->execute([
     ':user_id' => $userId,
     ':full_name' => $fullName,
@@ -61,7 +63,20 @@ $stmt->execute([
     ':contact_number' => $contactNumber !== '' ? $contactNumber : null,
 ]);
 
-recordActivityLog($pdo, 'User Management', 'Added', userManagementActorLabel() . ' added user ' . $fullName, $userId);
+recordActivityLog($pdo, 'User Management', 'Added', userManagementActorLabel() . ' added user ' . $fullName, $userId, null, null, false);
+recordManagementAudit($pdo, 'ACCOUNT_CREATED', userManagementActorLabel() . ' created ' . roleLabel($role) . ' account ' . $username . '.', 'User Account', $userId, [
+    'affected_user_id' => $userId,
+    'affected_username' => $username,
+    'affected_name' => $fullName,
+    'new_role' => $role,
+    'status' => $status,
+]);
+$pdo->commit();
+} catch (Throwable $error) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('User creation transaction failed: ' . $error->getMessage());
+    sendUserJson(false, 'Unable to create the user account.', null, 500);
+}
 
 sendUserJson(true, 'User created successfully.');
 ?>

@@ -10,6 +10,7 @@ const EXPIRY_SYNC_KEY = 'drpInventoryExpiryChanged';
 const expiryChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('drp-inventory-expiry') : null;
 const PRODUCT_IDENTITY_SEPARATOR = PharmaUtils.productIdentitySeparator || ' \u2022 ';
 
+const stockThresholds = { storageLow: 30, shelfLow: 10, critical: 15 };
 let inventoryRows = [];
 let inventoryLoaded = false;
 let activeDetailsProductId = null;
@@ -224,6 +225,39 @@ function statusClass(status) {
     if (normalized === 'expiring soon') return 'status-soon';
     if (normalized === 'expired') return 'status-expired';
     return 'status-na';
+}
+
+function applyStockThresholds(value) {
+    const previous = JSON.stringify(stockThresholds);
+    const storageLow = Number(value?.storageLow);
+    const shelfLow = Number(value?.shelfLow);
+    const critical = Number(value?.critical);
+    if (Number.isInteger(storageLow) && storageLow >= 0) stockThresholds.storageLow = storageLow;
+    if (Number.isInteger(shelfLow) && shelfLow >= 0) stockThresholds.shelfLow = shelfLow;
+    if (Number.isInteger(critical) && critical >= 0) stockThresholds.critical = critical;
+    return JSON.stringify(stockThresholds) !== previous;
+}
+
+function stockLevelTag(quantity, location) {
+    if (location !== 'shelf' && location !== 'storage') return '';
+    const qty = Number(quantity || 0);
+    const low = location === 'shelf' ? stockThresholds.shelfLow : stockThresholds.storageLow;
+    const place = location === 'shelf' ? 'Shelf' : 'Storage';
+    if (qty <= 0) {
+        return `<span class="qty-stock-tag is-out" title="${esc(place)} quantity is zero">Out of Stock</span>`;
+    }
+    if (qty <= stockThresholds.critical) {
+        return `<span class="qty-stock-tag is-critical" title="${esc(place)} quantity is at or below the critical level of ${esc(stockThresholds.critical)}">Critical</span>`;
+    }
+    if (qty <= low) {
+        return `<span class="qty-stock-tag is-low" title="${esc(place)} quantity is at or below the low stock level of ${esc(low)}">Low Stock</span>`;
+    }
+    return '';
+}
+
+function inventoryQuantityCell(quantity, unitName, location, extraClass = '') {
+    const qty = Number(quantity || 0);
+    return `<td class="inventory-col-qty${extraClass ? ` ${extraClass}` : ''}"><div class="qty-stack"><span class="qty-number">${esc(qty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(unitName, qty))}</small>${stockLevelTag(qty, location)}</div></td>`;
 }
 
 function statusBadge(status) {
@@ -580,8 +614,8 @@ function renderInventory(rows) {
         const expiry = `<div class="expiry-cell">${statusBadge(row.expiry_status)}<span class="expiry-date">${esc(formatDate(row.nearest_expiry_date))}</span></div>`;
         const action = `<td class="inventory-col-action inventory-actions-column"><div class="table-actions">${moveButton}<button class="btn btn-sm btn-outline-secondary view-inventory-btn" type="button" title="View Details" aria-label="View Details" data-product-id="${productId}"><i class="fa-regular fa-eye"></i></button><button class="btn btn-sm btn-outline-secondary history-btn" type="button" title="View Stock Movement History" aria-label="View Stock Movement History" data-product-id="${productId}"><i class="fa-solid fa-clock-rotate-left"></i></button></div></td>`;
         const locationCells = inventoryView === 'shelf'
-            ? `<td class="inventory-col-qty"><span class="qty-number">${esc(shelfQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, shelfQty))}</small></td><td class="inventory-col-qty"><span class="qty-number">${esc(storageQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, storageQty))}</small></td><td class="inventory-col-expiry">${expiry}</td><td class="inventory-col-status"><span class="pos-status ${shelfQty > 0 && !inactive ? 'is-available' : 'is-unavailable'}">${shelfQty > 0 && !inactive ? 'Available' : 'Unavailable'}</span></td>${action}`
-            : `<td class="inventory-col-qty"><span class="qty-number">${esc(storageQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, storageQty))}</small></td><td class="inventory-col-qty"><span class="qty-number">${esc(shelfQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, shelfQty))}</small></td><td class="inventory-col-qty inventory-on-hand"><span class="qty-number">${esc(storageQty + shelfQty)}</span><small class="d-block text-muted">${esc(inventoryUnitLabel(inventoryUnit, storageQty + shelfQty))}</small></td><td class="inventory-col-expiry">${expiry}</td>${action}`;
+            ? `${inventoryQuantityCell(shelfQty, inventoryUnit, 'shelf')}${inventoryQuantityCell(storageQty, inventoryUnit, 'storage')}<td class="inventory-col-expiry">${expiry}</td><td class="inventory-col-status"><span class="pos-status ${shelfQty > 0 && !inactive ? 'is-available' : 'is-unavailable'}">${shelfQty > 0 && !inactive ? 'Available' : 'Unavailable'}</span></td>${action}`
+            : `${inventoryQuantityCell(storageQty, inventoryUnit, 'storage')}${inventoryQuantityCell(shelfQty, inventoryUnit, 'shelf')}${inventoryQuantityCell(storageQty + shelfQty, inventoryUnit, 'onhand', 'inventory-on-hand')}<td class="inventory-col-expiry">${expiry}</td>${action}`;
 
         const rowClasses = [inactive ? 'is-inactive' : '', searchTerm ? 'has-search-match' : ''].filter(Boolean).join(' ');
         return `
@@ -616,7 +650,8 @@ async function loadInventory() {
     try {
         const data = await fetchJson(`${API_BASE_URL}/inventory/get_inventory.php?t=${Date.now()}`);
         const nextRows = data.data || [];
-        if (inventoryLoaded && JSON.stringify(nextRows) === JSON.stringify(inventoryRows)) return;
+        const thresholdsChanged = applyStockThresholds(data.stockThresholds);
+        if (inventoryLoaded && !thresholdsChanged && JSON.stringify(nextRows) === JSON.stringify(inventoryRows)) return;
         inventoryRows = nextRows;
         inventoryLoaded = true;
         applyInventoryFilters();
@@ -631,8 +666,8 @@ async function loadInventory() {
     }
 }
 
-function stockSummaryItem(label, value) {
-    return `<div class="inventory-stock-summary-item"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+function stockSummaryItem(label, value, tag = '') {
+    return `<div class="inventory-stock-summary-item"><span>${esc(label)}</span><strong>${esc(value)}</strong>${tag}</div>`;
 }
 
 function quantityWithUnit(quantity, unit) {
@@ -686,8 +721,8 @@ function openDetails(productId, show = true) {
     const stockCards = document.getElementById('inventoryHeaderStockCards');
     if (stockCards) {
         stockCards.innerHTML = `
-            ${stockSummaryItem('Storage Stock', quantityWithUnit(storageQty, inventoryUnit))}
-            ${stockSummaryItem('Shelf Stock', quantityWithUnit(shelfQty, inventoryUnit))}
+            ${stockSummaryItem('Storage Stock', quantityWithUnit(storageQty, inventoryUnit), stockLevelTag(storageQty, 'storage'))}
+            ${stockSummaryItem('Shelf Stock', quantityWithUnit(shelfQty, inventoryUnit), stockLevelTag(shelfQty, 'shelf'))}
             ${stockSummaryItem('On Hand', quantityWithUnit(onHandQty, inventoryUnit))}
             ${stockSummaryItem('Damaged', quantityWithUnit(damagedQty, inventoryUnit))}
             ${stockSummaryItem('Returned', quantityWithUnit(hasReturned ? returnedQty : 0, inventoryUnit))}

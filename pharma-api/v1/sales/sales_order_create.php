@@ -11,6 +11,7 @@ try {
     }
 
     ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     ensureSalesOrderCashSchema($pdo);
 
     $payload = salesReadJsonBody();
@@ -37,7 +38,7 @@ try {
 
     if ($orderId > 0) {
         $stmt = $pdo->prepare(
-            "SELECT order_id, status
+            "SELECT order_id, order_no, status
              FROM sales_orders
              WHERE order_id = :order_id
              LIMIT 1
@@ -77,6 +78,21 @@ try {
             ':change_amount' => $cashTotals['change_amount'],
             ':order_id' => $orderId,
         ]);
+        recordSalesAudit(
+            $pdo,
+            'TRANSACTION_DRAFT_SAVED',
+            salesCurrentUserName() . ' updated draft order #' . $existing['order_no'] . '.',
+            $orderId,
+            [
+                'order_id' => $orderId,
+                'order_no' => (string) $existing['order_no'],
+                'transaction_id' => (string) $existing['order_no'],
+                'amount' => $totals['total_amount'],
+                'discount' => $totals['discount'],
+                'status' => 'draft',
+                'operation' => 'draft updated',
+            ]
+        );
     } else {
         $orderNo = salesGenerateOrderNo($pdo);
         $insert = $pdo->prepare(

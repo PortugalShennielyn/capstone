@@ -1,6 +1,8 @@
 <?php
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
+require_once '../activity_log_helpers.php';
+require_once '../../config/audit_log.php';
 require_once '../purchase_orders/purchase_order_helpers.php';
 
 header('Content-Type: application/json');
@@ -45,6 +47,8 @@ try {
         true
     );
 
+    ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     $pdo->beginTransaction();
     $lookup = $pdo->prepare(
         'SELECT batch_id, legacy_inventory_id, product_id, received_date, expiry_date,
@@ -94,6 +98,20 @@ try {
         ]);
     }
 
+    if ($expiryDate !== $currentExpiryDate) {
+        $nameStmt = $pdo->prepare('SELECT product_name FROM product WHERE product_id=:product_id LIMIT 1');
+        $nameStmt->execute([':product_id' => $batch['product_id']]);
+        $productName = trim((string) $nameStmt->fetchColumn()) ?: 'Product';
+        $previous = $currentExpiryDate !== '' ? $currentExpiryDate : 'not set';
+        $next = $expiryDate !== '' ? $expiryDate : 'not set';
+        recordInventoryAudit($pdo, 'EXPIRY_DATE_UPDATED', "{$productName}: expiry date changed from {$previous} to {$next}.", (string) $batch['product_id'], [
+            'product_id' => $batch['product_id'], 'product_name' => $productName,
+            'batch_id' => $batch['batch_id'], 'previous_expiry_date' => $currentExpiryDate ?: null,
+            'new_expiry_date' => $expiryDate ?: null,
+        ]);
+        recordActivityLog($pdo, 'Inventory', 'Expiry Date Updated', "{$productName}: expiry date changed from {$previous} to {$next}.", (string) $batch['batch_id'], null, null, false);
+    }
+
     $pdo->commit();
     respond(true, 'Expiry date updated successfully.', '', 200, [
         'batch_id' => $batch['batch_id'],
@@ -104,9 +122,11 @@ try {
     ]);
 } catch (InvalidArgumentException $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    recordInventoryAuditFailure($pdo, 'EXPIRY_DATE_UPDATE_FAILED', 'Expiry date update failed validation.', isset($batch['product_id']) ? (string) $batch['product_id'] : null);
     respond(false, $e->getMessage(), $e->getMessage(), 400);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+    recordInventoryAuditFailure($pdo, 'EXPIRY_DATE_UPDATE_FAILED', 'Expiry date update failed before commit.', isset($batch['product_id']) ? (string) $batch['product_id'] : null);
     respond(false, 'Unable to update expiry date.', $e->getMessage(), 500);
 }
 ?>

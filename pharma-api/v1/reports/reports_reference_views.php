@@ -127,7 +127,7 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
             reportCard('Top Seller', $product['charts'][1]['rows'][0]['label']??'—', 'text', 'fa-star', 'blue'),
         ];
         $product['charts'] = [$product['charts'][1]];
-        $product['charts'][0]['title'] = 'Top products by sales';
+        $product['charts'][0]['title'] = !empty($role['management']) ? 'Top 20 products by sales' : 'Top products by sales';
         // Rx/OTC is applied by productReport; omit the indicator if that
         // classification filter cannot be represented by the daily series.
         $product['trend_series'] = ($filters['rx_filter'] ?? '') === '' ? $trendSeries : [];
@@ -175,23 +175,25 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
         $periodStart = new DateTimeImmutable($filters['start_date']);
         $periodEnd = new DateTimeImmutable($filters['end_date']);
         $periodDays = $periodStart->diff($periodEnd)->days + 1;
-        $previousStart = $periodStart->modify("-{$periodDays} days");
-        $previousEnd = $periodStart->modify('-1 day');
-        $previousFilters = $filters;
-        $previousFilters['start_date'] = $previousStart->format('Y-m-d');
-        $previousFilters['end_date'] = $previousEnd->format('Y-m-d');
-        $previousFilters['date_end_exclusive'] = $periodStart->format('Y-m-d');
-        [$previousWhere, $previousParams] = reportSalesWhere($previousFilters, $role);
-        [$previousParams, $previousScopeJoin, $previousItemJoin, $previousShare, $previousGross, $previousItemCount] = $scopeQueryParts($previousFilters, $previousParams, 'previous_scope');
-        $previous = reportRow($pdo, "SELECT
-            COALESCE(SUM(pay.final_amount*{$previousShare}),0) net_sales,
-            COALESCE(SUM({$previousGross}),0) gross_sales,
-            COALESCE(SUM((COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$previousShare}),0) discounts,
-            COALESCE(SUM(pay.refund_amount*{$previousShare}),0) returns_cancelled,
-            COUNT(DISTINCT o.order_id) transactions,
-            COALESCE(SUM({$previousItemCount}),0) items_sold
-            FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$previousScopeJoin} {$previousItemJoin}
-            WHERE {$previousWhere}", $previousParams);
+        $comparisonRange = reportComparisonRange($filters['start_date'], $filters['end_date'], $filters['comparison_mode'] ?? 'previous');
+        $previous = ['net_sales'=>0,'gross_sales'=>0,'discounts'=>0,'returns_cancelled'=>0,'transactions'=>0,'items_sold'=>0];
+        if ($comparisonRange !== null) {
+            $previousFilters = $filters;
+            $previousFilters['start_date'] = $comparisonRange['start'];
+            $previousFilters['end_date'] = $comparisonRange['end'];
+            $previousFilters['date_end_exclusive'] = date('Y-m-d', strtotime($comparisonRange['end'].' +1 day'));
+            [$previousWhere, $previousParams] = reportSalesWhere($previousFilters, $role);
+            [$previousParams, $previousScopeJoin, $previousItemJoin, $previousShare, $previousGross, $previousItemCount] = $scopeQueryParts($previousFilters, $previousParams, 'previous_scope');
+            $previous = reportRow($pdo, "SELECT
+                COALESCE(SUM(pay.final_amount*{$previousShare}),0) net_sales,
+                COALESCE(SUM({$previousGross}),0) gross_sales,
+                COALESCE(SUM((COALESCE(pay.sales_clerk_discount,o.discount,0)+COALESCE(pay.cashier_discount_amount,0))*{$previousShare}),0) discounts,
+                COALESCE(SUM(pay.refund_amount*{$previousShare}),0) returns_cancelled,
+                COUNT(DISTINCT o.order_id) transactions,
+                COALESCE(SUM({$previousItemCount}),0) items_sold
+                FROM sales_orders o INNER JOIN ({$paid}) pay ON pay.order_id=o.order_id {$previousScopeJoin} {$previousItemJoin}
+                WHERE {$previousWhere}", $previousParams);
+        }
         $base['summary'] = [
             reportCard('Net Sales', $total('net_sales'), 'currency', 'fa-peso-sign', 'purple'),
             reportCard('Gross Sales', $total('gross_sales'), 'currency', 'fa-chart-line', 'blue'),
@@ -208,22 +210,20 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
             $previousValue = $key === 'average_transaction'
                 ? ($previousTransactions > 0 ? (float) $previous['net_sales'] / $previousTransactions : 0)
                 : (float) ($previous[$key] ?? 0);
-            $card['comparison'] = $previousValue > 0
-                ? ['percent' => round(100 * ((float) $card['value'] - $previousValue) / $previousValue, 1), 'previous_value' => $previousValue]
-                : null;
+            $card['comparison'] = $comparisonRange === null
+                ? ['state'=>'disabled']
+                : ($previousValue > 0
+                    ? ['state'=>'available','percent' => round(100 * ((float) $card['value'] - $previousValue) / $previousValue, 1), 'previous_value' => $previousValue]
+                    : ((float)$card['value'] > 0 ? ['state'=>'new','is_new'=>true,'previous_value'=>0] : ['state'=>'no_activity','percent'=>0,'previous_value'=>0]));
         }
         unset($card);
         // Keep comparison metadata aligned with the seven comparable sales metrics above.
         // VAT and gross-profit cards use their own data/history rules and have no comparison here.
         if ($totalVatCard !== null) $base['summary'][] = $totalVatCard;
         if (!empty($role['management']) && $grossProfitCard !== null) $base['summary'][] = $grossProfitCard;
-        $base['comparison_period'] = [
-            'start' => $previousStart->format('Y-m-d'),
-            'end' => $previousEnd->format('Y-m-d'),
-            'days' => $periodDays,
-        ];
+        $base['comparison_period'] = $comparisonRange;
         $base['charts'] = [[
-            'id'=>'daily-net-sales', 'title'=>'Net sales per day', 'type'=>'bar', 'tone'=>'sales',
+            'id'=>'daily-net-sales', 'title'=>'Net sales per day', 'type'=>'line', 'tone'=>'sales',
             'rows'=>array_reverse(array_map(static function($row) use ($trendByDate): array {
                 $trend=$trendByDate[(string)$row['report_date']]??[];
                 return ['label'=>$row['report_date'],'raw_date'=>$row['report_date'],'value'=>(float)$row['net_sales'],
@@ -238,6 +238,21 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
         $base['numeric_columns'] = ['transactions', 'items_sold'];
         $base['currency_columns'] = ['gross_sales', 'discounts', 'returns_cancelled', 'net_sales'];
         $base['notes'] = ['Net sales uses saved completed payment amounts after recorded refunds. Cancelled and unpaid orders are excluded.', 'Daily totals use the completion date in the configured pharmacy timezone.'];
+        if ($periodDays > 60) {
+            $monthly = [];
+            foreach ($rows as $row) {
+                $monthKey = substr((string)$row['report_date'], 0, 7);
+                if (!isset($monthly[$monthKey])) $monthly[$monthKey] = ['month'=>DateTimeImmutable::createFromFormat('!Y-m', $monthKey)->format('M Y'),'transactions'=>0,'items_sold'=>0,'gross_sales'=>0.0,'discounts'=>0.0,'returns_cancelled'=>0.0,'net_sales'=>0.0];
+                foreach (['transactions','items_sold','gross_sales','discounts','returns_cancelled','net_sales'] as $key) $monthly[$monthKey][$key] += (float)($row[$key] ?? 0);
+            }
+            $base['table_insights'][] = [
+                'title'=>'Monthly sales totals',
+                'columns'=>['month'=>'Month','transactions'=>'Transactions','items_sold'=>'Items Sold','gross_sales'=>'Gross Sales','discounts'=>'Discounts','returns_cancelled'=>'Refunds','net_sales'=>'Net Sales'],
+                'rows'=>array_values($monthly),
+                'numeric_columns'=>['transactions','items_sold'],
+                'currency_columns'=>['gross_sales','discounts','returns_cancelled','net_sales'],
+            ];
+        }
         if ($totalVatCard !== null) $base['notes'][] = 'Total VAT Collected is the saved VAT from completed paid sales in the selected date range and filters, reduced proportionally for recorded refunds.';
         if (!empty($role['management'])) $base['notes'][] = 'Gross Profit uses recorded batch costs. Unknown costs are estimated from the all-time cost-to-sales ratio of reliably costed sales, and the card is labeled Estimated Gross Profit.';
         if ($workflowChart !== null) $base['notes'][] = 'My orders by status counts orders created in the selected date range and assigned to your account.';
@@ -298,7 +313,101 @@ function referenceSalesReport(PDO $pdo, array $filters, array $role): array
 function referenceInventoryReport(PDO $pdo, array $filters, array $role): array
 {
     $view = $filters['report_view'] ?: 'Current Inventory';
-    $base = inventoryReport($pdo, $filters);
+    if ($view === 'Inventory Overview') {
+        $loadSection = static function (string $section, ?array $sourceFilters = null) use ($pdo, $filters, $role): array {
+            $sectionFilters = $sourceFilters ?? $filters;
+            $sectionFilters['report_view'] = $section;
+            return referenceInventoryReport($pdo, $sectionFilters, $role);
+        };
+        $current = $loadSection('Current Inventory');
+        $movement = $loadSection('Stock Movement');
+        $reorder = $loadSection('Low / Out of Stock');
+        $velocity = $loadSection('Fast / Slow Moving');
+        $valuation = $loadSection('Inventory Valuation');
+        $comparisonRange = reportComparisonRange($filters['start_date'], $filters['end_date'], $filters['comparison_mode'] ?? 'previous');
+        $snapshotCards = array_merge($current['summary'] ?? [], $reorder['summary'] ?? [], $valuation['summary'] ?? []);
+        $snapshotFilters = array_intersect_key($filters, array_flip(['category_id','stock_status','product_id','brand','supplier_id','search','type_id','rx_filter']));
+        ksort($snapshotFilters);
+        $snapshotFilterHash = hash('sha256', json_encode($snapshotFilters, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '{}');
+        $snapshotDate = (new DateTimeImmutable('today'))->format('Y-m-d');
+        $snapshotComparisons = [];
+        try {
+            $saveSnapshot = $pdo->prepare('INSERT INTO inventory_report_daily_snapshots (snapshot_date,filter_hash,metric_key,metric_value) VALUES (:snapshot_date,:filter_hash,:metric_key,:metric_value) ON DUPLICATE KEY UPDATE metric_value=VALUES(metric_value)');
+            foreach ($snapshotCards as $snapshotCard) {
+                $saveSnapshot->execute([':snapshot_date'=>$snapshotDate,':filter_hash'=>$snapshotFilterHash,':metric_key'=>(string)$snapshotCard['title'],':metric_value'=>(float)($snapshotCard['value'] ?? 0)]);
+            }
+            if ($comparisonRange !== null && $filters['end_date'] === $snapshotDate) {
+                $findSnapshot = $pdo->prepare('SELECT metric_value FROM inventory_report_daily_snapshots WHERE filter_hash=:filter_hash AND metric_key=:metric_key AND snapshot_date BETWEEN :range_start AND :range_end ORDER BY snapshot_date DESC LIMIT 1');
+                foreach ($snapshotCards as $snapshotCard) {
+                    $findSnapshot->execute([':filter_hash'=>$snapshotFilterHash,':metric_key'=>(string)$snapshotCard['title'],':range_start'=>$comparisonRange['start'],':range_end'=>$comparisonRange['end']]);
+                    $previousValue = $findSnapshot->fetchColumn();
+                    if ($previousValue === false) continue;
+                    $previousValue = (float)$previousValue;
+                    $currentValue = (float)($snapshotCard['value'] ?? 0);
+                    $snapshotComparisons[(string)$snapshotCard['title']] = $previousValue > 0
+                        ? ['state'=>'available','percent'=>round(100*($currentValue-$previousValue)/$previousValue,1),'previous_value'=>$previousValue]
+                        : ($currentValue > 0 ? ['state'=>'new','is_new'=>true,'previous_value'=>0] : ['state'=>'no_activity','percent'=>0,'previous_value'=>0]);
+                }
+            }
+        } catch (Throwable $snapshotError) {
+            error_log('Inventory report snapshot capture is unavailable: '.$snapshotError->getMessage());
+        }
+        $previousPeriodReports = [];
+        if ($comparisonRange !== null) {
+            $previousFilters = $filters;
+            $previousFilters['start_date'] = $comparisonRange['start'];
+            $previousFilters['end_date'] = $comparisonRange['end'];
+            $previousFilters['date_end_exclusive'] = date('Y-m-d', strtotime($comparisonRange['end'].' +1 day'));
+            $previousFilters['comparison_mode'] = 'none';
+            $previousPeriodReports = [
+                'movement'=>$loadSection('Stock Movement', $previousFilters),
+                'velocity'=>$loadSection('Fast / Slow Moving', $previousFilters),
+            ];
+        }
+        $summary = [];
+        foreach ([[$current,'snapshot',null],[$reorder,'snapshot',null],[$movement,'period','movement'],[$velocity,'period','velocity'],[$valuation,'snapshot',null]] as [$sectionReport,$context,$comparisonSection]) {
+            foreach ($sectionReport['summary'] ?? [] as $card) {
+                $card['report_context'] = $context;
+                if ($context === 'snapshot') {
+                    $card['comparison'] = ($filters['comparison_mode'] ?? 'previous') === 'none'
+                        ? ['state'=>'disabled']
+                        : ($snapshotComparisons[$card['title'] ?? ''] ?? ['state'=>'tracking_started','snapshot_date'=>$snapshotDate]);
+                } elseif ($context === 'period') {
+                    if ($comparisonRange === null) {
+                        $card['comparison'] = ['state'=>'disabled'];
+                    } else {
+                        $previousCards = $previousPeriodReports[$comparisonSection]['summary'] ?? [];
+                        $previousCard = null;
+                        foreach ($previousCards as $candidate) {
+                            if (($candidate['title'] ?? '') === ($card['title'] ?? '')) { $previousCard = $candidate; break; }
+                        }
+                        $previousValue = $previousCard === null ? null : (float)($previousCard['value'] ?? 0);
+                        $currentValue = (float)($card['value'] ?? 0);
+                        $card['comparison'] = $previousValue === null
+                            ? ['state'=>'unavailable']
+                            : ($previousValue > 0
+                                ? ['state'=>'available','percent'=>round(100*($currentValue-$previousValue)/$previousValue,1),'previous_value'=>$previousValue]
+                                : ($currentValue > 0 ? ['state'=>'new','is_new'=>true,'previous_value'=>0] : ['state'=>'no_activity','percent'=>0,'previous_value'=>0]));
+                    }
+                }
+                $summary[] = $card;
+            }
+        }
+        $makeInsight = static function (string $title, array $report, array $columns, array $numeric = [], array $currency = []): array {
+            return ['title'=>$title,'columns'=>$columns,'rows'=>array_slice($report['rows'] ?? [],0,5),'numeric_columns'=>$numeric,'currency_columns'=>$currency];
+        };
+        $current['summary'] = $summary;
+        $current['comparison_period'] = $comparisonRange;
+        $current['charts'] = array_merge($current['charts'] ?? [],$movement['charts'] ?? [],$reorder['charts'] ?? [],$velocity['charts'] ?? [],$valuation['charts'] ?? []);
+        $current['table_insights'] = [
+            $makeInsight('Recent stock movements',$movement,['report_date'=>'Date','product_name'=>'Product','transaction_type'=>'Activity','units_in'=>'Units In','units_out'=>'Units Out'],['units_in','units_out']),
+            $makeInsight('Products to reorder',$reorder,['product_name'=>'Product','category'=>'Category','on_hand'=>'On Hand','reorder_level'=>'Reorder Level','stock_status'=>'Status'],['on_hand','reorder_level']),
+            $makeInsight('Fast / slow moving products',$velocity,['product_name'=>'Product','sold_qty'=>'Qty Sold','on_hand'=>'On Hand','performance_status'=>'Movement'],['sold_qty','on_hand']),
+            $makeInsight('Inventory valuation',$valuation,['product_name'=>'Product','category'=>'Category','inventory_value'=>'Stock Value','retail_value'=>'Retail Value'],[],['inventory_value','retail_value']),
+        ];
+        $current['notes'] = array_values(array_unique(array_merge($current['notes'] ?? [],$movement['notes'] ?? [],$reorder['notes'] ?? [],$velocity['notes'] ?? [],$valuation['notes'] ?? [])));
+        return $current;
+    }
     if ($view === 'Fast / Slow Moving') {
         $product = productReport($pdo, $filters, $role);
         $product['summary'] = [
@@ -314,6 +423,11 @@ function referenceInventoryReport(PDO $pdo, array $filters, array $role): array
     }
 
     if ($view === 'Stock Movement') return referenceStockMovementReport($pdo, $filters);
+
+    // Each reference view below builds its own summary, charts, rows and
+    // columns. Starting from a full inventoryReport() here caused every
+    // Inventory Overview section to repeat the same expensive stock scan.
+    $base = [];
 
     if ($view === 'Low / Out of Stock') {
         $params=[];$inventorySql=inventoryBaseSql($filters,$params);
@@ -361,7 +475,10 @@ function referenceInventoryReport(PDO $pdo, array $filters, array $role): array
     if(isset($stockLabels[$filters['stock_status']]))$rows=array_values(array_filter($rows,static fn($row):bool=>$row['stock_status']===$stockLabels[$filters['stock_status']]));
     $storage=array_sum(array_column($rows,'storage_qty'));$shelf=array_sum(array_column($rows,'shelf_qty'));
     $base['summary']=[reportCard('On Hand Units',$storage+$shelf,'number','fa-boxes-stacked','purple'),reportCard('Storage',$storage,'number','fa-warehouse','blue'),reportCard('Shelf',$shelf,'number','fa-store','teal'),reportCard('Expired Batches Still On Hand',count(array_filter($rows,static fn($row):bool=>$row['expiry_status']==='Expired')),'number','fa-calendar-xmark','red')];
-    $base['charts']=[['id'=>'current-stock','title'=>'On-hand units by product','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>array_slice(array_map(static fn($row):array=>['label'=>$row['product_name'],'value'=>(int)$row['on_hand']],$rows),0,10)]];
+    $onHandByProduct=[];
+    foreach($rows as $row){$brand=(string)($row['brand_name']??'');$productName=(string)($row['product_name']??'');$productId=(string)($row['product_id']??strtolower($brand."\0".$productName));$onHandByProduct[$productId]??=['label'=>trim($brand!==''?$brand.' — ':'').$productName,'value'=>0];$onHandByProduct[$productId]['value']+=(int)($row['on_hand']??0);}
+    uasort($onHandByProduct,static fn($a,$b):int=>$b['value']<=>$a['value']);
+    $base['charts']=[['id'=>'current-stock','title'=>'On-hand units by product','type'=>'bar','orientation'=>'horizontal','tone'=>'inventory','rows'=>array_map(static fn($row):array=>['label'=>$row['label'],'value'=>$row['value']],array_slice(array_values($onHandByProduct),0,20))]];
     [$base['rows'],$base['pagination']]=referenceReportPage($rows,$filters);
     $base['columns']=['product_name'=>'Product','batch_reference'=>'Batch','supplier'=>'Supplier','storage_qty'=>'Storage','shelf_qty'=>'Shelf','on_hand'=>'On Hand','expiry_date'=>'Expiry','stock_status'=>'Stock','expiry_status'=>'Expiry Status'];
     $base['numeric_columns']=['storage_qty','shelf_qty','on_hand'];$base['currency_columns']=[];

@@ -160,20 +160,43 @@ try {
     $listedApproved = apiRequest('GET', 'purchase_requests/get_purchase_requests.php', $adminSession);
     $final = array_values(array_filter($listedApproved['body']['data']['requests'] ?? [], fn(array $request): bool => $request['pr_id'] === $prId))[0] ?? null;
     prHttpAssert(($final['status'] ?? '') === 'Approved' && count($final['items'] ?? []) === 1, 'Approved PR did not appear correctly in Purchase Request Records.');
+    $supplierOption = array_values($final['items'][0]['supplier_options'] ?? [])[0] ?? null;
+    prHttpAssert(is_array($supplierOption) && !empty($supplierOption['supplier_price_available']), 'Approved PR did not include the selected supplier quote for Manager review.');
 
     $purchaseOrderQty = (int) ceil(7 / max(1, (int) $product['units_per_purchase_unit']));
+    $stalePrice = apiRequest('POST', 'purchase_requests/generate_purchase_orders.php', $managerSession, [
+        'pr_id' => $prId,
+        'items' => [[
+            'pr_item_id' => $final['items'][0]['pr_item_id'],
+            'supplier_product_id' => $product['supplier_product_id'],
+            'supplier_purchase_unit_price_seen' => (float) $supplierOption['supplier_price_per_purchase_unit'] + 1,
+        ]],
+        'supplier_etas' => [$product['supplier_id'] => date('Y-m-d', strtotime('+7 days'))],
+    ]);
+    prHttpAssert($stalePrice['status'] === 409, 'PO generation did not require a refresh when the reviewed supplier quote was stale.');
+    $poCountAfterStalePrice = $pdo->prepare('SELECT COUNT(*) FROM purchase_orders WHERE pr_id = :pr_id');
+    $poCountAfterStalePrice->execute([':pr_id' => $prId]);
+    prHttpAssert((int) $poCountAfterStalePrice->fetchColumn() === 0, 'A stale supplier quote created a Purchase Order.');
+
     $createdPo = apiRequest('POST', 'purchase_requests/generate_purchase_orders.php', $managerSession, [
         'pr_id' => $prId,
         'items' => [[
             'pr_item_id' => $final['items'][0]['pr_item_id'],
             'supplier_product_id' => $product['supplier_product_id'],
             'order_qty' => $purchaseOrderQty,
+            'supplier_purchase_unit_price_seen' => (float) $supplierOption['supplier_price_per_purchase_unit'],
+            'price' => 0.01,
         ]],
         'supplier_payment_terms' => [$product['supplier_id'] => 'Cash'],
         'supplier_etas' => [$product['supplier_id'] => date('Y-m-d', strtotime('+7 days'))],
     ]);
     prHttpAssert($createdPo['status'] === 201 && ($createdPo['body']['success'] ?? false), 'Manager could not generate a PO from the approved PR: ' . json_encode($createdPo));
     $poId = (string) $createdPo['body']['data']['purchase_orders'][0]['po_id'];
+    $savedPoItem = $pdo->prepare('SELECT unit_price_snapshot, line_total, purchase_qty, units_per_purchase_unit_snapshot FROM purchase_order_items WHERE po_id = :po_id LIMIT 1');
+    $savedPoItem->execute([':po_id' => $poId]);
+    $savedPoItemRow = $savedPoItem->fetch(PDO::FETCH_ASSOC);
+    prHttpAssert(abs((float) $savedPoItemRow['unit_price_snapshot'] - (float) $supplierOption['supplier_cost_per_inventory_unit']) < 0.0001, 'The browser-submitted price changed the database-derived PO unit price.');
+    prHttpAssert(abs((float) $savedPoItemRow['line_total'] - ((float) $supplierOption['supplier_price_per_purchase_unit'] * (int) $savedPoItemRow['purchase_qty'])) < 0.01, 'The PO line total did not retain the selected supplier quotation.');
     $generatedState = $pdo->prepare('SELECT status, approval_status, pr_id FROM purchase_orders WHERE po_id = :po_id');
     $generatedState->execute([':po_id' => $poId]);
     $generatedStateRow = $generatedState->fetch(PDO::FETCH_ASSOC);

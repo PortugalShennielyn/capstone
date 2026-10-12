@@ -4,6 +4,7 @@ require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 require_once 'purchase_order_payment_helpers.php';
+require_once '../../config/audit_log.php';
 
 function replacementResponse(bool $success, string $message, array $extra = [], int $code = 200): void
 {
@@ -51,6 +52,8 @@ try {
     $allowedIssues = ['Expired', 'Broken package', 'Wrong item delivered', 'Incorrect quantity', 'Damaged during delivery', 'Other'];
     if ($damaged > 0 && (!in_array($issueType, $allowedIssues, true) || $remarks === '')) throw new InvalidArgumentException('Issue type and remarks are required when replacement stock is damaged.');
 
+    ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     $pdo->beginTransaction();
     $duplicateStatement = $pdo->prepare('SELECT receiving_id FROM purchase_order_receiving WHERE receiving_request_key = :request_key LIMIT 1');
     $duplicateStatement->execute([':request_key' => $requestKey]);
@@ -136,9 +139,20 @@ try {
     $updatePo = $pdo->prepare("UPDATE purchase_orders SET final_payment = :final_payment WHERE po_id = :po_id");
     $updatePo->execute([':final_payment' => $newFinalPayment, ':po_id' => $record['po_id']]);
     synchronizePurchaseOrderPaymentStatus($pdo, cleanId($record['po_id']), $newFinalPayment);
+    if ($good > 0) {
+        $stockStmt = $pdo->prepare('SELECT COALESCE((SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id=:storage_id),0) + COALESCE((SELECT SUM(quantity_remaining) FROM product_selling_stock WHERE product_id=:shelf_id),0)');
+        $stockStmt->execute([':storage_id' => $record['product_id'], ':shelf_id' => $record['product_id']]);
+        $stockAfter = (int) $stockStmt->fetchColumn();
+        $stockBefore = $stockAfter - $good;
+        recordInventoryAudit($pdo, 'STOCK_ADJUSTED', $record['product_name'] . ': stock increased from ' . $stockBefore . ' to ' . $stockAfter . '. Difference: +' . $good . '. Replacement arrival.', (string) $record['product_id'], [
+            'product_id' => $record['product_id'], 'product_name' => $record['product_name'],
+            'previous_stock' => $stockBefore, 'new_stock' => $stockAfter, 'difference' => $good,
+            'reason' => 'Replacement arrival', 'claim_id' => $returnId, 'batches' => $validatedBatches,
+        ]);
+    }
     $pdo->commit();
 
-    recordActivityLog($pdo, 'Return/Damage', 'Replacement Arrival', $good . ' replacement units accepted for PO ' . $record['po_number'], $returnId);
+    recordActivityLog($pdo, 'Return/Damage', 'Replacement Arrival', $good . ' replacement units accepted for PO ' . $record['po_number'], $returnId, null, null, false);
     replacementResponse(true, $remaining === 0 ? 'Replacement fully received.' : 'Partial replacement recorded.', [
         'accepted_quantity' => $good, 'damaged_quantity' => $damaged, 'remaining_outstanding' => $remaining,
         'return_status' => $newStatus, 'final_payment' => $newFinalPayment,

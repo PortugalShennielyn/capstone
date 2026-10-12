@@ -3,6 +3,7 @@ require_once '../../config/db_connection.php';
 $allowedRoles = ['supervisor', 'ro-supervisor', 'ro_supervisor'];
 require_once '../../config/require_auth.php';
 require_once '../inventory/inventory_stock_summary.php';
+require_once '../settings/settings_helpers.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     http_response_code(405);
@@ -80,7 +81,7 @@ try {
     $period = supervisorPeriod();
     $params = [':start_date' => $period['start_date'], ':end_date' => $period['end_exclusive']];
 
-    $stockSql = inventoryStockSummarySql();
+    $stockSql = inventoryStockSummarySql(fetchStockThresholds($pdo));
     $specification = supervisorSpecificationSql();
     $inventory = supervisorRows($pdo, "SELECT stock.*, p.product_name, p.brand_name, {$specification} specification,
             COALESCE(pc.category_name, 'Uncategorized') category_name,

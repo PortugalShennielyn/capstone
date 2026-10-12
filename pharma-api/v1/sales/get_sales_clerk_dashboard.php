@@ -86,6 +86,7 @@ echo json_encode([
     'message' => 'Sales Clerk dashboard loaded.',
     'data' => [
         'today_forwarded_orders' => $todayForwarded,
+        'my_sales_today' => $todaySales,
         'pending_for_cashier' => $pendingForCashier,
         'completed_transactions' => $completedTransactions,
         'start_date' => $requestedStart,

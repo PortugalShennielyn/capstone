@@ -3,6 +3,7 @@ $allowedRoles = ['super_admin', 'admin', 'manager', 'Admin', 'ro-super-admin', '
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
+require_once '../../config/audit_log.php';
 require_once 'purchase_order_payment_helpers.php';
 require_once '../products/product_pricing_schema.php';
 require_once '../suppliers/purchasing_conversion.php';
@@ -94,6 +95,8 @@ try {
     if (!$isDraft && $deliveredByName === '') throw new InvalidArgumentException('Delivered By / Driver is required.');
     if (!$isDraft && $deliveryReceiptNo === '') throw new InvalidArgumentException('Supplier delivery receipt number is required.');
 
+    ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     $pdo->beginTransaction();
 
     $orderStatement = $pdo->prepare(
@@ -435,7 +438,7 @@ try {
                     ':quantity' => $storageQuantity, ':created_by' => $_SESSION['user_id'] ?? null
                 ]);
                 $productId = cleanId($validated['po_item']['product_id']);
-                $activityRows[] = ['inventory_id' => $inventoryId, 'quantity' => $storageQuantity, 'product_name' => $validated['po_item']['product_name']];
+                $activityRows[] = ['inventory_id' => $inventoryId, 'batch_id' => $pricingBatchId, 'product_id' => $productId, 'quantity' => $storageQuantity, 'product_name' => $validated['po_item']['product_name'], 'expiry_date' => $batch['expiry_date']];
                 if ($validated['unitPrice'] > 0) {
                     $acceptedPricingRows[$productId] = [
                         'batch_id' => $pricingBatchId,
@@ -504,10 +507,28 @@ try {
         $pricingResults[$productId] = applyAcceptedDeliveryPricing($pdo, $productId, $latestBasis);
     }
     synchronizePurchaseOrderPaymentStatus($pdo, $poId, purchaseOrderEffectivePayable($pdo, $poId));
+    $receivedByProduct = [];
+    foreach ($activityRows as $activity) {
+        $productId = (string) $activity['product_id'];
+        if (!isset($receivedByProduct[$productId])) $receivedByProduct[$productId] = ['quantity' => 0, 'name' => $activity['product_name'], 'batches' => []];
+        $receivedByProduct[$productId]['quantity'] += (int) $activity['quantity'];
+        $receivedByProduct[$productId]['batches'][] = ['batch_id' => $activity['batch_id'], 'expiry_date' => $activity['expiry_date'], 'quantity' => (int) $activity['quantity']];
+    }
+    $stockAfterStmt = $pdo->prepare('SELECT COALESCE((SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id=:storage_id),0) + COALESCE((SELECT SUM(quantity_remaining) FROM product_selling_stock WHERE product_id=:shelf_id),0)');
+    foreach ($receivedByProduct as $productId => $received) {
+        $stockAfterStmt->execute([':storage_id' => $productId, ':shelf_id' => $productId]);
+        $stockAfter = (int) $stockAfterStmt->fetchColumn();
+        $stockBefore = $stockAfter - (int) $received['quantity'];
+        recordInventoryAudit($pdo, 'STOCK_ADJUSTED', $received['name'] . ': stock increased from ' . $stockBefore . ' to ' . $stockAfter . '. Difference: +' . $received['quantity'] . '. Purchase order receipt.', $productId, [
+            'product_id' => $productId, 'product_name' => $received['name'], 'previous_stock' => $stockBefore,
+            'new_stock' => $stockAfter, 'difference' => $received['quantity'], 'reason' => 'Purchase order receipt',
+            'po_id' => $poId, 'batches' => $received['batches'],
+        ]);
+    }
+    foreach ($activityRows as $activity) recordActivityLog($pdo, 'Inventory', 'Received', $activity['quantity'] . ' received into storage: ' . $activity['product_name'], $activity['inventory_id'], null, null, false);
     $pdo->commit();
 
     recordActivityLog($pdo, 'Purchase Order', $newStatus, 'PO ' . $order['po_number'] . ' is ' . $newStatus, $poId);
-    foreach ($activityRows as $activity) recordActivityLog($pdo, 'Inventory', 'Received', $activity['quantity'] . ' received into storage: ' . $activity['product_name'], $activity['inventory_id']);
 
     receiveResponse(true, 'Purchase order received successfully.', '', [
         'po_status' => $newStatus,

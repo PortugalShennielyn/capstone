@@ -11,6 +11,7 @@ try {
     }
 
     ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     ensureSalesOrderCashSchema($pdo);
 
     $payload = salesReadJsonBody();
@@ -70,6 +71,7 @@ try {
             ':change_amount' => $cashTotals['change_amount'],
             ':order_id' => $orderId,
         ]);
+        salesRecordStatusChange($pdo, $orderId, null, 'draft', salesCurrentUserId(), 'Draft created and sent to cashier.');
     }
 
     $orderStmt = $pdo->prepare(

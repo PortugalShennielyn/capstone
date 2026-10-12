@@ -4,6 +4,8 @@ require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'purchase_order_helpers.php';
 require_once 'purchase_order_payment_helpers.php';
+require_once '../activity_log_helpers.php';
+require_once '../../config/audit_log.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo json_encode(['status'=>'error','message'=>'Only POST requests are allowed.']); exit(); }
 $payload = json_decode(file_get_contents('php://input'), true);
@@ -22,6 +24,8 @@ $orderStatement = $pdo->prepare("SELECT po_id,po_number,status,total_amount,fina
     $order = $orderStatement->fetch(PDO::FETCH_ASSOC);
     if (!$order) throw new InvalidArgumentException('Only a delivered purchase order can receive a later supplier claim.');
 
+    ensureActivityLogSchema($pdo);
+    ensureAuditLogSchema($pdo);
     $pdo->beginTransaction();
     $itemStatement = $pdo->prepare('SELECT po_item_id,COALESCE(NULLIF(inventory_qty_ordered,0),quantity) ordered_quantity,COALESCE(unit_price_snapshot,0) unit_price FROM purchase_order_items WHERE po_id=:po_id');
     $itemStatement->execute([':po_id'=>$poId]);
@@ -30,6 +34,7 @@ $orderStatement = $pdo->prepare("SELECT po_id,po_number,status,total_amount,fina
     $insertCredit=$pdo->prepare("INSERT INTO supplier_credits (credit_id,claim_id,credit_amount,credit_status) VALUES (:credit_id,:claim_id,:amount,'Available')");
     $insertApplication=$pdo->prepare('INSERT INTO supplier_credit_applications (application_id,credit_id,po_id,amount_applied,applied_by) VALUES (:application_id,:credit_id,:po_id,:amount,:applied_by)');
     $currentCreditTotal=0.0;
+    $stockReductions=[];
     $existingCurrentDiscount = (float) (purchaseOrderPaymentSummary($pdo, $poId, (float) $order['final_payment'])['current_po_discount'] ?? 0);
     $grossPayable = purchaseOrderEffectivePayable($pdo, $poId, (float) $order['final_payment']);
 
@@ -52,13 +57,21 @@ $orderStatement = $pdo->prepare("SELECT po_id,po_number,status,total_amount,fina
         if ($resolution!==null && !in_array($resolution,$allowedResolutions,true)) throw new InvalidArgumentException('Select a valid supplier resolution.');
         if (in_array($resolution,['Current PO Credit','Next PO Credit'],true) && $confirmedAmount<=0) throw new InvalidArgumentException('Enter the positive amount confirmed by the supplier.');
         if ($batchId!==null) {
-            $batchStatement=$pdo->prepare('SELECT batch_id,storage_qty,shelf_qty FROM inventory_batches WHERE batch_id=:batch_id AND po_item_id=:po_item_id LIMIT 1 FOR UPDATE');
+            $batchStatement=$pdo->prepare('SELECT batch_id,product_id,storage_qty,shelf_qty FROM inventory_batches WHERE batch_id=:batch_id AND po_item_id=:po_item_id LIMIT 1 FOR UPDATE');
             $batchStatement->execute([':batch_id'=>$batchId,':po_item_id'=>$poItemId]);
             $batch=$batchStatement->fetch(PDO::FETCH_ASSOC);
             if (!$batch) throw new InvalidArgumentException('The selected inventory batch does not belong to the original PO item.');
+            $productId=(string)$batch['product_id'];
+            if (!isset($stockReductions[$productId])) {
+                $stockBeforeStmt=$pdo->prepare('SELECT COALESCE((SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id=:storage_id),0) + COALESCE((SELECT SUM(quantity_remaining) FROM product_selling_stock WHERE product_id=:shelf_id),0)');
+                $stockBeforeStmt->execute([':storage_id'=>$productId,':shelf_id'=>$productId]);
+                $stockReductions[$productId]=['before'=>(int)$stockBeforeStmt->fetchColumn(),'quantity'=>0,'reason'=>$reason,'batch_ids'=>[]];
+            }
             if ($affectedBase>(int)$batch['storage_qty']+(int)$batch['shelf_qty']) throw new InvalidArgumentException('Affected quantity exceeds usable stock in the selected batch.');
             $fromStorage=min($affectedBase,(int)$batch['storage_qty']); $fromShelf=$affectedBase-$fromStorage;
             $pdo->prepare('UPDATE inventory_batches SET storage_qty=storage_qty-:storage_qty,shelf_qty=shelf_qty-:shelf_qty,damaged_qty=damaged_qty+:affected_qty WHERE batch_id=:batch_id')->execute([':storage_qty'=>$fromStorage,':shelf_qty'=>$fromShelf,':affected_qty'=>$affectedBase,':batch_id'=>$batchId]);
+            $stockReductions[$productId]['quantity'] += $affectedBase;
+            $stockReductions[$productId]['batch_ids'][] = $batchId;
         }
         $claimId=newUuid($pdo);
         $insertClaim->execute([':claim_id'=>$claimId,':po_item_id'=>$poItemId,':batch_id'=>$batchId,':quantity'=>$quantity,':conversion_id'=>$conversionId,':reason'=>$reason,':disposition'=>$disposition,':resolution'=>$resolution,':requested_resolution'=>$resolution,':status'=>supplierClaimStatus($resolution),':reported_by'=>$_SESSION['user_id']??null,':remarks'=>$remarks ?: null]);
@@ -73,6 +86,18 @@ $orderStatement = $pdo->prepare("SELECT po_id,po_number,status,total_amount,fina
     $payable=purchaseOrderEffectivePayable($pdo,$poId,(float)$order['final_payment']);
     $pdo->prepare("UPDATE purchase_orders SET final_payment=:payable WHERE po_id=:po_id")->execute([':payable'=>$payable,':po_id'=>$poId]);
     synchronizePurchaseOrderPaymentStatus($pdo,$poId,$payable);
+    $stockAfterStmt=$pdo->prepare('SELECT COALESCE((SELECT SUM(storage_qty) FROM inventory_batches WHERE product_id=:storage_id),0) + COALESCE((SELECT SUM(quantity_remaining) FROM product_selling_stock WHERE product_id=:shelf_id),0)');
+    $productNameStmt=$pdo->prepare('SELECT product_name FROM product WHERE product_id=:product_id LIMIT 1');
+    foreach($stockReductions as $productId=>$change){
+        $stockAfterStmt->execute([':storage_id'=>$productId,':shelf_id'=>$productId]);
+        $stockAfter=(int)$stockAfterStmt->fetchColumn();
+        $productNameStmt->execute([':product_id'=>$productId]);
+        $productName=trim((string)$productNameStmt->fetchColumn())?:'Product';
+        recordInventoryAudit($pdo,'STOCK_ADJUSTED',$productName.': stock changed from '.$change['before'].' to '.$stockAfter.'. Difference: -'.$change['quantity'].'. Supplier claim: '.$change['reason'].'.',$productId,[
+            'product_id'=>$productId,'product_name'=>$productName,'previous_stock'=>$change['before'],'new_stock'=>$stockAfter,
+            'difference'=>-$change['quantity'],'reason'=>'Supplier claim: '.$change['reason'],'po_id'=>$poId,'batch_ids'=>$change['batch_ids']
+        ]);
+    }
     $pdo->commit();
     recordActivityLog($pdo,'Purchase Order','Supplier Claim','Supplier claim recorded for PO '.$order['po_number'],$poId);
     echo json_encode(['status'=>'success','message'=>'Supplier claim saved successfully.']);

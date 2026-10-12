@@ -100,6 +100,28 @@ function reportDate(string $key, string $fallback): string
     return $value;
 }
 
+function reportComparisonRange(string $start, string $end, string $mode = 'previous'): ?array
+{
+    if ($mode === 'none') return null;
+    $periodStart = new DateTimeImmutable($start);
+    $periodEnd = new DateTimeImmutable($end);
+    if ($mode === 'year') {
+        $previousStartYear = (int)$periodStart->format('Y') - 1;
+        $previousEndYear = (int)$periodEnd->format('Y') - 1;
+        $startMonth = new DateTimeImmutable(sprintf('%04d-%02d-01', $previousStartYear, (int)$periodStart->format('n')));
+        $endMonth = new DateTimeImmutable(sprintf('%04d-%02d-01', $previousEndYear, (int)$periodEnd->format('n')));
+        $startDay = min((int)$periodStart->format('j'), (int)$startMonth->format('t'));
+        $endDay = min((int)$periodEnd->format('j'), (int)$endMonth->format('t'));
+        $previousStart = $periodStart->setDate($previousStartYear, (int)$periodStart->format('n'), $startDay);
+        $previousEnd = $periodEnd->setDate($previousEndYear, (int)$periodEnd->format('n'), $endDay);
+    } else {
+        $periodDays = $periodStart->diff($periodEnd)->days + 1;
+        $previousStart = $periodStart->modify('-'.$periodDays.' days');
+        $previousEnd = $periodStart->modify('-1 day');
+    }
+    return ['start'=>$previousStart->format('Y-m-d'),'end'=>$previousEnd->format('Y-m-d'),'days'=>$previousStart->diff($previousEnd)->days + 1];
+}
+
 function reportFilters(): array
 {
     $roles = reportSessionRoles();
@@ -108,6 +130,8 @@ function reportFilters(): array
     $cashierOnly = count(array_intersect($roles, $cashierRoles)) > 0 && count(array_intersect($roles, $managementRoles)) === 0;
     $start = reportDate('start_date', $cashierOnly ? date('Y-m-d') : date('Y-m-01'));
     $end = reportDate('end_date', date('Y-m-d'));
+    $comparisonMode = strtolower(trim((string)($_GET['comparison_mode'] ?? 'previous')));
+    if (!in_array($comparisonMode, ['previous','year','none'], true)) $comparisonMode = 'previous';
     if ($start > $end) throw new InvalidArgumentException('Start date cannot be after end date.');
     $days = (new DateTime($start))->diff(new DateTime($end))->days;
     if ($days > 3660) throw new InvalidArgumentException('Date range cannot exceed ten years.');
@@ -117,6 +141,7 @@ function reportFilters(): array
     return [
         'start_date' => $start,
         'end_date' => $end,
+        'comparison_mode' => $comparisonMode,
         'date_end_exclusive' => date('Y-m-d', strtotime($end . ' +1 day')),
         'category_id' => trim((string) ($_GET['category_id'] ?? '')),
         'type_id' => trim((string) ($_GET['type_id'] ?? '')),

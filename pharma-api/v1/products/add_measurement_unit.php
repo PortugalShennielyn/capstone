@@ -1,4 +1,5 @@
 <?php
+$allowedRoles = ['super_admin', 'admin'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once 'product_customization_schema.php';
@@ -26,9 +27,9 @@ try {
     $editingUnit = null;
     if ($measurementUnitId !== '') {
         $current = $pdo->prepare(
-            "SELECT {$unitIdColumn}, unit_symbol, measurement_group, is_system
+            "SELECT {$unitIdColumn}, unit_name, unit_symbol, measurement_group, is_system
              FROM product_measurement_units
-             WHERE {$unitIdColumn} = :unit_id AND measurement_group <> 'Packaging' LIMIT 1"
+             WHERE {$unitIdColumn} = :unit_id LIMIT 1"
         );
         $current->execute([':unit_id' => $measurementUnitId]);
         $editingUnit = $current->fetch(PDO::FETCH_ASSOC);
@@ -38,11 +39,32 @@ try {
             $measurementGroup = trim((string) $editingUnit['measurement_group']);
         }
     }
+    $unitDefinitionChanged = !$editingUnit
+        || strcasecmp(trim((string) $editingUnit['unit_name']), $unitName) !== 0
+        || strcasecmp(trim((string) $editingUnit['unit_symbol']), $unitSymbol) !== 0
+        || strcasecmp(trim((string) $editingUnit['measurement_group']), $measurementGroup) !== 0;
+    if ($unitDefinitionChanged) {
+        $globalDuplicate = $pdo->prepare(
+            "SELECT {$unitIdColumn} FROM product_measurement_units
+             WHERE {$unitIdColumn} <> :unit_id
+               AND (LOWER(TRIM(unit_name)) = LOWER(TRIM(:unit_name))
+                    OR LOWER(TRIM(COALESCE(unit_symbol, ''))) = LOWER(TRIM(:unit_symbol)))
+             LIMIT 1"
+        );
+        $globalDuplicate->execute([
+            ':unit_id' => $measurementUnitId,
+            ':unit_name' => $unitName,
+            ':unit_symbol' => $unitSymbol,
+        ]);
+        if ($globalDuplicate->fetchColumn()) {
+            throw new InvalidArgumentException('A quantity unit with this name or symbol already exists.');
+        }
+    }
     $compoundUnitPattern = '~(?:/|\\\\|\x{2044}|\bper\b|^\s*\d+(?:\.\d+)?\s*(?:mg|g|mcg|kg|iu|%|ml|l|tablet|capsule|piece|bottle|vial|ampule|sachet|box)\s*$)~iu';
     if (preg_match($compoundUnitPattern, $unitName) || preg_match($compoundUnitPattern, $unitSymbol)) {
         throw new InvalidArgumentException('Measurement units must be atomic and reusable (for example: mg, mL, tablet, or bottle). Enter concentration values in the Medicine Strength fields.');
     }
-    $groups = $pdo->query("SELECT DISTINCT measurement_group FROM product_measurement_units WHERE measurement_group <> 'Packaging' AND is_active = 1 ORDER BY measurement_group")->fetchAll(PDO::FETCH_COLUMN);
+    $groups = $pdo->query("SELECT DISTINCT measurement_group FROM product_measurement_units WHERE is_active = 1 ORDER BY measurement_group")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array($measurementGroup, $groups, true)) throw new InvalidArgumentException('Select a valid Measurement Group.');
     $duplicate = $pdo->prepare("SELECT {$unitIdColumn}, is_active, is_system FROM product_measurement_units WHERE measurement_group = :measurement_group AND (LOWER(TRIM(unit_name)) = LOWER(TRIM(:unit_name)) OR LOWER(TRIM(COALESCE(unit_symbol, ''))) = LOWER(TRIM(:unit_symbol))) AND {$unitIdColumn} <> :unit_id LIMIT 1");
     $duplicate->execute([':measurement_group' => $measurementGroup, ':unit_name' => $unitName, ':unit_symbol' => $unitSymbol, ':unit_id' => $measurementUnitId]);
@@ -52,7 +74,7 @@ try {
     }
     if ($duplicateUnit) $measurementUnitId = cleanId($duplicateUnit[$unitIdColumn]);
     if ($measurementUnitId !== '') {
-        $statement = $pdo->prepare("UPDATE product_measurement_units SET unit_name = :unit_name, unit_symbol = :unit_symbol, measurement_group = :measurement_group, is_active = 1 WHERE {$unitIdColumn} = :unit_id AND measurement_group <> 'Packaging'");
+        $statement = $pdo->prepare("UPDATE product_measurement_units SET unit_name = :unit_name, unit_symbol = :unit_symbol, measurement_group = :measurement_group, is_active = 1 WHERE {$unitIdColumn} = :unit_id");
         $statement->execute([':unit_name' => $unitName, ':unit_symbol' => $unitSymbol, ':measurement_group' => $measurementGroup, ':unit_id' => $measurementUnitId]);
     } else {
         $measurementUnitId = newUuid($pdo);

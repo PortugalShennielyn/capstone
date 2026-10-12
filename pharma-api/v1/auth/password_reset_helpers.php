@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../config/password_policy.php';
 
 function ensurePasswordResetTokensTable(PDO $pdo): void
 {

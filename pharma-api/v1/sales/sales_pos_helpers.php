@@ -478,9 +478,10 @@ function salesRecordStatusChange(PDO $pdo, int $orderId, ?string $oldStatus, str
         ':remarks' => $remarks,
     ]);
 
-    $orderStmt = $pdo->prepare('SELECT order_no FROM sales_orders WHERE order_id = :order_id LIMIT 1');
+    $orderStmt = $pdo->prepare('SELECT order_no, total_amount FROM sales_orders WHERE order_id = :order_id LIMIT 1');
     $orderStmt->execute([':order_id' => $orderId]);
-    $orderNo = trim((string) $orderStmt->fetchColumn());
+    $order = $orderStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $orderNo = trim((string) ($order['order_no'] ?? ''));
     $orderLabel = $orderNo !== '' ? $orderNo : (string) $orderId;
     $module = in_array($newStatus, ['accepted_by_cashier', 'processing_payment', 'completed'], true) ? 'Cashier' : 'Sales';
     $actionLabels = [
@@ -507,8 +508,45 @@ function salesRecordStatusChange(PDO $pdo, int $orderId, ?string $oldStatus, str
         $actionLabels[$newStatus] ?? salesStatusLabel($newStatus),
         $descriptions[$newStatus] ?? ('Sales order #' . $orderLabel . ' is ' . salesStatusLabel($newStatus)),
         (string) $orderId,
-        $changedBy
+        $changedBy,
+        null,
+        false
     );
+
+    $auditActions = [
+        'draft' => ['TRANSACTION_CREATED', 'created order'],
+        'waiting_cashier' => ['TRANSACTION_SENT_TO_CASHIER', 'sent order to cashier'],
+        'accepted_by_cashier' => ['TRANSACTION_ACCEPTED', 'accepted order'],
+        'processing_payment' => ['TRANSACTION_PAYMENT_PROCESSING', 'started payment for order'],
+        'cancelled' => ['TRANSACTION_CANCELLED', 'cancelled order'],
+        'rejected' => ['TRANSACTION_REJECTED', 'rejected order'],
+    ];
+    if ($newStatus !== 'completed') {
+        [$auditAction, $descriptionAction] = $auditActions[$newStatus]
+            ?? ['TRANSACTION_STATUS_CHANGED', 'changed order status to ' . salesStatusLabel($newStatus)];
+        $actor = salesCurrentUserName() ?: 'System';
+        $details = [
+            'order_id' => $orderId,
+            'order_no' => $orderNo !== '' ? $orderNo : null,
+            'transaction_id' => $orderNo !== '' ? $orderNo : (string) $orderId,
+            'amount' => isset($order['total_amount']) ? (float) $order['total_amount'] : null,
+            'previous_status' => $oldStatus,
+            'status' => $newStatus,
+            'status_label' => salesStatusLabel($newStatus),
+            'remarks' => $remarks,
+        ];
+        if ($newStatus === 'cancelled') {
+            $details['cancellation_reason'] = $remarks;
+            $details['operation'] = 'cancelled before payment';
+        }
+        recordSalesAudit(
+            $pdo,
+            $auditAction,
+            $actor . ' ' . $descriptionAction . ' #' . $orderLabel . '.',
+            $orderId,
+            $details
+        );
+    }
 
     return true;
 }

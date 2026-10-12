@@ -23,6 +23,9 @@ try {
         throw new InvalidArgumentException('Only existing Grocery, Medicine, and Medical Supplies category pricing can be updated.');
     }
     $markup = normalizeMarkupPercentage($payload['default_markup_percentage'] ?? 0);
+    if ($markup > 1000) {
+        throw new InvalidArgumentException('Markup percentage cannot exceed 1000.');
+    }
     $behavior = normalizePricingBehavior($payload['pricing_behavior'] ?? 'review_required');
     $applyPrices = !empty($payload['apply_prices']) && $behavior === 'automatic';
     $duplicate = $pdo->prepare('SELECT category_id FROM product_categories WHERE LOWER(TRIM(category_name)) = LOWER(TRIM(:category_name)) AND category_id <> :category_id LIMIT 1');

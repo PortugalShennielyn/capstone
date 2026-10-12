@@ -138,6 +138,40 @@ function calculatedSellingPrice(float $unitCost, float $markupPercentage): float
     return round($unitCost * (1 + ($markupPercentage / 100)), 2);
 }
 
+function selectedPricingChangeWarning(float $currentPrice, float $calculatedPrice): ?string
+{
+    if ($currentPrice <= 0) return 'Current selling price is invalid.';
+    $percent = ($calculatedPrice - $currentPrice) / $currentPrice * 100;
+    if (abs($percent) < 30) return null;
+    return sprintf('%s %.1f%% from the current price', $percent > 0 ? 'Increase' : 'Decrease', abs($percent));
+}
+
+function selectedPricingCostError(array $basis, string $sellingUnit): ?string
+{
+    $cost = $basis['unit_cost'] ?? null;
+    if (!is_numeric($cost) || !is_finite((float)$cost) || (float)$cost <= 0) return 'Accepted unit cost must be greater than zero.';
+    $base = strtolower(trim($sellingUnit));
+    $receivedBase = strtolower(trim((string)($basis['accepted_inventory_unit'] ?? '')));
+    $purchase = strtolower(trim((string)($basis['accepted_purchase_unit'] ?? '')));
+    $factor = $basis['accepted_conversion'] ?? null;
+    if ($base === '' || $receivedBase === '' || $purchase === '') return 'Accepted delivery unit or conversion is missing.';
+    if ($base !== $receivedBase) return "Accepted cost is per {$receivedBase}, but this product sells per {$base}.";
+    if (!isset($basis['selling_base_quantity']) || (int)$basis['selling_base_quantity'] !== 1) {
+        return 'The active POS base selling unit or its 1-to-1 conversion is missing.';
+    }
+    if (!is_numeric($factor) || (float)$factor !== (float)(int)$factor || (int)$factor < 1) return 'Accepted purchase-unit conversion is invalid.';
+    if (($purchase === $base && (int)$factor !== 1) || ($purchase !== $base && (int)$factor === 1)) {
+        return "Accepted {$purchase} to {$base} conversion is mismatched.";
+    }
+    $purchaseQty = $basis['accepted_purchase_qty'] ?? null;
+    $baseQty = $basis['accepted_inventory_qty'] ?? null;
+    if (!is_numeric($purchaseQty) || !is_numeric($baseQty) || (int)$purchaseQty < 1
+        || (int)$baseQty !== (int)$purchaseQty * (int)$factor) {
+        return 'Accepted delivery quantity does not match its unit conversion.';
+    }
+    return null;
+}
+
 function productInventoryUnitSql(string $productIdExpression, string $medicineAlias = 'md', string $groceryAlias = 'gd', string $medicalSupplyAlias = 'msd'): string
 {
     return "COALESCE(
@@ -406,6 +440,72 @@ function latestAcceptedCostBasisExcludingBatch(PDO $pdo, string $productId, stri
     return $value === false ? null : round((float) $value, 2);
 }
 
+function verifiedMedicinePriceCeiling(PDO $pdo, string $productId): ?float
+{
+    static $column = false;
+    if ($column === false) {
+        $found = $pdo->query(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'medicine_details'
+               AND COLUMN_NAME IN ('price_ceiling', 'srp', 'max_retail_price', 'ceiling_price')
+             LIMIT 1"
+        )->fetchColumn();
+        $column = $found ? (string) $found : '';
+    }
+    if ($column === '') {
+        return null;
+    }
+    $statement = $pdo->prepare("SELECT {$column} FROM medicine_details WHERE product_id = :product_id LIMIT 1");
+    $statement->execute([':product_id' => $productId]);
+    $value = $statement->fetchColumn();
+    if ($value === false || !is_numeric($value) || (float) $value <= 0) {
+        return null;
+    }
+    return round((float) $value, 2);
+}
+
+function categoryMarkupSellableUnitLines(PDO $pdo, string $productId, float $unitCost, float $markup, string $baseUnit, float $baseCurrentPrice): array
+{
+    $statement = $pdo->prepare(
+        'SELECT selling_option_id, unit_name, base_quantity, selling_price
+         FROM product_selling_options
+         WHERE product_id = :product_id AND is_active = 1
+         ORDER BY base_quantity ASC, unit_name ASC'
+    );
+    $statement->execute([':product_id' => $productId]);
+    $options = $statement->fetchAll(PDO::FETCH_ASSOC);
+    if (!$options) {
+        $options = [[
+            'selling_option_id' => '',
+            'unit_name' => $baseUnit !== '' ? $baseUnit : 'Base unit',
+            'base_quantity' => 1,
+            'selling_price' => $baseCurrentPrice,
+        ]];
+    }
+    $lines = [];
+    foreach ($options as $option) {
+        $baseQuantity = max(1, (int) $option['base_quantity']);
+        $convertedCost = round($unitCost * $baseQuantity, 2);
+        if ($convertedCost <= 0) {
+            continue;
+        }
+        $newPrice = calculatedSellingPrice($convertedCost, $markup);
+        if (!is_finite($newPrice) || $newPrice <= 0) {
+            continue;
+        }
+        $lines[] = [
+            'selling_option_id' => (string) $option['selling_option_id'],
+            'sellable_unit' => (string) $option['unit_name'],
+            'base_quantity' => $baseQuantity,
+            'unit_cost' => $convertedCost,
+            'current_price' => round((float) $option['selling_price'], 2),
+            'markup_percentage' => round($markup, 2),
+            'new_price' => $newPrice,
+        ];
+    }
+    return $lines;
+}
+
 function categoryPricingImpact(PDO $pdo, string $categoryId, float $newMarkup): array
 {
     $statement = $pdo->prepare("SELECT product_id, brand_name, product_name, price, pricing_method, custom_markup_percentage FROM product WHERE category_id = :category_id AND status = 'Active' ORDER BY brand_name, product_name");
@@ -434,7 +534,7 @@ function categoryPricingImpact(PDO $pdo, string $categoryId, float $newMarkup): 
     return $rows;
 }
 
-function selectedCategoryPricingPreview(PDO $pdo, array $productIds): array
+function selectedCategoryPricingPreview(PDO $pdo, array $productIds, bool $lockForApply = false, bool $replaceManual = false): array
 {
     $productIds = array_values(array_unique(array_filter(array_map('cleanId', $productIds))));
     if (!$productIds) {
@@ -442,7 +542,7 @@ function selectedCategoryPricingPreview(PDO $pdo, array $productIds): array
     }
 
     $placeholders = implode(',', array_fill(0, count($productIds), '?'));
-    $statement = $pdo->prepare("SELECT product_id, brand_name, product_name, status FROM product WHERE product_id IN ({$placeholders}) ORDER BY brand_name, product_name");
+    $statement = $pdo->prepare("SELECT product_id, brand_name, product_name, status FROM product WHERE product_id IN ({$placeholders}) ORDER BY brand_name, product_name" . ($lockForApply ? ' FOR UPDATE' : ''));
     $statement->execute($productIds);
     $products = $statement->fetchAll(PDO::FETCH_ASSOC);
     if (count($products) !== count($productIds)) {
@@ -450,41 +550,185 @@ function selectedCategoryPricingPreview(PDO $pdo, array $productIds): array
     }
 
     $snapshots = productPricingSnapshots($pdo, array_column($products, 'product_id'));
+    $latestDeliveryStatement = $pdo->prepare(
+        'SELECT batch_id FROM inventory_batches
+         WHERE product_id = :product_id AND (received_qty - damaged_qty - returned_qty) > 0
+         ORDER BY received_date DESC, created_at DESC, batch_id DESC LIMIT 1' . ($lockForApply ? ' FOR UPDATE' : '')
+    );
+    $conversionStatement = $pdo->prepare(
+        'SELECT pmu.unit_name AS current_base_unit, poi.unit_snapshot AS accepted_inventory_unit,
+                poi.purchase_unit_snapshot AS accepted_purchase_unit,
+                poi.units_per_purchase_unit_snapshot AS accepted_conversion,
+                poi.purchase_qty AS accepted_purchase_qty,
+                poi.inventory_qty_ordered AS accepted_inventory_qty,
+                (SELECT pso.base_quantity FROM product_selling_options pso
+                 WHERE pso.product_id = p.product_id AND pso.is_active = 1
+                   AND LOWER(TRIM(pso.unit_name)) IN (LOWER(TRIM(pmu.unit_name)), LOWER(TRIM(COALESCE(NULLIF(pmu.unit_symbol, \'\'), pmu.unit_name))))
+                 ORDER BY pso.base_quantity LIMIT 1) AS selling_base_quantity
+         FROM product p
+         LEFT JOIN product_measurement_units pmu ON pmu.measurement_unit_id = p.inventory_unit_id
+         LEFT JOIN purchase_order_items poi ON poi.po_item_id = :po_item_id AND poi.product_id = p.product_id
+         WHERE p.product_id = :product_id LIMIT 1'
+    );
     $rows = [];
     foreach ($products as $product) {
         $snapshot = $snapshots[$product['product_id']];
-        $calculated = $snapshot['latest_cost_basis']
-            ? calculatedSellingPrice((float) $snapshot['latest_cost_basis']['unit_cost'], (float) $snapshot['category_markup_percentage'])
+        $basis = $snapshot['latest_cost_basis'];
+        $costError = $basis ? null : 'No accepted supplier cost is available.';
+        $latestDeliveryStatement->execute([':product_id' => $product['product_id']]);
+        $latestBatchId = $latestDeliveryStatement->fetchColumn();
+        if ($latestBatchId && $latestBatchId !== ($basis['batch_id'] ?? null)) {
+            $costError = 'Latest accepted delivery has no valid unit cost.';
+        }
+        $sellingUnit = '';
+        $conversion = [];
+        if ($basis) {
+            $conversionStatement->execute([':po_item_id' => $basis['po_item_id'], ':product_id' => $product['product_id']]);
+            $conversion = $conversionStatement->fetch(PDO::FETCH_ASSOC) ?: [];
+            $sellingUnit = (string)($conversion['current_base_unit'] ?? '');
+            $costError = $costError ?? selectedPricingCostError(array_merge($basis, $conversion), $sellingUnit);
+        }
+        $calculated = $costError === null
+            ? calculatedSellingPrice((float)$basis['unit_cost'], (float)$snapshot['category_markup_percentage'])
             : null;
-        $rows[] = [
+        if ($calculated !== null && (!is_finite($calculated) || $calculated <= 0)) {
+            $costError = 'Calculated selling price must be greater than zero.';
+            $calculated = null;
+        }
+        $current = (float)$snapshot['active_selling_price'];
+        $warning = $calculated !== null ? selectedPricingChangeWarning($current, $calculated) : null;
+        $difference = $calculated === null ? null : round($calculated - $current, 2);
+        $isActive = strcasecmp((string)$product['status'], 'Active') === 0;
+        $sellableUnits = $costError === null && $calculated !== null
+            ? categoryMarkupSellableUnitLines(
+                $pdo,
+                (string) $product['product_id'],
+                (float) $basis['unit_cost'],
+                (float) $snapshot['category_markup_percentage'],
+                $sellingUnit ?: (string) $snapshot['inventory_unit'],
+                $current
+            )
+            : [];
+        $unitDrift = false;
+        foreach ($sellableUnits as $line) {
+            if (abs($line['new_price'] - $line['current_price']) >= 0.005) {
+                $unitDrift = true;
+            }
+        }
+        $eligible = $isActive && $costError === null && $current > 0 && $sellableUnits
+            && ($snapshot['pricing_method'] !== 'category_markup' || abs((float) $difference) >= 0.005 || $unitDrift);
+        $manualKept = $eligible && $snapshot['pricing_method'] === 'manual' && !$replaceManual;
+        if ($manualKept) {
+            $eligible = false;
+        }
+        $reviewNote = null;
+        if ($costError === null && strcasecmp((string) $snapshot['category_name'], 'Medicine') === 0 && $calculated !== null) {
+            $ceiling = verifiedMedicinePriceCeiling($pdo, (string) $product['product_id']);
+            if ($ceiling === null) {
+                $reviewNote = 'No verified medicine price ceiling on file. Review this price manually.';
+            } else {
+                $exceedsCeiling = $calculated > $ceiling;
+                foreach ($sellableUnits as $line) {
+                    if ($line['new_price'] > $ceiling) {
+                        $exceedsCeiling = true;
+                    }
+                }
+                if ($exceedsCeiling) {
+                    $eligible = false;
+                    $costError = 'Exceeds verified medicine price ceiling.';
+                }
+            }
+        }
+        if ($costError === null && $calculated !== null && !$sellableUnits) {
+            $costError = 'No active sellable unit can be priced.';
+            $eligible = false;
+        }
+        $status = !$isActive ? 'Inactive product'
+            : ($costError ?? ($current <= 0 ? 'Current selling price is invalid.'
+                : ($manualKept ? 'Manual price kept'
+                    : ($eligible
+                        ? ($warning ?? ($unitDrift && abs((float) $difference) < 0.005 ? 'Sellable unit price outdated' : ($snapshot['pricing_method'] === 'manual' ? 'Ready to replace manual price' : 'Ready to update')))
+                        : 'Already up to date'))));
+        $row = [
             'product_id' => $product['product_id'],
             'product' => trim($product['brand_name'] . ' ' . $product['product_name']),
             'category' => $snapshot['category_name'],
             'existing_pricing_method' => $snapshot['pricing_method'],
-            'current_cost_basis' => $snapshot['latest_cost_basis']['unit_cost'] ?? null,
-            'inventory_unit' => $snapshot['inventory_unit'],
+            'current_cost_basis' => $basis['unit_cost'] ?? null,
+            'inventory_unit' => $sellingUnit ?: $snapshot['inventory_unit'],
             'applied_markup_percentage' => $snapshot['category_markup_percentage'],
             'markup_source' => $snapshot['category_markup_source'],
-            'current_selling_price' => $snapshot['active_selling_price'],
+            'current_selling_price' => $current,
             'calculated_selling_price' => $calculated,
-            'difference' => $calculated === null ? null : round($calculated - $snapshot['active_selling_price'], 2),
-            'eligible_for_apply' => $snapshot['category_pricing_eligible'],
-            'eligibility_status' => $snapshot['category_pricing_status'],
+            'difference' => $difference,
+            'price_change_percent' => $calculated === null || $current <= 0 ? null : round($difference / $current * 100, 1),
+            'warning' => $warning,
+            'review_note' => $reviewNote,
+            'sellable_units' => $sellableUnits,
+            'eligible_for_apply' => $eligible,
+            'eligibility_status' => $status,
         ];
+        $row['preview_token'] = hash('sha256', json_encode([
+            $row['product_id'], $basis['batch_id'] ?? null, $row['current_selling_price'],
+            $row['current_cost_basis'], $row['inventory_unit'], $row['applied_markup_percentage'],
+            $row['calculated_selling_price'], $row['warning'], $row['eligibility_status'],
+            $replaceManual,
+            array_map(static fn(array $line): array => [
+                $line['selling_option_id'], $line['base_quantity'], $line['unit_cost'], $line['current_price'], $line['new_price'],
+            ], $sellableUnits),
+            $conversion['accepted_inventory_unit'] ?? null, $conversion['accepted_purchase_unit'] ?? null,
+            $conversion['accepted_conversion'] ?? null, $conversion['accepted_inventory_qty'] ?? null,
+            $conversion['selling_base_quantity'] ?? null
+        ]));
+        $rows[] = $row;
     }
     return $rows;
 }
 
-function applyCategoryMarkupToSelectedProducts(PDO $pdo, array $productIds): array
+function applyCategoryMarkupToSelectedProducts(PDO $pdo, array $productIds, bool $confirmFlagged = false, ?array $previewTokens = null, bool $isAdmin = false, bool $replaceManual = false): array
 {
-    $rows = selectedCategoryPricingPreview($pdo, $productIds);
+    $rows = selectedCategoryPricingPreview($pdo, $productIds, true, $replaceManual);
     $update = $pdo->prepare("UPDATE product SET pricing_method = 'category_markup', custom_markup_percentage = NULL, price = :price WHERE product_id = :product_id");
+    $updatePosBase = $pdo->prepare(
+        'UPDATE product_selling_options pso
+         INNER JOIN product p ON p.product_id = pso.product_id
+         INNER JOIN product_measurement_units pmu ON pmu.measurement_unit_id = p.inventory_unit_id
+         SET pso.selling_price = :price
+         WHERE pso.product_id = :product_id AND pso.is_active = 1 AND pso.base_quantity = 1
+           AND LOWER(TRIM(pso.unit_name)) IN (LOWER(TRIM(pmu.unit_name)), LOWER(TRIM(COALESCE(NULLIF(pmu.unit_symbol, \'\'), pmu.unit_name))))'
+    );
+    foreach ($rows as $row) {
+        if ($previewTokens !== null && !hash_equals($row['preview_token'], (string)($previewTokens[$row['product_id']] ?? ''))) {
+            throw new InvalidArgumentException('Pricing or cost changed. Preview the selected products again before applying.');
+        }
+        if (!$row['eligible_for_apply']) throw new InvalidArgumentException($row['product'] . ': ' . $row['eligibility_status']);
+        if ($row['warning'] && (!$confirmFlagged || !$isAdmin)) {
+            throw new InvalidArgumentException('An Admin must explicitly confirm every price change of 30% or more.');
+        }
+    }
+    $updateUnit = $pdo->prepare(
+        'UPDATE product_selling_options
+         SET selling_price = :price
+         WHERE selling_option_id = :selling_option_id AND product_id = :product_id AND is_active = 1'
+    );
     $applied = 0;
     foreach ($rows as $row) {
-        if (!$row['eligible_for_apply']) {
-            continue;
-        }
         $update->execute([':price' => $row['calculated_selling_price'], ':product_id' => $row['product_id']]);
+        $updatePosBase->execute([':price' => $row['calculated_selling_price'], ':product_id' => $row['product_id']]);
+        foreach ($row['sellable_units'] as $unit) {
+            if ($unit['selling_option_id'] === '') {
+                continue;
+            }
+            $unitPrice = (int) $unit['base_quantity'] === 1 ? (float) $row['calculated_selling_price'] : (float) $unit['new_price'];
+            if ($unitPrice <= 0) {
+                throw new InvalidArgumentException($row['product'] . ': calculated sellable unit price must be greater than zero.');
+            }
+            $updateUnit->execute([
+                ':price' => $unitPrice,
+                ':selling_option_id' => $unit['selling_option_id'],
+                ':product_id' => $row['product_id'],
+            ]);
+        }
         $applied++;
         recordActivityLog($pdo, 'Pricing', 'Selected category markup applied', json_encode([
             'previous_pricing_method' => $row['existing_pricing_method'],
@@ -493,6 +737,7 @@ function applyCategoryMarkupToSelectedProducts(PDO $pdo, array $productIds): arr
             'cost_basis_per_inventory_unit' => $row['current_cost_basis'],
             'applied_markup_percentage' => $row['applied_markup_percentage'],
             'markup_source' => $row['markup_source'],
+            'price_change_warning' => $row['warning'],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $row['product_id']);
     }
     return ['products' => $rows, 'applied_products' => $applied];

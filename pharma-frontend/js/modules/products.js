@@ -18,7 +18,7 @@ import {
     formatProductSpecification,
     medicineCatalogSpecificationParts,
     normalizeProductSpecificationValues
-} from './product_specification.js?v=16';
+} from './product_specification.js?v=17';
 import {
     loadMeasurementUnits,
     measurementUnitsForContext
@@ -101,6 +101,9 @@ let editPricingApplyRequested = false;
 let selectedPricingPreviewRows = [];
 let selectedPricingEligibleProductIds = new Set();
 let selectedPricingSubmissionActive = false;
+let markupSelectionPreviewById = new Map();
+let markupSelectionPreviewReady = false;
+let markupSelectionPreviewRequest = 0;
 let addProductSubmissionActive = false;
 let productsLoadPromise = null;
 let productTypeCustomizerTarget = { mode: 'add', variationIndex: 0 };
@@ -776,16 +779,7 @@ function productCatalogSpecification(product) {
     const medicineParts = medicineCatalogSpecificationParts(specificationProduct);
     if (medicineParts) {
         const { strength, details } = medicineParts;
-        const form = String(product.dosage_form || product.type_name || '').toLowerCase();
-        const icon = /powder/.test(form) ? 'fa-solid fa-flask'
-            : /suspension|syrup|solution|drops|liquid/.test(form) ? 'fa-solid fa-droplet'
-            : /supplement/.test(form) ? 'fa-solid fa-leaf'
-            : /capsule/.test(form) ? 'fa-solid fa-capsules'
-            : 'fa-regular fa-circle-dot';
-        const strengthParts = strength.split(/\s*\/\s*/);
-        const strengthHtml = strengthParts.length > 1
-            ? `<strong>${escapeHtml(strengthParts[0])}</strong><span class="catalog-specification-ratio"> / ${escapeHtml(strengthParts.slice(1).join(' / '))}</span>`
-            : `<strong>${escapeHtml(strength)}</strong>`;
+        const strengthHtml = `<strong>${escapeHtml(strength)}</strong>`;
         return `<div class="catalog-specification catalog-specification-medicine">
             ${strength ? `<span class="catalog-specification-strength">${strengthHtml}</span>` : ''}
             ${details ? `<span class="catalog-specification-details">${escapeHtml(details)}</span>` : ''}
@@ -796,16 +790,41 @@ function productCatalogSpecification(product) {
     return `<div class="catalog-specification">${lines.map(line => `<span>${escapeHtml(line)}</span>`).join('')}</div>`;
 }
 
+function renderProductCategoryTabs() {
+    const tabs = document.getElementById('productCategoryTabs');
+    const selected = getValue('productCategoryFilter');
+    if (!tabs) return;
+    const categories = productState.categories || [];
+    const tab = (id, label, count) => `<button type="button" class="product-category-tab ${String(selected) === String(id) ? 'is-active' : ''}" data-category-id="${escapeHtml(id)}" aria-pressed="${String(selected) === String(id)}">${escapeHtml(label)} <span>${count}</span></button>`;
+    tabs.innerHTML = tab('', 'All products', productState.products.length) + categories.map(category => tab(category.category_id, category.category_name, productState.products.filter(product => String(product.category_id) === String(category.category_id)).length)).join('');
+}
+
 function renderProductCards() {
     const tableBody = document.querySelector('#table-products tbody');
     if (!tableBody) return;
 
+    renderProductCategoryTabs();
     const products = getFilteredProducts();
+    if (productState.pricingSelectionMode) {
+        const visibleIds = new Set(products.map(product => String(product.product_id)));
+        Array.from(productState.selectedPricingProductIds).forEach(productId => {
+            if (!visibleIds.has(String(productId))) productState.selectedPricingProductIds.delete(productId);
+        });
+    }
     document.querySelector('.pricing-selection-column')?.classList.toggle('d-none', !productState.pricingSelectionMode);
+    document.querySelectorAll('#table-products .markup-column').forEach(column => column.classList.toggle('d-none', !productState.pricingSelectionMode));
     document.getElementById('table-products')?.classList.toggle('pricing-selection-mode', productState.pricingSelectionMode);
+    document.getElementById('productPricingToolbar')?.classList.toggle('d-none', productState.pricingSelectionMode);
+    document.getElementById('markupSelectionBar')?.classList.toggle('d-none', !productState.pricingSelectionMode);
+    document.getElementById('productPricingFilterWrap')?.classList.toggle('d-none', !productState.pricingSelectionMode);
+    const editHeader = document.querySelector('#table-products thead th:last-child');
+    if (editHeader) editHeader.textContent = productState.pricingSelectionMode ? 'Pricing' : 'Edit';
+    const priceHeader = document.querySelector('#table-products thead .current-price-header');
+    if (priceHeader) priceHeader.textContent = productState.pricingSelectionMode ? 'Current Price' : 'Price';
+    syncMarkupCategorySelect();
 
     if (!products.length) {
-        tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No products found.</td></tr>';
+        tableBody.innerHTML = `<tr><td colspan="${productState.pricingSelectionMode ? 12 : 7}" class="text-center text-muted py-4">No products found.</td></tr>`;
         syncSelectedPricingControls();
         return;
     }
@@ -813,30 +832,57 @@ function renderProductCards() {
     tableBody.innerHTML = products.map((product) => {
         const status = product.status || 'Active';
         const isActive = status === 'Active';
-        const priceBadge = productPriceBadge(product);
         const selectionStatus = productPricingSelectionStatus(product);
+        const pricing = product.pricing || {};
+        const method = product.pricing_method || pricing.pricing_method || 'manual';
+        const pricingMethod = pricingMethodDisplay(method);
+        const pricingMethodClass = method === 'manual' ? 'pricing-method-manual' : method === 'custom_markup' ? 'pricing-method-custom' : 'pricing-method-category';
+        const selectionPreview = productState.pricingSelectionMode ? markupSelectionPreviewById.get(String(product.product_id)) : null;
+        const unitLabel = escapeHtml(selectionPreview?.inventory_unit || pricing.inventory_unit || product.inventory_unit_name || product.inventory_unit_symbol || 'unit');
+        const cost = selectionPreview?.current_cost_basis ?? pricing.latest_cost_basis?.unit_cost;
+        const markupValue = selectionPreview?.applied_markup_percentage ?? pricing.category_markup_percentage;
+        const markup = Number(markupValue);
+        const validCost = Number(cost) > 0 && (!productState.pricingSelectionMode || Number(selectionPreview?.calculated_selling_price) > 0);
+        const validMarkup = markupValue !== null && markupValue !== undefined && Number.isFinite(markup);
+        const currentPrice = Number(selectionPreview?.current_selling_price ?? product.price);
+        const proposedPrice = productState.pricingSelectionMode && validCost && validMarkup
+            ? Number(selectionPreview.calculated_selling_price) : null;
+        const priceDifference = proposedPrice !== null && selectionPreview?.difference !== null && selectionPreview?.difference !== undefined
+            ? Number(selectionPreview.difference) : null;
+        const differenceClass = priceDifference === null || priceDifference === 0 ? 'is-zero' : priceDifference < 0 ? 'is-decrease' : 'is-increase';
+        const largeDecrease = priceDifference !== null && currentPrice > 0 && priceDifference / currentPrice <= -0.3;
+        const manualOverwrite = method === 'manual' && selectionStatus.eligible;
+        const costUnavailableText = !markupSelectionPreviewReady ? 'Checking cost…'
+            : !selectionPreview ? 'Pricing unavailable' : 'No valid accepted cost';
 
+        const selected = productState.selectedPricingProductIds.has(String(product.product_id));
+        const rowState = productState.pricingSelectionMode
+            ? `${selectionStatus.eligible ? '' : 'is-markup-disabled'} ${selected ? 'is-markup-selected' : ''} ${largeDecrease && selectionStatus.eligible ? 'is-markup-large-drop' : ''} ${manualOverwrite ? 'is-markup-manual' : ''}`
+            : '';
+        const markupAttrs = productState.pricingSelectionMode
+            ? `aria-selected="${selected ? 'true' : 'false'}"${selectionStatus.eligible ? '' : ' aria-disabled="true"'} title="${escapeHtml(selectionStatus.label)}"`
+            : '';
         return `
-            <tr class="product-row" data-product-id="${escapeHtml(product.product_id)}">
-                <td class="text-center pricing-selection-column ${productState.pricingSelectionMode ? '' : 'd-none'}"><div class="pricing-selection-cell">${selectionStatus.eligible ? `<input class="form-check-input product-pricing-select" type="checkbox" value="${escapeHtml(product.product_id)}" aria-label="Select ${escapeHtml(product.product_name)} for category pricing" ${productState.selectedPricingProductIds.has(String(product.product_id)) ? 'checked' : ''}>` : `<input class="form-check-input" type="checkbox" aria-label="${escapeHtml(selectionStatus.label)}" disabled>`}<span class="pricing-selection-status ${selectionStatus.className}">${escapeHtml(selectionStatus.label)}</span></div></td>
+            <tr class="product-row ${rowState}" data-product-id="${escapeHtml(product.product_id)}" data-markup-eligible="${selectionStatus.eligible ? '1' : '0'}" ${markupAttrs}>
+                <td class="text-center pricing-selection-column ${productState.pricingSelectionMode ? '' : 'd-none'}"><div class="pricing-selection-cell">${selectionStatus.eligible ? `<input class="form-check-input product-pricing-select" type="checkbox" value="${escapeHtml(product.product_id)}" aria-label="Select ${escapeHtml(product.product_name)} for category pricing" ${selected ? 'checked' : ''}>` : `<input class="form-check-input" type="checkbox" aria-label="${escapeHtml(selectionStatus.label)}" title="${escapeHtml(selectionStatus.label)}" disabled>`}</div></td>
                 <td><span class="product-clamp">${escapeHtml(dash(product.brand_name))}</span></td>
-                <td class="product-column"><div class="medicine-product-identity"><span class="product-clamp">${escapeHtml(productCatalogName(product))}</span>${medicineRxBadge(product)}</div></td>
+                <td class="product-column"><div class="medicine-product-identity"><strong class="product-clamp">${escapeHtml(productCatalogName(product))}</strong>${medicineRxBadge(product)}</div></td>
                 <td>${productCatalogSpecification(product)}</td>
                 <td class="product-container-cell">${escapeHtml(formatProductForm(product, '—'))}</td>
-                <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(product.price)}</span><span class="pricing-method-badge ${priceBadge.className}" title="${escapeHtml(priceBadge.title)}" aria-label="${escapeHtml(priceBadge.title)}">${priceBadge.code}</span></div></td>
+                <td class="markup-column markup-number-cell ${productState.pricingSelectionMode ? '' : 'd-none'}" title="${escapeHtml(selectionPreview?.eligibility_status || '')}">${validCost ? `<span class="markup-money-stack"><strong>₱${formatPriceNumber(cost)}</strong><small>per ${unitLabel}</small></span>` : `<span class="text-warning">${costUnavailableText}</span>`}</td>
+                <td class="markup-column markup-percent-cell ${productState.pricingSelectionMode ? '' : 'd-none'}">${validMarkup ? `${Number(markup.toFixed(2))}%` : '—'}</td>
+                <td class="selling-price-cell"><div class="selling-price-stack"><span class="selling-price-value">₱${formatPriceNumber(currentPrice)}</span><span class="selling-price-unit">per ${productState.pricingSelectionMode ? unitLabel : escapeHtml(product.inventory_unit_name || product.inventory_unit_symbol || 'unit')}</span></div></td>
+                <td class="markup-column markup-number-cell ${productState.pricingSelectionMode ? '' : 'd-none'}">${proposedPrice === null ? '—' : `<span class="markup-money-stack"><strong>₱${formatPriceNumber(proposedPrice)}</strong><small>per ${unitLabel}</small></span>`}</td>
+                <td class="markup-column markup-difference ${differenceClass} ${productState.pricingSelectionMode ? '' : 'd-none'}">${priceDifference === null ? '—' : `${priceDifference > 0 ? '+' : priceDifference < 0 ? '−' : ''}₱${formatPriceNumber(Math.abs(priceDifference))}`}</td>
                 <td><span class="badge ${isActive ? 'text-bg-success' : 'text-bg-secondary'}">${escapeHtml(status)}</span></td>
                 <td>
-                    <div class="product-actions" role="group" aria-label="Product actions">
-                        <button type="button" class="btn btn-outline-secondary btn-icon view-product-btn" data-product-id="${escapeHtml(product.product_id)}" aria-label="View product details">
-                            <i class="fa-regular fa-eye" aria-hidden="true"></i>
-                        </button>
+                    ${productState.pricingSelectionMode
+                        ? `<span class="pricing-method-badge ${pricingMethodClass}" title="${escapeHtml(selectionStatus.label)}">${escapeHtml(pricingMethod)}</span>`
+                        : `<div class="product-actions" role="group" aria-label="Product actions">
                         <button type="button" class="btn btn-outline-primary btn-icon edit-product-btn" data-product-id="${escapeHtml(product.product_id)}" aria-label="Edit product">
                             <i class="fa-solid fa-pen" aria-hidden="true"></i>
                         </button>
-                        <button type="button" class="btn ${isActive ? 'btn-outline-warning' : 'btn-outline-success'} btn-icon delete-product-btn" data-product-id="${escapeHtml(product.product_id)}" aria-label="${isActive ? 'Deactivate' : 'Reactivate'} product">
-                            <i class="fa-solid ${isActive ? 'fa-ban' : 'fa-circle-check'}" aria-hidden="true"></i>
-                        </button>
-                    </div>
+                    </div>`}
                 </td>
             </tr>
         `;
@@ -871,59 +917,152 @@ function productPricingSelectionStatus(product) {
     if (String(product.status || 'Active') !== 'Active') {
         return { label: 'Inactive', eligible: false, className: 'is-blocked' };
     }
-    if (!pricing.latest_cost_basis) {
+    if (productState.pricingSelectionMode) {
+        if (!markupSelectionPreviewReady) return { label: 'Checking price', eligible: false, className: 'is-blocked' };
+        const preview = markupSelectionPreviewById.get(String(product.product_id));
+        if (!preview || !preview.eligible_for_apply) {
+            return { label: preview?.eligibility_status || 'Pricing unavailable', eligible: false, className: 'is-blocked' };
+        }
+    }
+    if (!productState.pricingSelectionMode && (!pricing.latest_cost_basis || !(Number(pricing.latest_cost_basis.unit_cost) > 0))) {
         return { label: 'No accepted cost', eligible: false, className: 'is-blocked' };
     }
     if (method === 'manual') {
-        return { label: 'Eligible — Manual', eligible: true, className: 'is-eligible' };
+        return { label: 'Manual price', eligible: true, className: 'is-eligible' };
     }
     if (method === 'custom_markup') {
-        return { label: 'Eligible — Custom', eligible: true, className: 'is-eligible' };
+        return { label: 'Custom markup', eligible: true, className: 'is-eligible' };
     }
-    if (pricing.category_pricing_eligible) {
-        return { label: 'Eligible — Price outdated', eligible: true, className: 'is-outdated' };
+    if (productState.pricingSelectionMode || pricing.category_pricing_eligible) {
+        return { label: 'Price outdated', eligible: true, className: 'is-outdated' };
     }
     return { label: 'Up to date', eligible: false, className: 'is-blocked' };
 }
 
+function eligibleProductsInScope() {
+    return getFilteredProducts().filter(product => productPricingSelectionStatus(product).eligible);
+}
+
+function selectedEligibleProductIds() {
+    return Array.from(productState.selectedPricingProductIds).filter(productId => {
+        const product = getProductById(productId);
+        return product && productPricingSelectionStatus(product).eligible;
+    });
+}
+
+function syncMarkupCategorySelect() {
+    const select = document.getElementById('markupCategorySelect');
+    if (!select) return;
+    const categories = productState.categories || [];
+    const signature = categories.map(category => `${category.category_id}:${category.category_name}`).join('|');
+    if (select.dataset.signature !== signature) {
+        select.dataset.signature = signature;
+        select.innerHTML = '<option value="">All products</option>' + categories.map(category => `<option value="${escapeHtml(category.category_id)}">${escapeHtml(category.category_name)}</option>`).join('');
+    }
+    const selected = getValue('productCategoryFilter');
+    if (select.value !== selected) select.value = selected;
+}
+
+function applyProductCategoryFilter(categoryId) {
+    const filter = document.getElementById('productCategoryFilter');
+    const nextCategory = categoryId || '';
+    if (filter && filter.value !== nextCategory) filter.value = nextCategory;
+    if (productState.pricingSelectionMode && nextCategory) {
+        productState.products.forEach(product => {
+            if (String(product.category_id) !== String(nextCategory)) {
+                productState.selectedPricingProductIds.delete(String(product.product_id));
+            }
+        });
+    }
+    updateMedicineClassificationFilter();
+    renderProductCards();
+}
+
+function toggleMarkupProduct(productId, forceSelected = null) {
+    const id = String(productId || '');
+    const product = getProductById(id);
+    if (!product || !productPricingSelectionStatus(product).eligible) return;
+    const selected = forceSelected === null ? !productState.selectedPricingProductIds.has(id) : Boolean(forceSelected);
+    if (selected) productState.selectedPricingProductIds.add(id);
+    else productState.selectedPricingProductIds.delete(id);
+    const row = document.querySelector(`#table-products tr[data-product-id="${CSS.escape(id)}"]`);
+    const checkbox = row?.querySelector('.product-pricing-select');
+    if (checkbox) checkbox.checked = selected;
+    row?.classList.toggle('is-markup-selected', selected);
+    row?.setAttribute('aria-selected', selected ? 'true' : 'false');
+    syncSelectedPricingControls();
+}
+
+function selectAllEligibleInScope(selected = true) {
+    eligibleProductsInScope().forEach(product => {
+        const id = String(product.product_id);
+        if (selected) productState.selectedPricingProductIds.add(id);
+        else productState.selectedPricingProductIds.delete(id);
+    });
+    renderProductCards();
+}
+
 function syncSelectedPricingControls() {
-    const selectedCount = productState.selectedPricingProductIds.size;
-    const eligibleCount = productState.products.filter(product => product.pricing?.category_pricing_eligible).length;
-    const visibleEligibleCount = getFilteredProducts().filter(product => productPricingSelectionStatus(product).eligible).length;
-    const manageButton = document.getElementById('btnManagePrices');
-    const selectionActions = document.getElementById('pricingSelectionActions');
-    if (manageButton) {
-        manageButton.classList.toggle('d-none', productState.pricingSelectionMode);
-        manageButton.disabled = eligibleCount === 0;
-        manageButton.innerHTML = `<i class="fa-solid fa-tags me-1"></i>Manage Prices${eligibleCount ? `<span class="manage-prices-count" title="${eligibleCount} products need review">${eligibleCount}</span>` : ''}`;
-    }
-    selectionActions?.classList.toggle('d-none', !productState.pricingSelectionMode);
-    setPricingText('pricingSelectionCount', `${selectedCount} selected · ${visibleEligibleCount} eligible`);
-    const button = document.getElementById('btnApplySelectedPricing');
-    if (button) {
-        button.disabled = selectedCount === 0;
-        button.innerHTML = `<i class="fa-solid fa-percent me-2"></i>Apply Category Markup${selectedCount ? ` (${selectedCount} selected)` : ''}`;
-    }
-    const visible = Array.from(document.querySelectorAll('.product-pricing-select:not(:disabled)'));
+    const selectedIds = selectedEligibleProductIds();
+    const scope = eligibleProductsInScope();
+    const selectedInScope = scope.filter(product => productState.selectedPricingProductIds.has(String(product.product_id))).length;
+    const count = document.getElementById('markupSelectedCount');
+    if (count) count.textContent = `${selectedIds.length} selected`;
+    const previewButton = document.getElementById('btnPreviewMarkupPrices');
+    if (previewButton) previewButton.disabled = selectedIds.length === 0;
     const selectAll = document.getElementById('selectAllProductsForPricing');
     if (selectAll) {
-        const checked = visible.filter(input => input.checked).length;
-        selectAll.checked = visible.length > 0 && checked === visible.length;
-        selectAll.indeterminate = checked > 0 && checked < visible.length;
+        selectAll.checked = scope.length > 0 && selectedInScope === scope.length;
+        selectAll.indeterminate = selectedInScope > 0 && selectedInScope < scope.length;
+        selectAll.disabled = scope.length === 0;
     }
 }
 
 function enterPricingSelectionMode() {
     productState.pricingSelectionMode = true;
     productState.selectedPricingProductIds.clear();
+    markupSelectionPreviewById.clear();
+    markupSelectionPreviewReady = false;
     renderProductCards();
+    loadMarkupSelectionPreview();
 }
 
 function exitPricingSelectionMode() {
+    markupSelectionPreviewRequest++;
+    markupSelectionPreviewById.clear();
+    markupSelectionPreviewReady = false;
     productState.pricingSelectionMode = false;
     productState.selectedPricingProductIds.clear();
     selectedPricingEligibleProductIds.clear();
     selectedPricingPreviewRows = [];
+    renderProductCards();
+}
+
+async function loadMarkupSelectionPreview() {
+    const requestId = ++markupSelectionPreviewRequest;
+    markupSelectionPreviewReady = false;
+    markupSelectionPreviewById.clear();
+    const productIds = productState.products.map(product => String(product.product_id));
+    if (!productIds.length) {
+        markupSelectionPreviewReady = true;
+        renderProductCards();
+        return;
+    }
+    try {
+        const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/apply_selected_category_pricing.php`, {
+            method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'preview', product_ids: productIds, replace_manual: true })
+        });
+        if (requestId !== markupSelectionPreviewRequest || !productState.pricingSelectionMode) return;
+        markupSelectionPreviewById = new Map((response.products || []).map(row => [String(row.product_id), row]));
+    } catch (error) {
+        if (requestId !== markupSelectionPreviewRequest || !productState.pricingSelectionMode) return;
+        PharmaUtils.toast.error('Unable to check accepted unit costs. Leave and reopen markup selection to retry.');
+    }
+    markupSelectionPreviewReady = true;
+    productState.selectedPricingProductIds.forEach(productId => {
+        if (!markupSelectionPreviewById.get(productId)?.eligible_for_apply) productState.selectedPricingProductIds.delete(productId);
+    });
     renderProductCards();
 }
 
@@ -1114,6 +1253,7 @@ function invalidateProductDetails(productIds) {
 }
 
 async function openProductDetailsModal(productId, options = {}) {
+    if (productState.pricingSelectionMode) return;
     const product = getProductById(productId);
     const container = document.getElementById('productDetailsContent');
     const modalElement = document.getElementById('productDetailsModal');
@@ -1197,24 +1337,14 @@ async function populateProductCardFilters() {
         });
         await populateMedicineClassificationSelects();
         updateMedicineClassificationFilter();
+        renderProductCategoryTabs();
     } catch (err) {
         console.warn('Failed to load product card filters:', err.message || err);
     }
 }
 
 async function populateMedicineClassificationSelects() {
-    const rows = await cachedMedicineClassifications();
-    const targets = [
-        ['productMedicineClassification', 'Select classification...'],
-        ['editProductMedicineClassification', 'Select classification...']
-    ];
-    targets.forEach(([id, placeholder]) => {
-        const select = document.getElementById(id);
-        if (!select) return;
-        const selected = select.value;
-        select.innerHTML = `<option value="">${placeholder}</option>${rows.map(row => `<option value="${escapeHtml(row.value)}">${escapeHtml(row.value)}</option>`).join('')}`;
-        if (rows.some(row => row.value === selected)) select.value = selected;
-    });
+    await cachedMedicineClassifications();
 }
 
 function updateMedicineClassificationFilter() {
@@ -1298,20 +1428,17 @@ function setMedicineFields(mode, categoryName, { clear = true } = {}) {
     document.getElementById(mode === 'edit' ? 'editProductModal' : 'addProductModal')?.classList.toggle('medicine-product-mode', medicine);
     const selector = mode === 'edit' ? '.edit-medicine-basic-field' : '.medicine-basic-field';
     document.querySelectorAll(selector).forEach(field => field.classList.toggle('d-none', !medicine));
-    document.querySelectorAll(`${selector}.medicine-classification-basic-field`).forEach(field => field.classList.toggle('d-none', !medicine));
     document.getElementById(mode === 'edit' ? 'editProductTypeField' : 'productTypeField')?.classList.toggle('d-none', medicine);
-    const classification = document.getElementById(`${prefix}MedicineClassification`);
     const generic = document.getElementById(`${prefix}GenericName`);
     const brand = document.getElementById(mode === 'edit' ? 'editProductBrand' : 'productBrandName');
     const productName = document.getElementById(mode === 'edit' ? 'editProductName' : 'productName');
     const productNameField = document.getElementById(mode === 'edit' ? 'editProductNameField' : 'productNameField');
     const brandLabel = document.getElementById(mode === 'edit' ? 'editProductBrandLabel' : 'productBrandLabel');
-    [classification, generic].filter(Boolean).forEach(field => {
-        const skuOwnedClassification = field === classification && medicine;
-        field.disabled = !medicine || skuOwnedClassification;
-        field.required = medicine && !skuOwnedClassification;
-        if (!medicine && clear) field.value = '';
-    });
+    if (generic) {
+        generic.disabled = !medicine;
+        generic.required = medicine;
+        if (!medicine && clear) generic.value = '';
+    }
     productNameField?.classList.toggle('d-none', medicine);
     if (productName) {
         productName.disabled = medicine;
@@ -1377,7 +1504,7 @@ function buildProductPayload() {
         price: firstVariation.price || '0',
         barcode: firstVariation.barcode || '',
         generic_name: genericName,
-        medicine_classification: firstVariation.medicine_classification || getValue('productMedicineClassification'),
+        medicine_classification: firstVariation.medicine_classification || '',
         status: 'Active',
         pricing_method: pricingMethod,
         variations
@@ -1715,6 +1842,7 @@ async function loadProductsTable(options = {}) {
             });
             let renderMs = 0;
             replaceProducts(freshProducts);
+            if (changed && productState.pricingSelectionMode) loadMarkupSelectionPreview();
             if (changed || !cachedProducts) {
                 const renderStartedAt = performance.now();
                 renderProductCards();
@@ -1737,7 +1865,7 @@ async function loadProductsTable(options = {}) {
             } else {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="text-center text-danger py-4">
+                        <td colspan="10" class="text-center text-danger py-4">
                             <div>${escapeHtml(err.message)}</div>
                             <button class="btn btn-sm btn-outline-primary mt-2 retry-products-btn" type="button">Retry</button>
                         </td>
@@ -2327,7 +2455,7 @@ function dynamicVariationEntry(variation = {}, canDelete = true, mode = 'add') {
     const skuTail = medicine
         ? `${inventoryUnitField(variation)}${sellingPriceField(variation)}${barcodeField}`
         : `${inventoryUnitField(variation)}${barcodeField}${sellingPriceField(variation)}`;
-    const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div><div class="sku-classification-field"><label class="form-label">Medicine Classification <span class="text-danger">*</span></label><select class="form-select medicine-sku-classification" required>${medicineSkuClassificationOptions(variation.medicine_classification || getValue(mode === 'edit' ? 'editProductMedicineClassification' : 'productMedicineClassification'))}</select></div></div>` : '';
+    const skuIdentity = medicine ? `<div class="sku-medicine-identity-grid"><div class="sku-dosage-form-field"><label class="form-label">Dosage Form <span class="text-danger">*</span></label><div class="dosage-form-control"><select class="form-select medicine-sku-type" required>${medicineSkuTypeOptions(variation.type_id || getValue(mode === 'edit' ? 'editProductType' : 'productType'), mode, variation.type_name || '')}</select></div></div><div class="sku-classification-field"><label class="form-label">Medicine Classification <span class="text-danger">*</span></label><select class="form-select medicine-sku-classification" required>${medicineSkuClassificationOptions(variation.medicine_classification || '')}</select></div></div>` : '';
     return `<div class="edit-variation-entry${medicine ? ' is-medicine-variation' : ''}" data-show-all-specifications="${variation.show_all_specifications ? '1' : '0'}"><div class="d-flex align-items-center justify-content-end gap-2 mb-3"><button class="btn btn-sm btn-outline-secondary btn-customize-specifications" type="button"><i class="fa-solid fa-gear me-1"></i>Customize Specifications</button><input class="form-check-input edit-var-default d-none" type="radio" name="${mode}DefaultVariation" ${String(variation.is_default ?? 1) === '1' ? 'checked' : ''}>${deleteButton}</div>${empty}<div class="dynamic-specification-grid">${skuIdentity}${fields}${skuTail}</div></div>`;
 }
 
@@ -2597,7 +2725,6 @@ async function openCreateAnotherVariant(product) {
     document.getElementById('productBrandName').value = product.brand_name || '';
     document.getElementById('productName').value = product.product_name || '';
     document.getElementById('productGenericName').value = product.generic_name || '';
-    setSelectValue('productMedicineClassification', product.medicine_classification || '');
     const categorySelect = document.getElementById('productCategory');
     const typeSelect = document.getElementById('productType');
     if (categorySelect) categorySelect.innerHTML = `<option value="${escapeHtml(product.category_id || '')}" data-category-name="${escapeHtml(product.category_name || '')}" selected>${escapeHtml(product.category_name || 'Current category')}</option>`;
@@ -2752,12 +2879,15 @@ function updateEditPricingView({ preserveApply = false } = {}) {
     const note = document.getElementById('editPricingActionNote');
     if (note) note.textContent = method === 'manual'
         ? 'Category and supplier-cost changes will not overwrite this manual price.'
+        : context.cost === null
+            ? 'An accepted delivery with a unit cost is needed to calculate a markup price. You can save the markup method now.'
         : editPricingApplyRequested
             ? `The calculated price ${calculatedLabel} will become active when you save.`
             : 'Saving the pricing method preserves the active price unless you explicitly apply the calculation.';
 }
 
 async function openEditProduct(productId) {
+    if (productState.pricingSelectionMode) return;
     const product = getProductById(productId);
     const modalElement = document.getElementById('editProductModal');
 
@@ -2767,8 +2897,14 @@ async function openEditProduct(productId) {
     document.getElementById('editProductBrand').value = product.brand_name || '';
     document.getElementById('editProductName').value = product.product_name || '';
     document.getElementById('editProductGenericName').value = product.generic_name || '';
-    setSelectValue('editProductMedicineClassification', product.medicine_classification || '');
     document.getElementById('editProductStatus').value = product.status || 'Active';
+    const statusAction = document.getElementById('editProductStatusAction');
+    if (statusAction) {
+        const active = (product.status || 'Active') === 'Active';
+        statusAction.textContent = active ? 'Deactivate Product' : 'Activate Product';
+        statusAction.classList.toggle('btn-outline-warning', active);
+        statusAction.classList.toggle('btn-outline-success', !active);
+    }
     document.getElementById('editProductPricingMethod').value = product.pricing_method || product.pricing?.pricing_method || 'manual';
     document.getElementById('editProductCustomMarkup').value = product.pricing?.custom_markup_percentage ?? '';
     editPricingApplyRequested = false;
@@ -2823,7 +2959,6 @@ async function openEditProduct(productId) {
         if (detailResult.status === 'fulfilled') productDetailsCache.set(String(product.product_id), details);
         const hydratedProduct = { ...product, ...(details.product || {}) };
         document.getElementById('editProductGenericName').value = hydratedProduct.generic_name || '';
-        setSelectValue('editProductMedicineClassification', hydratedProduct.medicine_classification || '');
         const rawSavedSpecifications = Array.isArray(details.specifications) && details.specifications.length
             ? details.specifications
             : (Array.isArray(product.specifications) && product.specifications.length ? product.specifications : legacySpecificationsForProduct(hydratedProduct));
@@ -2858,7 +2993,7 @@ async function submitEditProduct(event) {
         category_id: getValue('editProductCategory'),
         type_id: collectEditVariations().find(variation => !variation.delete)?.type_id || getValue('editProductType'),
         generic_name: genericName,
-        medicine_classification: collectEditVariations().find(variation => !variation.delete)?.medicine_classification || getValue('editProductMedicineClassification'),
+        medicine_classification: collectEditVariations().find(variation => !variation.delete)?.medicine_classification || '',
         status: getValue('editProductStatus') || 'Active',
         pricing_method: pricingMethod,
         variations: collectEditVariations()
@@ -2898,7 +3033,7 @@ async function submitEditProduct(event) {
 
         const currentProduct = getProductById(payload.product_id) || {};
         const primaryVariation = payload.variations.find(variation => !variation.delete) || {};
-        const savedPrice = primaryVariation.price || payload.manual_selling_price || currentProduct.price || 0;
+        const savedPrice = data.price ?? primaryVariation.price ?? payload.manual_selling_price ?? currentProduct.price ?? 0;
         const savedSpecifications = normalizeProductSpecificationValues(
             productState.specifications,
             primaryVariation.specifications || currentProduct.specifications || [],
@@ -2980,11 +3115,11 @@ async function deleteProduct(productId) {
 }
 
 function selectedPricingIds() {
-    return Array.from(productState.selectedPricingProductIds);
+    return selectedEligibleProductIds();
 }
 
 function pricingMethodDisplay(method) {
-    return { category_markup: 'Category markup', custom_markup: 'Custom markup', manual: 'Manual price' }[method] || 'Manual price';
+    return { category_markup: 'Category Markup', custom_markup: 'Custom Markup', manual: 'Manual Price' }[method] || 'Manual Price';
 }
 
 function enrichSelectedPricingRow(row) {
@@ -2998,15 +3133,45 @@ function enrichSelectedPricingRow(row) {
     };
 }
 
+function selectedPricingUnitLines(row) {
+    if (Array.isArray(row.sellable_units) && row.sellable_units.length) return row.sellable_units;
+    return [{
+        sellable_unit: row.inventory_unit || '—',
+        unit_cost: row.current_cost_basis,
+        current_price: row.current_selling_price,
+        markup_percentage: row.applied_markup_percentage,
+        new_price: row.calculated_selling_price
+    }];
+}
+
+function selectedPricingChange(unit) {
+    const current = Number(unit.current_price);
+    const next = Number(unit.new_price);
+    if (unit.current_price === null || unit.current_price === undefined || unit.new_price === null || unit.new_price === undefined || !Number.isFinite(current) || !Number.isFinite(next)) return null;
+    const amount = Math.round((next - current) * 100) / 100;
+    return { amount, percent: current > 0 ? (amount / current) * 100 : null };
+}
+
 function updateSelectedPricingPreviewSummary() {
     const selectedCount = selectedPricingEligibleProductIds.size;
     const eligibleCount = selectedPricingPreviewRows.filter(row => row.eligible_for_apply).length;
     const blockedCount = selectedPricingPreviewRows.length - eligibleCount;
+    const warningCount = selectedPricingPreviewRows.filter(row => selectedPricingEligibleProductIds.has(String(row.product_id)) && (row.warning || (row.existing_pricing_method === 'manual' && selectedPricingUnitLines(row).some(unit => (selectedPricingChange(unit)?.amount ?? 0) < 0)))).length;
+    const reviewCount = selectedPricingPreviewRows.filter(row => row.review_note && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
     setPricingText('selectedPricingSelectedCount', String(selectedCount));
     setPricingText('selectedPricingEligibleCount', String(eligibleCount));
     setPricingText('selectedPricingBlockedCount', String(blockedCount));
+    setPricingText('selectedPricingWarningCount', String(warningCount));
     const summary = document.getElementById('selectedPricingPreviewSummary');
-    if (summary) summary.textContent = `${selectedCount} eligible product${selectedCount === 1 ? '' : 's'} selected for application. ${blockedCount ? `${blockedCount} product${blockedCount === 1 ? '' : 's'} cannot be applied because pricing is current, cost is missing, or the product is inactive.` : 'All previewed products are eligible.'}`;
+    if (summary) {
+        const parts = [`${selectedCount} product${selectedCount === 1 ? '' : 's'} selected.`];
+        if (warningCount) parts.push(`${warningCount} product${warningCount === 1 ? '' : 's'} need price review before applying.`);
+        const manualCount = selectedPricingPreviewRows.filter(row => row.existing_pricing_method === 'manual' && selectedPricingEligibleProductIds.has(String(row.product_id))).length;
+        if (manualCount) parts.push(`${manualCount} manual price${manualCount === 1 ? '' : 's'} will be replaced only with Admin confirmation.`);
+        if (reviewCount) parts.push(`${reviewCount} medicine price${reviewCount === 1 ? '' : 's'} have no verified ceiling and need manual review.`);
+        if (blockedCount) parts.push(`${blockedCount} excluded. Products without an accepted unit cost stay unchanged.`);
+        summary.textContent = parts.join(' ');
+    }
     const confirm = document.getElementById('btnConfirmSelectedPricing');
     if (confirm) confirm.disabled = selectedCount === 0 || selectedPricingSubmissionActive;
 }
@@ -3015,38 +3180,59 @@ function renderSelectedPricingPreview() {
     const body = document.getElementById('selectedPricingPreviewBody');
     if (!body) return;
     const query = getValue('selectedPricingSearch').toLowerCase();
-    const rows = selectedPricingPreviewRows.filter(row => !query || [row.barcode, row.brand_name, row.product_name, row.specification, row.category]
-        .some(value => String(value || '').toLowerCase().includes(query)));
+    const rows = selectedPricingPreviewRows.filter(row => {
+        if (!query) return true;
+        const units = selectedPricingUnitLines(row).map(unit => unit.sellable_unit).join(' ');
+        return [row.product, row.product_name, row.category, row.eligibility_status, units]
+            .some(value => String(value || '').toLowerCase().includes(query));
+    });
     body.innerHTML = rows.map(row => {
         const eligible = Boolean(row.eligible_for_apply);
         const checked = eligible && selectedPricingEligibleProductIds.has(String(row.product_id));
-        return `<tr class="${eligible ? '' : 'is-ineligible'}">
-            <td class="center-column"><input class="form-check-input bulk-pricing-select" type="checkbox" value="${escapeHtml(row.product_id)}" aria-label="Select ${escapeHtml(row.product_name)}" ${checked ? 'checked' : ''} ${eligible ? '' : 'disabled'}></td>
-            <td class="text-column"><span class="identity-value" title="${escapeHtml(row.barcode)}">${escapeHtml(row.barcode)}</span></td>
-            <td class="text-column"><span class="identity-value">${escapeHtml(row.brand_name)}</span></td>
-            <td class="text-column"><span class="identity-value">${escapeHtml(row.product_name)}</span></td>
-            <td class="text-column"><span class="specification-value">${escapeHtml(row.specification)}</span></td>
-            <td class="text-column">${escapeHtml(row.category)}</td>
-            <td class="text-column">${escapeHtml(pricingMethodDisplay(row.existing_pricing_method))}</td>
-            <td class="numeric-column">${row.current_cost_basis === null ? '<span class="text-danger">No accepted cost</span>' : `${formatPrice(row.current_cost_basis)}<small class="d-block text-muted">per ${escapeHtml(row.inventory_unit)}</small>`}</td>
-            <td class="numeric-column">${Number(row.applied_markup_percentage).toFixed(2)}%<small class="d-block text-muted">${escapeHtml(row.markup_source)}</small></td>
-            <td class="numeric-column">${formatPrice(row.current_selling_price)}</td>
-            <td class="numeric-column">${row.calculated_selling_price === null ? '—' : formatPrice(row.calculated_selling_price)}</td>
-            <td class="numeric-column">${row.difference === null ? '—' : signedPrice(row.difference)}</td>
-            <td class="center-column"><span class="bulk-pricing-status ${eligible ? 'is-ready' : 'is-blocked'}">${escapeHtml(row.eligibility_status || (eligible ? 'Ready' : 'Cannot apply'))}</span></td>
+        const lines = selectedPricingUnitLines(row);
+        const manual = row.existing_pricing_method === 'manual';
+        const manualDrop = manual && lines.some(unit => (selectedPricingChange(unit)?.amount ?? 0) < 0);
+        const statusClass = eligible ? (row.warning || row.review_note || manualDrop ? 'is-warning' : 'is-ready') : 'is-blocked';
+        const statusText = row.eligibility_status || (eligible ? 'Ready' : 'Excluded');
+        return lines.map((unit, index) => {
+            const change = selectedPricingChange(unit);
+            const decrease = change && change.amount < -0.004;
+            const increase = change && change.amount > 0.004;
+            const changeText = change ? `${change.amount > 0 ? '+' : change.amount < 0 ? '−' : ''}${formatPrice(Math.abs(change.amount))}` : '—';
+            const changePercent = change?.percent === null || change?.percent === undefined ? '' : `${change.percent > 0 ? '+' : ''}${change.percent.toFixed(1)}%`;
+            return `<tr class="${eligible ? (decrease && manual ? 'has-manual-price-drop' : row.warning ? 'has-price-warning' : '') : 'is-ineligible'}">
+            ${index === 0 ? `<td class="center-column" rowspan="${lines.length}"><input class="form-check-input bulk-pricing-select" type="checkbox" value="${escapeHtml(row.product_id)}" aria-label="Select ${escapeHtml(row.product_name || row.product)}" ${checked ? 'checked' : ''} ${eligible ? '' : 'disabled'}></td>
+            <td class="text-column" rowspan="${lines.length}"><span class="identity-value">${escapeHtml(row.product_name || row.product)}</span>${manual && eligible ? '<small class="manual-overwrite-note">Manual price will be replaced</small>' : ''}</td>
+            <td class="text-column" rowspan="${lines.length}">${escapeHtml(row.category || '—')}</td>` : ''}
+            <td class="text-column">${escapeHtml(unit.sellable_unit || '—')}</td>
+            <td class="numeric-column">${unit.unit_cost === null || unit.unit_cost === undefined ? '<span class="text-danger">No accepted cost</span>' : formatPrice(unit.unit_cost)}</td>
+            <td class="numeric-column">${unit.current_price === null || unit.current_price === undefined ? '—' : formatPrice(unit.current_price)}</td>
+            <td class="numeric-column">${unit.markup_percentage === null || unit.markup_percentage === undefined ? '—' : `${Number(Number(unit.markup_percentage).toFixed(2))}%`}</td>
+            <td class="numeric-column ${decrease && manual ? 'bulk-pricing-warning-value' : ''}">${unit.new_price === null || unit.new_price === undefined ? '—' : formatPrice(unit.new_price)}</td>
+            <td class="numeric-column price-change ${decrease ? 'is-decrease' : increase ? 'is-increase' : ''}"><strong>${changeText}</strong>${changePercent ? `<small>${changePercent}</small>` : ''}</td>
+            ${index === 0 ? `<td class="text-column" rowspan="${lines.length}"><span class="pricing-method-badge ${manual ? 'pricing-method-manual' : row.existing_pricing_method === 'custom_markup' ? 'pricing-method-custom' : 'pricing-method-category'}">${escapeHtml(pricingMethodDisplay(row.existing_pricing_method))}</span><small class="d-block mt-1 text-muted">→ Category Markup</small></td>` : ''}
+            ${index === 0 ? `<td class="center-column" rowspan="${lines.length}"><span class="bulk-pricing-status ${statusClass}">${escapeHtml(statusText)}</span>${row.review_note ? `<small class="d-block text-muted mt-1">${escapeHtml(row.review_note)}</small>` : ''}</td>` : ''}
         </tr>`;
-    }).join('') || '<tr><td colspan="13" class="text-center text-muted py-4">No preview products match this search.</td></tr>';
+        }).join('');
+    }).join('') || '<tr><td colspan="11" class="text-center text-muted py-4">No preview products match this search.</td></tr>';
     updateSelectedPricingPreviewSummary();
 }
 
 async function previewSelectedCategoryPricing() {
     const productIds = selectedPricingIds();
-    if (!productIds.length) return;
+    if (!productIds.length) {
+        PharmaUtils.toast.error('Select at least one eligible product.');
+        return;
+    }
     try {
         PharmaUtils.modal.loading('Preparing Pricing Preview...');
         const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/apply_selected_category_pricing.php`, {
             method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'preview', product_ids: productIds })
+            body: JSON.stringify({
+            action: 'preview',
+            product_ids: productIds,
+            replace_manual: true
+        })
         });
         PharmaUtils.modal.close();
         selectedPricingPreviewRows = (response.products || []).map(enrichSelectedPricingRow);
@@ -3064,6 +3250,35 @@ async function previewSelectedCategoryPricing() {
 async function applySelectedCategoryPricing() {
     const productIds = Array.from(selectedPricingEligibleProductIds);
     if (!productIds.length || selectedPricingSubmissionActive) return;
+    const selectedRows = selectedPricingPreviewRows.filter(row => productIds.includes(String(row.product_id)));
+    const manualRows = selectedRows.filter(row => row.existing_pricing_method === 'manual');
+    const replaceManual = Boolean(document.getElementById('selectedPricingReplaceManual')?.checked);
+    if (manualRows.length && !replaceManual) {
+        PharmaUtils.toast.error('Confirm replacement of manual prices before applying.');
+        document.getElementById('selectedPricingReplaceManual')?.focus();
+        return;
+    }
+    const flagged = selectedRows.filter(row => row.warning);
+    const reviews = selectedRows.filter(row => row.review_note);
+    const warningList = flagged.length
+        ? `<ul class="text-start small mt-2 mb-0">${flagged.map(row => `<li>${escapeHtml(row.product)}: ${escapeHtml(row.warning)}</li>`).join('')}</ul>`
+        : '';
+    const reviewList = reviews.length
+        ? `<p class="small mb-0">Medicine prices with no verified ceiling stay flagged for manual review: ${reviews.map(row => escapeHtml(row.product)).join(', ')}.</p>`
+        : '';
+    const approval = await Swal.fire({
+        icon: flagged.length || manualRows.length ? 'warning' : 'question',
+        title: 'Confirm Category Markup',
+        html: `<p>${productIds.length} selected product${productIds.length === 1 ? '' : 's'} will update every configured sellable unit. Shelf Inventory and both POS screens use those selling prices.</p>${manualRows.length ? `<p class="text-danger fw-bold">${manualRows.length} manual-priced product${manualRows.length === 1 ? '' : 's'} will switch to Category Markup. Their current manual prices will be overwritten.</p>` : ''}${reviewList}${warningList}`,
+        showCancelButton: true,
+        confirmButtonText: `Apply to ${productIds.length} Product${productIds.length === 1 ? '' : 's'}`,
+        ...(flagged.length ? {
+            input: 'checkbox',
+            inputPlaceholder: 'I am an Admin and I approve the flagged price changes.',
+            inputValidator: value => value ? undefined : 'Admin approval is required for flagged price changes.'
+        } : {})
+    });
+    if (!approval.isConfirmed) return;
     const confirm = document.getElementById('btnConfirmSelectedPricing');
     try {
         selectedPricingSubmissionActive = true;
@@ -3074,7 +3289,12 @@ async function applySelectedCategoryPricing() {
         PharmaUtils.modal.loading('Applying Category Markup...');
         const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/apply_selected_category_pricing.php`, {
             method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'apply', product_ids: productIds })
+            body: JSON.stringify({
+                action: 'apply', product_ids: productIds,
+                confirm_flagged: flagged.length > 0 && Boolean(approval.value),
+                replace_manual: true,
+                preview_tokens: Object.fromEntries(selectedRows.map(row => [row.product_id, row.preview_token]))
+            })
         });
         PharmaUtils.modal.close();
         bootstrap.Modal.getInstance(document.getElementById('selectedPricingModal'))?.hide();
@@ -3093,39 +3313,130 @@ async function applySelectedCategoryPricing() {
     }
 }
 
+function selectEligibleProductsByCategory() {
+    const eligible = eligibleProductsInScope();
+    if (!eligible.length) {
+        PharmaUtils.toast.error('No eligible products in this view. Products without an accepted unit cost stay unselected.');
+        return;
+    }
+    selectAllEligibleInScope(true);
+    const categoryName = document.getElementById('markupCategorySelect')?.selectedOptions?.[0]?.textContent || 'this view';
+    PharmaUtils.toast.success(`${eligible.length} eligible ${categoryName} product${eligible.length === 1 ? '' : 's'} selected.`);
+}
+
+async function openCategoryMarkupManager() {
+    const categories = await cachedCategories(true);
+    const ordered = ['Medicine', 'Grocery', 'Medical Supplies']
+        .map(name => categories.find(row => row.category_name === name))
+        .filter(Boolean);
+    const fields = document.getElementById('categoryMarkupFields');
+    const error = document.getElementById('categoryMarkupError');
+    if (error) error.textContent = '';
+    if (!fields || ordered.length !== 3) {
+        throw new Error('Medicine, Grocery, and Medical Supplies markups are unavailable.');
+    }
+    fields.innerHTML = ordered.map(category => `<div class="mb-3">
+        <label class="form-label" for="categoryMarkup-${escapeHtml(category.category_id)}">${escapeHtml(category.category_name)}</label>
+        <div class="input-group">
+            <input class="form-control" id="categoryMarkup-${escapeHtml(category.category_id)}" data-category-id="${escapeHtml(category.category_id)}" data-category-name="${escapeHtml(category.category_name)}" data-pricing-behavior="${escapeHtml(category.pricing_behavior || 'review_required')}" type="number" min="0" max="1000" step="0.01" value="${Number(category.default_markup_percentage).toFixed(2)}" required>
+            <span class="input-group-text">%</span>
+        </div>
+    </div>`).join('');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('categoryMarkupModal')).show();
+}
+
+async function saveCategoryMarkups() {
+    const inputs = Array.from(document.querySelectorAll('#categoryMarkupFields input[data-category-id]'));
+    const error = document.getElementById('categoryMarkupError');
+    if (error) error.textContent = '';
+    if (inputs.length !== 3) throw new Error('Enter a markup for Medicine, Grocery, and Medical Supplies.');
+    inputs.forEach(input => {
+        const value = Number(input.value);
+        if (!Number.isFinite(value) || value < 0 || value > 1000) {
+            throw new Error(`${input.dataset.categoryName} markup must be from 0 to 1000.`);
+        }
+    });
+    for (const input of inputs) {
+        await PharmaUtils.safeFetch(`${API_BASE_URL}/products/save_category.php`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                category_id: input.dataset.categoryId,
+                category_name: input.dataset.categoryName,
+                default_markup_percentage: Number(input.value),
+                pricing_behavior: input.dataset.pricingBehavior || 'review_required',
+                apply_prices: false
+            })
+        });
+    }
+    referenceCache.categories = null;
+    await cachedCategories(true);
+    bootstrap.Modal.getInstance(document.getElementById('categoryMarkupModal'))?.hide();
+    PharmaUtils.toast.success('Category markups saved. Current prices stay in place until you apply them.');
+}
+
 function initProductCards() {
     if (document.body.dataset.productCardsReady === '1') return;
     document.body.dataset.productCardsReady = '1';
 
     populateProductCardFilters();
+    document.getElementById('productCategoryTabs')?.addEventListener('click', event => {
+        const tab = event.target.closest('.product-category-tab');
+        if (!tab) return;
+        applyProductCategoryFilter(tab.dataset.categoryId || '');
+    });
+    document.getElementById('btnCategorySpecifications')?.addEventListener('click', () => {
+        openCategorySpecificationSettings().catch(error => PharmaUtils.toast.error(error.message || 'Unable to open specifications.'));
+    });
+    document.getElementById('specificationCategorySelect')?.addEventListener('change', event => {
+        loadCategorySpecificationType(event.target.value).catch(error => showCustomizerError('customSpecificationError', error.message));
+    });
+    document.getElementById('specificationCategoryChoices')?.addEventListener('click', event => {
+        const choice = event.target.closest('.specification-category-choice');
+        if (!choice) return;
+        document.getElementById('specificationCategorySelect').value = choice.dataset.categoryId;
+        loadCategorySpecificationType(choice.dataset.categoryId).catch(error => showCustomizerError('customSpecificationError', error.message));
+    });
+    document.getElementById('specificationTypeSelect')?.addEventListener('change', event => {
+        loadCategorySpecificationType(getValue('specificationCategorySelect'), event.target.value).catch(error => showCustomizerError('customSpecificationError', error.message));
+    });
+    document.getElementById('customizeSpecificationsModal')?.addEventListener('hidden.bs.modal', () => {
+        document.getElementById('customizeSpecificationsModal').dataset.categoryMode = '0';
+        document.getElementById('categorySpecificationControls')?.classList.add('d-none');
+        document.getElementById('specificationCategoryChoices')?.classList.add('d-none');
+        resetNewSpecificationEditor();
+        setSpecificationCustomizerView('list');
+    });
 
     ['productSearchInput', 'medicineClassificationFilter', 'productStatusFilter', 'productPricingFilter'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', renderProductCards);
         document.getElementById(id)?.addEventListener('change', renderProductCards);
     });
 
-    document.getElementById('productCategoryFilter')?.addEventListener('change', async (event) => {
-        updateMedicineClassificationFilter();
-        renderProductCards();
+    document.getElementById('productCategoryFilter')?.addEventListener('change', event => {
+        applyProductCategoryFilter(event.target.value);
     });
 
     document.getElementById('table-products')?.addEventListener('click', (event) => {
-        if (event.target.closest('.product-pricing-select')) {
-            event.stopPropagation();
+        const row = event.target.closest('.product-row');
+        if (productState.pricingSelectionMode) {
+            if (!row || event.target.closest('.product-pricing-select, .form-check-input')) return;
+            event.preventDefault();
+            if (row.dataset.markupEligible !== '1') return;
+            toggleMarkupProduct(row.dataset.productId);
             return;
         }
         const viewButton = event.target.closest('.view-product-btn');
         const editButton = event.target.closest('.edit-product-btn');
         const deleteButton = event.target.closest('.delete-product-btn');
         const barcodeButton = event.target.closest('.product-barcode-toggle');
-        const row = event.target.closest('.product-row');
 
         if (barcodeButton) {
             event.stopPropagation();
             openBarcodeModal(barcodeButton.dataset.productId);
             return;
         }
-
 
         if (viewButton) {
             event.stopPropagation();
@@ -3149,25 +3460,45 @@ function initProductCards() {
     });
     document.getElementById('table-products')?.addEventListener('change', event => {
         const checkbox = event.target.closest('.product-pricing-select');
-        if (!checkbox) return;
-        if (checkbox.checked) productState.selectedPricingProductIds.add(String(checkbox.value));
-        else productState.selectedPricingProductIds.delete(String(checkbox.value));
-        syncSelectedPricingControls();
+        if (!checkbox || checkbox.disabled) return;
+        toggleMarkupProduct(checkbox.value, checkbox.checked);
     });
     document.getElementById('table-products')?.addEventListener('click', event => {
         if (event.target.closest('.retry-products-btn')) loadProductsTable();
     });
     document.getElementById('selectAllProductsForPricing')?.addEventListener('change', event => {
-        document.querySelectorAll('.product-pricing-select').forEach(checkbox => {
-            checkbox.checked = event.target.checked;
-            if (checkbox.checked) productState.selectedPricingProductIds.add(String(checkbox.value));
-            else productState.selectedPricingProductIds.delete(String(checkbox.value));
-        });
-        syncSelectedPricingControls();
+        selectAllEligibleInScope(event.target.checked);
     });
-    document.getElementById('btnApplySelectedPricing')?.addEventListener('click', previewSelectedCategoryPricing);
-    document.getElementById('btnManagePrices')?.addEventListener('click', enterPricingSelectionMode);
+    document.getElementById('btnPreviewMarkupPrices')?.addEventListener('click', () => {
+        const replaceManual = document.getElementById('selectedPricingReplaceManual');
+        if (replaceManual) replaceManual.checked = false;
+        previewSelectedCategoryPricing();
+    });
+    document.getElementById('btnSelectAllEligible')?.addEventListener('click', selectEligibleProductsByCategory);
+    document.getElementById('markupCategorySelect')?.addEventListener('change', event => {
+        applyProductCategoryFilter(event.target.value);
+    });
+    document.getElementById('btnEnterMarkupMode')?.addEventListener('click', enterPricingSelectionMode);
+    document.getElementById('btnManageCategoryMarkup')?.addEventListener('click', () => {
+        openCategoryMarkupManager().catch(error => PharmaUtils.toast.error(error.message || 'Unable to open category markup.'));
+    });
+    document.getElementById('categoryMarkupForm')?.addEventListener('submit', event => {
+        event.preventDefault();
+        saveCategoryMarkups().catch(error => {
+            const target = document.getElementById('categoryMarkupError');
+            if (target) target.textContent = error.message || 'Unable to save category markup.';
+        });
+    });
     document.getElementById('btnExitPricingSelection')?.addEventListener('click', exitPricingSelectionMode);
+    document.getElementById('editProductStatusAction')?.addEventListener('click', async () => {
+        const productId = getValue('editProductId');
+        const previous = getProductById(productId)?.status;
+        await deleteProduct(productId);
+        if (getProductById(productId)?.status !== previous) {
+            document.getElementById('editProductStatus').value = getProductById(productId)?.status || 'Active';
+            bootstrap.Modal.getInstance(document.getElementById('editProductModal'))?.hide();
+        }
+    });
     document.getElementById('btnConfirmSelectedPricing')?.addEventListener('click', applySelectedCategoryPricing);
     document.getElementById('selectedPricingPreviewBody')?.addEventListener('change', event => {
         const checkbox = event.target.closest('.bulk-pricing-select');
@@ -3182,7 +3513,8 @@ function initProductCards() {
         document.getElementById('selectedPricingSearch')?.focus({ preventScroll: true });
     });
     document.getElementById('selectedPricingModal')?.addEventListener('hidden.bs.modal', () => {
-        exitPricingSelectionMode();
+        if (!productState.pricingSelectionMode) return;
+        syncSelectedPricingControls();
     });
 
     document.getElementById('productDetailsEditButton')?.addEventListener('click', () => {
@@ -3428,6 +3760,29 @@ async function deleteProductType(typeId, typeName) {
     PharmaUtils.toast.success(response.message);
 }
 
+function resetNewSpecificationEditor() {
+    document.getElementById('newSpecificationName').value = '';
+    document.getElementById('newSpecificationStyle').value = 'Selection List';
+    document.getElementById('measurementGroupEditor')?.classList.add('d-none');
+    document.getElementById('selectionChoiceEditor')?.classList.remove('d-none');
+    renderSpecificationChoiceList('newSpecificationChoiceList');
+}
+
+function setSpecificationCustomizerView(view) {
+    const modal = document.getElementById('customizeSpecificationsModal');
+    if (!modal) return;
+    const nextView = view === 'add' || view === 'edit' ? view : 'list';
+    modal.dataset.specView = nextView;
+    document.getElementById('specificationListPane')?.classList.toggle('d-none', nextView !== 'list');
+    document.getElementById('newSpecificationEditor')?.classList.toggle('d-none', nextView !== 'add');
+    document.getElementById('editSpecificationEditor')?.classList.toggle('d-none', nextView !== 'edit');
+    const body = modal.querySelector('.modal-body');
+    if (body) body.scrollTop = 0;
+    if (nextView === 'add') {
+        window.setTimeout(() => document.getElementById('newSpecificationName')?.focus(), 50);
+    }
+}
+
 function renderSpecificationAssignments() {
     const assigned = new Set(productState.specifications.map(specification => String(specification.specification_id)));
     const container = document.getElementById('specificationAssignmentList');
@@ -3492,8 +3847,7 @@ function openSpecificationEditor(specificationId) {
     document.getElementById('editSpecificationScope').textContent = Number(specification.usage_count) > 1
         ? 'This is shared. Display Name applies to this Product Type; selection choices are shared wherever this specification is used.'
         : (Number(specification.value_count) > 0 ? 'The name can change, but structure remains protected because saved products use it.' : 'This specification is only used here, so its name and structure can be edited safely.');
-    document.getElementById('newSpecificationEditor')?.classList.add('d-none');
-    document.getElementById('editSpecificationEditor')?.classList.remove('d-none');
+    setSpecificationCustomizerView('edit');
     configureSpecificationEditFields();
 }
 
@@ -3525,7 +3879,7 @@ async function deleteSpecification(specificationId) {
     });
 
     pendingSpecificationEdits.delete(String(specificationId));
-    document.getElementById('editSpecificationEditor')?.classList.add('d-none');
+    setSpecificationCustomizerView('list');
     invalidateProductListCache();
     invalidateProductConfiguration(typeId);
     await loadProductConfiguration(typeId, { forceRefresh: true });
@@ -3543,14 +3897,63 @@ async function deleteSpecification(specificationId) {
     PharmaUtils.toast.success(response.message);
 }
 
+async function loadCategorySpecificationType(categoryId, selectedTypeId = '') {
+    const typeSelect = document.getElementById('specificationTypeSelect');
+    document.querySelectorAll('#specificationCategoryChoices .specification-category-choice').forEach(button => {
+        const active = String(button.dataset.categoryId) === String(categoryId);
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+    });
+    const types = await cachedProductTypes(categoryId);
+    typeSelect.innerHTML = types.map(type => `<option value="${escapeHtml(type.type_id)}">${escapeHtml(type.type_name)}</option>`).join('');
+    if (!types.length) {
+        document.getElementById('specificationAssignmentList').innerHTML = '<div class="p-3 text-muted">No product types exist in this category.</div>';
+        return;
+    }
+    typeSelect.value = selectedTypeId && types.some(type => String(type.type_id) === String(selectedTypeId)) ? String(selectedTypeId) : String(types[0].type_id);
+    const typeId = typeSelect.value;
+    document.getElementById('specificationCustomizerContext').textContent = `${types.find(type => String(type.type_id) === typeId)?.type_name || 'Product type'} · ${document.getElementById('specificationCategorySelect')?.selectedOptions?.[0]?.textContent || ''}`;
+    await loadProductConfiguration(typeId, { forceRefresh: true });
+    pendingSpecificationEdits = new Map();
+    resetNewSpecificationEditor();
+    setSpecificationCustomizerView('list');
+    renderSpecificationAssignments();
+}
+
+async function openCategorySpecificationSettings() {
+    const modal = document.getElementById('customizeSpecificationsModal');
+    const categorySelect = document.getElementById('specificationCategorySelect');
+    if (!modal || !categorySelect) return;
+    const categories = await cachedCategories();
+    categorySelect.innerHTML = categories.map(category => `<option value="${escapeHtml(category.category_id)}">${escapeHtml(category.category_name)}</option>`).join('');
+    if (!categories.length) return;
+    const preferred = getValue('productCategoryFilter');
+    categorySelect.value = preferred || String(categories.find(category => String(category.category_name).toLowerCase() === 'medicine')?.category_id || categories[0].category_id);
+    const choices = document.getElementById('specificationCategoryChoices');
+    if (choices) choices.innerHTML = categories.map(category => `<button type="button" class="specification-category-choice" data-category-id="${escapeHtml(category.category_id)}" data-category-name="${escapeHtml(String(category.category_name).toLowerCase())}"><span class="specification-category-dot"></span>${escapeHtml(category.category_name)}</button>`).join('');
+    modal.dataset.categoryMode = '1';
+    modal.dataset.editMode = '0';
+    document.getElementById('categorySpecificationControls')?.classList.remove('d-none');
+    choices?.classList.remove('d-none');
+    showNestedModal('customizeSpecificationsModal');
+    try {
+        await loadCategorySpecificationType(categorySelect.value);
+    } catch (error) {
+        showCustomizerError('customSpecificationError', error.message || 'Unable to load fields.');
+    }
+}
+
 async function openSpecificationCustomizer(editMode = false, target = {}) {
-    const typeId = getValue(editMode ? 'editProductType' : 'productType');
+    const typeId = target.typeId || getValue(editMode ? 'editProductType' : 'productType');
     if (!typeId) {
         PharmaUtils.toast.error('Select a Product Type first.');
         return;
     }
+    document.getElementById('customizeSpecificationsModal').dataset.categoryMode = '0';
+    document.getElementById('categorySpecificationControls')?.classList.add('d-none');
+    document.getElementById('specificationCategoryChoices')?.classList.add('d-none');
     document.getElementById('customizeSpecificationsModal').dataset.editMode = editMode ? '1' : '0';
-    document.getElementById('specificationCustomizerContext').textContent = `${editMode ? selectedEditTypeName() : selectedAddTypeName()} · optional SKU fields`;
+    document.getElementById('specificationCustomizerContext').textContent = `${target.typeName || (editMode ? selectedEditTypeName() : selectedAddTypeName())} · optional SKU fields`;
     pendingSpecificationEdits = new Map();
     const cachedConfiguration = referenceCache.configurationsByType.get(String(typeId));
     if (cachedConfiguration) {
@@ -3560,13 +3963,9 @@ async function openSpecificationCustomizer(editMode = false, target = {}) {
         const assignments = document.getElementById('specificationAssignmentList');
         if (assignments) assignments.innerHTML = '<div class="p-3 text-muted text-center"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading specifications...</div>';
     }
-    document.getElementById('newSpecificationEditor').classList.add('d-none');
-    document.getElementById('editSpecificationEditor').classList.add('d-none');
-    document.getElementById('newSpecificationName').value = '';
-    document.getElementById('newSpecificationStyle').value = 'Selection List';
-    document.getElementById('measurementGroupEditor').classList.add('d-none');
-    document.getElementById('selectionChoiceEditor').classList.add('d-none');
-    renderSpecificationChoiceList('newSpecificationChoiceList');
+    resetNewSpecificationEditor();
+    document.getElementById('selectionChoiceEditor')?.classList.add('d-none');
+    setSpecificationCustomizerView('list');
     showCustomizerError('customSpecificationError');
     showNestedModal('customizeSpecificationsModal');
 
@@ -3906,12 +4305,18 @@ function initProductCustomizers() {
         } catch (error) { showCustomizerError('customProductTypeError', error.message); }
     });
     document.getElementById('btnAddSpecification')?.addEventListener('click', () => {
-        document.getElementById('editSpecificationEditor')?.classList.add('d-none');
-        const editor = document.getElementById('newSpecificationEditor');
-        editor.classList.toggle('d-none');
-        document.getElementById('measurementGroupEditor')?.classList.add('d-none');
-        document.getElementById('selectionChoiceEditor')?.classList.toggle('d-none', editor.classList.contains('d-none'));
-        renderSpecificationChoiceList('newSpecificationChoiceList');
+        resetNewSpecificationEditor();
+        const groups = document.getElementById('newSpecificationGroup');
+        if (groups && !groups.options.length) {
+            groups.innerHTML = productState.measurementGroups.map(group => `<option>${escapeHtml(group)}</option>`).join('');
+        }
+        setSpecificationCustomizerView('add');
+    });
+    document.getElementById('customizeSpecificationsModal')?.addEventListener('click', event => {
+        const back = event.target.closest('[data-spec-view="list"]');
+        if (!back || !back.classList.contains('specification-editor-back')) return;
+        if (document.getElementById('customizeSpecificationsModal')?.dataset.specView === 'add') resetNewSpecificationEditor();
+        setSpecificationCustomizerView('list');
     });
     document.getElementById('customizeSpecificationsModal')?.addEventListener('click', event => {
         const addButton = event.target.closest('.add-specification-choice');
@@ -3955,7 +4360,7 @@ function initProductCustomizers() {
             measurement_group: getValue('editSpecificationGroup'),
             choices: specificationChoiceValues('editSpecificationChoiceList'),
         });
-        document.getElementById('editSpecificationEditor')?.classList.add('d-none');
+        setSpecificationCustomizerView('list');
         renderSpecificationAssignments();
         checkedAssignments.forEach(id => { const input = document.getElementById(`assign-${id}`); if (input) input.checked = true; });
     });
@@ -3967,20 +4372,31 @@ function initProductCustomizers() {
     document.getElementById('btnSaveSpecifications')?.addEventListener('click', async () => {
         const modal = document.getElementById('customizeSpecificationsModal');
         const editMode = modal.dataset.editMode === '1';
-        const typeId = getValue(editMode ? 'editProductType' : 'productType');
+        const categoryMode = modal.dataset.categoryMode === '1';
+        const typeId = categoryMode ? getValue('specificationTypeSelect') : getValue(editMode ? 'editProductType' : 'productType');
         const assignments = Array.from(document.querySelectorAll('.specification-assignment:checked')).map(input => input.value);
-        const adding = !document.getElementById('newSpecificationEditor').classList.contains('d-none') && getValue('newSpecificationName');
+        const adding = modal.dataset.specView === 'add';
+        if (adding && !getValue('newSpecificationName')) {
+            showCustomizerError('customSpecificationError', 'Specification Name is required.');
+            return;
+        }
         const newSpecification = adding ? { specification_name: getValue('newSpecificationName'), field_style: getValue('newSpecificationStyle'), measurement_group: getValue('newSpecificationGroup'), choices: specificationChoiceValues('newSpecificationChoiceList'), allow_custom_value: false } : null;
-        const preserved = editMode ? collectEditVariations() : collectAddVariations();
+        const preserved = categoryMode ? [] : (editMode ? collectEditVariations() : collectAddVariations());
         try {
-            const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/save_product_configuration.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type_id: typeId, assignments, new_specification: newSpecification, specification_edits: Array.from(pendingSpecificationEdits.values()) }) });
+            const response = await PharmaUtils.safeFetch(`${API_BASE_URL}/products/save_product_configuration.php`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type_id: typeId, assignments, new_specification: newSpecification, specification_edits: Array.from(pendingSpecificationEdits.values()), category_default_assignments: true }) });
             invalidateProductListCache();
-            if (editMode) await loadProductsTable({ skipCache: true });
+            if (editMode || categoryMode) await loadProductsTable({ skipCache: true });
+            referenceCache.configurationsByType.clear();
+            referenceCache.configurationPromises.clear();
             invalidateProductConfiguration(typeId);
             await loadProductConfiguration(typeId, { forceRefresh: true });
             if (editMode) renderEditVariations({ variations: preserved }, document.getElementById('editProductCategory')?.selectedOptions?.[0]?.dataset.categoryName || '');
-            else renderAddVariations({ variations: preserved }, getSelectedAddCategoryName());
+            else if (!categoryMode) renderAddVariations({ variations: preserved }, getSelectedAddCategoryName());
             bootstrap.Modal.getInstance(modal)?.hide();
+            if (categoryMode) {
+                modal.dataset.categoryMode = '0';
+                document.getElementById('categorySpecificationControls')?.classList.add('d-none');
+            }
             PharmaUtils.toast.success(response.message);
         } catch (error) { showCustomizerError('customSpecificationError', error.message); }
     });

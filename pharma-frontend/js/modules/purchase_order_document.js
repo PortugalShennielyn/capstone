@@ -39,7 +39,7 @@ function firstPageHeader(order) {
         field('PR Reference', order.pr_number || 'Historical / Manual PO'),
         field('ETA', date(order.expected_delivery_date)),
     ].join('');
-    return `<header class="supplier-heading"><h1>${escapeHtml(order.supplier_name || 'Purchase Order Supplier')}</h1>${contacts ? `<div class="supplier-contact">${contacts}</div>` : ''}<div class="document-title-row"><div class="document-title">PURCHASE ORDER</div><span class="document-status">${escapeHtml(order.status || 'Draft')}</span></div></header><hr class="document-rule"><section class="meta po-meta"><div class="meta-block po-meta-left">${leftMetadata}</div><div class="meta-block po-meta-right">${rightMetadata}</div></section>`;
+    return `<header class="supplier-heading"><div class="pharmacy-name">DOC R PHARMACY</div><div class="document-title-row"><div class="document-title">PURCHASE ORDER</div><span class="document-status">${escapeHtml(order.status || 'Draft')}</span></div><h1>${escapeHtml(order.supplier_name || 'Purchase Order Supplier')}</h1>${contacts ? `<div class="supplier-contact">${contacts}</div>` : ''}</header><hr class="document-rule"><section class="meta po-meta"><div class="meta-block po-meta-left">${leftMetadata}</div><div class="meta-block po-meta-right">${rightMetadata}</div></section>`;
 }
 
 function continuationHeader(order) {
@@ -47,7 +47,7 @@ function continuationHeader(order) {
 }
 
 function tableShell() {
-    return `<table class="order-table"><thead><tr><th style="width:6%">No.</th><th style="width:46%">Product / Specification</th><th style="width:16%">Order Qty</th><th style="width:15%">Purchase Unit</th><th style="width:17%">Contents</th></tr></thead><tbody></tbody></table>`;
+    return `<table class="order-table"><thead><tr><th style="width:5%">No.</th><th style="width:34%">Product / Specification</th><th style="width:18%">Contents</th><th style="width:10%">Order Qty</th><th style="width:11%">Purchase Unit</th><th style="width:11%">Supplier Price</th><th style="width:11%">Line Total</th></tr></thead><tbody></tbody></table>`;
 }
 
 function rowHtml(item, index) {
@@ -55,9 +55,11 @@ function rowHtml(item, index) {
     const conversion = Number(item.units_per_purchase_unit || 1);
     const purchaseUnit = item.purchase_unit || 'unit';
     const inventoryUnit = item.unit || 'units';
+    const supplierPrice = item.price == null || item.price === '' ? null : Number(item.price) * conversion;
+    const lineTotal = item.line_total == null || item.line_total === '' ? null : Number(item.line_total);
     const detail = [item.brand_name, specification(item)].filter(Boolean).join(' · ');
     const normalizedInventoryUnit = contentUnitLabel(inventoryUnit, conversion);
-    return `<tr><td class="center">${index + 1}</td><td class="product"><strong>${escapeHtml(item.product_name || '-')}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ''}${item.pr_approved_qty == null ? '' : `<span>PR Approved: ${number(item.pr_approved_qty)} ${escapeHtml(item.pr_unit)}</span>`}</td><td class="center"><strong>${number(orderQty)}</strong></td><td class="center">${escapeHtml(purchaseUnit)}</td><td class="center">1 ${escapeHtml(purchaseUnit)} = ${number(conversion)} ${escapeHtml(normalizedInventoryUnit)}</td></tr>`;
+    return `<tr><td class="center">${index + 1}</td><td class="product"><strong>${escapeHtml(item.product_name || '-')}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ''}${item.pr_approved_qty == null ? '' : `<span>PR Approved: ${number(item.pr_approved_qty)} ${escapeHtml(item.pr_unit)}</span>`}</td><td class="center">1 ${escapeHtml(purchaseUnit)} = ${number(conversion)} ${escapeHtml(normalizedInventoryUnit)}</td><td class="center"><strong>${number(orderQty)}</strong></td><td class="center">${escapeHtml(purchaseUnit)}</td><td class="money">${supplierPrice === null ? '—' : peso(supplierPrice)}</td><td class="money">${lineTotal === null ? '—' : peso(lineTotal)}</td></tr>`;
 }
 
 function createPage(order, first) {

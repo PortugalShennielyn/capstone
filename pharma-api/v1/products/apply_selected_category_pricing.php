@@ -22,8 +22,9 @@ try {
         throw new InvalidArgumentException('Pricing action must be preview or apply.');
     }
 
+    $replaceManual = !empty($payload['replace_manual']);
     if ($action === 'preview') {
-        $products = selectedCategoryPricingPreview($pdo, $productIds);
+        $products = selectedCategoryPricingPreview($pdo, $productIds, false, $replaceManual);
         echo json_encode([
             'status' => 'success',
             'products' => $products,
@@ -32,8 +33,20 @@ try {
         exit();
     }
 
+    $isAdmin = currentSessionHasAnyRole(['super_admin', 'admin', 'Admin', 'ro-super-admin', 'ro-admin']);
+    if (!$isAdmin) {
+        throw new InvalidArgumentException('Only an Admin can confirm and apply selected category prices.');
+    }
+
     $pdo->beginTransaction();
-    $result = applyCategoryMarkupToSelectedProducts($pdo, $productIds);
+    $result = applyCategoryMarkupToSelectedProducts(
+        $pdo,
+        $productIds,
+        !empty($payload['confirm_flagged']),
+        is_array($payload['preview_tokens'] ?? null) ? $payload['preview_tokens'] : [],
+        $isAdmin,
+        $replaceManual
+    );
     $pdo->commit();
     echo json_encode([
         'status' => 'success',

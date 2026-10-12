@@ -16,9 +16,10 @@ try {
     }
     ensureProductCustomizationSchema($pdo);
     $typeId = cleanId($payload['type_id'] ?? null);
-    $typeCheck = $pdo->prepare('SELECT type_id FROM product_types WHERE type_id = :type_id');
+    $typeCheck = $pdo->prepare('SELECT type_id, category_id FROM product_types WHERE type_id = :type_id');
     $typeCheck->execute([':type_id' => $typeId]);
-    if (!$typeCheck->fetchColumn()) {
+    $selectedType = $typeCheck->fetch(PDO::FETCH_ASSOC);
+    if (!$selectedType) {
         throw new InvalidArgumentException('A valid Product Type is required.');
     }
     $assignments = is_array($payload['assignments'] ?? null) ? $payload['assignments'] : [];
@@ -31,6 +32,7 @@ try {
     foreach ($existingLabelsStatement->fetchAll(PDO::FETCH_ASSOC) as $labelRow) {
         $assignmentLabels[$labelRow['specification_id']] = $labelRow['display_label'];
     }
+    $previousAssignmentIds = array_keys($assignmentLabels);
     $createdSpecificationId = null;
     if ($newSpecification) {
         $name = requiredProductField($newSpecification, 'specification_name');
@@ -149,6 +151,21 @@ try {
     $insertAssignment = $pdo->prepare('INSERT INTO product_type_specifications (type_id, specification_id, display_label, sort_order) VALUES (:type_id, :specification_id, :display_label, :sort_order)');
     foreach ($assignments as $index => $specificationId) {
         $insertAssignment->execute([':type_id' => $typeId, ':specification_id' => $specificationId, ':display_label' => $assignmentLabels[$specificationId] ?? null, ':sort_order' => $index + 1]);
+    }
+    $categoryDefaultIds = !empty($payload['category_default_assignments'])
+        ? array_values(array_diff($assignments, $previousAssignmentIds))
+        : [];
+    if ($categoryDefaultIds) {
+        $categoryTypes = $pdo->prepare('SELECT type_id FROM product_types WHERE category_id = :category_id AND type_id <> :type_id');
+        $categoryTypes->execute([':category_id' => $selectedType['category_id'], ':type_id' => $typeId]);
+        $nextOrder = $pdo->prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM product_type_specifications WHERE type_id = :type_id');
+        $insertCategoryDefault = $pdo->prepare('INSERT IGNORE INTO product_type_specifications (type_id, specification_id, display_label, sort_order) VALUES (:type_id, :specification_id, NULL, :sort_order)');
+        foreach ($categoryTypes->fetchAll(PDO::FETCH_COLUMN) as $categoryTypeId) {
+            foreach ($categoryDefaultIds as $specificationId) {
+                $nextOrder->execute([':type_id' => $categoryTypeId]);
+                $insertCategoryDefault->execute([':type_id' => $categoryTypeId, ':specification_id' => $specificationId, ':sort_order' => (int) $nextOrder->fetchColumn()]);
+            }
+        }
     }
     $pdo->commit();
     echo json_encode(['status' => 'success', 'message' => 'Product Type specifications saved.', 'specifications' => getTypeSpecificationConfiguration($pdo, $typeId), 'created_specification_id' => $createdSpecificationId]);

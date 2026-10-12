@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=11"></script>
+    <script src="./js/navbar_bootstrap.js?v=15"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Admin Settings</title>
@@ -16,6 +16,8 @@
     <link href="./css/navbar.css?v=42" rel="stylesheet">
     <script src="./js/navbar.js?v=97" defer></script>
     <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <script type="module" src="./js/modules/pr_quantity_limit_settings.js?v=1"></script>
+    <script type="module" src="./js/modules/stock_threshold_settings.js?v=2"></script>
 
     <style>
         :root {
@@ -2336,6 +2338,19 @@
             min-width: 0;
         }
 
+        .quantity-limit-label {
+            display: grid;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .quantity-limit-label small {
+            color: #7b8494;
+            font-size: 11px;
+            font-weight: 650;
+            line-height: 1.4;
+        }
+
         .admin-setting-label {
             min-width: 0;
             color: var(--text-main);
@@ -3297,13 +3312,35 @@
                                                 <label class="admin-switch" aria-label="Expiry Monitoring"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
                                             </div>
                                             <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Low Stock Threshold</span>
-                                                <input class="admin-setting-control" type="number" value="30" min="0" aria-label="Low Stock Threshold">
+                                                <label class="quantity-limit-label" for="storageLowStockThresholdInput">
+                                                    <span class="admin-setting-label">Storage Low Stock</span>
+                                                    <small>Storage quantity at or below this shows a yellow Low Stock tag.</small>
+                                                </label>
+                                                <input class="admin-setting-control" id="storageLowStockThresholdInput" type="number" value="30" min="0" max="1000000" step="1" aria-label="Storage Low Stock">
                                             </div>
                                             <div class="admin-setting-item">
-                                                <span class="admin-setting-label">Critical Stock Threshold</span>
-                                                <input class="admin-setting-control" type="number" value="5" min="0" aria-label="Critical Stock Threshold">
+                                                <label class="quantity-limit-label" for="shelfLowStockThresholdInput">
+                                                    <span class="admin-setting-label">Shelf Low Stock</span>
+                                                    <small>Shelf quantity at or below this shows a yellow Low Stock tag.</small>
+                                                </label>
+                                                <input class="admin-setting-control" id="shelfLowStockThresholdInput" type="number" value="10" min="0" max="1000000" step="1" aria-label="Shelf Low Stock">
                                             </div>
+                                            <div class="admin-setting-item">
+                                                <label class="quantity-limit-label" for="criticalStockThresholdInput">
+                                                    <span class="admin-setting-label">Critical Stock Threshold</span>
+                                                    <small>A quantity above zero and at or below this shows a red Critical tag. Zero shows Out of Stock.</small>
+                                                </label>
+                                                <input class="admin-setting-control" id="criticalStockThresholdInput" type="number" value="15" min="0" max="1000000" step="1" aria-label="Critical Stock Threshold">
+                                            </div>
+                                            <p class="small text-muted mb-0 d-none" id="stockThresholdMessage" role="status" aria-live="polite"></p>
+                                            <div class="admin-setting-item">
+                                                <label class="quantity-limit-label" for="purchaseRequestQuantityLimitInput">
+                                                    <span class="admin-setting-label">Purchase Request Quantity Limit</span>
+                                                    <small>Maximum quantity per product line in a Purchase Request.</small>
+                                                </label>
+                                                <input class="admin-setting-control" id="purchaseRequestQuantityLimitInput" type="number" value="50" min="1" max="1000000" step="1" aria-label="Purchase Request Quantity Limit">
+                                            </div>
+                                            <p class="small text-muted mb-0 d-none" id="purchaseRequestQuantityLimitMessage" role="status" aria-live="polite"></p>
                                             <div class="admin-setting-item">
                                                 <span class="admin-setting-label">Expiry Alert Days</span>
                                                 <select class="admin-setting-control" aria-label="Expiry Alert Days">
@@ -3341,12 +3378,12 @@
                                             <div class="procurement-panel-intro"><div class="procurement-panel-intro-copy"><h4>Documents &amp; Signatures</h4><p>Manage the names and role labels printed on PR and PO documents.</p></div><button class="btn btn-purple procurement-edit-button" type="button" id="editProcurementSignatoriesBtn"><i class="fa-solid fa-pen me-1"></i>Edit</button></div>
                                             <div class="procurement-document-grid">
                                                 <section class="procurement-document-card"><div class="procurement-group-heading"><span>Purchase Request</span></div><div class="procurement-signatory-list">
-                                                    <div class="procurement-signatory-block"><h5>Requested / Prepared By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="prPreparedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="prPreparedRole">Manager<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="prPreparedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="prPreparedRoleInput" type="text" maxlength="100" value="Manager" autocomplete="off"></label></div></div>
-                                                    <div class="procurement-signatory-block"><h5>Checked / Reviewed By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="prReviewedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="prReviewedRole">Supervisor<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="prReviewedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="prReviewedRoleInput" type="text" maxlength="100" value="Supervisor" autocomplete="off"></label></div></div>
+                                                    <div class="procurement-signatory-block"><h5>Requested / Prepared By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="prPreparedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="prPreparedRole">Manager<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="prPreparedNameInput" type="text" maxlength="150" autocomplete="new-password"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="prPreparedRoleInput" type="text" maxlength="100" value="Manager" autocomplete="off"></label></div></div>
+                                                    <div class="procurement-signatory-block"><h5>Checked / Reviewed By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="prReviewedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="prReviewedRole">Supervisor<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="prReviewedNameInput" type="text" maxlength="150" autocomplete="new-password"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="prReviewedRoleInput" type="text" maxlength="100" value="Supervisor" autocomplete="off"></label></div></div>
                                                 </div></section>
                                                 <section class="procurement-document-card"><div class="procurement-group-heading"><span>Purchase Order</span></div><div class="procurement-signatory-list">
-                                                    <div class="procurement-signatory-block"><h5>Prepared By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="poPreparedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="poPreparedRole">Manager<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="poPreparedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="poPreparedRoleInput" type="text" maxlength="100" value="Manager" autocomplete="off"></label></div></div>
-                                                    <div class="procurement-signatory-block"><h5>Checked &amp; Approved By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="poApprovedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="poApprovedRole">Supervisor<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="poApprovedNameInput" type="text" maxlength="150" autocomplete="off"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="poApprovedRoleInput" type="text" maxlength="100" value="Supervisor" autocomplete="off"></label></div></div>
+                                                    <div class="procurement-signatory-block"><h5>Prepared By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="poPreparedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="poPreparedRole">Manager<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="poPreparedNameInput" type="text" maxlength="150" autocomplete="new-password"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="poPreparedRoleInput" type="text" maxlength="100" value="Manager" autocomplete="off"></label></div></div>
+                                                    <div class="procurement-signatory-block"><h5>Checked &amp; Approved By</h5><div class="procurement-signatory-summary"><div class="procurement-summary-field"><span>Name</span><strong data-procurement-value="poApprovedName">—</strong></div><div class="procurement-summary-field"><span>Role</span><strong data-procurement-value="poApprovedRole">Supervisor<i class="fa-solid fa-lock" aria-label="Locked outside edit mode"></i></strong></div></div><div class="procurement-edit-fields"><label class="general-setting-field"><span class="admin-setting-label">Name</span><input class="admin-setting-control" id="poApprovedNameInput" type="text" maxlength="150" autocomplete="new-password"></label><label class="general-setting-field"><span class="admin-setting-label">Role</span><input class="admin-setting-control" id="poApprovedRoleInput" type="text" maxlength="100" value="Supervisor" autocomplete="off"></label></div></div>
                                                 </div></section>
                                             </div>
                                             <p class="procurement-role-note"><i class="fa-solid fa-lock"></i>Role labels are locked during normal use and can only be changed while editing these document settings.</p>
@@ -5095,6 +5132,7 @@
                 ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
                 : "../pharma-api/v1";
             const state = { users: [], editingUser: null, actorRole: '', assignableRoles: [] };
+            const announceUserListChange = () => { try { localStorage.setItem('pharmacy-user-list-updated', String(Date.now())); } catch (_) {} };
             const roleLabels = {
                 super_admin: 'Super Admin',
                 admin: 'Admin',
@@ -5349,6 +5387,7 @@
                             method: 'POST',
                             body: JSON.stringify({ user_id: user.user_id, status: button.dataset.nextStatus })
                         });
+                        announceUserListChange();
                         toastr.success(button.dataset.nextStatus === 'Active' ? 'User activated.' : 'User deactivated.');
                         await loadUsers();
                     } catch (error) {
@@ -5384,6 +5423,7 @@
                         method: 'POST',
                         body: JSON.stringify(payload)
                     });
+                    announceUserListChange();
                     toastr.success(isEdit ? 'User updated.' : 'User created.');
                     modals.form?.hide();
                     await loadUsers();

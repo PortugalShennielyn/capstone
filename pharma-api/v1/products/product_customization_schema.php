@@ -979,9 +979,19 @@ function getAllSpecificationDefinitionsForType(PDO $pdo, string $typeId): array
           FROM product_specifications ps
           LEFT JOIN product_type_specifications pts ON pts.specification_id = ps.specification_id AND pts.type_id = :type_id
           WHERE LOWER(TRIM(ps.specification_name)) <> 'inventory unit'
+            AND (
+                NOT EXISTS (SELECT 1 FROM product_type_specifications any_assignment WHERE any_assignment.specification_id = ps.specification_id)
+                OR EXISTS (
+                    SELECT 1 FROM product_type_specifications category_assignment
+                    INNER JOIN product_types assigned_type ON assigned_type.type_id = category_assignment.type_id
+                    INNER JOIN product_types selected_type ON selected_type.type_id = :category_type_id
+                    WHERE category_assignment.specification_id = ps.specification_id
+                      AND assigned_type.category_id = selected_type.category_id
+                )
+            )
          ORDER BY COALESCE(pts.sort_order, 9999), ps.specification_name"
     );
-    $statement->execute([':type_id' => $typeId]);
+    $statement->execute([':type_id' => $typeId, ':category_type_id' => $typeId]);
     $rows = attachSpecificationChoices($pdo, $statement->fetchAll(PDO::FETCH_ASSOC));
     foreach ($rows as &$row) {
         $row['allow_custom_value'] = (bool) $row['allow_custom_value'];

@@ -77,14 +77,18 @@ function recordLoginAttempt(PDO $pdo, string $username, ?string $userId, bool $s
 
 function auditAuthenticationEvent(PDO $pdo, string $action, array $context = []): void
 {
+    $actorAuthenticated = !array_key_exists('actor_authenticated', $context) || (bool) $context['actor_authenticated'];
     recordAuditLog($pdo, [
         'module' => 'Authentication',
         'action' => $action,
         'success' => $context['success'] ?? true,
-        'user_id' => $context['user_id'] ?? ($_SESSION['user_id'] ?? null),
-        'user_name' => $context['user_name'] ?? auditCurrentUserName(),
-        'role' => $context['role'] ?? ($_SESSION['role'] ?? null),
-        'auth_session_id' => $context['auth_session_id'] ?? ($_SESSION['auth_session_id'] ?? null),
+        'event_status' => $context['event_status'] ?? null,
+        'actor_authenticated' => $actorAuthenticated,
+        'user_id' => $actorAuthenticated ? ($context['user_id'] ?? ($_SESSION['user_id'] ?? null)) : null,
+        'employee_id' => $actorAuthenticated ? ($context['employee_id'] ?? null) : null,
+        'user_name' => $actorAuthenticated ? ($context['user_name'] ?? auditCurrentUserName()) : 'Unauthenticated',
+        'role' => $actorAuthenticated ? ($context['role'] ?? ($_SESSION['role'] ?? null)) : null,
+        'auth_session_id' => $actorAuthenticated ? ($context['auth_session_id'] ?? ($_SESSION['auth_session_id'] ?? null)) : null,
         'details' => $context['details'] ?? null,
         'idempotency_key' => $context['idempotency_key'] ?? null,
     ]);
@@ -338,8 +342,11 @@ function hydrateSessionFromAuthRecord(PDO $pdo, array $authSession): bool
     $_SESSION['full_name'] = $user['full_name'];
     $_SESSION['first_name'] = $user['first_name'];
     $_SESSION['last_name'] = $user['last_name'];
-    $_SESSION['roles'] = $accountContext['roles'];
-    $_SESSION['role_identifiers'] = $accountContext['role_identifiers'];
+    // The Admin-managed users.role column is authoritative for this account.
+    // Linked account_roles may be stale and must not override that assignment.
+    $assignedRole = strtolower(trim((string) $user['role']));
+    $_SESSION['roles'] = [$assignedRole];
+    $_SESSION['role_identifiers'] = [legacyRoleIdentifier($assignedRole)];
     $_SESSION['account_id'] = $accountContext['account_id'];
     $_SESSION['account_type'] = $accountContext['account_type'];
     $_SESSION['tenant_id'] = $accountContext['tenant_id'];
@@ -431,6 +438,16 @@ function preventProtectedPageCache(): void
 
 function sendUnauthorizedResponse(string $message = 'Unauthorized'): void
 {
+    global $pdo;
+    if ($pdo instanceof PDO) {
+        auditAuthenticationEvent($pdo, 'ACCESS_DENIED', [
+            'success' => false,
+            'event_status' => 'Denied',
+            'actor_authenticated' => false,
+            'details' => 'Unauthenticated request denied: ' . basename((string) ($_SERVER['SCRIPT_NAME'] ?? 'unknown')),
+            'idempotency_key' => auditRequestId() . ':ACCESS_DENIED',
+        ]);
+    }
     authDiagnosticLog('401 returned', ['function' => __FUNCTION__, 'reason' => $message]);
     http_response_code(401);
     echo json_encode([
@@ -443,6 +460,16 @@ function sendUnauthorizedResponse(string $message = 'Unauthorized'): void
 
 function sendForbiddenResponse(string $message = 'Access denied.'): void
 {
+    global $pdo;
+    if ($pdo instanceof PDO) {
+        auditAuthenticationEvent($pdo, 'ACCESS_DENIED', [
+            'success' => false,
+            'event_status' => 'Denied',
+            'actor_authenticated' => !empty($_SESSION['user_id']),
+            'details' => 'Access denied: ' . basename((string) ($_SERVER['SCRIPT_NAME'] ?? 'unknown')),
+            'idempotency_key' => auditRequestId() . ':ACCESS_DENIED',
+        ]);
+    }
     http_response_code(403);
     echo json_encode([
         'success' => false,
@@ -482,6 +509,12 @@ function requireValidSession(PDO $pdo, array $allowedRoles = []): void
 {
     preventProtectedPageCache();
 
+    // A restricted first-login session never carries a normal tab token. Keep
+    // every endpoint using this shared guard closed until password completion.
+    if (!empty($_SESSION['restricted_password_change_user_id'])) {
+        sendForbiddenResponse('A password change is required before accessing the system.');
+    }
+
     try {
         if (tableExists($pdo, 'auth_sessions')) {
             $authSession = loadAuthSessionByPresentedToken($pdo);
@@ -492,6 +525,9 @@ function requireValidSession(PDO $pdo, array $allowedRoles = []): void
                 || (int) $authSession['is_active'] !== 1
                 || (int) $authSession['is_deleted'] === 1) {
                 auditAuthenticationEvent($pdo, 'SESSION_REVOKED', [
+                    'actor_authenticated' => false,
+                    'event_status' => 'Denied',
+                    'success' => false,
                     'auth_session_id' => (string) ($authSession['auth_session_id'] ?? ''),
                     'user_id' => $authSession['user_id'] ?? null,
                     'details' => 'Session is revoked or inactive.',
@@ -501,6 +537,9 @@ function requireValidSession(PDO $pdo, array $allowedRoles = []): void
             }
             if ((int) ($authSession['is_expired'] ?? 0) === 1) {
                 auditAuthenticationEvent($pdo, 'SESSION_EXPIRED', [
+                    'actor_authenticated' => false,
+                    'event_status' => 'Denied',
+                    'success' => false,
                     'auth_session_id' => (string) ($authSession['auth_session_id'] ?? ''),
                     'user_id' => $authSession['user_id'] ?? null,
                     'details' => 'Session reached expires_at.',
@@ -530,6 +569,23 @@ function requireValidSession(PDO $pdo, array $allowedRoles = []): void
             'status' => 'error',
             'message' => 'Authentication service is temporarily unavailable. Please retry.',
         ]);
+        exit();
+    }
+
+    // Also honor the database flag on every protected API request so stale or
+    // manually-created sessions cannot bypass a newly-required password change.
+    try {
+        $columnCheck = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'must_change_password'");
+        if ((int) $columnCheck->fetchColumn() > 0) {
+            $requiredStmt = $pdo->prepare('SELECT must_change_password FROM users WHERE user_id = :user_id LIMIT 1');
+            $requiredStmt->execute([':user_id' => $_SESSION['user_id']]);
+            if ((int) $requiredStmt->fetchColumn() === 1) {
+                sendForbiddenResponse('A password change is required before accessing the system.');
+            }
+        }
+    } catch (PDOException $error) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'status' => 'error', 'message' => 'Authentication service is temporarily unavailable. Please retry.']);
         exit();
     }
 

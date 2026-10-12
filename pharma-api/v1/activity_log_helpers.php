@@ -2,6 +2,45 @@
 
 require_once __DIR__ . '/../config/audit_log.php';
 
+/** Record an administrator-side account or settings change in the canonical audit stream. */
+function recordManagementAudit(PDO $pdo, string $action, string $description, string $targetType, ?string $targetId, array $details): void
+{
+    if (!$pdo->inTransaction()) {
+        throw new RuntimeException('Management audit events must be committed with their source operation.');
+    }
+    $event = [
+        'module' => 'System & User Management',
+        'action' => $action,
+        'event_status' => 'Success',
+        'description' => $description,
+        'target_type' => $targetType,
+        'target_id' => $targetId,
+        'details' => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        'idempotency_key' => auditRequestId() . ':MANAGEMENT:' . $action . ':' . ($targetId ?: 'SETTINGS'),
+    ];
+    if (!recordAuditLog($pdo, $event)) {
+        throw new RuntimeException('The management change could not be audited.');
+    }
+}
+
+function recordSettingsDiffAudit(PDO $pdo, array $previous, array $next, array $labels, array $redacted = []): void
+{
+    foreach ($next as $field => $newValue) {
+        $oldValue = $previous[$field] ?? null;
+        $normalizedOld = $oldValue === '' ? null : $oldValue;
+        $normalizedNew = $newValue === '' ? null : $newValue;
+        if ($normalizedOld == $normalizedNew) continue;
+        $name = $labels[$field] ?? $field;
+        $isRedacted = in_array($field, $redacted, true);
+        $details = [
+            'setting_name' => $name,
+            'previous_value' => $isRedacted && $oldValue !== null ? '[redacted]' : $oldValue,
+            'new_value' => $isRedacted && $newValue !== null ? '[redacted]' : $newValue,
+        ];
+        recordManagementAudit($pdo, 'SETTINGS_CHANGED', auditCurrentUserName() . ' changed ' . $name . '.', 'Store Setting', $field, $details);
+    }
+}
+
 function ensureActivityLogSchema(PDO $pdo): void
 {
     $pdo->exec(
@@ -40,7 +79,8 @@ function recordActivityLog(
     string $description,
     ?string $referenceId = null,
     ?string $userId = null,
-    ?string $role = null
+    ?string $role = null,
+    bool $mirrorAudit = true
 ): bool {
     try {
         if (!$pdo->inTransaction()) {
@@ -61,7 +101,7 @@ function recordActivityLog(
             ':description' => trim($description),
             ':reference_id' => $referenceId,
         ]);
-        logAudit($pdo, [
+        if ($mirrorAudit) logAudit($pdo, [
             'module' => auditModuleName($module),
             'action' => auditActionName($action),
             'description' => $description,
@@ -78,6 +118,48 @@ function recordActivityLog(
         error_log('Activity log write failed: ' . $e->getMessage());
         return false;
     }
+}
+
+/** Writes the canonical inventory event to audit_logs. Call inside the inventory transaction. */
+function recordInventoryAudit(PDO $pdo, string $action, string $description, string $productId, array $details = []): void
+{
+    $requestId = auditRequestId();
+    $event = [
+        'module' => 'Inventory',
+        'action' => $action,
+        'event_status' => 'Success',
+        'description' => $description,
+        'target_type' => 'Product',
+        'target_id' => $productId,
+        'details' => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        'idempotency_key' => $requestId . ':INVENTORY:' . $action . ':' . $productId,
+    ];
+    if (!recordAuditLog($pdo, $event)) {
+        throw new RuntimeException('The inventory change could not be audited.');
+    }
+}
+
+function recordInventoryAuditFailure(PDO $pdo, string $action, string $description, ?string $productId = null, array $details = []): void
+{
+    recordAuditLog($pdo, [
+        'module' => 'Inventory', 'action' => $action, 'event_status' => 'Failure',
+        'description' => $description, 'target_type' => 'Product', 'target_id' => $productId,
+        'details' => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        'idempotency_key' => auditRequestId() . ':INVENTORY_FAILURE:' . $action . ':' . ($productId ?: 'UNKNOWN'),
+    ]);
+}
+
+/** Writes a sales/transaction event within its source operation transaction. */
+function recordSalesAudit(PDO $pdo, string $action, string $description, int $orderId, array $details): void
+{
+    if (!$pdo->inTransaction()) throw new RuntimeException('Sales audit events must be committed with their transaction.');
+    $event = [
+        'module' => 'Sales & Transactions', 'action' => $action, 'event_status' => 'Success',
+        'description' => $description, 'target_type' => 'Sales Transaction', 'target_id' => (string) $orderId,
+        'details' => json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        'idempotency_key' => auditRequestId() . ':SALES:' . $action . ':' . $orderId,
+    ];
+    if (!recordAuditLog($pdo, $event)) throw new RuntimeException('The sales transaction could not be audited.');
 }
 
 function auditActionName(string $action): string
@@ -101,7 +183,7 @@ function auditModuleName(string $module): string
     return match (strtolower($module)) {
         'products' => 'Product Master',
         'pricing' => 'Product Master',
-        'inventory' => 'Storage',
+        'inventory' => 'Inventory',
         'goods received note' => 'Inspect Deliveries',
         'return/damage' => 'Inspect Deliveries',
         'user management' => 'Users',
