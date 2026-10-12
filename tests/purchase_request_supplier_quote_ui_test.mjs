@@ -37,10 +37,24 @@ assert.match(setupHtml, /<strong>Supplier A<\/strong>\s*<span[^>]*>— ₱85 \/ 
 assert.match(setupHtml, /<strong>Supplier B<\/strong>\s*<span[^>]*>₱92 \/ Box<\/span>/);
 assert.match(setupHtml, /<span[^>]*>Lowest price<\/span>\s*<span[^>]*>Recommended<\/span>/);
 assert.match(setupHtml, /Price not set/);
+assert.match(setupHtml, /data-set-supplier-price="sp-c"/);
+assert.doesNotMatch(setupHtml, /supplier\.html/);
+assert.doesNotMatch(setupHtml, /target="_blank"/);
+assert.match(setupHtml, />Set price</);
+assert.doesNotMatch(setupHtml, /Set price for /);
+assert.match(setupHtml, /aria-disabled="true"/);
+assert.doesNotMatch(setupHtml.split('data-manager-pr-item="line-b"')[0], /data-manager-supplier value="sp-c"/);
 assert.match(setupHtml, /₱170/);
 
 assert.equal(vm.runInContext("procurementCalculation(first).estimatedLineTotal", context), 170);
 vm.runInContext("procurementSelections['line-a']={supplier_product_id:'sp-b'}", context);
 assert.equal(vm.runInContext("procurementCalculation(first).estimatedLineTotal", context), 184);
 assert.equal(vm.runInContext("managerSupplierGroups({items:[first,second]}).length", context), 2);
+vm.runInContext(`
+const unpriced = {pr_item_id:'line-c',product_name:'Omeprazole',approved_qty:5,unit:'box',supplier_options:[{...options[2],supplier_product_id:'sp-only',supplier_name:'Fast Distribution'}]};
+initializePoGeneration({items:[unpriced]});
+if (procurementSelections['line-c'].supplier_product_id !== '') throw new Error('An unpriced supplier was selected automatically.');
+const blocked = procurementErrors({items:[unpriced]});
+if (!blocked.some((error) => error.includes('set a supplier price'))) throw new Error(blocked.join(' | '));
+`, context);
 console.log('PASS: supplier quote display, normalized cheapest recommendation, manual selection, line estimates, and supplier-specific PO grouping.');

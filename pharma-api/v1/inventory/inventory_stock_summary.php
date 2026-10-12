@@ -11,10 +11,18 @@ const INVENTORY_SHELF_MINIMUM_THRESHOLD = 10;
  * comes from active inventory batches, while shelf stock comes from the live
  * product_selling_stock balance because sales decrement quantity_remaining.
  */
-function inventoryStockSummarySql(?array $thresholds = null): string
+function inventoryStockSummarySql(?array $thresholds = null, array $productIds = []): string
 {
     $threshold = INVENTORY_LOW_STOCK_THRESHOLD;
     $shelfMinimum = INVENTORY_SHELF_MINIMUM_THRESHOLD;
+    $safeProductIds = [];
+    foreach ($productIds as $productId) {
+        $productId = (string) $productId;
+        if (preg_match('/^[A-Za-z0-9-]+$/', $productId)) $safeProductIds[$productId] = $productId;
+    }
+    $productFilter = $safeProductIds
+        ? 'WHERE ib.product_id IN (' . implode(',', array_map(static fn(string $id): string => "'" . $id . "'", $safeProductIds)) . ')'
+        : '';
     if (is_array($thresholds) && array_key_exists('shelfLow', $thresholds)) {
         $shelfMinimum = max(0, (int) $thresholds['shelfLow']);
     }
@@ -70,6 +78,7 @@ function inventoryStockSummarySql(?array $thresholds = null): string
                 GROUP BY source_batch_id
             ) selling ON selling.source_batch_id = ib.batch_id
             LEFT JOIN (SELECT DISTINCT product_id FROM inventory_resolution_cases) resolution ON resolution.product_id = ib.product_id
+            {$productFilter}
             GROUP BY ib.product_id
         ) totals";
 }

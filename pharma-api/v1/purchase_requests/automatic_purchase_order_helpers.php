@@ -215,7 +215,10 @@ function insertPurchaseOrdersForApprovedRequest(PDO $pdo, array $request, array 
         }
         $supplierId = cleanId($setup['supplier_id']);
         $priceAvailable = !empty($setup['supplier_price_available']);
-        $unitCost = $priceAvailable ? (float) ($setup['supplier_cost_per_inventory_unit'] ?? 0) : null;
+        if (!$priceAvailable) {
+            throw new InvalidArgumentException('Set a supplier price before choosing this supplier for the purchase order.');
+        }
+        $unitCost = (float) ($setup['supplier_cost_per_inventory_unit'] ?? 0);
         if ($unitCost !== null && (!is_finite($unitCost) || $unitCost < 0)) {
             throw new InvalidArgumentException('The selected supplier has an invalid purchase price. Update its quotation before generating the PO.');
         }

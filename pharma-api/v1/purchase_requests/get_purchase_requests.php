@@ -65,23 +65,27 @@ try {
     $supplierOptions = $canManagePurchasing ? purchaseRequestSupplierOptions($pdo, $allProductIds) : [];
     $inventoryContext = [];
     $receivedHistory = [];
-    {
-        $stockSql = inventoryStockSummarySql();
+    $scopedProductIds = array_values(array_unique(array_filter(array_map('strval', $allProductIds))));
+    if ($scopedProductIds) {
+        $stockSql = inventoryStockSummarySql(null, $scopedProductIds);
         $contextRows = $pdo->query(
             "SELECT stock.product_id,stock.shelf_quantity,stock.storage_quantity,stock.total_quantity,stock.stock_status
              FROM ({$stockSql}) stock"
         )->fetchAll(PDO::FETCH_ASSOC);
+        $placeholders = implode(',', array_fill(0, count($scopedProductIds), '?'));
         $recentSalesByProduct = [];
         try {
-            $recentSalesRows = $pdo->query(
+            $recentSalesStatement = $pdo->prepare(
                 "SELECT i.product_id, SUM(i.quantity) AS quantity_sold
                  FROM sales_orders o
                  INNER JOIN sales_order_items i ON i.order_id = o.order_id
                  WHERE o.status = 'completed'
                    AND o.completed_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+                   AND i.product_id IN ({$placeholders})
                  GROUP BY i.product_id"
-            )->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($recentSalesRows as $recentSalesRow) {
+            );
+            $recentSalesStatement->execute($scopedProductIds);
+            foreach ($recentSalesStatement->fetchAll(PDO::FETCH_ASSOC) as $recentSalesRow) {
                 $recentSalesByProduct[(string) $recentSalesRow['product_id']] = (int) $recentSalesRow['quantity_sold'];
             }
         } catch (PDOException $e) {
@@ -91,7 +95,7 @@ try {
         }
         foreach ($contextRows as $row) {
             $productId = (string) $row['product_id'];
-            $inventoryContext[(string) $row['product_id']] = [
+            $inventoryContext[$productId] = [
                 'shelf_stock'=>(int)$row['shelf_quantity'],
                 'storage_stock'=>(int)$row['storage_quantity'],
                 'on_hand'=>(int)$row['total_quantity'],
@@ -99,7 +103,14 @@ try {
                 'sold_last_30_days'=>$recentSalesByProduct[$productId] ?? 0,
             ];
         }
-        foreach ($pdo->query('SELECT DISTINCT product_id FROM inventory_batches WHERE received_qty > 0')->fetchAll(PDO::FETCH_COLUMN) as $receivedProductId) {
+        $receivedStatement = $pdo->prepare(
+            "SELECT DISTINCT product_id
+             FROM inventory_batches
+             WHERE received_qty > 0
+               AND product_id IN ({$placeholders})"
+        );
+        $receivedStatement->execute($scopedProductIds);
+        foreach ($receivedStatement->fetchAll(PDO::FETCH_COLUMN) as $receivedProductId) {
             $receivedHistory[(string) $receivedProductId] = true;
         }
     }

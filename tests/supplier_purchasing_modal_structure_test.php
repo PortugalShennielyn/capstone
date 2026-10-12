@@ -56,6 +56,7 @@ supplierPurchasingModalAssert(str_contains($html, 'supplier-review-impact'), 'Pu
 supplierPurchasingModalAssert(str_contains($javascript, 'products/get_product_details.php'), 'Product identity and saved values must come from Product Master details.');
 supplierPurchasingModalAssert(str_contains($javascript, 'products/get_product_configuration.php'), 'Configured attributes must come from the Product Master configuration.');
 supplierPurchasingModalAssert(str_contains($javascript, 'renderSupplierProductMasterDetails'), 'The Product Master details renderer must populate the modal.');
+supplierPurchasingModalAssert(str_contains($javascript, 'supplierMasterIdentityName'), 'Medicine identity must use the generic name when the product name repeats the brand.');
 supplierPurchasingModalAssert(str_contains($javascript, "endpoint('suppliers/update_supplier_assignment.php')"), 'Saving must continue through the existing supplier assignment update endpoint.');
 supplierPurchasingModalAssert(str_contains($javascript, "import { purchasingConversion }"), 'The modal must use the shared purchasing conversion function.');
 supplierPurchasingModalAssert(!str_contains($javascript, 'purchasingCost('), 'The modal must not calculate derived per-unit purchasing costs.');

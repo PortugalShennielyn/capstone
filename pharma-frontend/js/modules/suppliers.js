@@ -33,13 +33,19 @@ let pendingConfirmation = null;
 let productTypeLoadToken = 0;
 let editProductTypeLoadToken = 0;
 let activeSupplierProductEdit = null;
+let focusQuotedCostOnOpen = false;
+let returnAfterSupplierEdit = false;
 
 function supplierCatalogCanModify() {
     return ['super_admin', 'admin'].includes(primaryAccessRole(window.__drpSession || {}));
 }
 
+function supplierCatalogCanEditPurchasing() {
+    return supplierCatalogCanModify() || primaryAccessRole(window.__drpSession || {}) === 'manager';
+}
+
 function supplierCatalogCanViewCost() {
-    return ['super_admin', 'admin', 'supervisor'].includes(primaryAccessRole(window.__drpSession || {}));
+    return ['super_admin', 'admin', 'manager', 'supervisor'].includes(primaryAccessRole(window.__drpSession || {}));
 }
 
 const esc = (value) => String(value ?? '')
@@ -566,13 +572,13 @@ function renderSupplierProducts(rows) {
                 <td class="col-purchase-unit"><div class="supplier-purchase-unit-display"><strong>${esc(displayOrNotSet(product.purchase_unit))}</strong><small>${esc(supplierContainsLabel(product))}</small></div></td>
                 <td class="col-supplier-price">${product.supplier_cost_input === null || product.supplier_cost_input === undefined || product.supplier_cost_input === '' ? '<span class="text-muted">Not set</span>' : esc(pesoPrice(product.supplier_cost_input))}</td>
                 <td class="col-actions actions-column">
-                    ${supplierCatalogCanModify() ? `<div class="supplier-product-actions">
+                    ${supplierCatalogCanEditPurchasing() ? `<div class="supplier-product-actions">
                         <button class="btn btn-sm btn-outline-primary edit-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" title="Edit supplier product" aria-label="Edit supplier product">
                             <i class="fa-solid fa-pen" aria-hidden="true"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger delete-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" data-product-id="${esc(product.product_id)}" title="Remove supplier product assignment" aria-label="Remove supplier product assignment">
+                        ${supplierCatalogCanModify() ? `<button class="btn btn-sm btn-outline-danger delete-supplier-product-btn" type="button" data-supplier-product-id="${esc(product.supplier_product_id)}" data-product-id="${esc(product.product_id)}" title="Remove supplier product assignment" aria-label="Remove supplier product assignment">
                             <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
-                        </button>
+                        </button>` : ''}
                     </div>` : '<span class="text-muted small">Read only</span>'}
                 </td>
             </tr>
@@ -634,10 +640,28 @@ function supplierAttributeValue(attributes, names) {
     return cleanText(match?.[1]);
 }
 
+function supplierMasterIdentityName(product) {
+    const brand = cleanText(product.brand_name);
+    const generic = cleanText(product.generic_name);
+    const productName = removeBrandPrefix(product.product_name, brand) || cleanText(product.product_name);
+    const differsFromBrand = (value) => value && value.toLowerCase() !== brand.toLowerCase();
+    if (categoryGroup(product.category_name) === 'medicine') {
+        return (differsFromBrand(generic) ? generic : '')
+            || (differsFromBrand(productName) ? productName : '')
+            || generic
+            || productName;
+    }
+    return (differsFromBrand(productName) ? productName : '')
+        || (differsFromBrand(generic) ? generic : '')
+        || productName
+        || generic;
+}
+
 function renderSupplierProductMasterDetails(product, configuredSpecifications = [], savedSpecifications = [], units = []) {
     const normalizedSpecifications = normalizeProductSpecificationValues(configuredSpecifications, savedSpecifications, units);
+    const identityName = supplierMasterIdentityName(product);
     setSupplierEditText('editSupplierProductBrandText', product.brand_name);
-    setSupplierEditText('editSupplierProductNameText', removeBrandPrefix(product.product_name, product.brand_name) || product.product_name);
+    setSupplierEditText('editSupplierProductNameText', identityName);
     setSupplierEditText('editSupplierProductCategoryText', product.category_name);
     setSupplierEditText('editSupplierProductTypeText', product.type_name);
     setSupplierEditText('editSupplierProductStatusText', product.status || 'Active');
@@ -648,7 +672,7 @@ function renderSupplierProductMasterDetails(product, configuredSpecifications = 
     setSupplierEditText('editSupplierProductPackagingText', supplierProductPackaging(product));
     const subtitle = document.getElementById('editSupplierProductSubtitle');
     if (subtitle) {
-        const productName = cleanText(product.product_name) || 'Product';
+        const productName = identityName || cleanText(product.product_name) || 'Product';
         const supplierName = cleanText(product.supplier_name);
         subtitle.textContent = supplierName ? `${productName} · ${supplierName}` : productName;
     }
@@ -656,7 +680,7 @@ function renderSupplierProductMasterDetails(product, configuredSpecifications = 
     if (purchaseHelp) purchaseHelp.textContent = cleanText(product.supplier_name) ? `How ${cleanText(product.supplier_name)} sells it to you.` : 'How the supplier sells it to you.';
 
     setSupplierEditGroup('brand', product.brand_name);
-    setSupplierEditGroup('product', removeBrandPrefix(product.product_name, product.brand_name) || product.product_name);
+    setSupplierEditGroup('product', identityName);
     setSupplierEditGroup('specification', formatProductSpecification({ ...product, specifications: normalizedSpecifications }));
     setSupplierEditGroup('category', product.category_name);
     setSupplierEditGroup('type', product.type_name);
@@ -1859,7 +1883,7 @@ async function submitProduct(event) {
 }
 
 async function openEditSupplierProduct(supplierProductId) {
-    if (!supplierCatalogCanModify()) return;
+    if (!supplierCatalogCanEditPurchasing()) return;
     const product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(supplierProductId));
     if (!product) return;
 
@@ -1932,7 +1956,7 @@ async function openEditSupplierProduct(supplierProductId) {
 
 async function submitEditSupplierProduct(event) {
     event.preventDefault();
-    if (!supplierCatalogCanModify()) {
+    if (!supplierCatalogCanEditPurchasing()) {
         PharmaUtils.toast.error('Supplier purchasing setup is read only for this account.');
         return;
     }
@@ -1963,6 +1987,10 @@ async function submitEditSupplierProduct(event) {
         await loadSupplierProducts();
         window.dispatchEvent(new CustomEvent('products:changed'));
         PharmaUtils.toast.success(data.message || 'Supplier product updated successfully.');
+        if (returnAfterSupplierEdit) {
+            returnAfterSupplierEdit = false;
+            history.back();
+        }
     } catch (error) {
         PharmaUtils.toast.error(error.message);
     }
@@ -2219,6 +2247,13 @@ document.getElementById('supplierConfirmModal')?.addEventListener('hidden.bs.mod
     ['editSupplierProductModal', 'editSupplierProductModalTitle']
 ].forEach(([modalId, titleId]) => {
     document.getElementById(modalId)?.addEventListener('shown.bs.modal', () => {
+        if (modalId === 'editSupplierProductModal' && focusQuotedCostOnOpen) {
+            focusQuotedCostOnOpen = false;
+            const cost = document.getElementById('editSupplierProductCost');
+            cost?.focus();
+            cost?.select();
+            return;
+        }
         document.getElementById(titleId)?.focus();
     });
 });
@@ -2288,6 +2323,39 @@ document.getElementById('table-supplier-products')?.addEventListener('keydown', 
     openSupplierProductDetails(row.dataset.supplierProductId);
 });
 
+async function openSupplierProductFromLink() {
+    const supplierProductId = new URLSearchParams(window.location.search).get('edit_supplier_product');
+    if (!supplierProductId) return;
+    if (!supplierCatalogCanEditPurchasing()) {
+        PharmaUtils.toast.error('Supplier purchasing setup is read only for this account.');
+        return;
+    }
+    let product = supplierProductRows.find((row) => String(row.supplier_product_id) === String(supplierProductId));
+    if (!product) {
+        try {
+            const data = await fetchJson(endpoint(`suppliers/get_supplier_product_list.php?supplier_product_id=${encodeURIComponent(supplierProductId)}&per_page=10`));
+            product = (data.products || []).find((row) => String(row.supplier_product_id) === String(supplierProductId)) || null;
+            if (product) supplierProductRows = [product, ...supplierProductRows];
+        } catch (error) {
+            PharmaUtils.toast.error(error.message || 'That supplier product could not be opened.');
+            return;
+        }
+    }
+    if (!product) {
+        PharmaUtils.toast.error('That supplier product could not be opened.');
+        return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete('edit_supplier_product');
+    history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    focusQuotedCostOnOpen = true;
+    returnAfterSupplierEdit = true;
+    await openEditSupplierProduct(supplierProductId);
+    if (!document.getElementById('editSupplierProductModal')?.classList.contains('show')) {
+        returnAfterSupplierEdit = false;
+    }
+}
+
 async function initializeSupplierWorkspace() {
     await Promise.resolve(window.__drpSessionReadyPromise).catch(() => null);
     const assignButton = document.getElementById('assignSupplierProductButton');
@@ -2302,7 +2370,8 @@ async function initializeSupplierWorkspace() {
     loadSuppliers();
     loadProductCategories();
     updateDependentProductSelectors();
-    loadSupplierProducts();
+    await loadSupplierProducts();
+    await openSupplierProductFromLink();
 }
 
 initializeSupplierWorkspace();

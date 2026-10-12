@@ -14,6 +14,7 @@ try {
     $categoryFilter = trim((string)($_GET['category'] ?? ''));
     $typeFilter = trim((string)($_GET['type'] ?? ''));
     $purchaseUnitFilter = trim((string)($_GET['purchase_unit'] ?? ''));
+    $supplierProductId = trim((string)($_GET['supplier_product_id'] ?? ''));
 
     $conditions = ['s.archived_at IS NULL'];
     $parameters = [];
@@ -32,6 +33,7 @@ try {
     if ($categoryFilter !== '') { $conditions[] = 'pc.category_name = :category'; $parameters[':category'] = $categoryFilter; }
     if ($typeFilter !== '') { $conditions[] = 'pt.type_name = :type'; $parameters[':type'] = $typeFilter; }
     if ($purchaseUnitFilter !== '') { $conditions[] = 'sp.purchase_unit = :purchase_unit'; $parameters[':purchase_unit'] = $purchaseUnitFilter; }
+    if ($supplierProductId !== '') { $conditions[] = 'sp.supplier_product_id = :supplier_product_id'; $parameters[':supplier_product_id'] = $supplierProductId; }
     $whereSql = implode(' AND ', $conditions);
 
     $countStatement = $pdo->prepare(
@@ -140,6 +142,7 @@ try {
     $pricingSnapshots = productPricingSnapshots($pdo, array_column($products, 'product_id'));
     $canViewSupplierCost = currentSessionHasRbacRole('super_admin') || currentSessionHasRbacRole('ro_super_admin')
         || currentSessionHasRbacRole('admin') || currentSessionHasRbacRole('ro_admin')
+        || currentSessionHasRbacRole('manager') || currentSessionHasRbacRole('ro_manager')
         || currentSessionHasRbacRole('supervisor') || currentSessionHasRbacRole('ro_supervisor');
     foreach ($products as &$product) {
         $specifications = $specificationsByProduct[(string)$product['product_id']] ?? [];

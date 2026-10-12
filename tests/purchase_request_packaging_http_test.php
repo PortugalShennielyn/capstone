@@ -86,7 +86,7 @@ try {
         $pdo->prepare("INSERT INTO product(product_id,barcode,product_name,brand_name,price,type_id,inventory_unit_id,status) VALUES(?,?,?,'Packaging regression',1,?,?,'Active')")->execute([$product,$product,'Packaging '.$base,$type,$unitId]);
         $setup = ['purchase_unit'=>$purchase,'inventory_unit'=>$base,'hierarchy_levels'=>$levels];
         $conversion = supplierPurchasingConversion($setup);
-        $pdo->prepare('INSERT INTO supplier_products(supplier_product_id,supplier_id,product_id,purchase_unit,inventory_unit,units_per_purchase_unit) VALUES(?,?,?,?,?,?)')->execute([$sp,$supplier,$product,$purchase,$base,$conversion['base_qty_per_purchase_unit']]);
+        $pdo->prepare('INSERT INTO supplier_products(supplier_product_id,supplier_id,product_id,purchase_unit,inventory_unit,units_per_purchase_unit,supplier_cost_input,supplier_cost_basis) VALUES(?,?,?,?,?,?,?,?)')->execute([$sp,$supplier,$product,$purchase,$base,$conversion['base_qty_per_purchase_unit'],10,'purchase']);
         syncSupplierProductUnitConversions($pdo,$sp,$setup);
         $candidates = supplierEligibilityApi('GET','purchase_requests/get_pr_candidates.php',$manager);
         supplierEligibilityAssert($candidates['status']===200, 'Candidate API failed: '.json_encode($candidates));

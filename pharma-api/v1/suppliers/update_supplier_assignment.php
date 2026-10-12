@@ -1,5 +1,5 @@
 <?php
-$allowedRoles = ['super_admin', 'admin', 'Admin', 'ro-super-admin', 'ro-admin'];
+$allowedRoles = ['super_admin', 'admin', 'Admin', 'manager', 'ro-super-admin', 'ro-admin', 'ro-manager'];
 require_once '../../config/db_connection.php';
 require_once '../../config/require_auth.php';
 require_once '../products/product_category_schema.php';

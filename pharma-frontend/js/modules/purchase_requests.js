@@ -10,6 +10,11 @@ let inventoryRows = [];
 let actorRole = "";
 let sessionUser = null;
 let dataReady = false;
+let requestsLoaded = false;
+let candidatesLoaded = false;
+let purchaseRequestRefresh = null;
+let catalogRequest = null;
+const PURCHASE_REQUEST_CACHE_KEY = "drpPurchaseRequests:list:v1";
 let inventoryShortcutHandled = false;
 let requestInFlight = false;
 let editingRequest = null;
@@ -520,6 +525,12 @@ function syncVisibleSelectionCheckbox() {
 function renderProductCatalog() {
     const body = document.getElementById("productSelectorRows");
     if (!body) return;
+    if (!candidatesLoaded) {
+        body.innerHTML =
+            '<tr><td colspan="11" class="product-selector-empty">Loading products...</td></tr>';
+        syncVisibleSelectionCheckbox();
+        return;
+    }
     const rows = visibleEligibleProducts();
     if (!rows.length) {
         body.innerHTML =
@@ -711,7 +722,8 @@ function formatSubmittedDate(value = "") {
 }
 
 function renderSummary() {
-    const count = (status) => requests.filter((request) => request.status === status).length;
+    const count = (status) =>
+        requestsLoaded ? String(requests.filter((request) => request.status === status).length) : "…";
     document.getElementById("draftPrCount").textContent = count("Draft");
     document.getElementById("pendingPrCount").textContent = count("Pending Supervisor Approval");
     document.getElementById("approvedPrCount").textContent = count("Approved");
@@ -904,11 +916,11 @@ function purchaseUnitLabel(unit, count) {
 
 function selectedProcurementOption(item) {
     const selectedId = procurementSelections[item.pr_item_id]?.supplier_product_id || "";
-    return (
+    const option =
         (item.supplier_options || []).find(
-            (option) => String(option.supplier_product_id) === String(selectedId),
-        ) || null
-    );
+            (candidate) => String(candidate.supplier_product_id) === String(selectedId),
+        ) || null;
+    return option?.supplier_price_available ? option : null;
 }
 
 function approvedRequirement(item) {
@@ -948,7 +960,7 @@ function initializePoGeneration(request) {
     supplierEtas = {};
     (request.items || []).forEach((item) => {
         const options = item.supplier_options || [];
-        const initial = options.length === 1 ? options[0] : null;
+        const initial = options.length === 1 && options[0].supplier_price_available ? options[0] : null;
         const conversion = Number(
             initial?.base_qty_per_purchase_unit || initial?.units_per_purchase_unit || 0,
         );
@@ -967,7 +979,15 @@ function procurementErrors(request) {
                 `Cannot generate PO for ${item.product_name} because no active supplier purchasing setup is assigned.`,
             );
         else if (!calc.option)
-            errors.push(`${item.product_name}: select a supplier purchasing setup.`);
+            errors.push(
+                (item.supplier_options || []).some((option) => option.supplier_price_available)
+                    ? `${item.product_name}: select a supplier purchasing setup.`
+                    : `${item.product_name}: set a supplier price before choosing a supplier.`,
+            );
+        else if (!calc.hasPrice)
+            errors.push(
+                `${item.product_name}: set a supplier price for ${calc.option.supplier_name} before choosing that supplier.`,
+            );
         else if (!calc.option.purchase_unit || !calc.option.inventory_unit || calc.conversion <= 0)
             errors.push(
                 `${item.product_name}: the selected supplier setup needs a valid purchase unit and packaging conversion.`,
@@ -980,6 +1000,10 @@ function procurementErrors(request) {
             errors.push(`${item.product_name}: the Supervisor-approved quantity is missing.`);
     });
     return errors;
+}
+
+function supplierPriceEditButton(option) {
+    return `<button type="button" class="btn btn-sm btn-outline-primary" data-set-supplier-price="${esc(option.supplier_product_id)}" style="padding:1px 8px;font-size:12px;line-height:1.4;white-space:nowrap">Set price</button>`;
 }
 
 function renderManagerPurchasingSetup(request) {
@@ -998,6 +1022,9 @@ function renderManagerPurchasingSetup(request) {
                     const recommendation = isRecommended
                         ? '<small style="display:block;margin:3px 0 0 23px"><span style="color:#198754;font-weight:700">Lowest price</span> <span style="color:#0d6efd;font-weight:700">Recommended</span></small>'
                         : "";
+                    if (!option.supplier_price_available) {
+                        return `<div style="display:block;padding:9px 10px;border-bottom:1px solid #e9ecef;background:#fff"><span style="display:flex;align-items:center;gap:7px"><input type="radio" disabled aria-disabled="true" tabindex="-1"><strong style="color:#6c757d">${esc(option.supplier_name)}</strong><span style="margin-left:auto;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#6c757d">${esc(priceLabel)}${supplierPriceEditButton(option)}</span></span></div>`;
+                    }
                     return `<label style="display:block;padding:9px 10px;border-bottom:1px solid #e9ecef;cursor:pointer;background:${isSelected ? "#f7f3ff" : "#fff"}"><span style="display:flex;align-items:center;gap:7px"><input type="radio" name="supplier-${esc(item.pr_item_id)}" data-manager-supplier value="${esc(option.supplier_product_id)}" ${isSelected ? "checked" : ""}><strong>${esc(option.supplier_name)}</strong><span style="margin-left:auto;font-size:14px;font-weight:600">${esc(priceLabel)}</span></span>${recommendation}</label>`;
                 })
                 .join("");
@@ -1008,7 +1035,7 @@ function renderManagerPurchasingSetup(request) {
                 ? compactPeso(calc.option.supplier_price_per_purchase_unit)
                 : calc.option ? '<span class="text-muted">Price not set</span>' : "-";
             const supplierPicker = options.length
-                ? `<details style="position:relative"><summary style="cursor:pointer;list-style:none;border:1px solid #ced4da;border-radius:6px;padding:8px 10px;background:#fff">${selectedSupplierLabel} <span aria-hidden="true" style="float:right">▾</span></summary><div style="position:absolute;z-index:20;top:calc(100% + 3px);left:0;right:0;min-width:270px;max-height:240px;overflow:auto;border:1px solid #ced4da;border-radius:6px;background:#fff;box-shadow:0 4px 12px #0002">${optionMarkup}</div></details>`
+                ? `<details style="position:relative;display:inline-block;max-width:190px"><summary style="cursor:pointer;list-style:none;border:1px solid #ced4da;border-radius:6px;padding:6px 22px 6px 8px;background:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${selectedSupplierLabel} <span aria-hidden="true" style="position:absolute;right:8px;top:6px">▾</span></summary><div style="position:absolute;z-index:20;top:calc(100% + 3px);left:0;width:max-content;min-width:300px;max-height:240px;overflow:auto;border:1px solid #ced4da;border-radius:6px;background:#fff;box-shadow:0 4px 12px #0002">${optionMarkup}</div></details>`
                 : '<span class="text-muted">No active supplier setup</span>';
             return `<tr data-manager-pr-item="${esc(item.pr_item_id)}"><td class="setup-product">${productIdentityMarkup(item, true)}<small style="font-size:10px">${esc(poProductSpecification(item))}</small></td><td>${supplierPicker}</td><td>${quote}</td><td>${calc.option ? esc(calc.option.summary || `${calc.conversion} ${calc.option.inventory_unit} per ${calc.option.purchase_unit}`) : "-"}</td><td><strong>${calc.option ? calc.orderQty.toLocaleString() : "-"}</strong></td><td><strong>${esc(calc.option?.purchase_unit || "-")}</strong></td><td class="expected-qty"><strong>${calc.option ? `${calc.expected.toLocaleString()} ${esc(calc.option.inventory_unit)}` : "-"}</strong></td><td class="text-end"><strong>${calc.estimatedLineTotal === null ? "—" : compactPeso(calc.estimatedLineTotal)}</strong></td></tr>`;
         })
@@ -1291,6 +1318,10 @@ function actionButtons(request) {
 function renderTable() {
     const body = document.getElementById("requestRows");
     if (!body) return;
+    if (!requestsLoaded) {
+        body.innerHTML = '<tr><td colspan="6" class="pr-empty">Loading purchase requests...</td></tr>';
+        return;
+    }
     const rows = filteredRequests();
     if (!rows.length) {
         body.innerHTML = '<tr><td colspan="6" class="pr-empty">No purchase requests yet.</td></tr>';
@@ -1333,8 +1364,14 @@ function prepareRequestMetadata(request = null) {
     );
 }
 
-function openForm(request = null, selectedProductIds = []) {
+async function openForm(request = null, selectedProductIds = []) {
     if (!canCreatePurchaseRequests()) return;
+    if (!candidatesLoaded) {
+        const modal = document.getElementById("createRequestModal");
+        if (modal) bootstrap.Modal.getOrCreateInstance(modal).show();
+        renderProductCatalog();
+        await refreshPurchaseRequestCatalog();
+    }
     editingRequest = request;
     selectedItems.clear();
     document.getElementById("requestId").value = request?.pr_id || "";
@@ -1622,34 +1659,126 @@ function maybeOpenInventoryShortcut() {
     openForm(null, eligibleIds);
 }
 
-async function load() {
+function restorePurchaseRequestCache() {
     try {
-        const [prData, candidateData, settingsData] = await Promise.all([
-            json(`${API_BASE_URL}/purchase_requests/get_purchase_requests.php?t=${Date.now()}`),
-            json(`${API_BASE_URL}/purchase_requests/get_pr_candidates.php?t=${Date.now()}`),
-            json(`${API_BASE_URL}/settings/get_admin_settings.php?t=${Date.now()}`).catch(() => ({ prQuantityLimit: 50 })),
+        const cached = JSON.parse(sessionStorage.getItem(PURCHASE_REQUEST_CACHE_KEY) || "null");
+        if (!cached || !Array.isArray(cached.requests)) return false;
+        requests = cached.requests;
+        requestsLoaded = true;
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function rememberPurchaseRequests() {
+    try {
+        sessionStorage.setItem(
+            PURCHASE_REQUEST_CACHE_KEY,
+            JSON.stringify({ requests, savedAt: Date.now() }),
+        );
+    } catch {
+        // The list still renders when session storage is full or blocked.
+    }
+}
+
+function syncGeneratingRequestPrices() {
+    if (!generatingRequest || generationInFlight) return;
+    const updated = requests.find((request) => String(request.pr_id) === String(generatingRequest.pr_id));
+    if (!updated) return;
+    const optionsByItem = new Map(
+        (updated.items || []).map((item) => [String(item.pr_item_id), item.supplier_options || []]),
+    );
+    let changed = false;
+    (generatingRequest.items || []).forEach((item) => {
+        const nextOptions = optionsByItem.get(String(item.pr_item_id));
+        if (!nextOptions) return;
+        if (JSON.stringify(item.supplier_options || []) !== JSON.stringify(nextOptions)) {
+            item.supplier_options = nextOptions;
+            changed = true;
+        }
+        const selectedId = procurementSelections[item.pr_item_id]?.supplier_product_id || "";
+        const selected = nextOptions.find((option) => String(option.supplier_product_id) === String(selectedId));
+        if (!selected?.supplier_price_available) {
+            const priced = nextOptions.filter((option) => option.supplier_price_available);
+            const nextId = !selectedId && nextOptions.length === 1 && priced.length === 1
+                ? priced[0].supplier_product_id
+                : "";
+            if (String(selectedId) !== String(nextId)) {
+                procurementSelections[item.pr_item_id] = { supplier_product_id: nextId };
+                changed = true;
+            }
+        }
+    });
+    if (!changed || !document.getElementById("generatePoModal")?.classList.contains("show")) return;
+    renderManagerPurchasingSetup(generatingRequest);
+    if (poGenerationStep === 2) renderManagerPoPreview(generatingRequest);
+    renderGenerationActions();
+}
+
+function refreshPurchaseRequests() {
+    if (purchaseRequestRefresh) return purchaseRequestRefresh;
+    purchaseRequestRefresh = (async () => {
+        try {
+            const prData = await json(`${API_BASE_URL}/purchase_requests/get_purchase_requests.php`);
+            requests = prData.data?.requests || [];
+            requestsLoaded = true;
+            rememberPurchaseRequests();
+            renderSummary();
+            renderTable();
+            syncGeneratingRequestPrices();
+            maybeOpenInventoryShortcut();
+        } catch (error) {
+            if (!requestsLoaded) {
+                const body = document.getElementById("requestRows");
+                if (body) {
+                    body.innerHTML = `<tr><td colspan="6" class="pr-empty text-danger">${esc(error.message)}</td></tr>`;
+                }
+                toastr.error(error.message);
+            }
+        } finally {
+            purchaseRequestRefresh = null;
+        }
+    })();
+    return purchaseRequestRefresh;
+}
+
+function refreshPurchaseRequestCatalog({ force = false } = {}) {
+    if (catalogRequest) return force ? catalogRequest.then(() => refreshPurchaseRequestCatalog({ force: true })) : catalogRequest;
+    if (candidatesLoaded && !force) return Promise.resolve();
+    catalogRequest = (async () => {
+        const [candidateData, settingsData] = await Promise.all([
+            json(`${API_BASE_URL}/purchase_requests/get_pr_candidates.php`),
+            json(`${API_BASE_URL}/settings/get_admin_settings.php`).catch(() => ({ prQuantityLimit: 50 })),
         ]);
         const configuredLimit = Number(settingsData?.prQuantityLimit);
         MAX_PURCHASE_REQUEST_QTY = Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 50;
         products = candidateData.data || [];
-        requests = prData.data?.requests || [];
         inventoryRows = products;
         productById.clear();
         inventoryByProduct.clear();
         products.forEach((product) => productById.set(String(product.product_id), product));
         inventoryRows.forEach((row) => inventoryByProduct.set(String(row.product_id), row));
+        candidatesLoaded = true;
         dataReady = true;
-        renderSummary();
-        renderTable();
         maybeOpenInventoryShortcut();
-    } catch (error) {
-        document.getElementById("requestRows").innerHTML =
-            `<tr><td colspan="6" class="pr-empty text-danger">${esc(error.message)}</td></tr>`;
-        toastr.error(error.message);
-    }
+        if (document.getElementById("createRequestModal")?.classList.contains("show")) renderSelectionState();
+    })();
+    const current = catalogRequest;
+    current.finally(() => {
+        if (catalogRequest === current) catalogRequest = null;
+    });
+    return current;
 }
 
-document.getElementById("createRequestButton")?.addEventListener("click", () => openForm());
+async function load() {
+    await refreshPurchaseRequests();
+    await refreshPurchaseRequestCatalog({ force: true });
+}
+
+document.getElementById("createRequestButton")?.addEventListener("click", () => {
+    openForm().catch((error) => toastr.error(error.message));
+});
 document.getElementById("productSelectorSearch")?.addEventListener("input", renderProductCatalog);
 document.getElementById("replenishmentFilter")?.addEventListener("change", renderProductCatalog);
 document.getElementById("productBulkSelect")?.addEventListener("change", (event) => {
@@ -1810,6 +1939,74 @@ window.addEventListener("message", (event) => {
         return;
     frame.style.height = `${Math.max(1123, Number(event.data.height || 1123))}px`;
 });
+function supplierPriceSavePayload(option, cost) {
+    const payload = {
+        supplier_product_id: option.supplier_product_id,
+        purchase_unit: option.purchase_unit,
+        units_per_purchase_unit: option.base_qty_per_purchase_unit || option.units_per_purchase_unit,
+        purchase_unit_contains:
+            option.purchase_unit_contains || option.base_qty_per_purchase_unit || option.units_per_purchase_unit,
+        supplier_cost_input: cost,
+    };
+    if (Array.isArray(option.hierarchy_levels) && option.hierarchy_levels.length) {
+        payload.hierarchy_levels = option.hierarchy_levels.map((level) => ({
+            unit: level.unit,
+            quantity: level.quantity,
+        }));
+    }
+    return payload;
+}
+
+async function saveSupplierPriceFromPurchaseOrder(item, option) {
+    const productName = String(item.generic_name || item.product_name || "Product").trim();
+    const purchaseUnit = option.purchase_unit || "purchase unit";
+    const focusTrap = bootstrap.Modal.getInstance(document.getElementById("generatePoModal"))?._focustrap;
+    focusTrap?.deactivate();
+    let result;
+    try {
+        result = await Swal.fire({
+            title: "Set supplier price",
+            html: `<div style="text-align:left"><strong>${esc(option.supplier_name)}</strong><div>${esc(productName)}</div><div style="margin-top:8px;color:#64748b">Quoted cost per ${esc(purchaseUnit)}</div></div>`,
+            input: "number",
+            inputAttributes: { min: "0", step: "0.01", inputmode: "decimal" },
+            inputPlaceholder: "0.00",
+            showCancelButton: true,
+            confirmButtonText: "Save price",
+            confirmButtonColor: "#6f42c1",
+            inputValidator: (value) => {
+                const amount = Number(value);
+                if (!Number.isFinite(amount) || amount <= 0) return "Enter a supplier price greater than zero.";
+                return undefined;
+            },
+        });
+    } finally {
+        focusTrap?.activate();
+    }
+    if (!result?.isConfirmed) return;
+    await json(`${API_BASE_URL}/suppliers/update_supplier_assignment.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(supplierPriceSavePayload(option, Number(result.value))),
+    });
+    await refreshPurchaseRequests();
+    toastr.success(`Supplier price saved for ${option.supplier_name}.`);
+}
+
+document.getElementById("managerProcurementAssignments")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-set-supplier-price]");
+    if (!button || !generatingRequest) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const row = button.closest("[data-manager-pr-item]");
+    const item = (generatingRequest.items || []).find(
+        (candidate) => String(candidate.pr_item_id) === String(row?.dataset.managerPrItem),
+    );
+    const option = (item?.supplier_options || []).find(
+        (candidate) => String(candidate.supplier_product_id) === String(button.dataset.setSupplierPrice),
+    );
+    if (!item || !option) return;
+    saveSupplierPriceFromPurchaseOrder(item, option).catch((error) => toastr.error(error.message));
+});
 document.getElementById("managerProcurementAssignments")?.addEventListener("change", (event) => {
     if (!generatingRequest) return;
     const row = event.target.closest("[data-manager-pr-item]");
@@ -1818,6 +2015,10 @@ document.getElementById("managerProcurementAssignments")?.addEventListener("chan
     );
     if (!item) return;
     if (event.target.matches("[data-manager-supplier]")) {
+        const option = (item.supplier_options || []).find(
+            (candidate) => String(candidate.supplier_product_id) === String(event.target.value),
+        );
+        if (!option?.supplier_price_available) return;
         procurementSelections[item.pr_item_id] = { supplier_product_id: event.target.value };
     }
     renderManagerPurchasingSetup(generatingRequest);
@@ -1884,7 +2085,8 @@ document.getElementById("requestRows")?.addEventListener("click", (event) => {
             toastr.error(error.message);
         }
     }
-    if (control.dataset.prAction === "edit") openForm(request);
+    if (control.dataset.prAction === "edit")
+        openForm(request).catch((error) => toastr.error(error.message));
     if (control.dataset.prAction === "submit")
         submitExisting(request).catch((error) => toastr.error(error.message));
     if (control.dataset.prAction === "generate-po") openPoGeneration(request);
@@ -1911,9 +2113,6 @@ document.getElementById("clearPrFilters")?.addEventListener("click", () => {
     });
     renderTable();
 });
-window.addEventListener("pharma:session-ready", (event) => applyRoleUi(event.detail));
-const initialSession = window.__drpSession || (await ensurePageTabSession());
-applyRoleUi(window.__drpSession || initialSession);
 const linkedStatus = new URLSearchParams(window.location.search).get("status") || "";
 const linkedStatusFilter = document.getElementById("prStatusFilter");
 if (
@@ -1922,4 +2121,19 @@ if (
 ) {
     linkedStatusFilter.value = linkedStatus;
 }
-await load();
+restorePurchaseRequestCache();
+if (requestsLoaded) {
+    renderSummary();
+    renderTable();
+}
+window.addEventListener("pharma:session-ready", (event) => applyRoleUi(event.detail));
+const initialSession = window.__drpSession || (await ensurePageTabSession());
+applyRoleUi(window.__drpSession || initialSession);
+await refreshPurchaseRequests();
+void refreshPurchaseRequestCatalog().catch(() => {});
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshPurchaseRequests();
+});
+window.addEventListener("pageshow", (event) => {
+    if (event.persisted) refreshPurchaseRequests();
+});

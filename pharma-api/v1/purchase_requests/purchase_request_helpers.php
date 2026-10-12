@@ -5,6 +5,10 @@ require_once __DIR__ . '/../suppliers/purchasing_conversion.php';
 
 function ensurePurchaseRequestSchema(PDO $pdo): void
 {
+    // Bump this flag name when the purchase-request schema checks below change.
+    $schemaFlag = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'drp_pr_schema_ready_20261011.flag';
+    if (is_file($schemaFlag)) return;
+
     ensureSupplierPurchasingConversionSchema($pdo);
     $migration = __DIR__ . '/../../migrations/20260807_create_purchase_requests.sql';
     if (!is_file($migration)) {
@@ -27,12 +31,15 @@ function ensurePurchaseRequestSchema(PDO $pdo): void
         $pdo->exec(trim((string) file_get_contents($linkMigration)));
     }
 
-    $workflowMigration = __DIR__ . '/../../migrations/20260811_automatic_po_from_purchase_requests.sql';
-    if (!is_file($workflowMigration)) {
-        throw new RuntimeException('Automatic purchase-order migration is missing.');
-    }
-    foreach (array_filter(array_map('trim', explode(';', (string) file_get_contents($workflowMigration)))) as $statement) {
-        $pdo->exec($statement);
+    $prLinkCheck = $pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_orders' AND COLUMN_NAME = 'pr_id'");
+    if ((int) $prLinkCheck->fetchColumn() === 0) {
+        $workflowMigration = __DIR__ . '/../../migrations/20260811_automatic_po_from_purchase_requests.sql';
+        if (!is_file($workflowMigration)) {
+            throw new RuntimeException('Automatic purchase-order migration is missing.');
+        }
+        foreach (array_filter(array_map('trim', explode(';', (string) file_get_contents($workflowMigration)))) as $statement) {
+            $pdo->exec($statement);
+        }
     }
 
     $approvedQtyCheck = $pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'purchase_request_items' AND COLUMN_NAME = 'approved_qty'");
@@ -43,16 +50,27 @@ function ensurePurchaseRequestSchema(PDO $pdo): void
     if ((int) $decisionReasonCheck->fetchColumn() === 0) {
         $pdo->exec('ALTER TABLE purchase_requests ADD COLUMN decision_reason TEXT NULL AFTER decided_at');
     }
-    $pdo->exec(
-        "UPDATE purchase_request_items pri
+    $needsApprovedQty = $pdo->query(
+        "SELECT 1
+         FROM purchase_request_items pri
          INNER JOIN purchase_requests pr ON pr.pr_id = pri.pr_id
-         SET pri.approved_qty = pri.requested_qty
          WHERE pr.status IN ('Approved', 'Partially Ordered', 'Ordered')
-           AND pri.approved_qty IS NULL"
-    );
+           AND pri.approved_qty IS NULL
+         LIMIT 1"
+    )->fetchColumn();
+    if ($needsApprovedQty) {
+        $pdo->exec(
+            "UPDATE purchase_request_items pri
+             INNER JOIN purchase_requests pr ON pr.pr_id = pri.pr_id
+             SET pri.approved_qty = pri.requested_qty
+             WHERE pr.status IN ('Approved', 'Partially Ordered', 'Ordered')
+               AND pri.approved_qty IS NULL"
+        );
+    }
 
     purchaseRequestEnsureIndex($pdo, 'purchase_orders', 'idx_purchase_orders_pr', ['pr_id']);
     purchaseRequestEnsureForeignKey($pdo, 'purchase_orders', 'fk_purchase_orders_pr', 'pr_id', 'purchase_requests', 'pr_id');
+    @file_put_contents($schemaFlag, 'ready');
 }
 
 function purchaseRequestEnsureIndex(PDO $pdo, string $table, string $index, array $columns): void
