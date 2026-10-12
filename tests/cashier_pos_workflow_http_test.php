@@ -93,11 +93,21 @@ function cashierWorkflowCompleteConcurrently(int $orderId, float $amount, array 
 }
 
 $cashierJs = (string) file_get_contents(__DIR__ . '/../pharma-frontend/js/modules/cashier_pos.js');
+$shiftSummaryJs = (string) file_get_contents(__DIR__ . '/../pharma-frontend/js/modules/cashier_shift_summary.js');
+$shiftSummaryCss = (string) file_get_contents(__DIR__ . '/../pharma-frontend/css/cashier_shift_summary.css');
 $navbarJs = (string) file_get_contents(__DIR__ . '/../pharma-frontend/js/navbar.js');
 cashierWorkflowAssert(substr_count($cashierJs, 'id="cashAmountInput"') === 1, 'Cashier POS must render exactly one authoritative Cash Received input.');
 cashierWorkflowAssert(strpos($cashierJs, 'class="payment-hero"') < strpos($cashierJs, 'class="items-wrap"'), 'The payment summary must render before the order items.');
 cashierWorkflowAssert(str_contains($cashierJs, 'paymentDrafts: new Map()') && str_contains($cashierJs, "event.key !== 'Enter'"), 'Cash preservation or Enter-to-submit handling is missing.');
 cashierWorkflowAssert(str_contains($cashierJs, 'submittingOrderIds.has(normalizedOrderId)'), 'Frontend double-submission protection is missing.');
+cashierWorkflowAssert(str_contains($shiftSummaryJs, 'Transaction Summary') && str_contains($shiftSummaryJs, 'function renderTrackedShifts'), 'Cashier shift tracking UI is missing.');
+$breakdownStart = strpos($shiftSummaryJs, 'function renderPaymentBreakdown');
+$breakdownEnd = strpos($shiftSummaryJs, 'function renderKpiCards', $breakdownStart === false ? 0 : $breakdownStart);
+$breakdownMarkup = $breakdownStart !== false && $breakdownEnd !== false ? substr($shiftSummaryJs, $breakdownStart, $breakdownEnd - $breakdownStart) : '';
+cashierWorkflowAssert(substr_count($breakdownMarkup, 'Total Cash Sales') === 1 && substr_count($breakdownMarkup, 'Total GCash Sales') === 1 && substr_count($breakdownMarkup, 'Total Payments Collected') === 1, 'Transaction Summary must render exactly the three requested cards.');
+cashierWorkflowAssert(!str_contains($breakdownMarkup, 'Total Cash Collected') && !str_contains($breakdownMarkup, 'Total GCash Collected'), 'Collected cash and GCash cards must not be rendered in Transaction Summary.');
+cashierWorkflowAssert(str_contains($shiftSummaryCss, '.payment-summary-card .cash-payment-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }'), 'Transaction Summary must use a three-column desktop layout.');
+cashierWorkflowAssert(str_contains($shiftSummaryCss, '.payment-summary-card .cash-payment-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }'), 'Transaction Summary must wrap into two columns on smaller screens.');
 cashierWorkflowAssert(str_contains($navbarJs, '.cashier-topbar') && str_contains($navbarJs, '.shift-topbar') && str_contains($navbarJs, '.title-wrap'), 'The shared topbar does not cover all cashier and sales headers.');
 foreach (['cashier_pos.html', 'cashier_transaction_history.html', 'cashier_shift_summary.html', 'sales_history.html'] as $page) {
     $html = (string) file_get_contents(__DIR__ . '/../pharma-frontend/' . $page);
@@ -129,11 +139,26 @@ $today = (string) $pdo->query('SELECT DATE(NOW())')->fetchColumn();
 $clerkSession = cashierWorkflowSession($pdo, $salesClerk, 'clerk');
 $cashierSession = cashierWorkflowSession($pdo, $cashier, 'cashier');
 $orderIds = [];
+$testShiftId = 0;
+$createdShiftId = 0;
 
 try {
     $shiftBefore = cashierWorkflowRequest("cashier/get_cashier_shift_summary.php?start_date={$today}&end_date={$today}", $cashierSession);
     cashierWorkflowAssert($shiftBefore['status'] === 200, 'Could not load the starting shift summary.');
+    $dashboardBefore = cashierWorkflowRequest('cashier/get_cashier_dashboard.php', $cashierSession);
+    cashierWorkflowAssert($dashboardBefore['status'] === 200, 'Could not load cashier dashboard metrics: ' . json_encode($dashboardBefore));
+    $dashboardBaseline = $dashboardBefore['body']['data']['summary'] ?? [];
+    foreach (['total_sales_today', 'completed_today', 'units_sold_today', 'cash_received_today', 'returns_today', 'average_sale_today'] as $metric) {
+        cashierWorkflowAssert(array_key_exists($metric, $dashboardBaseline), "Cashier dashboard response is missing {$metric}.");
+    }
     $initialShift = $shiftBefore['body']['data']['summary'] ?? [];
+    $activeShift = $pdo->prepare('SELECT shift_id FROM cashier_shifts WHERE active_cashier_id=:cashier_id LIMIT 1');
+    $activeShift->execute([':cashier_id' => $cashier['user_id']]);
+    $testShiftId = (int) ($activeShift->fetchColumn() ?: 0);
+    $initialTrackedShift = null;
+    foreach ($shiftBefore['body']['data']['shifts'] ?? [] as $shift) {
+        if ((int) $shift['shift_id'] === $testShiftId) $initialTrackedShift = $shift;
+    }
 
     $createOrder = static function (string $customer, float $discount = 0) use (&$orderIds, $product, $clerkSession): int {
         $response = cashierWorkflowRequest('sales/sales_order_send_to_cashier.php', $clerkSession, [
@@ -155,6 +180,20 @@ try {
 
     $firstOrder = $createOrder('Codex Cash Test');
     $accept($firstOrder);
+    if ($testShiftId === 0) {
+        $withoutShift = cashierWorkflowRequest('cashier/complete_payment.php', $cashierSession, [
+            'order_id' => $firstOrder, 'amount_paid' => 20.00,
+            'cashier_discount_type' => 'none', 'cashier_discount_amount' => 0,
+        ]);
+        cashierWorkflowAssert($withoutShift['status'] === 400 && str_contains($withoutShift['body']['message'] ?? '', 'Start your cashier shift'), 'Payment must be blocked before a cashier shift starts.');
+        $started = cashierWorkflowRequest('cashier/manage_cashier_shift.php', $cashierSession, [
+            'action' => 'start', 'opening_cash' => 100.00,
+        ]);
+        cashierWorkflowAssert($started['status'] === 201, 'Cashier could not start a shift: ' . json_encode($started));
+        $createdShiftId = (int) ($started['body']['data']['shift']['shift_id'] ?? 0);
+        $testShiftId = $createdShiftId;
+        cashierWorkflowAssert($testShiftId > 0, 'Starting a shift did not return its ID.');
+    }
     $insufficient = cashierWorkflowRequest('cashier/complete_payment.php', $cashierSession, [
         'order_id' => $firstOrder, 'amount_paid' => 9.99,
         'cashier_discount_type' => 'none', 'cashier_discount_amount' => 0,
@@ -182,10 +221,20 @@ try {
     ]);
     cashierWorkflowAssert($discounted['status'] === 200, 'Decimal discounted payment failed: ' . json_encode($discounted));
 
+    $fourthOrder = $createOrder('Codex GCash Dashboard');
+    $accept($fourthOrder);
+    $gcash = cashierWorkflowRequest('cashier/complete_payment.php', $cashierSession, [
+        'order_id' => $fourthOrder, 'amount_paid' => 10.00,
+        'payment_method' => 'gcash', 'gcash_confirmed' => true,
+        'cashier_discount_type' => 'none', 'cashier_discount_amount' => 0,
+    ]);
+    cashierWorkflowAssert($gcash['status'] === 200, 'Confirmed GCash payment failed: ' . json_encode($gcash));
+
     $expected = [
         $firstOrder => ['total' => 10.00, 'cash' => 20.00, 'change' => 10.00, 'discount' => 0.00],
         $secondOrder => ['total' => 10.00, 'cash' => 10.00, 'change' => 0.00, 'discount' => 0.00],
         $thirdOrder => ['total' => 9.00, 'cash' => 9.50, 'change' => 0.50, 'discount' => 1.00],
+        $fourthOrder => ['total' => 10.00, 'cash' => 0.00, 'change' => 0.00, 'discount' => 0.00],
     ];
     foreach ($expected as $orderId => $values) {
         $statement = $pdo->prepare(
@@ -201,6 +250,9 @@ try {
         cashierWorkflowAssert((bool) $saved && $saved['status'] === 'completed', "Order {$orderId} was not completed.");
         cashierWorkflowAssert($saved['sales_clerk_id'] === $salesClerk['user_id'] && $saved['assigned_cashier_id'] === $cashier['user_id'], 'Order staff relationships were not saved by ID.');
         cashierWorkflowAssert((int) $saved['payment_count'] === 1 && (int) $saved['receipt_count'] === 1, "Order {$orderId} did not save exactly one payment and receipt.");
+        $shiftLink = $pdo->prepare('SELECT shift_id FROM cashier_shift_transactions WHERE order_id=:order_id');
+        $shiftLink->execute([':order_id' => $orderId]);
+        cashierWorkflowAssert((int) $shiftLink->fetchColumn() === $testShiftId, "Order {$orderId} was not assigned to the open shift.");
         cashierWorkflowAssert(abs((float) $saved['total_amount'] - $values['total']) < 0.005, "Order {$orderId} total is incorrect.");
         cashierWorkflowAssert(abs((float) $saved['cash_received'] - $values['cash']) < 0.005, "Order {$orderId} cash received is incorrect.");
         cashierWorkflowAssert(abs((float) $saved['change_amount'] - $values['change']) < 0.005, "Order {$orderId} change is incorrect.");
@@ -219,23 +271,67 @@ try {
 
     $stockStatement->execute([':product_id' => $product['product_id']]);
     $stockAfter = array_sum(array_map('intval', $stockStatement->fetchAll(PDO::FETCH_KEY_PAIR)));
-    cashierWorkflowAssert($stockAfter === $stockTotalBefore - 6 && $stockAfter >= 0, 'Shelf stock was not deducted exactly once per completed order.');
+    cashierWorkflowAssert($stockAfter === $stockTotalBefore - 8 && $stockAfter >= 0, 'Shelf stock was not deducted exactly once per completed order.');
 
     $shiftAfter = cashierWorkflowRequest("cashier/get_cashier_shift_summary.php?start_date={$today}&end_date={$today}", $cashierSession);
     $finalShift = $shiftAfter['body']['data']['summary'] ?? [];
     cashierWorkflowAssert($shiftAfter['status'] === 200, 'Could not reload the shift summary.');
-    cashierWorkflowAssert((int) ($finalShift['completed_transactions'] ?? 0) === (int) ($initialShift['completed_transactions'] ?? 0) + 3, 'Shift Summary did not add all three completed transactions.');
-    cashierWorkflowAssert(abs((float) ($finalShift['total_completed_sales'] ?? 0) - (float) ($initialShift['total_completed_sales'] ?? 0) - 29.00) < 0.005, 'Shift Summary completed sales are incorrect.');
+    cashierWorkflowAssert((int) ($finalShift['completed_transactions'] ?? 0) === (int) ($initialShift['completed_transactions'] ?? 0) + 4, 'Shift Summary did not add all four completed transactions.');
+    cashierWorkflowAssert(abs((float) ($finalShift['total_completed_sales'] ?? 0) - (float) ($initialShift['total_completed_sales'] ?? 0) - 39.00) < 0.005, 'Shift Summary completed sales are incorrect.');
     cashierWorkflowAssert(abs((float) ($finalShift['cash_tendered'] ?? 0) - (float) ($initialShift['cash_tendered'] ?? 0) - 39.50) < 0.005, 'Shift Summary cash tendered is incorrect.');
     cashierWorkflowAssert(abs((float) ($finalShift['change_given'] ?? 0) - (float) ($initialShift['change_given'] ?? 0) - 10.50) < 0.005, 'Shift Summary change given is incorrect.');
+    $dashboardAfter = cashierWorkflowRequest('cashier/get_cashier_dashboard.php', $cashierSession);
+    cashierWorkflowAssert($dashboardAfter['status'] === 200, 'Could not reload dashboard metrics after saved payments.');
+    $dashboardSummary = $dashboardAfter['body']['data']['summary'] ?? [];
+    cashierWorkflowAssert((int) $dashboardSummary['completed_today'] === (int) $dashboardBaseline['completed_today'] + 4, 'Dashboard transaction count did not reflect the four persisted payments.');
+    cashierWorkflowAssert(abs((float) $dashboardSummary['total_sales_today'] - (float) $dashboardBaseline['total_sales_today'] - 39.00) < 0.005, 'Dashboard total sales did not reflect persisted net sale amounts.');
+    cashierWorkflowAssert((int) $dashboardSummary['units_sold_today'] === (int) $dashboardBaseline['units_sold_today'] + 8, 'Dashboard units sold did not sum transaction line-item quantities.');
+    cashierWorkflowAssert(abs((float) $dashboardSummary['cash_received_today'] - (float) $dashboardBaseline['cash_received_today'] - 29.00) < 0.005, 'Dashboard cash received incorrectly included tendered change or non-cash payment.');
+    cashierWorkflowAssert(
+        abs((float) $dashboardSummary['average_sale_today'] - ((float) $dashboardSummary['total_sales_today'] / (int) $dashboardSummary['completed_today'])) < 0.005,
+        'Dashboard average sale does not use the same sales and transaction set.'
+    );
+    $dashboardData = $dashboardAfter['body']['data'] ?? [];
+    cashierWorkflowAssert(($dashboardData['business_date'] ?? '') === $today, 'Dashboard did not return its database business date.');
+    cashierWorkflowAssert(isset($dashboardData['charts']['today'], $dashboardData['charts']['week'], $dashboardData['charts']['month']), 'Dashboard chart series are missing.');
+    cashierWorkflowAssert(
+        count(array_filter($dashboardData['recent_transactions'] ?? [], static fn(array $row): bool => (int) $row['order_id'] === $firstOrder)) === 1,
+        'Dashboard recent transactions did not include the saved transaction.'
+    );
+    $trackedShift = array_values(array_filter($shiftAfter['body']['data']['shifts'] ?? [], static fn(array $shift): bool => (int) $shift['shift_id'] === $testShiftId))[0] ?? null;
+    cashierWorkflowAssert($trackedShift !== null && (int) $trackedShift['completed_transactions'] === (int) ($initialTrackedShift['completed_transactions'] ?? 0) + 4, 'Tracked shift totals did not include all four completed payments.');
+    cashierWorkflowAssert(abs((float) $trackedShift['total_payments_collected'] - (float) ($initialTrackedShift['total_payments_collected'] ?? 0) - 39.00) < 0.005, 'Tracked shift payment total is incorrect.');
+    if ($createdShiftId > 0) {
+        $unfinishedOrder = $createOrder('Codex Accepted At Shift Close');
+        $accept($unfinishedOrder);
+        $actualCash = (float) $trackedShift['opening_cash'] + (float) $trackedShift['net_cash_collected'];
+        $closed = cashierWorkflowRequest('cashier/manage_cashier_shift.php', $cashierSession, [
+            'action' => 'close',
+            'actual_cash' => $actualCash,
+        ]);
+        cashierWorkflowAssert($closed['status'] === 200 && ($closed['body']['data']['shift']['status'] ?? '') === 'closed', 'Cashier could not close the shift: ' . json_encode($closed));
+        $savedShift = $pdo->prepare('SELECT status, active_cashier_id, actual_cash, expected_cash, closed_at FROM cashier_shifts WHERE shift_id=:shift_id');
+        $savedShift->execute([':shift_id' => $createdShiftId]);
+        $closedRecord = $savedShift->fetch(PDO::FETCH_ASSOC);
+        cashierWorkflowAssert(
+            $closedRecord && $closedRecord['status'] === 'closed' && $closedRecord['active_cashier_id'] === null
+            && $closedRecord['closed_at'] !== null && abs((float) $closedRecord['actual_cash'] - $actualCash) < 0.005,
+            'Closing the shift did not persist its closed status, timestamp, and cash count.'
+        );
+    }
 
     echo "cashier POS workflow HTTP test passed\n";
 } finally {
     if ($orderIds) {
         $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+        $pdo->prepare("DELETE FROM cashier_shift_transactions WHERE order_id IN ({$placeholders})")->execute($orderIds);
         foreach (['sales_receipts', 'sales_payments', 'cashier_queue', 'sales_order_status_history', 'sales_order_items', 'sales_orders'] as $table) {
             $pdo->prepare("DELETE FROM {$table} WHERE order_id IN ({$placeholders})")->execute($orderIds);
         }
+    }
+    if ($createdShiftId > 0) {
+        $pdo->prepare('DELETE FROM cashier_shift_transactions WHERE shift_id=:shift_id')->execute([':shift_id' => $createdShiftId]);
+        $pdo->prepare('DELETE FROM cashier_shifts WHERE shift_id=:shift_id')->execute([':shift_id' => $createdShiftId]);
     }
     $restore = $pdo->prepare('UPDATE product_selling_stock SET quantity_remaining=:quantity WHERE selling_stock_id=:id');
     foreach ($stockBefore as $sellingStockId => $quantity) {

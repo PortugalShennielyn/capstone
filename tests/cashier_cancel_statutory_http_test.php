@@ -58,7 +58,20 @@ $stockBefore = $stockStmt->fetchAll(PDO::FETCH_KEY_PAIR);
 $clerkSession = cashierFeatureSession($pdo,$clerk);
 $cashierSession = cashierFeatureSession($pdo,$cashier);
 $orders = [];
+$createdShiftId = 0;
 try {
+    $today = (string)$pdo->query('SELECT DATE(NOW())')->fetchColumn();
+    $summary = cashierFeatureRequest("cashier/get_cashier_shift_summary.php?start_date={$today}&end_date={$today}", $cashierSession);
+    cashierFeatureAssert($summary['status']===200,'Could not load cashier shift summary.');
+    $activeShift = $pdo->prepare('SELECT shift_id FROM cashier_shifts WHERE active_cashier_id=:cashier_id LIMIT 1');
+    $activeShift->execute([':cashier_id'=>$cashier['user_id']]);
+    if (!(int)$activeShift->fetchColumn()) {
+        $started = cashierFeatureRequest('cashier/manage_cashier_shift.php',$cashierSession,['action'=>'start','opening_cash'=>50.00]);
+        cashierFeatureAssert($started['status']===201,'Could not start cashier shift: '.json_encode($started));
+        $createdShiftId = (int)($started['body']['data']['shift']['shift_id']??0);
+        cashierFeatureAssert($createdShiftId>0,'Starting a shift did not return a shift ID.');
+    }
+
     $makeOrder = static function(float $clerkDiscount=0) use (&$orders,$product,$clerkSession,$cashierSession): int {
         $response = cashierFeatureRequest('sales/sales_order_send_to_cashier.php',$clerkSession,[
             'customer_name'=>'Codex Cashier Feature Test',
@@ -117,9 +130,14 @@ try {
     echo "Cashier cancellation and Senior Citizen/PWD medicine payments passed.\n";
 } finally {
     foreach ($orders as $id) {
+        $pdo->prepare('DELETE FROM cashier_shift_transactions WHERE order_id=:id')->execute([':id'=>$id]);
         foreach (['sales_receipts','sales_payments','cashier_queue','sales_order_status_history','sales_order_items','sales_orders'] as $table) {
             $pdo->prepare("DELETE FROM {$table} WHERE order_id=:id")->execute([':id'=>$id]);
         }
+    }
+    if ($createdShiftId > 0) {
+        $pdo->prepare('DELETE FROM cashier_shift_transactions WHERE shift_id=:shift_id')->execute([':shift_id'=>$createdShiftId]);
+        $pdo->prepare('DELETE FROM cashier_shifts WHERE shift_id=:shift_id')->execute([':shift_id'=>$createdShiftId]);
     }
     foreach ($stockBefore as $stockId=>$quantity) {
         $pdo->prepare('UPDATE product_selling_stock SET quantity_remaining=:qty WHERE selling_stock_id=:id')->execute([':qty'=>$quantity,':id'=>$stockId]);

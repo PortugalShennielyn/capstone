@@ -1,4 +1,4 @@
-import API_BASE_URL from '../config/config.js';
+import API_BASE_URL from '../config/config.js?v=2';
 import { savedTransactionTotals } from './sales_financials.js?v=1';
 
 const page = document.body.dataset.cashierPage || '';
@@ -410,15 +410,6 @@ async function loadDashboard() {
     setText('completedToday', count(s.completed_today));
     setText('totalSalesToday', money(s.total_sales_today));
     setText('cashCollectedToday', money(s.cash_collected_today));
-    const list = document.getElementById('activityList');
-    if (!list) return;
-    const rows = data.activities || [];
-    list.innerHTML = rows.length ? rows.map((row) => `
-        <div class="activity-item">
-            <strong>${esc(row.description)}</strong>
-            <span>${esc(row.action)} - ${esc(dt(row.created_at))}</span>
-        </div>
-    `).join('') : '<div class="empty-state">No cashier activities yet.</div>';
 }
 
 async function loadQueue() {

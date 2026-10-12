@@ -37,6 +37,7 @@ $deniedEndpoints = [
     '/PharmacySystem_for_DocR/pharma-api/v1/sales/sales_order_create.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/get_cashier_orders.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/save_cashier_shift_reconciliation.php',
+    '/PharmacySystem_for_DocR/pharma-api/v1/cashier/manage_cashier_shift.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/accept_order.php',
     '/PharmacySystem_for_DocR/pharma-api/v1/cashier/complete_payment.php',
 ];

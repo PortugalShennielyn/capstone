@@ -32,6 +32,9 @@ function shiftSummaryEmptyData(
         'cashier_name' => $cashierName,
         'is_admin_view' => $isAdmin,
         'cashiers' => $isAdmin ? $cashiers : [],
+        'active_shift' => null,
+        'shifts' => [],
+        'can_manage_shift' => false,
         'reconciliation' => null,
         'has_records' => false,
         'summary' => [
@@ -71,6 +74,7 @@ function shiftSummaryEmptyData(
 }
 
 try {
+    ensureCashierShiftSchema($pdo);
     $isAdminView = cashierIsAdminSession();
     $authenticatedUserId = cashierCurrentUserId();
     $today = new DateTimeImmutable('today');
@@ -106,20 +110,29 @@ try {
                 u.role = 'cashier'
                 OR (
                     u.role IN ('admin', 'super_admin', 'manager')
-                    AND EXISTS (
-                        SELECT 1
-                        FROM sales_payments activity_payment
-                        WHERE activity_payment.cashier_id = u.user_id
-                        LIMIT 1
+                    AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM sales_payments activity_payment
+                            WHERE activity_payment.cashier_id = u.user_id
+                            LIMIT 1
+                        )
+                        OR EXISTS (
+                            SELECT 1
+                            FROM cashier_shifts activity_shift
+                            WHERE activity_shift.cashier_id = u.user_id
+                            LIMIT 1
+                        )
                     )
                 )
+                OR (u.user_id = :authenticated_user_id AND u.role IN ('admin', 'super_admin'))
            )
            AND u.status = 'Active'
            AND COALESCE(u.is_archived, 0) = 0
            AND COALESCE(u.is_deleted, 0) = 0
          ORDER BY name ASC"
     );
-    $cashierListStmt->execute();
+    $cashierListStmt->execute([':authenticated_user_id' => $authenticatedUserId]);
     $cashiers = array_map(static function (array $row): array {
         return [
             'user_id' => (string) $row['user_id'],
@@ -147,12 +160,21 @@ try {
                 role = 'cashier'
                 OR (
                     role IN ('admin', 'super_admin', 'manager')
-                    AND EXISTS (
-                        SELECT 1
-                        FROM sales_payments activity_payment
-                        WHERE activity_payment.cashier_id = users.user_id
-                        LIMIT 1
-                    )
+                     AND (
+                         EXISTS (
+                             SELECT 1
+                             FROM sales_payments activity_payment
+                             WHERE activity_payment.cashier_id = users.user_id
+                             LIMIT 1
+                         )
+                         OR EXISTS (
+                             SELECT 1
+                             FROM cashier_shifts activity_shift
+                             WHERE activity_shift.cashier_id = users.user_id
+                             LIMIT 1
+                         )
+                     )
+                     OR (user_id = :authenticated_user_id AND role IN ('admin', 'super_admin'))
                 )
            )
            AND status = 'Active'
@@ -160,7 +182,10 @@ try {
            AND COALESCE(is_deleted, 0) = 0
          LIMIT 1"
     );
-    $cashierStmt->execute([':user_id' => $targetCashierId]);
+    $cashierStmt->execute([
+        ':user_id' => $targetCashierId,
+        ':authenticated_user_id' => $authenticatedUserId,
+    ]);
     $cashier = $cashierStmt->fetch(PDO::FETCH_ASSOC);
     if (!$cashier) {
         http_response_code($isAdminView ? 422 : 403);
@@ -174,6 +199,96 @@ try {
     $cashierName = cashierDisplay($cashier['cashier_name'] ?? '', 'Cashier');
     $start = $startDate . ' 00:00:00';
     $end = $endDateObject->modify('+1 day')->format('Y-m-d') . ' 00:00:00';
+    $activeShiftStmt = $pdo->prepare(
+        "SELECT shift_id, status, opening_cash, opened_at
+         FROM cashier_shifts
+         WHERE active_cashier_id = :cashier_id AND status = 'open'
+         LIMIT 1"
+    );
+    $activeShiftStmt->execute([':cashier_id' => $targetCashierId]);
+    $activeShift = $activeShiftStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $shiftStmt = $pdo->prepare(
+        "SELECT s.shift_id, s.status, s.opening_cash, s.expected_cash, s.actual_cash,
+                s.cash_variance, s.variance_remarks, s.opened_at, s.closed_at,
+                COALESCE(t.completed_transactions, 0) AS completed_transactions,
+                COALESCE(t.cash_sales, 0) AS cash_sales,
+                COALESCE(t.gcash_sales, 0) AS gcash_sales,
+                COALESCE(t.cash_refunds, 0) AS cash_refunds,
+                COALESCE(t.gcash_refunds, 0) AS gcash_refunds
+         FROM cashier_shifts s
+         LEFT JOIN (
+            SELECT st.shift_id,
+                   COUNT(DISTINCT o.order_id) AS completed_transactions,
+                   SUM(CASE WHEN LOWER(p.payment_method) = 'cash' THEN COALESCE(NULLIF(p.final_amount, 0), p.total_amount) ELSE 0 END) AS cash_sales,
+                   SUM(CASE WHEN LOWER(p.payment_method) = 'gcash' THEN COALESCE(NULLIF(p.final_amount, 0), p.total_amount) ELSE 0 END) AS gcash_sales,
+                   SUM(CASE WHEN LOWER(p.payment_method) = 'cash' AND p.payment_status = 'refunded' THEN COALESCE(NULLIF(p.final_amount, 0), p.total_amount) ELSE 0 END) AS cash_refunds,
+                   SUM(CASE WHEN LOWER(p.payment_method) = 'gcash' AND p.payment_status = 'refunded' THEN COALESCE(NULLIF(p.final_amount, 0), p.total_amount) ELSE 0 END) AS gcash_refunds
+            FROM cashier_shift_transactions st
+            INNER JOIN sales_orders o ON o.order_id = st.order_id AND o.status = 'completed'
+            INNER JOIN sales_payments p ON p.order_id = o.order_id
+            WHERE p.payment_status IN ('paid', 'refunded')
+              AND LOWER(p.payment_method) IN ('cash', 'gcash')
+              AND st.shift_id IN (
+                  SELECT scoped_shift.shift_id
+                  FROM cashier_shifts scoped_shift
+                  WHERE scoped_shift.cashier_id = :totals_cashier_id
+                    AND ((scoped_shift.opened_at >= :totals_start AND scoped_shift.opened_at < :totals_end) OR scoped_shift.status = 'open')
+              )
+            GROUP BY st.shift_id
+         ) t ON t.shift_id = s.shift_id
+         WHERE s.cashier_id = :cashier_id
+           AND ((s.opened_at >= :date_start AND s.opened_at < :date_end) OR s.status = 'open')
+         ORDER BY s.opened_at DESC, s.shift_id DESC"
+    );
+    $shiftStmt->execute([
+        ':cashier_id' => $targetCashierId,
+        ':date_start' => $start,
+        ':date_end' => $end,
+        ':totals_cashier_id' => $targetCashierId,
+        ':totals_start' => $start,
+        ':totals_end' => $end,
+    ]);
+    $shiftRows = $shiftStmt->fetchAll(PDO::FETCH_ASSOC);
+    $shifts = array_map(static function (array $row): array {
+        $cashSales = cashierMoney($row['cash_sales'] ?? 0);
+        $gcashSales = cashierMoney($row['gcash_sales'] ?? 0);
+        $cashRefunds = cashierMoney($row['cash_refunds'] ?? 0);
+        $gcashRefunds = cashierMoney($row['gcash_refunds'] ?? 0);
+        $netCash = cashierMoney($cashSales - $cashRefunds);
+        $netGcash = cashierMoney($gcashSales - $gcashRefunds);
+        return [
+            'shift_id' => (int) $row['shift_id'],
+            'status' => (string) $row['status'],
+            'opening_cash' => cashierMoney($row['opening_cash']),
+            'expected_cash' => $row['expected_cash'] === null ? null : cashierMoney($row['expected_cash']),
+            'actual_cash' => $row['actual_cash'] === null ? null : cashierMoney($row['actual_cash']),
+            'cash_variance' => $row['cash_variance'] === null ? null : cashierMoney($row['cash_variance']),
+            'variance_remarks' => (string) ($row['variance_remarks'] ?? ''),
+            'opened_at' => $row['opened_at'],
+            'closed_at' => $row['closed_at'],
+            'completed_transactions' => (int) $row['completed_transactions'],
+            'cash_paid_sales' => $cashSales,
+            'gcash_paid_sales' => $gcashSales,
+            'cash_refunds' => $cashRefunds,
+            'gcash_refunds' => $gcashRefunds,
+            'net_cash_collected' => $netCash,
+            'net_gcash_collected' => $netGcash,
+            'total_payments_collected' => cashierMoney($netCash + $netGcash),
+        ];
+    }, $shiftRows);
+    $dataShift = $activeShift ? [
+        'shift_id' => (int) $activeShift['shift_id'],
+        'status' => (string) $activeShift['status'],
+        'opening_cash' => cashierMoney($activeShift['opening_cash']),
+        'opened_at' => $activeShift['opened_at'],
+        'closed_at' => null,
+    ] : null;
+    $sessionRoles = cashierSessionRoles();
+    $canManageShift = $targetCashierId === $authenticatedUserId
+        && (
+            in_array('cashier', $sessionRoles, true)
+            || (bool) array_intersect($sessionRoles, ['admin', 'super_admin', 'ro_admin', 'ro_super_admin'])
+        );
     $completedParams = [
         ':cashier_id' => $targetCashierId,
         ':date_start' => $start,
@@ -339,6 +454,9 @@ try {
     $netGcashSales = cashierMoney($gcashPaidSales - $gcashRefunds);
 
     $data = shiftSummaryEmptyData($startDate, $endDate, $isAdminView, $cashiers, $targetCashierId, $cashierName);
+    $data['active_shift'] = $dataShift;
+    $data['shifts'] = $shifts;
+    $data['can_manage_shift'] = $canManageShift;
     $data['has_records'] = $completedTransactions > 0 || $cancelledVoided > 0 || $refundedTransactions > 0 || $refunds > 0;
     $data['summary'] = [
         'total_completed_sales' => $completedSales,
@@ -377,35 +495,83 @@ try {
     $data['recent_transactions'] = $recentTransactions;
 
     if ($startDate === $endDate) {
-        $reconciliationStmt = $pdo->prepare(
-            'SELECT beginning_cash, actual_cash, variance_remarks, status, updated_at
-             FROM cashier_shift_reconciliations
-             WHERE cashier_id = :cashier_id AND shift_date = :shift_date
-             LIMIT 1'
-        );
-        $reconciliationStmt->execute([':cashier_id' => $targetCashierId, ':shift_date' => $startDate]);
-        $reconciliation = $reconciliationStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        $beginningCash = $reconciliation ? cashierMoney($reconciliation['beginning_cash']) : null;
-        $actualCash = $reconciliation && $reconciliation['actual_cash'] !== null ? cashierMoney($reconciliation['actual_cash']) : null;
-        $cashIn = 0.0;
-        $cashOut = 0.0;
-        $expectedCash = $beginningCash === null ? null : cashierMoney($beginningCash + $cashPaidSales - $cashOut - $cashRefunds);
-        $data['reconciliation'] = [
-            'beginning_cash' => $beginningCash,
-            'cash_sales' => $cashPaidSales,
-            'cash_in' => $cashIn,
-            'cash_in_supported' => false,
-            'cash_out' => $cashOut,
-            'cash_out_supported' => false,
-            'cash_refunds_paid' => $cashRefunds,
-            'expected_cash' => $expectedCash,
-            'actual_cash' => $actualCash,
-            'cash_variance' => $actualCash === null || $expectedCash === null ? null : cashierMoney($actualCash - $expectedCash),
-            'variance_remarks' => $reconciliation['variance_remarks'] ?? '',
-            'status' => $reconciliation['status'] ?? 'not_counted',
-            'updated_at' => $reconciliation['updated_at'] ?? null,
-            'editable' => !$isAdminView && $targetCashierId === $authenticatedUserId,
-        ];
+        $dailyShifts = array_values(array_filter($shifts, static function (array $shift) use ($start, $end): bool {
+            return (string) $shift['opened_at'] >= $start && (string) $shift['opened_at'] < $end;
+        }));
+        if ($dailyShifts) {
+            $beginningCash = 0.0;
+            $expectedCash = 0.0;
+            $actualCashTotal = 0.0;
+            $cashSales = 0.0;
+            $cashRefundTotal = 0.0;
+            $allShiftsClosed = true;
+            $remarks = [];
+            $updatedAt = null;
+            foreach ($dailyShifts as $shift) {
+                $beginningCash += (float) $shift['opening_cash'];
+                $cashSales += (float) $shift['cash_paid_sales'];
+                $cashRefundTotal += (float) $shift['cash_refunds'];
+                $expectedCash += $shift['expected_cash'] === null
+                    ? (float) $shift['opening_cash'] + (float) $shift['net_cash_collected']
+                    : (float) $shift['expected_cash'];
+                if ($shift['status'] !== 'closed' || $shift['actual_cash'] === null) {
+                    $allShiftsClosed = false;
+                } else {
+                    $actualCashTotal += (float) $shift['actual_cash'];
+                }
+                if ($shift['variance_remarks'] !== '') $remarks[] = '#' . $shift['shift_id'] . ': ' . $shift['variance_remarks'];
+                if ($shift['closed_at'] && ($updatedAt === null || $shift['closed_at'] > $updatedAt)) $updatedAt = $shift['closed_at'];
+            }
+            $beginningCash = cashierMoney($beginningCash);
+            $expectedCash = cashierMoney($expectedCash);
+            $actualCash = $allShiftsClosed ? cashierMoney($actualCashTotal) : null;
+            $data['reconciliation'] = [
+                'beginning_cash' => $beginningCash,
+                'cash_sales' => cashierMoney($cashSales),
+                'cash_in' => 0.0,
+                'cash_in_supported' => false,
+                'cash_out' => 0.0,
+                'cash_out_supported' => false,
+                'cash_refunds_paid' => cashierMoney($cashRefundTotal),
+                'expected_cash' => $expectedCash,
+                'actual_cash' => $actualCash,
+                'cash_variance' => $actualCash === null ? null : cashierMoney($actualCash - $expectedCash),
+                'variance_remarks' => implode(' | ', $remarks),
+                'status' => $allShiftsClosed ? 'count_saved' : 'open',
+                'updated_at' => $updatedAt,
+                'editable' => false,
+            ];
+        } else {
+            $reconciliationStmt = $pdo->prepare(
+                'SELECT beginning_cash, actual_cash, variance_remarks, status, updated_at
+                 FROM cashier_shift_reconciliations
+                 WHERE cashier_id = :cashier_id AND shift_date = :shift_date
+                 LIMIT 1'
+            );
+            $reconciliationStmt->execute([':cashier_id' => $targetCashierId, ':shift_date' => $startDate]);
+            $reconciliation = $reconciliationStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            $beginningCash = $reconciliation ? cashierMoney($reconciliation['beginning_cash']) : null;
+            $actualCash = $reconciliation && $reconciliation['actual_cash'] !== null ? cashierMoney($reconciliation['actual_cash']) : null;
+            $cashIn = 0.0;
+            $cashOut = 0.0;
+            $expectedCash = $beginningCash === null ? null : cashierMoney($beginningCash + $cashPaidSales - $cashOut - $cashRefunds);
+            $data['reconciliation'] = [
+                'beginning_cash' => $beginningCash,
+                'cash_sales' => $cashPaidSales,
+                'cash_in' => $cashIn,
+                'cash_in_supported' => false,
+                'cash_out' => $cashOut,
+                'cash_out_supported' => false,
+                'cash_refunds_paid' => $cashRefunds,
+                'expected_cash' => $expectedCash,
+                'actual_cash' => $actualCash,
+                'cash_variance' => $actualCash === null || $expectedCash === null ? null : cashierMoney($actualCash - $expectedCash),
+                'variance_remarks' => $reconciliation['variance_remarks'] ?? '',
+                'status' => $reconciliation['status'] ?? 'not_counted',
+                'updated_at' => $reconciliation['updated_at'] ?? null,
+                'editable' => !$isAdminView && $targetCashierId === $authenticatedUserId,
+            ];
+        }
     }
 
     $settingsStmt = $pdo->query("SELECT pharmacy_name, timezone FROM system_settings ORDER BY setting_id ASC LIMIT 1");

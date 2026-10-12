@@ -207,6 +207,10 @@ body {
 .cashier-summary-item h3 span { font-weight: 800; }
 .cashier-summary-item .report-lines > div { padding: 5px 0; font-size: 11px; }
 .cashier-summary-item .report-lines .grand { margin-top: 3px; padding-top: 6px; font-size: 12px; }
+.cashier-shift-mini-list { display: grid; gap: 6px; margin-top: 9px; }
+.cashier-shift-mini { min-width: 0; display: grid; gap: 3px; padding: 7px; border: 1px solid #e7ebf2; border-radius: 6px; background: #f8faff; }
+.cashier-shift-mini strong { color: #15366f; font-size: 9px; }
+.cashier-shift-mini span { color: #697791; font-size: 9px; overflow-wrap: anywhere; }
 
 .report-header {
     min-width: 0;
@@ -339,8 +343,11 @@ body {
 .kpi-label { display: block; color: #6b7891; font-size: 10px; font-weight: 750; line-height: 1.3; }
 .kpi-value { display: block; margin-top: 5px; color: #142747; font-size: clamp(13px, 1vw, 17px); font-weight: 900; line-height: 1.2; overflow-wrap: anywhere; }
 .kpi-support { display: block; margin-top: 4px; color: #7b879d; font-size: 9px; font-weight: 700; }
-.shift-content-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .85fr); align-items: start; gap: 14px; }
+.shift-content-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .85fr); align-items: stretch; gap: 14px; }
 .shift-main-column, .shift-side-column { min-width: 0; display: grid; gap: 14px; }
+.shift-main-column { display: flex; flex-direction: column; }
+.shift-wide-sections { min-width: 0; display: grid; gap: 14px; margin-top: 14px; }
+.shift-wide-sections > .report-card { min-width: 0; width: 100%; margin: 0; }
 .shift-content-grid .summary-report, .shift-content-grid .report-card { margin: 0; }
 .shift-side-column .report-card { padding: 14px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
@@ -368,9 +375,9 @@ body {
 .primary-action:hover:not(:disabled) { background: #173f91; transform: translateY(-1px); }
 .primary-action:disabled { opacity: .6; cursor: wait; }
 .cash-payment-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-.cash-payment-summary > div { display: grid; gap: 5px; padding: 10px; border: 1px solid #e7ebf2; border-radius: 8px; background: #f8faff; }
+.cash-payment-summary > div { min-width: 0; display: grid; gap: 5px; padding: 10px; border: 1px solid #e7ebf2; border-radius: 8px; background: #f8faff; }
 .cash-payment-summary span { color: #697791; font-size: 10px; }
-.cash-payment-summary strong { color: #15366f; font-size: 13px; font-weight: 900; }
+.cash-payment-summary strong { color: #15366f; font-size: 13px; font-weight: 900; overflow-wrap: anywhere; }
 .history-tabs { display: flex; gap: 5px; padding: 0 14px; border-bottom: 1px solid var(--shift-line); }
 .history-tab { min-height: 38px; padding: 0 11px; border: 0; border-bottom: 2px solid transparent; color: #64748b; background: transparent; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
 .history-tab:hover, .history-tab.active { color: #244fa7; }
@@ -390,6 +397,12 @@ body {
 .cash-count-form + .muted-copy { padding-top: 2px; }
 
 .shift-info-card { padding: 12px 14px 10px; }
+@media (min-width: 961px) {
+    .shift-main-column > .shift-info-card { flex: 1; display: flex; flex-direction: column; }
+    .shift-main-column > .shift-info-card .shift-info-grid { flex: 1; align-content: stretch; }
+    .shift-main-column > .shift-info-card .shift-info-column { display: flex; flex-direction: column; justify-content: space-between; }
+    .shift-main-column > .shift-info-card .shift-info-note { margin-top: auto; padding-top: 8px; }
+}
 .shift-info-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 7px; border-bottom: 1px solid var(--shift-line); }
 .shift-info-heading h2 { margin: 0; color: var(--shift-ink); font-size: 13px; font-weight: 900; }
 .shift-info-heading h2 i { margin-right: 7px; color: #2454b5; }
@@ -400,23 +413,40 @@ body {
 .shift-info-row > strong { min-width: 0; color: #182943; font-size: 10px; font-weight: 850; text-align: right; overflow-wrap: anywhere; }
 .shift-info-row .status-pill { font-size: 9px; }
 .shift-info-note { margin: 8px 0 0; color: #748098; font-size: 9px; line-height: 1.4; }
-.shift-info-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--shift-line); }
+.shift-info-actions { display: flex; gap: 8px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--shift-line); }
 .shift-info-actions .primary-action, .shift-info-actions .secondary-action { min-width: 0; min-height: 34px; padding: 0 8px; white-space: nowrap; font-size: 9px; }
 .secondary-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #cfd8e8; border-radius: 7px; color: #1d438b; background: #fff; font-weight: 850; }
 .secondary-action:hover:not(:disabled) { border-color: #8ca5d2; background: #f7f9fd; }
 .secondary-action:disabled { color: #8490a2; background: #f7f8fa; cursor: not-allowed; }
 .shift-info-actions .primary-action:disabled { border-color: #aebbd1; background: #aebbd1; cursor: not-allowed; }
 
-/* Cash and GCash totals remain distinct while sharing the existing summary panel. */
+/* Cash and GCash sales remain distinct in the three-card summary panel. */
 .payment-summary-card { padding: 14px; }
-.payment-summary-card .cash-payment-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.cash-payment-summary small { color: #758198; font-size: 9px; }
-@media (max-width: 1180px) {
-    .payment-summary-card .cash-payment-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
+.payment-summary-card .cash-payment-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 640px) {
     .payment-summary-card .cash-payment-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.shift-management-panel { margin-top: 10px; padding: 10px; border: 1px solid #e7ebf2; border-radius: 8px; background: #f8faff; }
+.shift-management-form { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(0, 1.3fr) auto; align-items: end; gap: 9px; }
+.shift-management-form label { min-width: 0; display: grid; gap: 5px; color: #52617c; font-size: 10px; font-weight: 800; }
+.shift-management-form input, .shift-management-form textarea { width: 100%; min-height: 36px; padding: 8px 9px; border: 1px solid #d8dfeb; border-radius: 7px; outline: none; color: #182943; background: #fff; font: inherit; font-size: 12px; }
+.shift-management-form textarea { resize: vertical; }
+.shift-management-form input:focus, .shift-management-form textarea:focus { border-color: #315fc0; box-shadow: 0 0 0 3px rgba(49, 95, 192, .12); }
+.shift-management-form .primary-action { min-height: 36px; padding: 0 12px; white-space: nowrap; }
+.start-shift-form { grid-template-columns: minmax(150px, .7fr) auto; justify-content: start; }
+.shift-management-form .shift-remarks-field { grid-column: 2; }
+.shift-management-panel .form-feedback { margin: 5px 0 0; }
+.tracked-shifts-card { padding: 14px; }
+.tracked-shift-list { display: grid; gap: 9px; }
+.tracked-shift { min-width: 0; padding: 10px; border: 1px solid #e7ebf2; border-radius: 8px; background: #f8faff; }
+.tracked-shift-heading, .tracked-shift-times { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tracked-shift-heading > strong { color: #15366f; font-size: 11px; }
+.tracked-shift-times { margin-top: 6px; color: #697791; font-size: 9px; flex-wrap: wrap; }
+.tracked-shift-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+.tracked-shift-totals > div { min-width: 0; display: grid; gap: 4px; padding: 7px; border-radius: 6px; background: #fff; }
+.tracked-shift-totals span { color: #697791; font-size: 9px; }
+.tracked-shift-totals strong { color: #15366f; font-size: 11px; overflow-wrap: anywhere; }
+.tracked-shift-remarks { margin: 8px 0 0; color: #52617c; font-size: 10px; overflow-wrap: anywhere; }
 
 @media (hover: hover) {
     .kpi-card { transition: transform .15s ease, box-shadow .15s ease; }
@@ -431,7 +461,10 @@ body {
 
 @media (max-width: 960px) {
     .shift-info-grid { gap: 0 12px; }
-    .shift-info-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .shift-management-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .shift-management-form .shift-remarks-field { grid-column: 1 / -1; }
+    .start-shift-form { grid-template-columns: minmax(0, 1fr) auto; }
+    .shift-management-form .primary-action { justify-self: start; }
     .shift-content-grid { grid-template-columns: 1fr; }
     .shift-side-column { grid-template-columns: 1fr 1fr; align-items: start; }
     .shift-topbar { align-items: flex-start; flex-wrap: wrap; }
@@ -455,8 +488,10 @@ body {
 
 @media (max-width: 640px) {
     .shift-info-grid { grid-template-columns: 1fr; }
-    .shift-info-actions { grid-template-columns: 1fr 1fr; }
     .shift-info-actions .primary-action, .shift-info-actions .secondary-action { white-space: normal; }
+    .shift-management-form, .start-shift-form { grid-template-columns: 1fr; }
+    .shift-management-form .shift-remarks-field { grid-column: 1; }
+    .tracked-shift-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .shift-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
     .kpi-card { min-height: 78px; padding: 9px; gap: 7px; }
     .kpi-icon { width: 30px; height: 30px; flex-basis: 30px; }
@@ -492,7 +527,7 @@ body {
 
 @page {
     size: A4 portrait;
-    margin: 0;
+    margin: 10mm;
 }
 
 @media print {
@@ -504,6 +539,7 @@ body {
         color: #000 !important;
         background: #fff !important;
         font-family: Arial, Helvetica, sans-serif !important;
+        font-size: 9pt !important;
     }
 
     #navbar-container,
@@ -543,13 +579,16 @@ body {
     .print-receipt-report {
         display: block !important;
         width: 100% !important;
-        max-width: 180mm;
+        max-width: none;
+        min-height: 0 !important;
         margin: 0 auto;
-        padding: 12mm 0;
+        padding: 0;
         color: #000 !important;
         background: #fff !important;
-        font-size: 10.5pt;
-        line-height: 1.42;
+        font-size: 9pt;
+        line-height: 1.24;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
     }
 
     .print-receipt-report h1,
@@ -568,22 +607,22 @@ body {
     }
 
     .print-receipt-report h2 {
-        margin-top: 4mm;
-        padding-bottom: 5mm;
+        margin-top: 2mm;
+        padding-bottom: 2mm;
         border-bottom: 1.5pt solid #000;
         text-align: center;
-        font-size: 15pt;
+        font-size: 12pt;
         font-weight: 700;
         line-height: 1.25;
     }
 
     .print-receipt-report h3 {
-        margin-top: 7mm;
-        padding: 3mm 0 2mm;
+        margin-top: 3mm;
+        padding: 1.5mm 0 1mm;
         border-top: 1pt solid #000;
         border-bottom: 1pt solid #000;
         text-align: left;
-        font-size: 12pt;
+        font-size: 9.5pt;
         font-weight: 700;
         line-height: 1.25;
     }
@@ -591,15 +630,15 @@ body {
     .print-meta,
     .print-lines {
         display: grid;
-        gap: 2.2mm;
-        padding-top: 4mm;
+        gap: 0.8mm;
+        padding-top: 1.8mm;
     }
 
     .print-meta div,
     .print-lines div {
         display: flex;
         justify-content: space-between;
-        gap: 14mm;
+        gap: 8mm;
         width: 100%;
     }
 
@@ -609,37 +648,52 @@ body {
         color: #000 !important;
         text-transform: uppercase;
         text-align: left;
-        font-size: 10.5pt;
+        font-size: 8.5pt;
     }
 
     .print-meta strong,
     .print-lines strong {
         flex: 0 0 auto;
-        min-width: 45mm;
+        min-width: 38mm;
         color: #000 !important;
         font-weight: 700;
         text-align: right;
-        font-size: 10.5pt;
+        font-size: 8.5pt;
+        overflow-wrap: anywhere;
     }
 
     .print-lines .total {
-        margin-top: 2mm;
-        padding-top: 3mm;
+        margin-top: 0.8mm;
+        padding-top: 1mm;
         border-top: 1pt solid #000;
         font-weight: 700;
     }
 
     .print-lines .total span,
     .print-lines .total strong {
-        font-size: 11.5pt;
+        font-size: 9.2pt;
         font-weight: 700;
     }
 
     .printed-at {
-        margin-top: 9mm !important;
-        padding-top: 4mm;
+        margin-top: 4mm !important;
+        padding-top: 2mm;
         border-top: 1pt solid #000;
         text-align: center;
         font-size: 9pt;
     }
+
+    .print-section { break-inside: avoid-page; page-break-inside: avoid; }
+    .print-section h3 { break-after: avoid-page; page-break-after: avoid; }
+    .print-tracked-section h3 { break-after: avoid-page; page-break-after: avoid; }
+    .print-lines > div { break-inside: avoid; page-break-inside: avoid; }
+    .print-shift-list { display: grid; gap: 2.5mm; padding-top: 1.8mm; }
+    .print-shift-card { break-inside: avoid; page-break-inside: avoid; padding: 2mm; border: .6pt solid #888; border-radius: 1mm; }
+    .print-shift-card h4 { margin: 0; padding-bottom: 1mm; border-bottom: .5pt solid #bbb; color: #000 !important; font-size: 9pt; font-weight: 700; }
+    .print-shift-card .print-lines { grid-template-columns: 1fr 1fr; gap: .5mm 5mm; padding-top: 1mm; }
+    .print-shift-card .print-lines div { break-inside: avoid; page-break-inside: avoid; gap: 2mm; }
+    .print-shift-card .print-lines span,
+    .print-shift-card .print-lines strong { font-size: 7.8pt; text-transform: none; }
+    .print-shift-card .print-lines strong { min-width: 0; }
+    .print-empty { margin-top: 1.5mm !important; }
 }
