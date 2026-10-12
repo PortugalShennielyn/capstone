@@ -66,7 +66,7 @@
         .type-select-wrap { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
         .type-select-wrap label { color: #667085; font-size: 12px; font-weight: 900; white-space: nowrap; }
         .type-select-wrap select { min-height: 34px; min-width: 190px; border: 1px solid var(--line); border-radius: 8px; color: #18213b; background: #fff; font-size: 12px; font-weight: 800; padding: 0 10px; }
-        .product-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px; }
+        .product-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; padding: 14px; }
         .product-card { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(104px, .62fr) minmax(0, 1.38fr); grid-template-rows: auto auto auto; align-content: start; row-gap: 8px; column-gap: 11px; padding: 10px; border: 1px solid #e9e5f1; border-radius: 13px; background: #fff; box-shadow: 0 5px 18px rgba(25,20,48,.045); overflow: hidden; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
         .product-card:not(.product-card-skeleton):hover { border-color: #cbbaf2; box-shadow: 0 14px 30px rgba(67,45,120,.12); transform: translateY(-2px); }
         .barcode-mark { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #e3e8f2; color: #111827; background: rgba(255,255,255,.94); border-radius: 6px; z-index: 2; }
@@ -77,11 +77,13 @@
         .image-placeholder { width: 78px; height: 78px; display: grid; place-items: center; gap: 4px; border: 1px dashed #bda9e8; border-radius: 14px; color: var(--purple); background: rgba(255,255,255,.82); font-size: 10px; font-weight: 750; text-align: center; box-shadow: 0 12px 25px rgba(72,45,130,.08); }
         .image-placeholder i { font-size: 22px; }
         .product-meta { grid-column: 2; grid-row: 1; min-width: 0; padding: 4px 28px 0 0; display: flex; flex-direction: column; }
-        .brand { display: block; min-height: 17px; color: #77758a; font-size: 11px; font-weight: 700; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .product-name { display: -webkit-box; min-height: 38px; max-height: 38px; margin-top: 2px; color: var(--ink); font-size: 14px; font-weight: 800; line-height: 1.32; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+        .brand { display: block; min-height: 17px; color: #77758a; font-size: 13px; font-weight: 700; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .product-name { display:flex; align-items:flex-start; gap:4px; min-height:38px; max-height:38px; margin-top:2px; color:var(--ink); font-size:14px; font-weight:800; line-height:1.32; overflow:hidden; }
+        .product-name-text { display:-webkit-box; flex:0 1 auto; width:fit-content; max-width:calc(100% - 36px); min-width:0; overflow:hidden; overflow-wrap:anywhere; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; }
         .product-generic, .order-generic-line, .receipt-generic-line { display:block; margin-top:4px; color:#51607a; font-size:13px; font-weight:800; line-height:1.25; overflow-wrap:anywhere; }
         .rx-label { display:inline; margin-left:4px; color:#000; font-size:inherit; font-weight:600; line-height:inherit; vertical-align:baseline; white-space:nowrap; }
-        .spec { display: -webkit-box; min-height: 35px; max-height: 35px; margin-top: 4px; color: #53627d; font-size: 12px; font-weight: 600; line-height: 1.4; overflow: hidden; overflow-wrap: break-word; word-break: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+        .product-name .rx-label { position:static; display:inline-flex; flex:0 0 auto; align-items:center; margin:1px 0 0; padding:2px 7px; border:1px solid #fca5a5; border-radius:999px; color:#b91c1c; background:#fee2e2; font-size:10px; font-weight:900; line-height:1.2; }
+        .spec { display: -webkit-box; min-height: 35px; max-height: 35px; margin-top: 4px; color: #53627d; font-size: 13px; font-weight: 600; line-height: 1.4; overflow: hidden; overflow-wrap: break-word; word-break: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
         .spec-generic { color: #f97316; font-weight: 900; }
         .card-foot { grid-column: 2; grid-row: 3; min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 0; padding: 7px 0 0; border-top: 1px solid #eeeaf5; background: transparent; }
         .commerce-meta { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -151,6 +153,7 @@
         .order-product { min-width: 0; }
         .order-product strong { display: block; color: var(--ink); font-size: 14px; font-weight: 900; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
         .order-product span { display: block; margin-top: 4px; color: #51607a; font-size: 12px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+        .order-product .order-generic-line { font-size:13px; }
         .order-product .order-spec { margin-top: 4px; color: #53627d; }
         .qty-stepper { min-width: 92px; display: inline-grid; grid-template-columns: 30px 30px 30px; align-items: center; justify-self: center; height: 36px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
         .qty-stepper button { width: 30px; height: 34px; border: 0; background: #fff; color: #4f5f7c; font-size: 15px; font-weight: 900; }
@@ -265,7 +268,7 @@
             .receipt-table-head, .receipt-item { grid-template-columns: 8mm 1fr 16mm 18mm !important; gap: 1.5mm !important; }
         }
         /* Sales Clerk catalog refresh: keep the POS workflow, using the shared indigo system palette. */
-        .pos-page-intro { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin:0 0 18px; }
+        .pos-page-intro { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:0 0 18px; }
         .pos-page-intro .eyebrow { display:block; margin-bottom:5px; color:var(--text-secondary,#64748b); font-size:13px; font-weight:650; }
         .pos-page-intro h1 { margin:0; color:var(--text-primary,#182233); font-size:clamp(24px,2.2vw,32px); font-weight:850; letter-spacing:-.04em; }
         .pos-page-intro p { margin:6px 0 0; color:var(--text-secondary,#64748b); font-size:13px; }
@@ -281,32 +284,33 @@
         .category-tab:hover { color:var(--primary-hover,#4338ca); background:var(--primary-soft,#eef2ff); }
         .category-tab.active { border-color:var(--primary,#4f46e5); color:#fff; background:var(--primary,#4f46e5); box-shadow:0 5px 14px rgba(79,70,229,.2); }
         .type-select-wrap select { min-height:38px; border-radius:10px; border-color:var(--border,#dde4ee); }
-        .product-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; padding:8px 20px 20px; }
+        .product-grid { grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; padding:8px 20px 20px; }
         .product-card { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto auto auto; min-height:240px; padding:19px; border:1px solid var(--border,#dde4ee); border-radius:18px; box-shadow:0 4px 14px rgba(15,23,42,.035); }
         .product-card:not(.product-card-skeleton):hover { border-color:#a5b4fc; box-shadow:0 12px 26px rgba(79,70,229,.11); transform:translateY(-2px); }
         .image-pick { position:absolute; top:16px; right:16px; width:52px; height:52px; min-height:52px; padding:3px; border-radius:12px; background:#f1f5f9; }
+        .image-pick:not(.product-image-wrap) { display:none; }
         .image-pick .image-placeholder { width:46px; height:46px; border:0; border-radius:10px; color:var(--primary,#4f46e5); background:var(--primary-soft,#eef2ff); box-shadow:none; font-size:8px; }
         .image-placeholder i { font-size:14px; }
-        .barcode-mark { top:27px; right:76px; width:32px; height:32px; border:1px solid var(--border,#dde4ee); border-radius:9px; color:var(--primary,#4f46e5); background:#fff; }
-        .product-meta { grid-column:1; grid-row:1; padding:0 118px 0 0; }
-        .brand { min-height:0; color:#64748b; font-size:11px; }
-        .product-name { min-height:42px; max-height:42px; margin-top:9px; font-size:16px; line-height:1.3; }
-        .spec { min-height:36px; max-height:36px; margin-top:5px; font-size:12px; }
+        .barcode-mark { top:27px; right:16px; width:32px; height:32px; border:1px solid var(--border,#dde4ee); border-radius:9px; color:var(--primary,#4f46e5); background:#fff; }
+        .product-meta { grid-column:1; grid-row:1; padding:0 48px 0 0; }
+        .brand { min-height:0; color:#64748b; font-size:13px; }
+        .product-name { min-height:42px; max-height:42px; margin-top:9px; font-size:18px; line-height:1.3; }
+        .spec { min-height:36px; max-height:36px; margin-top:5px; font-size:13px; }
         .card-selling-units { grid-column:1; grid-row:2; margin-top:12px; }
         .card-selling-unit { padding:7px 10px; border-radius:999px; background:#f8fafc; }
-        .card-foot { grid-column:1; grid-row:4; min-height:60px; align-items:flex-end; margin-top:auto; padding-top:12px; border-top:0; }
+        .card-foot { grid-column:1; grid-row:4; min-height:90px; flex-direction:column; align-items:flex-start; justify-content:flex-end; gap:8px; margin-top:auto; padding-top:12px; border-top:0; }
         .commerce-meta { gap:6px; }
-        .product-price { color:var(--primary-hover,#4338ca); font-size:21px; }
+        .product-price { color:#111827; font-size:21px; }
         .stock { gap:5px; }
         .stock strong { color:#166534; background:#dcfce7; }
         .stock span { font-size:11px; }
-        .cart-btn { width:auto; min-width:126px; height:42px; flex-basis:auto; gap:8px; padding:0 15px; border-radius:999px; background:var(--primary,#4f46e5); box-shadow:none; }
+        .cart-btn { align-self:flex-end; width:auto; min-width:126px; height:42px; flex-basis:auto; gap:8px; padding:0 15px; border-radius:999px; background:#16a34a; box-shadow:none; }
         .cart-btn::after { content:"Add to cart"; font-size:12px; font-weight:800; white-space:nowrap; }
-        .cart-btn:hover { background:var(--primary-hover,#4338ca); }
+        .cart-btn:hover { background:#15803d; }
         .current-order-fab { right:24px; border-radius:999px; background:var(--primary,#4f46e5); box-shadow:0 12px 25px rgba(79,70,229,.24); }
         .current-order-fab:hover { background:var(--primary-hover,#4338ca); }
         .current-order-count { color:var(--primary,#4f46e5); }
-        .pos-view-tabs { margin-bottom:16px; border-radius:999px; background:#fff; }
+        .pos-view-tabs { width:max-content; flex:0 0 auto; margin:0; border-radius:999px; background:#fff; }
         .pos-view-tabs a[aria-current="page"] { background:var(--primary,#4f46e5); box-shadow:0 5px 14px rgba(79,70,229,.18); }
         @media (max-width:1000px) { .product-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
         @media (max-width:720px) {
@@ -318,8 +322,8 @@
             .product-grid { grid-template-columns:1fr; gap:10px; padding:6px 12px 14px; }
             .product-card { min-height:235px; padding:14px; }
             .image-pick { top:12px; right:12px; }
-            .barcode-mark { top:23px; right:72px; }
-            .product-meta { padding-right:118px; }
+            .barcode-mark { top:23px; right:12px; }
+            .product-meta { padding-right:48px; }
             .product-name { font-size:14px; }
             .cart-btn { min-width:126px; height:38px; padding:0 10px; }
         }
@@ -341,17 +345,16 @@
         </header>
 
         <section class="page-body">
-            <nav class="pos-view-tabs" aria-label="Sales Clerk POS views">
-                <a href="sales_clerk_pos.html" aria-current="page"><i class="fa-solid fa-border-all"></i>Current POS</a>
-                <a href="sales_clerk_scan_pos.html"><i class="fa-solid fa-barcode"></i>Scan POS</a>
-            </nav>
             <header class="pos-page-intro">
                 <div>
                     <span class="eyebrow" id="currentDateTime"><span>Welcome to your counter</span></span>
                     <h1>Find products, build an order</h1>
                     <p>Search the shelf catalog or browse by category to get started.</p>
                 </div>
-                <span class="pos-clock"><i class="fa-regular fa-clock me-1"></i>Sales Clerk workspace</span>
+                <nav class="pos-view-tabs" aria-label="Sales Clerk POS views">
+                    <a href="sales_clerk_pos.html" aria-current="page"><i class="fa-solid fa-border-all"></i>Current POS</a>
+                    <a href="sales_clerk_scan_pos.html"><i class="fa-solid fa-barcode"></i>Scan POS</a>
+                </nav>
             </header>
             <div class="pos-shell">
                 <section class="catalog-panel" aria-label="Products">
@@ -889,30 +892,21 @@
                 const priceMarkup = sellingPrice === null
                     ? '<span class="product-price is-unavailable">Price unavailable</span>'
                     : product.selling_units?.length > 1
-                        ? `<span class="product-price">From ${escapeHtml(peso.format(sellingPrice))}</span>`
+                        ? `<span class="product-price">${escapeHtml(peso.format(sellingPrice))}</span>`
                         : `<span class="product-price">${escapeHtml(peso.format(sellingPrice))} <small>/ ${escapeHtml(canonicalUnitLabel(product.selling_units?.[0]?.unit || inventoryUnit))}</small></span>`;
-                const unitButtons = (product.selling_units || []).length > 1
-                    ? `<div class="card-selling-units" aria-label="Sellable units">${product.selling_units.map(unit => {
-                        const left = unitAvailability(product, unit);
-                        const requires = `${unitFactor(unit)} ${canonicalUnitLabel(inventoryUnit, unitFactor(unit))}`;
-                        return `<button class="card-selling-unit" type="button" data-add-product="${escapeHtml(product.product_id)}" data-add-unit="${escapeHtml(unit.unit)}" ${unavailable || left < 1 ? 'disabled' : ''} title="${left < 1 ? `Requires ${escapeHtml(requires)}` : `${countFormat.format(left)} left`}"><span>${escapeHtml(canonicalUnitLabel(unit.unit))} — ${escapeHtml(peso.format(Number(unit.selling_price)))}</span><small>${left < 1 ? `Requires ${escapeHtml(requires)}` : `${countFormat.format(left)} left`}</small></button>`;
-                    }).join('')}</div>`
-                    : '';
                 return `
                 <article class="product-card" data-category-id="${escapeHtml(product.category_id || '')}" data-category-name="${escapeHtml(product.category_name || '')}" data-type-id="${escapeHtml(product.type_id || '')}" data-type-name="${escapeHtml(product.type_name || '')}">
                     <button class="barcode-mark" type="button" data-barcode-product="${escapeHtml(product.product_id)}" title="${escapeHtml(product.barcode || 'Barcode')}" aria-label="Open barcode"><i class="fa-solid fa-barcode"></i></button>
                     <button class="image-pick ${hasImage ? 'product-image-wrap' : ''}" type="button" ${hasImage ? `data-zoom-product="${escapeHtml(product.product_id)}"` : `data-image-product="${escapeHtml(product.product_id)}"`} aria-label="${hasImage ? 'Zoom product image' : 'Select product image'}">${productImageMarkup(product)}</button>
                     <div class="product-meta">
                         <span class="brand">${escapeHtml(product.brand_name || '-')}</span>
-                        <strong class="product-name">${escapeHtml(product.product_name || '-')}${rxBadgeMarkup(product)}</strong>
+                        <strong class="product-name"><span class="product-name-text">${escapeHtml(product.product_name || '-')}</span>${rxBadgeMarkup(product)}</strong>
                         <span class="spec" title="${escapeHtml(fullSpecification)}">${specificationMarkup || 'No specification available'}</span>
                     </div>
-                    ${unitButtons}
                     <div class="card-foot">
                         <div class="commerce-meta">
                             ${priceMarkup}
                             ${expiryBadge}
-                            <span class="stock"><strong>${countFormat.format(availableStock)}</strong><span>${escapeHtml(unavailable ? 'Unavailable' : `${canonicalUnitLabel(inventoryUnit, availableStock)} available`)}</span></span>
                         </div>
                         <button class="cart-btn" type="button" data-add-product="${escapeHtml(product.product_id)}" aria-label="Add to order" ${unavailable ? 'disabled' : ''}><i class="fa-solid fa-cart-shopping"></i></button>
                     </div>

@@ -114,7 +114,7 @@ export function renderPurchaseRequestDocument(
             <div class="meta-field"><span class="meta-label">Request Date:</span><span class="meta-value">${escapeHtml(displayDate(request.request_date))}</span></div>
             <div class="meta-field approval-date-field"><span class="meta-label">Approval Date:</span><span class="meta-value">${escapeHtml(hasRecordedApproval ? displayDate(request.decided_at) : "__________")}</span></div>
         </section>
-        <table class="pr-print-table"><thead><tr><th>No.</th><th>Product Description</th><th>Base Inventory Unit</th><th>Shelf</th><th>Storage</th><th>On Hand</th><th>Requested Qty</th><th>Approved Qty</th></tr></thead><tbody>${rows}</tbody></table>
+        <table class="pr-print-table"><thead><tr><th>No.</th><th>Product Description</th><th>Base<br>Inventory<br>Unit</th><th>Shelf</th><th>Storage</th><th>On<br>Hand</th><th>Requested<br>Qty</th><th>Approved<br>Qty</th></tr></thead><tbody>${rows}</tbody></table>
         <section class="signature-grid">
             <div class="signature-block"><span class="signature-caption">Requested / Prepared By</span><div class="signature-space"></div><span class="signature-name">${escapeHtml(preparedName) || "&nbsp;"}</span><div class="signature-line" aria-hidden="true"></div><span class="signature-role">${escapeHtml(preparedRole)}</span></div>
             <div class="signature-block"><span class="signature-caption">Checked / Reviewed By</span><div class="signature-space"></div><span class="signature-name">${escapeHtml(reviewedName) || "&nbsp;"}</span><div class="signature-line" aria-hidden="true"></div><span class="signature-role">${escapeHtml(reviewedRole) || "&nbsp;"}</span></div>

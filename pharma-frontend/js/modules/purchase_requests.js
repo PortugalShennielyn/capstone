@@ -2,7 +2,7 @@ import API_BASE_URL from "../config/config.js";
 import { ensurePageTabSession, tabToken } from "./auth_guard.js?v=27";
 import { primaryAccessRole } from "./rbac.js";
 import { formatProductSpecification as productSpecification } from "./product_specification.js?v=8";
-import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=1";
+import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=2";
 
 let products = [];
 let requests = [];
@@ -796,11 +796,44 @@ function renderRelatedPurchaseOrders(orders) {
     table.hidden = false;
     body.innerHTML = orders
         .map((order) => {
-            const count = Number(order.product_count || 0);
+            const itemNames = String(order.item_names || "");
+            const itemSpecifications = new Map(
+                String(order.item_specifications || "").split(" || ").filter(Boolean).map((entry) => {
+                    const [productId, ...specParts] = entry.split(" ~~ ");
+                    return [productId, specParts.join(" ~~ ")];
+                }),
+            );
+            const rxProductIds = new Set(String(order.rx_product_ids || "").split(",").filter(Boolean));
+            const itemTitle = itemNames
+                .split(" || ")
+                .map((entry) => entry.split(" ~~ ").slice(1).join(" ~~ "))
+                .filter(Boolean)
+                .join(" || ");
+            const itemMarkup = itemNames
+                ? itemNames.split(" || ").map((entry) => {
+                    const [productId, ...nameParts] = entry.split(" ~~ ");
+                    const [productName, ...brandParts] = nameParts.join(" ~~ ").split(" — ");
+                    const brandName = brandParts.join(" — ");
+                    const rxTag = rxProductIds.has(productId)
+                        ? '<span class="related-po-item-rx" title="Prescription medicine">Rx</span>'
+                        : "";
+                    return `<div class="related-po-item">${brandName
+                        ? `<span class="related-po-item-name">${esc(productName)}${rxTag}</span><span class="related-po-item-brand">${esc(brandName)}</span>`
+                        : `<span class="related-po-item-name">${esc(productName)}${rxTag}</span>`}</div>`;
+                }).join("")
+                : '<span class="related-po-item-name">No products</span>';
+            const specificationsMarkup = itemNames
+                ? itemNames.split(" || ").map((entry) => {
+                    const [productId] = entry.split(" ~~ ");
+                    const specification = itemSpecifications.get(productId) || "—";
+                    return `<div class="related-po-specification">${esc(specification)}</div>`;
+                }).join("")
+                : "—";
             return `<tr>
             <td><strong class="related-po-number">${esc(order.po_number || "-")}</strong></td>
             <td><span class="related-po-supplier">${esc(order.supplier_name || "Unknown supplier")}</span></td>
-            <td><div class="related-po-items"><strong>${count} ${count === 1 ? "product" : "products"}</strong><span title="${esc(order.item_names || "")}">${esc(order.item_names || "No products")}</span></div></td>
+            <td><div class="related-po-items" title="${esc(itemTitle)}">${itemMarkup}</div></td>
+            <td><div class="related-po-specifications">${specificationsMarkup}</div></td>
             <td class="text-end fw-bold">${esc(purchaseOrderTotalText(order))}</td>
             <td>${order.expected_delivery_date ? esc(formatRequestDate(order.expected_delivery_date)) : "-"}</td>
             <td><span class="pr-status ${poStatusClass(order.status)}">${esc(order.status || "Pending")}</span></td>
@@ -816,7 +849,7 @@ async function showRelatedPurchaseOrders(prId) {
     );
     document.getElementById("relatedPurchaseOrdersPrNumber").textContent = "";
     document.getElementById("relatedPurchaseOrderRows").innerHTML =
-        '<tr><td colspan="7" class="related-po-loading">Loading related purchase orders...</td></tr>';
+        '<tr><td colspan="8" class="related-po-loading">Loading related purchase orders...</td></tr>';
     document.getElementById("relatedPurchaseOrdersTable").hidden = false;
     document.getElementById("relatedPurchaseOrdersEmpty").hidden = true;
     modal.show();
@@ -1359,7 +1392,7 @@ function showDetails(request) {
     if (rejectionReasonElement) rejectionReasonElement.textContent = showRejectionReason ? rejectionReason : "";
     const frame = document.getElementById("requestPreviewFrame");
     frame.dataset.contentHeight = "1123";
-    frame.src = `purchase_request_print.html?pr_id=${encodeURIComponent(request.pr_id)}&embed=1&ui=final2`;
+    frame.src = `purchase_request_print.html?pr_id=${encodeURIComponent(request.pr_id)}&embed=1&ui=final4`;
     const purchaseOrders = request.purchase_orders || [];
     document.getElementById("generatedPoSection").hidden = purchaseOrders.length === 0;
     document.getElementById("generatedPoList").innerHTML = purchaseOrders
