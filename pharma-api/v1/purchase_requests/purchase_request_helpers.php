@@ -252,6 +252,14 @@ function purchaseRequestItemsForRequests(PDO $pdo, array $prIds): array
                 pri.stock_qty_at_request AS current_stock_snapshot,
                 pri.unit_label_at_request AS unit_snapshot,
                 p.product_name, p.brand_name, md.generic_name, pmu.unit_name AS base_inventory_unit,
+                CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM product_specification_values psv
+                    INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+                    WHERE psv.product_id = p.product_id
+                      AND LOWER(TRIM(ps.specification_name)) = "medicine classification"
+                      AND LOWER(TRIM(psv.value_text)) = "prescription (rx)"
+                ) THEN "Rx" ELSE NULL END AS medicine_classification_badge,
                 TRIM(CONCAT_WS(" · ",
                     NULLIF(CONCAT_WS(" ", NULLIF(md.generic_name,""), COALESCE(NULLIF(md.strength,""),NULLIF(CONCAT_WS(" ",md.strength_value,md.strength_unit),""))), ""),
                     NULLIF(CONCAT_WS(" ",gd.variant,gd.size,gd.net_weight,gd.unit),""),
@@ -358,19 +366,58 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
                 s.supplier_name,
                 COUNT(DISTINCT poi.product_id) AS product_count,
                 GROUP_CONCAT(
-                    DISTINCT COALESCE(
-                        NULLIF(TRIM(poi.generic_name_snapshot), ""),
-                        NULLIF(TRIM(md.generic_name), ""),
-                        NULLIF(TRIM(p.product_name), ""),
-                        "Unnamed product"
+                    DISTINCT CONCAT(
+                        poi.product_id,
+                        " ~~ ",
+                        COALESCE(
+                            NULLIF(TRIM(poi.generic_name_snapshot), ""),
+                            NULLIF(TRIM(md.generic_name), ""),
+                            NULLIF(TRIM(poi.product_name_snapshot), ""),
+                            NULLIF(TRIM(p.product_name), ""),
+                            "Unnamed product"
+                        ),
+                        CASE
+                        WHEN NULLIF(TRIM(poi.variant_flavor_snapshot), "") IS NOT NULL
+                         AND LOCATE(
+                                LOWER(NULLIF(TRIM(poi.variant_flavor_snapshot), "")),
+                                LOWER(COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), ""), NULLIF(TRIM(md.generic_name), ""), NULLIF(TRIM(poi.product_name_snapshot), ""), NULLIF(TRIM(p.product_name), ""), "Unnamed product"))
+                             ) = 0
+                        THEN CONCAT(" ", NULLIF(TRIM(poi.variant_flavor_snapshot), ""))
+                        ELSE ""
+                        END,
+                        CASE
+                        WHEN COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), ""), NULLIF(TRIM(p.brand_name), "")) IS NOT NULL
+                         AND LOWER(COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), ""), NULLIF(TRIM(p.brand_name), ""))) <> LOWER(COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), ""), NULLIF(TRIM(md.generic_name), ""), NULLIF(TRIM(poi.product_name_snapshot), ""), NULLIF(TRIM(p.product_name), ""), "Unnamed product"))
+                        THEN CONCAT(" — ", COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), ""), NULLIF(TRIM(p.brand_name), "")))
+                        ELSE ""
+                        END
                     )
-                    ORDER BY COALESCE(
-                        NULLIF(TRIM(poi.generic_name_snapshot), ""),
-                        NULLIF(TRIM(md.generic_name), ""),
-                        NULLIF(TRIM(p.product_name), "")
+                    SEPARATOR " || "
+                ) AS item_names,
+                GROUP_CONCAT(
+                    DISTINCT CASE WHEN EXISTS (
+                        SELECT 1
+                        FROM product_specification_values rxv
+                        INNER JOIN product_specifications rxs ON rxs.specification_id = rxv.specification_id
+                        WHERE rxv.product_id = poi.product_id
+                          AND LOWER(TRIM(rxs.specification_name)) = "medicine classification"
+                          AND LOWER(TRIM(rxv.value_text)) = "prescription (rx)"
+                    ) THEN poi.product_id ELSE NULL END
+                    SEPARATOR ","
+                ) AS rx_product_ids,
+                GROUP_CONCAT(
+                    DISTINCT CONCAT(
+                        poi.product_id,
+                        " ~~ ",
+                        CONCAT_WS(
+                            " • ",
+                            NULLIF(TRIM(COALESCE(NULLIF(poi.strength_snapshot, ""), NULLIF(md.strength, ""), NULLIF(CONCAT_WS(" ", md.strength_value, md.strength_unit), ""), NULLIF(CONCAT_WS(" ", poi.size_value_snapshot, poi.unit_snapshot), ""), "")), ""),
+                            NULLIF(TRIM(COALESCE(NULLIF(poi.packaging_snapshot, ""), NULLIF(md.package_type, ""), "")), ""),
+                            NULLIF(TRIM(COALESCE(NULLIF(poi.unit_snapshot, ""), NULLIF(md.dosage_form, ""), "")), "")
+                        )
                     )
-                    SEPARATOR ", "
-                ) AS item_names
+                    SEPARATOR " || "
+                ) AS item_specifications
          FROM purchase_requests pr
          LEFT JOIN purchase_orders po ON po.pr_id = pr.pr_id
          LEFT JOIN suppliers s ON s.supplier_id = po.supplier_id

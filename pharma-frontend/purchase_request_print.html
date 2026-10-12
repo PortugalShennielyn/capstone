@@ -124,15 +124,16 @@
             .pr-print-table td {
                 border: 1px solid #111;
                 vertical-align: middle;
-                overflow-wrap: break-word;
+                overflow-wrap: normal;
+                word-break: normal;
             }
             .pr-print-table th {
-                padding: 6px 4px;
+                padding: 6px 3px;
                 color: #000;
                 background: #fff;
-                font-size: 12px;
+                font-size: 10px;
                 font-weight: 700;
-                line-height: 1.15;
+                line-height: 1.2;
                 text-align: center;
                 text-transform: uppercase;
                 white-space: normal;
@@ -146,27 +147,25 @@
                 width: 5%;
             }
             .pr-print-table th:nth-child(2) {
-                width: 37%;
+                width: 31%;
             }
             .pr-print-table th:nth-child(3) {
-                width: 12%;
+                width: 14%;
             }
             .pr-print-table th:nth-child(4) {
                 width: 7%;
             }
             .pr-print-table th:nth-child(5) {
-                width: 8%;
-                white-space: nowrap;
-                font-size: 11px;
-            }
-            .pr-print-table th:nth-child(6) {
-                width: 8%;
-            }
-            .pr-print-table th:nth-child(7) {
                 width: 12%;
             }
-            .pr-print-table th:nth-child(8) {
+            .pr-print-table th:nth-child(6) {
+                width: 7%;
+            }
+            .pr-print-table th:nth-child(7) {
                 width: 11%;
+            }
+            .pr-print-table th:nth-child(8) {
+                width: 13%;
             }
             .pr-print-table th:nth-child(n + 4):nth-child(-n + 8) {
                 padding-left: 5px;
@@ -362,6 +361,6 @@
             <div class="loading" id="printLoading">Loading purchase request...</div>
             <article id="purchaseRequestDocument" hidden></article>
         </main>
-        <script type="module" src="./js/modules/purchase_request_print.js?v=15"></script>
+        <script type="module" src="./js/modules/purchase_request_print.js?v=16"></script>
     </body>
 </html>

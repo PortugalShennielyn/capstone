@@ -25,7 +25,7 @@
             rel="stylesheet"
         />
         <link href="./css/navbar.css?v=40" rel="stylesheet" />
-        <link href="./css/supervisor_approval.css?v=27" rel="stylesheet" />
+        <link href="./css/supervisor_approval.css?v=29" rel="stylesheet" />
         <script src="./js/navbar.js?v=100" defer></script>
         <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
         <style>
@@ -1223,13 +1223,13 @@
             .related-pos-table {
                 width: 100%;
                 margin: 0;
-                table-layout: auto;
+                table-layout: fixed;
             }
             .related-pos-table th {
                 position: sticky;
                 top: 0;
                 z-index: 1;
-                padding: 11px 12px;
+                padding: 11px 8px;
                 color: #475569;
                 background: #f8fafc;
                 font-size: 10px;
@@ -1239,7 +1239,7 @@
                 white-space: nowrap;
             }
             .related-pos-table td {
-                padding: 12px;
+                padding: 12px 8px;
                 vertical-align: middle;
                 border-color: var(--border-soft);
                 font-size: 12px;
@@ -1249,26 +1249,53 @@
             }
             .related-po-supplier {
                 display: block;
-                min-width: 150px;
                 font-weight: 700;
             }
             .related-po-items {
-                min-width: 190px;
-                max-width: 320px;
+                min-width: 0;
+                max-width: none;
             }
             .related-po-items strong,
             .related-po-items span {
                 display: block;
             }
             .related-po-items span {
-                margin-top: 3px;
-                color: var(--muted);
+                margin-top: 0;
+                color: #111827;
+                font-size: inherit;
+                font-weight: 700;
+                line-height: inherit;
+                overflow-wrap: anywhere;
+            }
+            .related-po-items .related-po-item-brand {
+                color: #6b7280;
+                font-size: 11px;
+            }
+            .related-po-items .related-po-item-rx {
+                display: inline-flex;
+                align-items: center;
+                margin-left: 5px;
+                padding: 1px 5px;
+                border: 1px solid #ffc8ce;
+                border-radius: 6px;
+                color: #bd2333;
+                background: #fff5f5;
                 font-size: 10px;
-                line-height: 1.35;
+                font-weight: 750;
+                line-height: 1.2;
+                vertical-align: middle;
+            }
+            .related-po-specifications {
+                min-width: 0;
+                color: #111827;
+                font-size: inherit;
+                font-weight: 700;
+            }
+            .related-po-specification {
                 overflow-wrap: anywhere;
             }
             .related-po-action {
-                width: 1%;
+                width: auto;
                 white-space: nowrap;
             }
             .related-po-action .btn {
@@ -1897,11 +1924,22 @@
                             id="relatedPurchaseOrdersTable"
                             data-table-enhance="false"
                         >
+                            <colgroup>
+                                <col style="width: 20%" />
+                                <col style="width: 14%" />
+                                <col style="width: 14%" />
+                                <col style="width: 16%" />
+                                <col style="width: 9%" />
+                                <col style="width: 10%" />
+                                <col style="width: 8%" />
+                                <col style="width: 9%" />
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>PO Number</th>
                                     <th>Supplier</th>
                                     <th>Items</th>
+                                    <th>Specifications</th>
                                     <th class="text-end">PO Total</th>
                                     <th>ETA</th>
                                     <th>Status</th>
@@ -2053,7 +2091,7 @@
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-        <script type="module" src="./js/modules/purchase_requests.js?v=81"></script>
+        <script type="module" src="./js/modules/purchase_requests.js?v=82"></script>
         <script type="module">
             import verifySession from "./js/modules/auth.js?v=8";
             await verifySession();

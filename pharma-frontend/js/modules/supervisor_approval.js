@@ -1,5 +1,5 @@
 import API_BASE_URL from "../config/config.js";
-import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=1";
+import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=2";
 
 let requests = [];
 let activeRequest = null;

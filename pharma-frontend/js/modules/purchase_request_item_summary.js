@@ -23,7 +23,10 @@ export function purchaseRequestItemsSummary(items = []) {
     const preview = items.slice(0, 2)
         .map((item) => {
             const { primary, secondary } = productLabels(item);
-            return `<li><strong>${escapeHtml(primary)}</strong>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ""}</li>`;
+            const rxTag = String(item.medicine_classification_badge || "").trim().toLowerCase() === "rx"
+                ? '<span class="request-item-rx-badge" title="Prescription medicine">Rx</span>'
+                : "";
+            return `<li><strong>${escapeHtml(primary)}${secondary ? "" : rxTag}</strong>${secondary ? `<span>${escapeHtml(secondary)}${rxTag}</span>` : ""}</li>`;
         })
         .join("");
     const remaining = items.length - 2;
