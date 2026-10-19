@@ -122,6 +122,16 @@ try {
             COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
             COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
             COALESCE(ROUND(piii.unit_cost * poi.purchase_qty, 2), poi.line_total) AS stored_line_total,
+            (SELECT CASE
+                    WHEN LOWER(COALESCE(sp.supplier_cost_basis, 'inventory')) = 'purchase'
+                         AND sp.supplier_cost_input IS NOT NULL
+                    THEN sp.supplier_cost_input
+                    ELSE COALESCE(sp.supplier_cost_price, 0) * COALESCE(sp.units_per_purchase_unit, 1)
+                END
+             FROM supplier_products sp
+             INNER JOIN purchase_orders supplier_po ON supplier_po.supplier_id = sp.supplier_id
+             WHERE supplier_po.po_id = poi.po_id AND sp.product_id = poi.product_id
+             LIMIT 1) AS supplier_price_per_purchase_unit,
             CASE
                 WHEN NULLIF(TRIM(poi.product_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.product_name_snapshot)) LIKE 'N/A%' THEN p.product_name
                 ELSE poi.product_name_snapshot
