@@ -23,8 +23,10 @@ if ($userId === '') sendUserJson(false, 'User record is missing.', null, 422);
 if ($fullName === '') sendUserJson(false, 'Full Name is required.', null, 422);
 if ($username === '') sendUserJson(false, 'Username is required.', null, 422);
 if (!in_array($role, validUserRoles(), true)) sendUserJson(false, 'Role is required.', null, 422);
-assertAssignableUserRole($role);
 $target = assertCanManageUser($pdo, $userId, $role);
+assertAssignableUserRole($role, (string) ($target['role'] ?? ''));
+assertAdminAccountStaysActive((string) ($target['role'] ?? ''), $role, $status);
+assertSingleSuperAdmin($pdo, $role, $userId);
 assertSingleActiveSupervisor($pdo, $role, $status, $userId);
 
 $exists = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username AND user_id <> :user_id');

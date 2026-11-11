@@ -86,13 +86,11 @@ try {
         $updateLegacy = $pdo->prepare(
             'UPDATE product_inventory
              SET expiry_date = :expiry_date,
-                 expiration_date = :expiration_date,
                  expiry_alert_days = :expiry_alert_days
              WHERE inventory_id = :inventory_id'
         );
         $updateLegacy->execute([
             ':expiry_date' => $expiryDate === '' ? null : $expiryDate,
-            ':expiration_date' => $expiryDate === '' ? null : $expiryDate,
             ':expiry_alert_days' => $alertDays,
             ':inventory_id' => $legacyInventoryId
         ]);

@@ -485,6 +485,43 @@ function syncInventoryViewControls() {
     if (label) label.textContent = historyActive ? 'Search Transfer History' : 'Search Inventory';
 }
 
+function transferProductMarkup(row) {
+    const prescription = meaningful(row.category_name).toLowerCase() === 'medicine' && isPrescriptionProduct(row);
+    return `<span class="transfer-product-label"><span class="transfer-cell-text">${esc(productIdentityText(row, '—'))}</span>${prescription ? '<span class="inventory-rx-badge" title="Prescription medicine" aria-label="Prescription medicine">Rx</span>' : ''}</span>`;
+}
+
+function showTransferDetails(row, trigger) {
+    let modal = document.getElementById('transferDetailsModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'transferDetailsModal';
+        modal.className = 'modal fade';
+        modal.tabIndex = -1;
+        modal.setAttribute('aria-labelledby', 'transferDetailsTitle');
+        modal.innerHTML = `<div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+            <div class="modal-header"><div><h2 class="modal-title fs-5" id="transferDetailsTitle">Transfer details</h2><p class="text-muted small mb-0">Complete inventory movement record</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button></div>
+        </div></div>`;
+        document.body.appendChild(modal);
+    }
+    const field = (label, value) => `<div><dt>${esc(label)}</dt><dd>${esc(cleanText(value, '—'))}</dd></div>`;
+    const allocations = String(row.allocations || '').split(/;\s*/).filter(Boolean);
+    modal.querySelector('.modal-body').innerHTML = `
+        <h3>Product</h3><dl class="transfer-detail-fields">
+            ${field('Brand', row.brand_name)}<div><dt>Product</dt><dd>${transferProductMarkup(row)}</dd></div>
+            ${field('Specification', transferHistorySpecification(row))}${field('Category / Type', [row.category_name, row.type_name].filter(Boolean).join(' / '))}
+        </dl>
+        <h3>Movement</h3><dl class="transfer-detail-fields">
+            ${field('Transfer reference', row.transfer_id ? `#${row.transfer_id}` : '')}${field('Date and time', formatDateTime(row.created_at))}
+            ${field('From', row.source_location)}${field('To', row.destination_location)}
+            ${field('Selected quantity', inventoryQuantityLabel(row.selected_quantity, row.selected_unit))}${field('Inventory quantity', inventoryQuantityLabel(row.base_quantity, row.base_unit))}
+        </dl>
+        <h3>Batch / expiry allocation</h3>
+        <ul class="transfer-detail-allocations">${allocations.length ? allocations.map(value => `<li>${esc(value)}</li>`).join('') : '<li>No batch allocation recorded.</li>'}</ul>`;
+    modal.addEventListener('hidden.bs.modal', () => { if (trigger?.isConnected) trigger.focus(); }, { once: true });
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+}
+
 function renderGlobalTransferHistory(rows) {
     const inventoryWrap = document.querySelector('.inventory-table-wrap');
     let historyWrap = document.getElementById('globalTransferHistory');
@@ -500,6 +537,34 @@ function renderGlobalTransferHistory(rows) {
     const historyTable = historyWrap.querySelector('table');
     const historyColumnClasses = ['inventory-history-col-date', 'inventory-history-col-brand', 'inventory-history-col-product', 'inventory-history-col-specification', 'inventory-history-col-movement', 'inventory-history-col-selected', 'inventory-history-col-base', 'inventory-history-col-allocation'];
     historyTable?.classList.add('inventory-history-table');
+    historyTable?.querySelectorAll('tbody tr').forEach((element, index) => {
+        const record = rows[index];
+        if (!record) return;
+        element.tabIndex = 0;
+        element.classList.add('transfer-history-row');
+        element.setAttribute('aria-label', `View transfer details for ${productIdentityText(record, 'product')}, ${formatDateTime(record.created_at)}`);
+        element.setAttribute('aria-haspopup', 'dialog');
+        Array.from(element.cells).forEach((cell, column) => {
+            if (column === 2) {
+                cell.innerHTML = transferProductMarkup(record);
+                return;
+            }
+            if (column === 4) {
+                const returning = String(record.destination_location).toLowerCase() === 'storage';
+                cell.innerHTML = `<span class="status-badge ${returning ? 'status-soon' : 'status-safe'} transfer-movement-badge"><span class="transfer-cell-text">${esc(record.source_location)} → ${esc(record.destination_location)}</span></span>`;
+                return;
+            }
+            const text = column === 7 ? cleanText(record.allocations, '—') : cell.textContent.replace(/\u001a/g, '→');
+            cell.innerHTML = `<span class="transfer-cell-text">${esc(text)}</span>`;
+        });
+        element.addEventListener('click', () => showTransferDetails(record, element));
+        element.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                showTransferDetails(record, element);
+            }
+        });
+    });
     historyTable?.querySelectorAll('tr').forEach((row) => {
         if (row.children.length !== historyColumnClasses.length) return;
         Array.from(row.children).forEach((cell, index) => cell.classList.add(historyColumnClasses[index] || ''));

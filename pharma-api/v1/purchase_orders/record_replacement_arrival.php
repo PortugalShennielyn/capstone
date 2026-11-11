@@ -61,7 +61,7 @@ try {
     $recordStatement = $pdo->prepare(
         "SELECT por.*, po.po_number, po.total_amount, po.final_payment, poi.product_id,
                 COALESCE(poi.unit_price_snapshot, 0) AS unit_price,
-                COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name) AS product_name,
+                p.product_name AS product_name,
                 po.supplier_id, receiving.receiving_id AS original_receiving_id,
                 receiving_item.receiving_item_id AS original_receiving_item_id,
                 CASE WHEN md.product_id IS NOT NULL OR LOWER(COALESCE(pc.category_name, '')) LIKE '%medicine%' THEN 1 ELSE 0 END AS requires_expiry
@@ -112,13 +112,13 @@ try {
     $pdo->prepare('INSERT INTO purchase_order_receiving_items (receiving_item_id, receiving_id, po_item_id, parent_receiving_item_id, received_quantity, accepted_quantity, damaged_quantity, missing_quantity) VALUES (:id, :receiving_id, :po_item_id, :parent_item_id, :received, :accepted, :damaged, 0)')
         ->execute([':id' => $replacementReceivingItemId, ':receiving_id' => $replacementReceivingId, ':po_item_id' => $record['po_item_id'], ':parent_item_id' => $record['original_receiving_item_id'], ':received' => $delivered, ':accepted' => $good, ':damaged' => $damaged]);
 
-    $inventoryStatement = $pdo->prepare("INSERT INTO product_inventory (inventory_id, receiving_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiration_date, expiry_date, status) VALUES (:id, :receiving_id, :product_id, :batch_number, :quantity, :remaining, :expiry, :expiry_copy, 'Available')");
+    $inventoryStatement = $pdo->prepare("INSERT INTO product_inventory (inventory_id, receiving_id, product_id, batch_number, quantity_stocked, quantity_remaining, expiry_date, status) VALUES (:id, :receiving_id, :product_id, :batch_number, :quantity, :remaining, :expiry, 'Available')");
     $batchStatement = $pdo->prepare("INSERT INTO inventory_batches (batch_id, legacy_inventory_id, po_id, po_item_id, product_id, supplier_id, received_date, expiry_date, received_qty, storage_qty, shelf_qty, damaged_qty, returned_qty, unit_cost, batch_status) VALUES (:batch_id, :inventory_id, NULL, :po_item_id, :product_id, :supplier_id, CURRENT_TIMESTAMP, :expiry, :received, :storage, 0, 0, 0, :unit_cost, 'active')");
     $auditStatement = $pdo->prepare("INSERT INTO inventory_receiving_transactions (transaction_id, transaction_request_key, transaction_type, receiving_id, receiving_item_id, claim_id, po_id, po_item_id, inventory_batch_id, product_id, supplier_id, quantity, created_by) VALUES (:id, :request_key, 'Replacement Receiving', :receiving_id, :receiving_item_id, :claim_id, :po_id, :po_item_id, :batch_id, :product_id, :supplier_id, :quantity, :created_by)");
     foreach ($validatedBatches as $batchIndex => $batch) {
         $inventoryId = newUuid($pdo);
         $batchId = newUuid($pdo);
-        $inventoryStatement->execute([':id' => $inventoryId, ':receiving_id' => $replacementReceivingId, ':product_id' => $record['product_id'], ':batch_number' => $batch['identifier'], ':quantity' => $batch['quantity'], ':remaining' => $batch['quantity'], ':expiry' => $batch['expiry'], ':expiry_copy' => $batch['expiry']]);
+        $inventoryStatement->execute([':id' => $inventoryId, ':receiving_id' => $replacementReceivingId, ':product_id' => $record['product_id'], ':batch_number' => $batch['identifier'], ':quantity' => $batch['quantity'], ':remaining' => $batch['quantity'], ':expiry' => $batch['expiry']]);
         $batchStatement->execute([':batch_id' => $batchId, ':inventory_id' => $inventoryId, ':po_item_id' => $record['po_item_id'], ':product_id' => $record['product_id'], ':supplier_id' => $record['supplier_id'], ':expiry' => $batch['expiry'], ':received' => $batch['quantity'], ':storage' => $batch['quantity'], ':unit_cost' => $record['unit_price']]);
         $auditStatement->execute([
             ':id' => newUuid($pdo), ':request_key' => $requestKey . ':' . ($batchIndex + 1),

@@ -1,5 +1,5 @@
 import API_BASE_URL from '../config/config.js';
-import { ensurePageTabSession as verifySession } from './auth_guard.js?v=21';
+import { ensurePageTabSession as verifySession } from './auth_guard.js?v=30';
 import { createLiveSync } from './live_data.js?v=1';
 
 const categories={sales:'Sales',inventory:'Inventory',expiry:'Expiry & Batch',purchases:'Purchasing',supplier:'Supplier & Receiving',staff:'Cashier & Audit',products:'Product Performance',overview:'Overview'};
@@ -10,7 +10,7 @@ const reportViews={
     inventory:['Inventory Overview'],
     purchases:['PR / PO Summary','Purchase History','Invoice & Payment'],
     supplier:['Supplier Performance','Delivery / Receiving','Returns & Damage','Supplier Credits'],
-    expiry:['Expiring Products','Expired / Wastage','Batch Traceability'],
+    expiry:['Expiring Products','Expired / Wastage','Returns & Disposals','Batch Traceability'],
     products:['Product Performance Summary'],
     staff:['Shift Reports','Transaction History','Audit Activity']
 };
@@ -47,6 +47,7 @@ const viewDescriptions={
     'Inventory Valuation':'How much money is tied up in stock.',
     'Expiring Products':'Batches grouped by time to expiry, earliest first (FEFO).',
     'Expired / Wastage':'Value lost to expiry and where the stock is now.',
+    'Returns & Disposals':'Cost of expiry stock pulled out for return or disposal, including the unresolved amount.',
     'Batch Traceability':'Supplier → PO → Receiving → Storage → Shelf → POS.',
     'PR / PO Summary':'Every purchase order with its PR, status and payment.',
     'Purchase History':'Line-level purchases by supplier and product.',
@@ -107,8 +108,8 @@ function renderViewMenu(){
     qs('#reportViewTitle').textContent=selected;qs('#reportViewDescription').textContent=viewDescriptions[selected]||description;
     qs('#reportViewIcon').innerHTML=`<i class="fa-solid ${categoryIcons[state.category]||'fa-chart-simple'}"></i>`;
     renderQuickViewSwitch(selected);
-    qs('.report-search').hidden=!['Product Sales','Cashier Sales','Current Inventory','Inventory Overview','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation','Expiring Products','Expired / Wastage','Batch Traceability','PR / PO Summary','Purchase History','Invoice & Payment'].includes(selected);
-    qs('#reportSearch').placeholder=selected==='Batch Traceability'?'Search batch number or product':selected==='PR / PO Summary'?'Search PO or PR number':state.category==='purchases'?'Search PO, PR or supplier':'Search product or batch';
+    qs('.report-search').hidden=!['Product Sales','Cashier Sales','Current Inventory','Inventory Overview','Stock Movement','Low / Out of Stock','Fast / Slow Moving','Inventory Valuation','Expiring Products','Expired / Wastage','Returns & Disposals','Batch Traceability','PR / PO Summary','Purchase History','Invoice & Payment'].includes(selected);
+    qs('#reportSearch').placeholder=selected==='Returns & Disposals'?'Search case, product or supplier':selected==='Batch Traceability'?'Search batch number or product':selected==='PR / PO Summary'?'Search PO or PR number':state.category==='purchases'?'Search PO, PR or supplier':'Search product or batch';
 }
 function renderQuickViewSwitch(selected){
     const views=reportViews[state.category]||[];
@@ -246,7 +247,7 @@ function salesComparisonBadge(card){
 function reportContextBadge(card,data){
     if(card.comparison)return salesComparisonBadge(card);
     const view=qs('[name="report_view"]').value;
-    const snapshotOverviewMetrics=['Inventory Cost','Cost at Risk','Total On Hand','Shelf Stock','Storage Stock','Low-Stock Products','Out-of-Stock Products'];
+    const snapshotOverviewMetrics=['Inventory Cost','Cost at Risk','Unresolved returns & disposals','Total On Hand','Shelf Stock','Storage Stock','Low-Stock Products','Out-of-Stock Products'];
     if(card.report_context){const snapshot=card.report_context==='snapshot',hasValue=card.value!==null&&card.value!==undefined;if(!(snapshot&&hasValue))return '';return `<small class="summary-change is-snapshot" title="Current inventory value. Daily inventory history is now being saved for future period comparisons.">Live snapshot</small>`;}
     const liveSnapshot=(state.category==='inventory'&&!['Stock Movement','Fast / Slow Moving'].includes(view))||state.category==='expiry'||(state.category==='overview'&&snapshotOverviewMetrics.includes(card.title));
     return liveSnapshot?`<small class="summary-change is-snapshot" title="This measure is a current inventory snapshot; historical snapshots are not stored.">Live snapshot</small>`:'';
@@ -385,6 +386,15 @@ function reportSummaryIndicator(data){
     const points=values.length===1?`${width/2-12},${height/2} ${width/2+12},${height/2}`:values.map((value,index)=>`${pad+index*(width-2*pad)/Math.max(1,values.length-1)},${height-pad-(value-min)*(height-2*pad)/span}`).join(' ');
     return `<div class="summary-trend-indicator" role="img" aria-label="Indicator for ${esc(title)}"><svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg></div>`;
 }
+function placeSummaryRows(target,html){
+    const holder=document.createElement('div');
+    holder.innerHTML=html;
+    const cards=[...holder.children];
+    const highlight=cards.filter(card=>card.matches('.report-primary-metric,.report-highlight-metric,.sales-metric-primary,.sales-metric-highlight,.purchase-metric-primary,.inventory-featured-metric'));
+    const metrics=cards.filter(card=>!highlight.includes(card));
+    const row=(items,kind)=>items.length?`<div class="summary-row summary-row-${kind}">${items.map(item=>item.outerHTML).join('')}</div>`:'';
+    target.innerHTML=row(highlight,'highlight')+row(metrics,'metrics');
+}
 function renderSummaryCards(data){
     const target=qs('#summaryCards'),view=qs('[name="report_view"]').value,
         salesSummary=state.category==='sales'&&view==='Sales Summary'&&(data.comparison_period||data.comparison_mode==='none'),
@@ -393,12 +403,12 @@ function renderSummaryCards(data){
     target.classList.toggle('purchase-summary',Boolean(purchaseSummary));
     target.classList.toggle('inventory-overview-summary',state.category==='inventory'&&view==='Inventory Overview');
     if(purchaseSummary){
-        target.innerHTML=(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${index===0?comparisonPeriodNote(data):''}${index===0&&!data.comparison_period?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${index===0?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>`:''}</article>`).join('');
+        placeSummaryRows(target,(data.summary||[]).map((card,index)=>`<article class="summary-card purchase-metric ${index===0?'purchase-metric-primary':''}"><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${index===0?comparisonPeriodNote(data):''}${index===0&&!data.comparison_period?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${index===0?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}<small class="purchase-order-count">${number.format(data.purchase_order_count)} purchase order${data.purchase_order_count===1?'':'s'}</small>`:''}</article>`).join(''));
         return;
     }
-    if(!salesSummary){const inventoryOverview=state.category==='inventory'&&view==='Inventory Overview',inventoryPriority={'On Hand Units':0,'Storage':1,'Total Inventory Cost':2},cards=inventoryOverview?[...(data.summary||[])].sort((a,b)=>(inventoryPriority[a.title]??Number.MAX_SAFE_INTEGER)-(inventoryPriority[b.title]??Number.MAX_SAFE_INTEGER)):orderFinancialCards(data.summary);target.innerHTML=cards.map((card,index)=>{const inventoryHighlight=inventoryOverview&&['Storage','Total Inventory Cost'].includes(card.title),inventoryFeatured=inventoryOverview&&['On Hand Units','Storage','Total Inventory Cost'].includes(card.title),inventoryDescription=card.title==='Storage'?'Units currently kept in Storage rather than on the Shelf.':card.title==='Total Inventory Cost'?'Recorded cost of active, unexpired stock currently on hand.':'';return `<article class="summary-card tone-${esc(card.tone||'purple')} ${index===0?'report-primary-metric':''} ${isFinancialHighlight(card)||inventoryHighlight?'report-highlight-metric':''} ${inventoryFeatured?'inventory-featured-metric':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}" aria-hidden="true"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${index===0?cardComparisonPeriodNote(card,data):''}${index===0&&!data.comparison_period?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${inventoryHighlight?`<p class="financial-metric-description">${esc(inventoryDescription)}</p>`:''}${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0&&!isFinancialHighlight(card)?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}`:''}</article>`;}).join('');return;}
+    if(!salesSummary){const inventoryOverview=state.category==='inventory'&&view==='Inventory Overview',inventoryPriority={'On Hand Units':0,'Storage':1,'Total Inventory Cost':2},cards=inventoryOverview?[...(data.summary||[])].sort((a,b)=>(inventoryPriority[a.title]??Number.MAX_SAFE_INTEGER)-(inventoryPriority[b.title]??Number.MAX_SAFE_INTEGER)):orderFinancialCards(data.summary);placeSummaryRows(target,cards.map((card,index)=>{const inventoryHighlight=inventoryOverview&&['Storage','Total Inventory Cost'].includes(card.title),inventoryFeatured=inventoryOverview&&['On Hand Units','Storage','Total Inventory Cost'].includes(card.title),inventoryDescription=card.title==='Storage'?'Units currently kept in Storage rather than on the Shelf.':card.title==='Total Inventory Cost'?'Recorded cost of active, unexpired stock currently on hand.':'';return `<article class="summary-card tone-${esc(card.tone||'purple')} ${index===0?'report-primary-metric':''} ${isFinancialHighlight(card)||inventoryHighlight?'report-highlight-metric':''} ${inventoryFeatured?'inventory-featured-metric':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><div class="summary-icon"><i class="fa-solid ${esc(card.icon||'fa-chart-simple')}" aria-hidden="true"></i></div><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-context">${reportContextBadge(card,data)}${index===0?cardComparisonPeriodNote(card,data):''}${index===0&&!data.comparison_period?`<span class="summary-context-range">${esc(reportContextLabel())}</span>`:''}</div>${inventoryHighlight?`<p class="financial-metric-description">${esc(inventoryDescription)}</p>`:''}${isFinancialHighlight(card)?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${salesTrendIndicator(data,card)}`:''}${index===0&&!isFinancialHighlight(card)?`<p class="summary-explanation">${esc(reportSummaryCaption(data))}</p>${reportSummaryIndicator(data)}`:''}</article>`;}).join(''));return;}
     const rangeStart=new Date(`${data.system.date_range.start}T00:00:00`),rangeEnd=new Date(`${data.system.date_range.end}T00:00:00`),period=data.comparison_period||{days:Math.max(1,Math.round((rangeEnd-rangeStart)/86400000)+1)};
-    target.innerHTML=orderFinancialCards(data.summary,true).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''} ${isFinancialHighlight(card)?'sales-metric-highlight':''} ${card.title==='Net Sales'?'sales-metric-net':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${index===0?comparisonPeriodNote(data):''}</div>${isFinancialHighlight(card)||card.title==='Net Sales'?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${isFinancialHighlight(card)?salesTrendIndicator(data,card):''}`:''}${index===0?`${salesTrendIndicator(data,card)}<p class="summary-explanation">${card.title==='Gross Sales'?'Sales before discounts': 'Completed sales after discounts and refunds'} over ${period.days} day${period.days===1?'':'s'}</p>`:''}</article>`).join('');
+    placeSummaryRows(target,orderFinancialCards(data.summary,true).map((card,index)=>`<article class="summary-card sales-metric ${index===0?'sales-metric-primary':''} ${isFinancialHighlight(card)?'sales-metric-highlight':''} ${card.title==='Net Sales'?'sales-metric-net':''}" ${card.tooltip?`title="${esc(card.tooltip)}"`:''}><span>${esc(card.title)}</span><strong>${esc(format(card.value,card.format))}</strong><div class="summary-comparison">${salesComparisonBadge(card)}${index===0?comparisonPeriodNote(data):''}</div>${isFinancialHighlight(card)||card.title==='Net Sales'?`<p class="financial-metric-description">${esc(financialCardDescription(card))}</p>${isFinancialHighlight(card)?salesTrendIndicator(data,card):''}`:''}${index===0?`${salesTrendIndicator(data,card)}<p class="summary-explanation">${card.title==='Gross Sales'?'Sales before discounts': 'Completed sales after discounts and refunds'} over ${period.days} day${period.days===1?'':'s'}</p>`:''}</article>`).join(''));
 }
 function renderReport(data){
     qs('#reportLoading').classList.add('d-none');qs('#reportContent').classList.remove('d-none');

@@ -54,10 +54,10 @@ try {
         if ($expiry !== null && $expiry <= date('Y-m-d')) throw new InvalidArgumentException('Replacement stock must have a future expiry date.');
         $inventoryId = newUuid($pdo);
         $replacementBatchId = newUuid($pdo);
-        $pdo->prepare("INSERT INTO product_inventory (inventory_id,product_id,batch_number,quantity_stocked,quantity_remaining,expiration_date,expiry_date,no_expiry,status)
-            VALUES (:id,:product_id,:number,:stocked,:remaining,:expiration,:expiry,:no_expiry,'Available')")
+        $pdo->prepare("INSERT INTO product_inventory (inventory_id,product_id,batch_number,quantity_stocked,quantity_remaining,expiry_date,no_expiry,status)
+            VALUES (:id,:product_id,:number,:stocked,:remaining,:expiry,:no_expiry,'Available')")
             ->execute([':id'=>$inventoryId,':product_id'=>$case['product_id'],':number'=>$number,
-                ':stocked'=>$quantity,':remaining'=>$quantity,':expiration'=>$expiry,':expiry'=>$expiry,':no_expiry'=>$expiry===null?1:0]);
+                ':stocked'=>$quantity,':remaining'=>$quantity,':expiry'=>$expiry,':no_expiry'=>$expiry===null?1:0]);
         $pdo->prepare("INSERT INTO inventory_batches
             (batch_id,legacy_inventory_id,po_id,po_item_id,product_id,supplier_id,received_date,expiry_date,no_expiry,received_qty,storage_qty,shelf_qty,damaged_qty,returned_qty,unit_cost,batch_status)
             VALUES (:batch_id,:inventory_id,:po_id,:po_item_id,:product_id,:supplier_id,NOW(),:expiry,:no_expiry,:received,:storage,0,0,0,:unit_cost,'active')")

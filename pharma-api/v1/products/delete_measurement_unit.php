@@ -87,9 +87,6 @@ try {
     $referenceColumns = [
         ['entity_dimensions', 'unit'], ['grocery_details', 'unit'],
         ['medicine_details', 'net_content_unit'], ['medicine_details', 'strength_unit'],
-        ['product_variations_backup', 'unit'], ['product_variations_backup', 'size_unit'],
-        ['product_variations_backup', 'strength_unit'], ['product_variations_backup', 'volume_unit'],
-        ['product_variations_backup', 'weight_unit'], ['product_variations_backup', 'pack_content_unit'],
         ['supplier_products', 'purchase_unit'], ['supplier_products', 'inner_unit'],
         ['supplier_products', 'inventory_unit'], ['purchase_order_items', 'purchase_unit_snapshot'],
         ['purchase_order_items', 'unit_snapshot'], ['purchase_request_items', 'unit_label_at_request'],

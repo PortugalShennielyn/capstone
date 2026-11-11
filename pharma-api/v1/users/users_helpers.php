@@ -49,21 +49,54 @@ function ensureUserManagementSchema(PDO $pdo): void
         $pdo->exec('ALTER TABLE users ADD COLUMN updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP AFTER created_at');
     }
 
-    $requiredRoleType = "enum('super_admin','admin','manager','supervisor','cashier','salesclerk')";
+    $requiredRoleType = "enum('super_admin','admin','supervisor','cashier','salesclerk')";
     if (userColumnType($pdo, 'role') !== $requiredRoleType) {
+        retireManagerAccounts($pdo);
         $pdo->exec(
             "UPDATE users
              SET role = CASE role
                 WHEN 'Admin' THEN 'admin'
+                WHEN 'Super Admin' THEN 'super_admin'
                 WHEN 'Sales Clerk' THEN 'salesclerk'
                 WHEN 'Cashier' THEN 'cashier'
-                WHEN 'Owner/Manager' THEN 'manager'
-                WHEN 'Manager / Owner' THEN 'manager'
+                WHEN 'Supervisor' THEN 'supervisor'
+                WHEN 'CEO' THEN 'supervisor'
+                WHEN 'Inventory Manager' THEN 'supervisor'
                 ELSE role
              END"
         );
-        $pdo->exec("ALTER TABLE users MODIFY role ENUM('super_admin','admin','manager','supervisor','cashier','salesclerk') NOT NULL DEFAULT 'salesclerk'");
+        $pdo->exec("ALTER TABLE users MODIFY role ENUM('super_admin','admin','supervisor','cashier','salesclerk') NOT NULL DEFAULT 'salesclerk'");
     }
+    relabelInventoryManagerRole($pdo);
+}
+
+function retireManagerAccounts(PDO $pdo): void
+{
+    $ids = $pdo->query("SELECT user_id FROM users WHERE role = 'manager'")->fetchAll(PDO::FETCH_COLUMN);
+    if (!$ids) return;
+
+    $marks = implode(',', array_fill(0, count($ids), '?'));
+    $references = $pdo->query(
+        "SELECT TABLE_NAME, COLUMN_NAME
+         FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND REFERENCED_TABLE_NAME = 'users'
+           AND REFERENCED_COLUMN_NAME = 'user_id'"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($references as $reference) {
+        $table = (string) ($reference['TABLE_NAME'] ?? '');
+        $column = (string) ($reference['COLUMN_NAME'] ?? '');
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $table) || !preg_match('/^[A-Za-z0-9_]+$/', $column)) continue;
+        $pdo->prepare("DELETE FROM `{$table}` WHERE `{$column}` IN ($marks)")->execute($ids);
+    }
+    $pdo->prepare("DELETE FROM users WHERE role = 'manager' AND user_id IN ($marks)")->execute($ids);
+}
+
+function relabelInventoryManagerRole(PDO $pdo): void
+{
+    $table = $pdo->query("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'roles'")->fetchColumn();
+    if (!(int) $table) return;
+    $pdo->exec("UPDATE roles SET name = 'Inventory Manager' WHERE role_identifier = 'ro-supervisor' AND name <> 'Inventory Manager'");
 }
 
 function sendUserJson(bool $success, string $message, $data = null, int $status = 200): void
@@ -88,14 +121,11 @@ function normalizeUserRole(string $role): string
     $value = strtolower(trim($role));
     $aliases = [
         'super admin' => 'super_admin',
-        'owner/manager' => 'manager',
-        'manager/owner' => 'manager',
-        'manager / owner' => 'manager',
-        'owner / manager' => 'manager',
-        'manager_owner' => 'manager',
-        'owner_manager' => 'manager',
-        'manager' => 'manager',
         'supervisor' => 'supervisor',
+        'ceo' => 'supervisor',
+        'inventory manager' => 'supervisor',
+        'inventory_manager' => 'supervisor',
+        'inventory-manager' => 'supervisor',
         'cashier' => 'cashier',
         'sales clerk' => 'salesclerk',
         'sales-clerk' => 'salesclerk',
@@ -123,7 +153,7 @@ function roleLabel(string $role): string
         'super_admin' => 'Super Admin',
         'admin' => 'Admin',
         'manager' => 'Manager',
-        'supervisor' => 'Supervisor',
+        'supervisor' => 'Inventory Manager',
         'cashier' => 'Cashier',
         'salesclerk' => 'Sales Clerk',
     ][$role] ?? $role;
@@ -131,7 +161,7 @@ function roleLabel(string $role): string
 
 function validUserRoles(): array
 {
-    return ['super_admin', 'admin', 'manager', 'supervisor', 'cashier', 'salesclerk'];
+    return ['super_admin', 'admin', 'supervisor', 'cashier', 'salesclerk'];
 }
 
 function normalizeUserStatus(string $status): string
@@ -154,11 +184,14 @@ function currentUserManagementRole(): string
     return '';
 }
 
+function creatableUserRoles(): array
+{
+    return ['cashier', 'salesclerk', 'supervisor'];
+}
+
 function assignableUserRoles(): array
 {
-    return currentUserManagementRole() === 'manager'
-        ? ['cashier', 'salesclerk']
-        : validUserRoles();
+    return creatableUserRoles();
 }
 
 function sendUserPermissionDenied(): void
@@ -171,10 +204,31 @@ function sendUserPermissionDenied(): void
     );
 }
 
-function assertAssignableUserRole(string $role): void
+function assertAssignableUserRole(string $role, ?string $existingRole = null): void
 {
-    if (!in_array($role, assignableUserRoles(), true)) {
+    $role = normalizeUserRole($role);
+    $existingRole = $existingRole === null ? '' : normalizeUserRole($existingRole);
+    if ($existingRole !== '' && $role === $existingRole && in_array($role, ['admin', 'super_admin'], true)) {
+        return;
+    }
+    if (!in_array($role, creatableUserRoles(), true)) {
         sendUserPermissionDenied();
+    }
+}
+
+function assertSingleSuperAdmin(PDO $pdo, string $role, ?string $excludeUserId = null): void
+{
+    if (normalizeUserRole($role) !== 'super_admin') return;
+    $sql = "SELECT COUNT(*) FROM users WHERE role = 'super_admin' AND COALESCE(is_deleted, 0) = 0";
+    $params = [];
+    if ($excludeUserId !== null && cleanId($excludeUserId) !== '') {
+        $sql .= ' AND user_id <> :user_id';
+        $params[':user_id'] = cleanId($excludeUserId);
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    if ((int) $stmt->fetchColumn() > 0) {
+        sendUserJson(false, 'Only one Super Admin account is allowed.', null, 409);
     }
 }
 
@@ -190,7 +244,7 @@ function assertSingleActiveSupervisor(PDO $pdo, string $role, string $status, ?s
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     if ((int) $stmt->fetchColumn() > 0) {
-        sendUserJson(false, 'Only one active Supervisor account is allowed.', null, 409);
+        sendUserJson(false, 'Only one active Inventory Manager account is allowed.', null, 409);
     }
 }
 
@@ -231,6 +285,14 @@ function assertCanManageUser(PDO $pdo, string $userId, ?string $submittedRole = 
     }
 
     return $target;
+}
+
+function assertAdminAccountStaysActive(string $currentRole, string $nextRole, string $nextStatus): void
+{
+    $protectsAdmin = normalizeUserRole($currentRole) === 'admin' || normalizeUserRole($nextRole) === 'admin';
+    if ($protectsAdmin && $nextStatus !== 'Active') {
+        sendUserJson(false, 'Admin accounts cannot be deactivated.', null, 422);
+    }
 }
 
 function userManagementActorLabel(): string

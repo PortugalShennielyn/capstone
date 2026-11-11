@@ -26,6 +26,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit();
 }
 
+function dashboardCreditFullyAppliedSql(string $claimAlias = 'sc'): string
+{
+    return "EXISTS (
+        SELECT 1
+        FROM supplier_credits cr
+        LEFT JOIN supplier_credit_applications app ON app.credit_id = cr.credit_id
+        WHERE cr.claim_id = {$claimAlias}.claim_id
+        GROUP BY cr.credit_id, cr.credit_amount
+        HAVING cr.credit_amount > 0
+           AND COALESCE(SUM(app.amount_applied), 0) >= cr.credit_amount
+    )";
+}
+
 function dashboardTableExists(PDO $pdo, string $tableName): bool
 {
     $statement = $pdo->prepare(
@@ -405,26 +418,34 @@ try {
     // This lets alerts load even when unrelated sales or activity sources are unavailable.
     if (($_GET['scope'] ?? '') === 'alerts') {
         $inventoryStockSql = inventoryStockSummarySql();
-        $stockRows = dashboardRows(
+        $stockCounts = dashboardRows(
             $pdo,
-            "SELECT stock.stock_status, COUNT(*) AS total
+            "SELECT
+                COALESCE(SUM(stock.stock_status = 'Low Stock'), 0) AS low_stock,
+                COALESCE(SUM(stock.stock_status = 'Out of Stock'), 0) AS out_of_stock,
+                COALESCE(SUM(stock.current_storage_quantity + stock.current_shelf_quantity > 0
+                    AND stock.current_shelf_quantity <= stock.shelf_minimum), 0) AS low_shelf
              FROM ({$inventoryStockSql}) stock
              INNER JOIN product p ON p.product_id = stock.product_id
-             WHERE COALESCE(NULLIF(TRIM(p.status), ''), 'Active') <> 'Inactive'
-             GROUP BY stock.stock_status"
+             WHERE COALESCE(NULLIF(TRIM(p.status), ''), 'Active') <> 'Inactive'"
         );
-        $lowStock = 0;
-        $outOfStock = 0;
-        foreach ($stockRows as $stockRow) {
-            if (($stockRow['stock_status'] ?? '') === 'Low Stock') $lowStock = (int) $stockRow['total'];
-            if (($stockRow['stock_status'] ?? '') === 'Out of Stock') $outOfStock = (int) $stockRow['total'];
-        }
+        $lowStock = (int) ($stockCounts[0]['low_stock'] ?? 0);
+        $outOfStock = (int) ($stockCounts[0]['out_of_stock'] ?? 0);
+        $lowShelf = (int) ($stockCounts[0]['low_shelf'] ?? 0);
 
+        $openCaseExists = dashboardTableExists($pdo, 'inventory_resolution_cases')
+            ? "EXISTS (
+                SELECT 1 FROM inventory_resolution_cases c
+                WHERE c.batch_id = ib.batch_id
+                  AND c.status NOT IN ('Replaced', 'Credited', 'Disposed')
+            )"
+            : '0';
         $expiringRows = dashboardRows(
             $pdo,
             "SELECT ib.expiry_date,
                     COALESCE(ib.expiry_alert_days, pi.expiry_alert_days, 30) AS expiry_alert_days,
-                    DATEDIFF(ib.expiry_date, CURDATE()) AS days_left
+                    DATEDIFF(ib.expiry_date, CURDATE()) AS days_left,
+                    {$openCaseExists} AS has_open_case
              FROM inventory_batches ib
              INNER JOIN product p ON p.product_id = ib.product_id
              LEFT JOIN product_inventory pi ON pi.inventory_id = ib.legacy_inventory_id
@@ -436,20 +457,64 @@ try {
                AND ib.storage_qty + COALESCE(selling.shelf_qty, 0) > 0"
         );
         $expiringSoon = 0;
+        $expiryAttention = 0;
         foreach ($expiringRows as $expiryRow) {
-            if (inventoryExpiryStatus(
+            $expiryStatus = inventoryExpiryStatus(
                 $expiryRow['expiry_date'] ?? null,
                 $expiryRow['days_left'] ?? null,
                 (int) ($expiryRow['expiry_alert_days'] ?? 30)
-            ) === 'Expiring Soon') $expiringSoon++;
+            );
+            if ($expiryStatus === 'Expiring Soon') $expiringSoon++;
+            if ((int) ($expiryRow['has_open_case'] ?? 0) === 1) continue;
+            if ($expiryStatus === 'Expired' || $expiryStatus === 'Expiring Soon') $expiryAttention++;
         }
+
+        $pendingPr = dashboardTableExists($pdo, 'purchase_requests')
+            ? (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM purchase_requests WHERE status = 'Pending Supervisor Approval'")
+            : 0;
+        $awaitingInspection = 0;
+        if (dashboardTableExists($pdo, 'purchase_orders') && dashboardTableExists($pdo, 'purchase_order_receiving')) {
+            $awaitingInspection = (int) dashboardScalar(
+                $pdo,
+                "SELECT COUNT(*) FROM (
+                    SELECT COALESCE(receiving.inspection_status, CASE WHEN po.status = 'Arrived' THEN 'Awaiting Inspection' ELSE NULL END) AS inspection_status
+                    FROM purchase_orders po
+                    LEFT JOIN (
+                        SELECT po_id, MAX(inspection_status) AS inspection_status
+                        FROM purchase_order_receiving
+                        GROUP BY po_id
+                    ) receiving ON receiving.po_id = po.po_id
+                    WHERE po.status = 'Arrived' OR receiving.po_id IS NOT NULL
+                ) receiving_workflow
+                WHERE inspection_status LIKE 'Awaiting%'"
+            );
+        }
+        $openClaims = 0;
+        if (dashboardTableExists($pdo, 'supplier_claims')) {
+            $appliedCreditSql = dashboardTableExists($pdo, 'supplier_credits') && dashboardTableExists($pdo, 'supplier_credit_applications')
+                ? ' AND NOT ' . dashboardCreditFullyAppliedSql('supplier_claims')
+                : " AND claim_status <> 'Credit Applied'";
+            $openClaims = (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM supplier_claims
+                WHERE claim_status NOT IN ('Resolved', 'Resolved / Credit Issued', 'Replacement Received / Resolved', 'Completed'){$appliedCreditSql}");
+        }
+        $openResolutionCases = dashboardTableExists($pdo, 'inventory_resolution_cases')
+            ? (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM inventory_resolution_cases
+                WHERE status NOT IN ('Replaced', 'Credited', 'Disposed')")
+            : 0;
 
         echo json_encode([
             'status' => 'success',
             'out_of_stock' => $outOfStock,
             'low_stock' => $lowStock,
+            'low_shelf' => $lowShelf,
             'expiring_soon' => $expiringSoon,
-            'pending_po' => (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM purchase_orders WHERE status = 'Pending'")
+            'expiry_attention' => $expiryAttention,
+            'pending_po' => (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM purchase_orders WHERE status = 'Pending'"),
+            'pending_pr' => $pendingPr,
+            'awaiting_inspection' => $awaitingInspection,
+            'open_claims' => $openClaims,
+            'open_resolution_cases' => $openResolutionCases,
+            'navbar_badges' => fetchNavbarBadgesEnabled($pdo)
         ]);
         exit();
     }
@@ -649,9 +714,12 @@ try {
     $replacementPending = (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM supplier_claims
         WHERE (resolution_type = 'Replacement' OR claim_status LIKE '%Replacement%')
           AND claim_status NOT IN ('Resolved', 'Resolved / Credit Issued', 'Replacement Received / Resolved', 'Completed')");
+    $appliedSupplierCreditSql = dashboardTableExists($pdo, 'supplier_credits') && dashboardTableExists($pdo, 'supplier_credit_applications')
+        ? ' AND NOT ' . dashboardCreditFullyAppliedSql('supplier_claims')
+        : " AND claim_status <> 'Credit Applied'";
     $supplierCreditPending = (int) dashboardScalar($pdo, "SELECT COUNT(*) FROM supplier_claims
         WHERE (resolution_type IN ('Next PO Credit', 'Credit', 'Supplier Credit') OR claim_status LIKE '%Credit%')
-          AND claim_status NOT IN ('Resolved', 'Resolved / Credit Issued', 'Replacement Received / Resolved', 'Completed')");
+          AND claim_status NOT IN ('Resolved', 'Resolved / Credit Issued', 'Replacement Received / Resolved', 'Completed'){$appliedSupplierCreditSql}");
 
     $expiryRows = dashboardRows(
         $pdo,
@@ -673,6 +741,7 @@ try {
     $expiryStatusCounts = ['Safe' => 0, 'Expiring Soon' => 0, 'Expired' => 0, 'Not Recorded' => 0];
     $nextBatchesToExpire = [];
     $expiredBatches = [];
+    $nearExpiryProducts = [];
     $nearExpiryIndex = [];
     $nearExpiryStart = new DateTimeImmutable('first day of this month');
     for ($month = 0; $month < 4; $month++) {
@@ -687,6 +756,16 @@ try {
     foreach ($expiryRows as $row) {
         $status = inventoryExpiryStatus($row['expiry_date'] ?? null, $row['days_left'] ?? null, (int) ($row['expiry_alert_days'] ?? 30));
         if (array_key_exists($status, $expiryStatusCounts)) $expiryStatusCounts[$status]++;
+        if ($status === 'Expiring Soon') {
+            $nearExpiryProducts[] = [
+                'batch_id' => (string) $row['batch_id'],
+                'product_name' => (string) $row['product_name'],
+                'brand_name' => (string) $row['brand_name'],
+                'expiry_date' => (string) $row['expiry_date'],
+                'days_left' => (int) $row['days_left'],
+                'on_hand' => (int) ($row['on_hand'] ?? 0),
+            ];
+        }
         if (!empty($row['expiry_date']) && (int) $row['days_left'] >= 0) {
             $nextBatchesToExpire[] = [
                 'batch_id' => (string) $row['batch_id'],
@@ -712,6 +791,7 @@ try {
         }
     }
     $nextBatchesToExpire = array_slice($nextBatchesToExpire, 0, 5);
+    $nearExpiryProducts = array_slice($nearExpiryProducts, 0, 5);
     $nearExpiryMonths = array_values($nearExpiryIndex);
 
     $inventoryByCategory = dashboardRows($pdo, "SELECT COALESCE(NULLIF(pc.category_name, ''), 'Uncategorized') AS category_name,
@@ -835,6 +915,7 @@ try {
         'next_batches_to_expire' => $nextBatchesToExpire,
         'expired_batches' => $expiredBatches,
         'near_expiry_months' => $nearExpiryMonths,
+        'near_expiry_products' => $nearExpiryProducts,
         'low_shelf_products' => array_slice($lowShelfProducts, 0, 5),
         'inventory_by_category' => $inventoryByCategory,
         'inventory_health' => [

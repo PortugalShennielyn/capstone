@@ -1,6 +1,6 @@
 import API_BASE_URL from '../config/config.js?v=2';
 import PharmaUtils from '../utils.js';
-import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=28';
+import { clearTabToken, ensurePageTabSession, redirectToLogin } from './auth_guard.js?v=30';
 
 let currentSessionUser = null;
 
@@ -78,10 +78,6 @@ function mapSessionUser(user) {
     setText('tenantOverviewBillingEmailInline', user.billing_email || 'Not configured');
     setText('tenantOverviewWebsiteInline', user.website_url || 'Not configured');
     setText('tenantActivityActor', displayName);
-    setText('billingTenantName', tenantName);
-    setText('billingOwnerName', displayName);
-    setText('billingAccountContext', roles);
-    setText('billingSubscriptionTenant', tenantName);
     setDbText('profileIdentityName', displayName, hasDbValue(user.full_name) || hasDbValue(user.username));
     setDbText('profileIdentityUsername', dbValue(user.username, 'Not configured'), hasDbValue(user.username));
     setDbText('profileIdentityEmail', email, hasDbValue(user.email));

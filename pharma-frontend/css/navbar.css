@@ -1,6 +1,6 @@
 :root {
     --sidebar-collapsed-width: 72px !important;
-    --sidebar-expanded-width: 315px !important;
+    --sidebar-expanded-width: 260px !important;
     --sidebar-width: var(--sidebar-expanded-width) !important;
     --sidebar-bg: #1e293b;
     --sidebar-bg-deep: #172033;
@@ -797,6 +797,20 @@ th.icon-column {
     flex: 1 1 auto;
 }
 
+.nav-work-count {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff !important;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 18px;
+    text-align: center;
+    flex: 0 0 auto;
+}
+
 .nav-link-item .collapse-arrow {
     width: 16px;
     min-width: 16px;
@@ -811,7 +825,8 @@ th.icon-column {
 /* Page-level legacy navbar blocks load after this stylesheet on some modules.
    Keep the shared icon column and spacing authoritative everywhere. */
 #navbar-container .sidebar-nav .nav-link-item {
-    column-gap: 16px !important;
+    position: relative;
+    column-gap: 12px !important;
 }
 
 #navbar-container .sidebar-nav .nav-link-item > i:first-child {
@@ -1105,12 +1120,23 @@ html:not(.navbar-role-ready) #navbar-container .sidebar-profile-footer {
 
 .app-sidebar.collapsed .sidebar-brand,
 .app-sidebar.collapsed .nav-link-item { justify-content: center; padding-inline: 0; }
-.app-sidebar.collapsed .nav-link-item {
-    width: 44px;
-    min-height: 44px;
-    margin-right: auto !important;
-    margin-left: auto !important;
+#navbar-container .app-sidebar.collapsed .sidebar-nav .nav-link-item {
+    width: 38px;
+    min-height: 38px;
+    padding-inline: 0;
+    margin: 7px auto !important;
 }
+#navbar-container .app-sidebar.collapsed .nav-work-count {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 9px;
+    line-height: 16px;
+}
+
 .app-sidebar.collapsed .nav-label,
 .app-sidebar.collapsed .brand-text,
 .app-sidebar.collapsed .collapse-arrow,

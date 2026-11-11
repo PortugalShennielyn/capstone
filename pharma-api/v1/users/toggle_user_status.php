@@ -16,7 +16,9 @@ $status = normalizeUserStatus((string) ($payload['status'] ?? ''));
 
 if ($userId === '') sendUserJson(false, 'User record is missing.', null, 422);
 $target = assertCanManageUser($pdo, $userId);
-assertSingleActiveSupervisor($pdo, normalizeUserRole((string) ($target['role'] ?? '')), $status, $userId);
+$targetRole = normalizeUserRole((string) ($target['role'] ?? ''));
+assertAdminAccountStaysActive($targetRole, $targetRole, $status);
+assertSingleActiveSupervisor($pdo, $targetRole, $status, $userId);
 
 $stmt = $pdo->prepare(
     'UPDATE users

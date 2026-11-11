@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
     <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=15"></script>
+    <script src="./js/navbar_bootstrap.js?v=17"></script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Dr. R Pharmacy | Dashboard</title>
@@ -26,9 +26,9 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
             rel="stylesheet"
         />
-        <link href="./css/navbar.css?v=42" rel="stylesheet" />
-        <script src="./js/navbar.js?v=100" defer></script>
-        <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+        <link href="./css/navbar.css?v=43" rel="stylesheet" />
+        <script src="./js/navbar.js?v=105" defer></script>
+        <script type="module" src="./js/modules/auth_guard.js?v=30"></script>
 
         <style>
             :root {
@@ -3553,7 +3553,11 @@
             .expired-batch-row { min-height: 54px; padding: 9px 11px; margin-bottom: 8px; border-radius: 11px; display: flex; align-items: center; justify-content: space-between; color: #fff; background: linear-gradient(100deg,#e52d1f,#f26616); text-decoration: none; }
             .expired-batch-row strong,.expired-batch-row small,.expired-batch-row em { display:block; }
             .expired-batch-row strong { font-size: 11px; } .expired-batch-row small { opacity:.8; font-size:9px; } .expired-batch-row > span:last-child { text-align:right; font-size:10px; } .expired-batch-row em { font-style:normal; font-weight:900; }
-            .near-expiry-chart { height: 155px; }
+            .near-expiry-row { min-height: 54px; padding: 9px 11px; margin-bottom: 8px; border-radius: 11px; display: block; color: #7a3e00; background: linear-gradient(100deg,#fff8eb,#ffefc4); border: 1px solid #f3d48a; text-decoration: none; }
+            .near-expiry-row:last-child { margin-bottom: 0; }
+            .near-expiry-row strong,.near-expiry-row small,.near-expiry-row em { display:block; }
+            .near-expiry-row strong { font-size: 13px; } .near-expiry-row small { margin-top: 3px; color: #9a6b2f; font-size: 9px; }
+            .near-expiry-row em { margin-top: 3px; color: #b45309; font-style: normal; font-size: 11px; font-weight: 900; }
 
             .transaction-tabs { display: flex; gap: 6px; }
             .transaction-tabs button { min-height: 32px; padding: 0 12px; border: 1px solid #dfe5ec; border-radius: 999px; color: #64748b; background: #fff; font-size: 10px; font-weight: 850; }
@@ -4005,7 +4009,7 @@
                             <div class="dashboard-section-heading"><div><h2 id="riskMonitoringTitle">Expiry &amp; Risk Monitoring</h2><p>Batch expiry risk and upcoming inventory attention</p></div></div>
                             <div class="dashboard-wide-row risk-report-row">
                                 <div class="content-panel next-expiry-card"><div class="panel-header"><div><h2>Next Batches to Expire</h2><p>Nearest active inventory batches</p></div></div><div class="panel-body"><div class="expiry-status-chips" id="expiryStatusOverview"></div><div class="attention-list mini-report" id="nextBatchesList"></div><a class="compact-view-all" href="expiry_monitoring.html">View all batches <i class="fa-solid fa-arrow-right"></i></a></div></div>
-                                <div class="risk-support-stack"><div class="content-panel expired-batches-card"><div class="panel-header"><h2>Expired Batches</h2></div><div class="panel-body" id="expiredBatchesList"></div></div><div class="content-panel near-expiry-card"><div class="panel-header"><h2>Near Expiry</h2></div><div class="panel-body"><div class="near-expiry-chart"><canvas id="dashboardNearExpiryCanvas" role="img" aria-label="Upcoming expiry batches by month"></canvas></div></div></div></div>
+                                <div class="risk-support-stack"><div class="content-panel expired-batches-card"><div class="panel-header"><h2>Expired Batches</h2></div><div class="panel-body" id="expiredBatchesList"></div></div><div class="content-panel near-expiry-card"><div class="panel-header"><h2>Near Expiry</h2></div><div class="panel-body" id="nearExpiryList"></div></div></div>
                             </div>
                         </section>
 
@@ -4060,127 +4064,6 @@
                         </section>
                         <section class="profile-settings-panel content-panel" data-settings-panel="notifications" hidden><div class="panel-header"><h2>Notifications</h2><p>Choose which existing pharmacy alerts appear in your notification center on this device.</p></div><div class="notification-preferences" id="notificationPreferences"><label><span><strong>Expiry alerts</strong><small>Batch expiry and near-expiry warnings</small></span><input type="checkbox" data-notification-key="expiry"></label><label><span><strong>Low-stock alerts</strong><small>Low and out-of-stock inventory warnings</small></span><input type="checkbox" data-notification-key="stock"></label><label><span><strong>PR / PO updates</strong><small>Purchase request and purchase order activity</small></span><input type="checkbox" data-notification-key="procurement"></label><label><span><strong>Delivery / inspection updates</strong><small>Receiving and inspection activity</small></span><input type="checkbox" data-notification-key="receiving"></label><label><span><strong>System notifications</strong><small>Account and system notices</small></span><input type="checkbox" data-notification-key="system"></label></div><p class="settings-help notification-preferences-note">Email notifications are not enabled because no email notification delivery service is configured.</p></section>
                     </section>
-                </div>
-                <div id="view-billing" class="content-view d-none">
-                    <div class="content-panel">
-                        <div class="panel-header">
-                            <h2>Billing</h2>
-                        </div>
-                        <div class="panel-body">
-                            <div class="user-context-grid mb-3">
-                                <div class="user-context-panel">
-                                    <h3>Billing Context</h3>
-                                    <dl class="context-list">
-                                        <div>
-                                            <dt>Tenant</dt>
-                                            <dd id="billingTenantName">Dr. R Pharmacy</dd>
-                                        </div>
-                                        <div>
-                                            <dt>Billing owner</dt>
-                                            <dd id="billingOwnerName">Dr. ADMIN</dd>
-                                        </div>
-                                        <div>
-                                            <dt>Account context</dt>
-                                            <dd id="billingAccountContext">Admin</dd>
-                                        </div>
-                                    </dl>
-                                </div>
-                                <div class="user-context-panel">
-                                    <h3>Source Tables</h3>
-                                    <dl class="context-list">
-                                        <div>
-                                            <dt>Tenant</dt>
-                                            <dd><code>saas.tenant</code></dd>
-                                        </div>
-                                        <div>
-                                            <dt>Plan rules</dt>
-                                            <dd><code>saas.plan</code></dd>
-                                        </div>
-                                        <div>
-                                            <dt>Overrides</dt>
-                                            <dd><code>saas.feature_override</code></dd>
-                                        </div>
-                                    </dl>
-                                </div>
-                            </div>
-                            <h3 class="user-section-title">Subscription</h3>
-                            <div class="table-responsive mb-3">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Plan</th>
-                                            <th>Tenant</th>
-                                            <th>Status</th>
-                                            <th>Billing Cycle</th>
-                                            <th>Trial Ends</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Workspace Plan</td>
-                                            <td id="billingSubscriptionTenant">Dr. R Pharmacy</td>
-                                            <td><span class="status-pill success">Active</span></td>
-                                            <td>Monthly</td>
-                                            <td>Configured on tenant</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <h3 class="user-section-title">Invoices</h3>
-                            <div class="table-responsive mb-3">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Invoice</th>
-                                            <th>Period</th>
-                                            <th>Amount</th>
-                                            <th>Status</th>
-                                            <th>Due Date</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>BILL-1003</td>
-                                            <td>Current month</td>
-                                            <td>0.00</td>
-                                            <td><span class="status-pill warning">Draft</span></td>
-                                            <td>Tenant billing date</td>
-                                        </tr>
-                                        <tr>
-                                            <td>BILL-1002</td>
-                                            <td>Previous month</td>
-                                            <td>0.00</td>
-                                            <td>
-                                                <span class="status-pill success">Recorded</span>
-                                            </td>
-                                            <td>Closed</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <h3 class="user-section-title">Payment Methods</h3>
-                            <div class="table-responsive">
-                                <table class="table">
-                                    <thead>
-                                        <tr>
-                                            <th>Method</th>
-                                            <th>Last Four</th>
-                                            <th>Expires</th>
-                                            <th>Default</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Manual billing</td>
-                                            <td>Not stored</td>
-                                            <td>Not applicable</td>
-                                            <td><span class="status-pill success">Yes</span></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </section>
         </main>
@@ -4270,7 +4153,6 @@
                     "view-inventory",
                     "view-suppliers",
                     "view-user-settings",
-                    "view-billing",
                 ];
                 const pageTitle = document.querySelector(".page-title-mini strong");
                 const pageSubtitle = document.querySelector(".page-title-mini span");
@@ -4282,12 +4164,10 @@
                         "Profile Settings",
                         "Manage your profile, account, security, and notifications",
                     ],
-                    billing: ["Billing", "Tenant billing and payment records"],
                 };
 
                 const dashboardRouteMap = {
                     dashboard: "dashboard",
-                    "dashboard/billing": "billing",
                     "dashboard/user/settings": "user-settings",
                     "dashboard/inventory": "inventory",
                     "dashboard/suppliers": "suppliers",
@@ -4987,7 +4867,6 @@
 
             let dashboardStorageStatusChart = null;
             let dashboardInventoryCategoryChart = null;
-            let dashboardNearExpiryChart = null;
 
             function renderInventoryStatus(groups = {}) {
                 const target = document.getElementById("inventoryStatusMeters");
@@ -5101,7 +4980,7 @@
                     return `<a class="mini-report-row" href="expiry_monitoring.html"><span><span class="mini-report-title">${escapeHtml(row.product_name || "Unnamed product")}</span><span class="mini-report-meta" title="Batch ${escapeHtml(batchReference)}">Batch ${escapeHtml(compactBatch)}</span></span><span class="mini-report-value">${escapeHtml(dashboardDate(row.expiry_date))}</span><span class="risk-badge ${severity}">${wholeNumber.format(days)} days</span></a>`;
                 }, "No upcoming batch expiries.");
                 renderExpiredBatches(data.expired_batches || []);
-                renderNearExpiry(data.near_expiry_months || []);
+                renderNearExpiry(data.near_expiry_products || []);
                 renderTopSuppliers(data.top_suppliers || [], data.period || {});
                 renderSupplierInvoices(data.supplier_invoice_summary || {});
             }
@@ -5120,13 +4999,19 @@
             }
 
             function renderNearExpiry(rows = []) {
-                const canvas = document.getElementById("dashboardNearExpiryCanvas");
-                dashboardNearExpiryChart?.destroy();
-                dashboardNearExpiryChart = null;
-                if (!canvas) return;
-                if (!rows.length) { canvas.style.visibility = "hidden"; return; }
-                canvas.style.visibility = "visible";
-                dashboardNearExpiryChart = new Chart(canvas, { type: "bar", data: { labels: rows.map((row) => row.label || row.month_label || row.month), datasets: [{ data: rows.map((row) => Number(row.batch_count || 0)), backgroundColor: ["#14b8a6", "#2dd4bf", "#5eead4", "#99f6e4"], borderRadius: 8, maxBarThickness: 38 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => `${wholeNumber.format(context.raw)} batches` } } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#e8edf4" }, border: { display: false } } } } });
+                const target = document.getElementById("nearExpiryList");
+                if (!target) return;
+                if (!rows.length) {
+                    target.innerHTML = '<p class="empty-state">No products are near expiry.</p>';
+                    return;
+                }
+                target.innerHTML = rows.slice(0, 5).map((row) => {
+                    const days = Number(row.days_left || 0);
+                    const dayLabel = days === 1 ? "1 day left" : `${wholeNumber.format(days)} days left`;
+                    const batchReference = String(row.batch_id || "Not recorded");
+                    const compactBatch = batchReference.length > 18 ? `${batchReference.slice(0, 8)}…${batchReference.slice(-5)}` : batchReference;
+                    return `<a class="near-expiry-row" href="expiry_monitoring.html"><strong>${escapeHtml(row.product_name || "Unnamed product")}</strong><em>${escapeHtml(dashboardDate(row.expiry_date))} · ${escapeHtml(dayLabel)}</em><small>Batch ${escapeHtml(compactBatch)}</small></a>`;
+                }).join("");
             }
 
             function renderTopSuppliers(rows = [], period = {}) {

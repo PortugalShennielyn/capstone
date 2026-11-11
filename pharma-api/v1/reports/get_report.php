@@ -857,6 +857,12 @@ function overviewReport(PDO $pdo,array $f,array $role): array
       GROUP BY o.sales_clerk_id,u.full_name,u.username
       ORDER BY transactions DESC,net_sales DESC,name LIMIT 3",$salesParams);
 
+    $resolution = reportRow($pdo, "SELECT COUNT(*) open_cases, COALESCE(SUM((shelf_qty+storage_qty)*unit_cost),0) unresolved_value
+        FROM inventory_resolution_cases
+        WHERE status NOT IN ('Replaced','Credited','Disposed')");
+    $unresolvedResolution = round((float) ($resolution['unresolved_value'] ?? 0), 2);
+    $openResolutionCases = (int) ($resolution['open_cases'] ?? 0);
+
     $dateQuery='start_date='.rawurlencode($f['start_date']).'&end_date='.rawurlencode($f['end_date']);
     $links=[
       'sales'=>'reports.html?category=sales&'.$dateQuery,
@@ -871,12 +877,13 @@ function overviewReport(PDO $pdo,array $f,array $role): array
       ['singular'=>'Low-stock product','plural'=>'Low-stock products','value'=>(int)$inventoryHealth['low_stock'],'tone'=>'amber','icon'=>'fa-triangle-exclamation','href'=>'reports.html?category=inventory&stock_status=low'],
       ['singular'=>'Expired batch','plural'=>'Expired batches','value'=>(int)($expiryRisk['expired']??0),'tone'=>'red','icon'=>'fa-ban','href'=>'reports.html?category=expiry&expiry_days=0'],
       ['singular'=>'Batch expiring within 30 days','plural'=>'Batches expiring within 30 days','value'=>(int)($expiryRisk['within_30']??0),'tone'=>'amber','icon'=>'fa-calendar-xmark','href'=>'reports.html?category=expiry&expiry_days=30'],
+      ['singular'=>'Unresolved return or disposal','plural'=>'Unresolved returns and disposals','value'=>$openResolutionCases,'format'=>'number','tone'=>'red','icon'=>'fa-box-open','href'=>'reports.html?category=expiry&report_view='.rawurlencode('Returns & Disposals')],
       ['singular'=>'Arrived PO waiting for inspection','plural'=>'Arrived POs waiting for inspection','value'=>$arrived,'tone'=>'amber','icon'=>'fa-clipboard-check','href'=>'reports.html?category=purchases&po_status=Arrived'],
       ['singular'=>'Outstanding delivered PO payable','plural'=>'Outstanding delivered PO payables','value'=>(float)$purchases['summary'][5]['value'],'format'=>'currency','tone'=>'amber','icon'=>'fa-wallet','href'=>'reports.html?category=purchases&payment_state=outstanding&'.$dateQuery],
     ];
     $salesChart=$sales['charts'][0];
     $salesChart['href']=$links['sales'];$salesChart['link_label']='View Sales Report';$salesChart['overview_trend']=true;
-    $overviewCards=[$sales['summary'][0],$sales['summary'][1],$sales['summary'][3],$inventory['summary'][5],reportCard('Cost at Risk',(float)($expiryRisk['cost_at_risk_30']??0),'currency','fa-coins','red'),$purchases['summary'][5]];
+    $overviewCards=[$sales['summary'][0],$sales['summary'][1],$sales['summary'][3],$inventory['summary'][5],reportCard('Cost at Risk',(float)($expiryRisk['cost_at_risk_30']??0),'currency','fa-coins','red'),reportCard('Unresolved returns & disposals',$unresolvedResolution,'currency','fa-peso-sign','red'),$purchases['summary'][5]];
     foreach ($sales['summary'] as $salesCard) {
         if (in_array($salesCard['title'] ?? '', ['Gross Profit','Estimated Gross Profit','Total VAT Collected'], true)) $overviewCards[]=$salesCard;
     }
@@ -952,7 +959,7 @@ try {
             }
             // Overview contains live inventory/expiry values alongside date-range
             // metrics. Only compare its time-based values.
-            if ($category === 'overview' && in_array($title, ['Inventory Cost','Cost at Risk'], true)) continue;
+            if ($category === 'overview' && in_array($title, ['Inventory Cost','Cost at Risk','Unresolved returns & disposals'], true)) continue;
             if (!is_numeric($currentValue) || $previousValue === null) {
                 $card['comparison'] = ['state'=>'unavailable'];
                 continue;

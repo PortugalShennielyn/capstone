@@ -40,7 +40,7 @@ try {
     } elseif ($scope === 'all') {
         $whereClause = '';
     } else {
-        $whereClause = "WHERE po.status IN ('Draft', 'Pending', 'Arrived', 'Delivered') AND po.approval_status <> 'Rejected'";
+        $whereClause = "WHERE po.status IN ('Draft', 'Pending', 'Arrived', 'Delivered', 'Cancelled') AND po.approval_status <> 'Rejected'";
     }
 
     $statement = $pdo->prepare(
@@ -159,6 +159,10 @@ try {
                 poi.po_id,
                 poi.po_item_id,
                 poi.product_id,
+                (SELECT psv.value_text FROM product_specification_values psv
+                 INNER JOIN product_specifications ps ON ps.specification_id = psv.specification_id
+                 WHERE psv.product_id = poi.product_id AND LOWER(TRIM(ps.specification_name)) = 'medicine classification'
+                 LIMIT 1) AS medicine_classification,
                 poi.quantity,
                 poi.purchase_qty,
                 CASE
@@ -168,18 +172,12 @@ try {
                 COALESCE(poi.units_per_purchase_unit_snapshot, 1) AS units_per_purchase_unit,
                 COALESCE(NULLIF(poi.inventory_qty_ordered, 0), poi.quantity) AS inventory_qty_ordered,
                 COALESCE(ROUND(piii.unit_cost * poi.purchase_qty, 2), poi.line_total) AS stored_line_total,
-                CASE
-                    WHEN NULLIF(TRIM(poi.product_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.product_name_snapshot)) LIKE 'N/A%' THEN p.product_name
-                    ELSE poi.product_name_snapshot
-                END AS product_name,
-                CASE
-                    WHEN NULLIF(TRIM(poi.brand_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.brand_name_snapshot)) LIKE 'N/A%' THEN p.brand_name
-                    ELSE poi.brand_name_snapshot
-                END AS brand_name,
-                COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
-                COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
-                COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
-                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
+                p.product_name AS product_name,
+                p.brand_name AS brand_name,
+                pc.category_name AS category_name,
+                pt.type_name AS type_name,
+                md.generic_name AS generic_name,
+                COALESCE(NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
                 COALESCE(md.strength_value, md.strength) AS strength_value,
                 md.strength_unit AS strength_unit,
                 md.dosage_form AS dosage_form,
@@ -187,8 +185,8 @@ try {
                 md.net_content_unit,
                 md.net_content_value AS volume_value,
                 md.net_content_unit AS volume_unit,
-                COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), gd.variant, '') AS variant_flavor,
-                COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, '') AS size_value,
+                COALESCE(gd.variant, '') AS variant_flavor,
+                COALESCE(gd.size, '') AS size_value,
                 gd.net_weight AS weight_volume_value,
                 gd.unit AS weight_volume_unit,
                 CASE
@@ -196,7 +194,7 @@ try {
                     WHEN LOWER(COALESCE(md.dosage_form, '')) IN ('tablet', 'capsule', 'caplet') THEN 'pcs'
                     ELSE COALESCE(md.dosage_form, '')
                 END AS unit,
-                COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging,
+                COALESCE(md.package_type, gd.package_type, '') AS packaging,
                 COALESCE(piii.unit_cost / NULLIF(poi.units_per_purchase_unit_snapshot, 0), poi.unit_price_snapshot) AS price,
                 p.price AS selling_price,
                 COALESCE(SUM(pori.received_quantity), 0) AS received_quantity,
@@ -225,7 +223,7 @@ try {
                  GROUP BY po_item_id
               ) batches ON batches.po_item_id = poi.po_item_id
              WHERE poi.po_id IN ({$placeholders})
-              GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, piii.unit_cost, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.returned_quantity, returns.replacement_pending_quantity, batches.inventory_added
+              GROUP BY poi.po_id, poi.po_item_id, poi.product_id, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, piii.unit_cost, poi.unit_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.returned_quantity, returns.replacement_pending_quantity, batches.inventory_added
              ORDER BY poi.po_id, poi.po_item_id"
         );
         $itemsStatement->execute($poIds);

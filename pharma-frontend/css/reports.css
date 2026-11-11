@@ -925,3 +925,188 @@ body { background:var(--mp-bg); }
     margin-top: 8px;
     padding-top: 0;
 }
+
+/* One content grid: purple highlight cards share the first row, smaller cards follow, charts stay in their own rows. */
+#reportContent .summary-grid,
+#reportContent .summary-grid.sales-summary,
+#reportContent .summary-grid.purchase-summary,
+#reportContent .summary-grid.inventory-overview-summary,
+.report-main:has(.reference-filters) #reportContent .summary-grid,
+.report-main:has(.reference-filters) #reportContent .summary-grid.sales-summary,
+.report-main:has(.reference-filters) #reportContent .summary-grid.purchase-summary {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 14px;
+    align-items: stretch;
+}
+#reportContent .summary-grid > .summary-card,
+#reportContent .summary-grid > .summary-card:first-child,
+#reportContent .sales-summary .sales-metric-primary,
+#reportContent .purchase-summary .purchase-metric-primary,
+#reportContent .summary-grid.inventory-overview-summary > .inventory-featured-metric,
+.report-main:has(.reference-filters) #reportContent .summary-grid > .summary-card:first-child,
+.report-main:has(.reference-filters) #reportContent .sales-summary .sales-metric-primary,
+.report-main:has(.reference-filters) #reportContent .purchase-summary .purchase-metric-primary {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    min-height: 168px;
+    height: auto;
+    overflow: hidden;
+}
+#reportContent .summary-card .summary-trend-indicator,
+#reportContent .summary-card .financial-trend-indicator,
+#reportContent .summary-card .summary-explanation,
+#reportContent .summary-card .financial-metric-description,
+#reportContent .report-primary-metric .summary-explanation,
+#reportContent .report-primary-metric .financial-metric-description,
+#reportContent .purchase-metric-primary .summary-explanation {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    margin: 10px 0 0;
+}
+#reportContent .summary-card .summary-trend-indicator,
+#reportContent .summary-card .financial-trend-indicator {
+    height: 36px;
+}
+#reportContent .report-visuals,
+#reportContent.is-overview .report-visuals {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    margin-bottom: 14px;
+}
+#reportContent .charts-grid,
+#reportContent.is-overview #reportCharts,
+#reportContent .charts-grid.chart-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+#reportContent .charts-grid.single-chart,
+#reportContent .charts-grid:has(.chart-card:only-child) {
+    grid-template-columns: minmax(0, 1fr);
+}
+#reportContent .chart-card,
+#reportContent .overview-panel,
+#reportContent .insight-card,
+#reportContent .attention-card {
+    min-width: 0;
+    overflow: hidden;
+}
+#reportContent .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+#reportContent .overview-chart-box,
+#reportContent .chart-box {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+@media (max-width: 1100px) {
+    #reportContent .summary-grid,
+    #reportContent .summary-grid.sales-summary,
+    #reportContent .summary-grid.purchase-summary,
+    #reportContent .summary-grid.inventory-overview-summary,
+    #reportContent .charts-grid,
+    #reportContent.is-overview #reportCharts,
+    #reportContent .charts-grid.chart-pair,
+    #reportContent .overview-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+@media (max-width: 700px) {
+    #reportContent .summary-grid,
+    #reportContent .summary-grid.sales-summary,
+    #reportContent .summary-grid.purchase-summary,
+    #reportContent .summary-grid.inventory-overview-summary,
+    #reportContent .charts-grid,
+    #reportContent.is-overview #reportCharts,
+    #reportContent .charts-grid.chart-pair,
+    #reportContent .overview-grid {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+}
+
+/* Purple highlight cards stay on the first row. Smaller metric cards stay on the rows below. */
+#reportContent #summaryCards.summary-grid,
+.report-main:has(.reference-filters) #reportContent #summaryCards.summary-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+    align-items: stretch !important;
+    grid-template-columns: none !important;
+}
+#summaryCards .summary-row {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+    gap: 14px !important;
+    align-items: stretch !important;
+}
+#summaryCards .summary-row > .summary-card,
+#summaryCards .summary-row > .summary-card:first-child {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    position: relative !important;
+    height: auto !important;
+    min-height: 132px !important;
+}
+#summaryCards .summary-row-highlight > .summary-card {
+    min-height: 168px !important;
+}
+#summaryCards .summary-row-metrics > .summary-card,
+#summaryCards .summary-row-metrics > .summary-card:first-child {
+    min-height: 118px !important;
+    padding: 16px 18px !important;
+    border: 1px solid var(--mp-line) !important;
+    background: #fff !important;
+    color: #222b3c !important;
+}
+#summaryCards .summary-row-metrics > .summary-card:first-child span,
+#summaryCards .summary-row-metrics > .summary-card span {
+    color: var(--mp-muted) !important;
+    font-size: 12px !important;
+}
+#summaryCards .summary-row-metrics > .summary-card:first-child strong,
+#summaryCards .summary-row-metrics > .summary-card strong {
+    margin-top: 8px !important;
+    color: #222b3c !important;
+    font-size: 22px !important;
+}
+#summaryCards .summary-row .summary-explanation,
+#summaryCards .summary-row .financial-metric-description,
+#summaryCards .summary-row .summary-trend-indicator,
+#summaryCards .summary-row .financial-trend-indicator {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    margin: 10px 0 0 !important;
+}
+#summaryCards .summary-row .summary-trend-indicator,
+#summaryCards .summary-row .financial-trend-indicator {
+    height: 36px !important;
+}
+#reportContent #reportCharts.charts-grid:not(.chart-pair) {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+}
+@media (max-width: 1100px) {
+    #summaryCards .summary-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+}
+@media (max-width: 700px) {
+    #summaryCards .summary-row {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+}

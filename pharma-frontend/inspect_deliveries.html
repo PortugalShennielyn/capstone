@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
     <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=15"></script>
+    <script src="./js/navbar_bootstrap.js?v=17"></script>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Dr. R Pharmacy | Inspect Deliveries</title>
@@ -24,11 +24,11 @@
             href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"
             rel="stylesheet"
         />
-        <link href="./css/navbar.css?v=42" rel="stylesheet" />
-        <link href="./css/inspect_deliveries.css?v=8" rel="stylesheet" />
+        <link href="./css/navbar.css?v=43" rel="stylesheet" />
+        <link href="./css/inspect_deliveries.css?v=11" rel="stylesheet" />
         <link href="./css/purchase_receiving.css?v=7" rel="stylesheet" />
-        <script src="./js/navbar.js?v=100" defer></script>
-        <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+        <script src="./js/navbar.js?v=105" defer></script>
+        <script type="module" src="./js/modules/auth_guard.js?v=30"></script>
     </head>
     <body data-page="inspect-deliveries">
         <div id="navbar-container"></div>
@@ -59,23 +59,6 @@
             <section class="page-body">
                 <div class="inspection-shell">
                     <section id="inspectionQueueView">
-                        <div class="page-heading">
-                            <div>
-                                <h1>Inspect Deliveries</h1>
-                                <p>
-                                    Review arrived purchase orders, inspect delivered products,
-                                    record batches and expiry dates, and confirm inventory receipt.
-                                </p>
-                            </div>
-                            <button
-                                class="btn btn-sm btn-outline-secondary"
-                                id="btnRefreshInspectionQueue"
-                                type="button"
-                            >
-                                <i class="fa-solid fa-rotate me-1"></i>Refresh
-                            </button>
-                        </div>
-
                         <div class="summary-grid" aria-label="Inspection queue summary">
                             <div class="summary-card">
                                 <span class="summary-icon"
@@ -115,70 +98,81 @@
                             </div>
                         </div>
 
-                        <div class="panel queue-toolbar" aria-label="Inspection filters">
-                            <div class="filter-field filter-search">
-                                <label for="inspectionSearch">Search</label
-                                ><input
-                                    class="filter-control"
-                                    id="inspectionSearch"
-                                    type="search"
-                                    placeholder="PO number or supplier"
-                                />
-                            </div>
-                            <details class="filter-field date-filter" id="inspectionDateFilter">
-                                <summary class="date-filter-summary">
-                                    <span id="inspectionDateSummary">All arrival dates</span
-                                    ><i class="fa-solid fa-calendar-days"></i>
-                                </summary>
-                                <div class="date-filter-panel">
-                                    <div>
-                                        <label for="inspectionDateFrom">From</label
-                                        ><input
-                                            class="filter-control"
-                                            id="inspectionDateFrom"
-                                            type="date"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label for="inspectionDateTo">To</label
-                                        ><input
-                                            class="filter-control"
-                                            id="inspectionDateTo"
-                                            type="date"
-                                        />
-                                    </div>
-                                </div>
-                            </details>
-                            <div class="filter-field filter-select">
-                                <label for="inspectionStatusFilter">Receiving Status</label
-                                ><select class="filter-control" id="inspectionStatusFilter">
-                                    <option value="">All statuses</option>
-                                    <option value="awaiting">Awaiting Inspection</option>
-                                    <option value="in-progress">Inspection in Progress</option>
-                                    <option value="issue-found">With Issues</option>
-                                    <option value="ready">Ready to Confirm</option>
-                                    <option value="completed">Receiving Completed</option>
-                                </select>
-                            </div>
-                            <button
-                                class="btn btn-sm btn-light border"
-                                id="btnClearInspectionFilters"
-                                type="button"
-                            >
-                                <i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear filters
-                            </button>
-                        </div>
-
                         <div class="panel queue-table-panel">
                             <div class="queue-table-header">
-                                <h2>Arrived Purchase Orders</h2>
-                                <p>
-                                    Review arrived orders and their physical inspection status.
-                                </p>
+                                <div class="queue-table-heading">
+                                    <div>
+                                        <h2>Arrived Purchase Orders</h2>
+                                        <p>
+                                            Review arrived orders and their physical inspection status.
+                                        </p>
+                                    </div>
+                                    <button
+                                        class="btn btn-sm btn-outline-secondary"
+                                        id="btnRefreshInspectionQueue"
+                                        type="button"
+                                    >
+                                        <i class="fa-solid fa-rotate me-1"></i>Refresh
+                                    </button>
+                                </div>
+                                <div class="queue-toolbar" aria-label="Inspection filters">
+                                    <div class="filter-field filter-search">
+                                        <label for="inspectionSearch">Search</label
+                                        ><input
+                                            class="filter-control"
+                                            id="inspectionSearch"
+                                            type="search"
+                                            placeholder="PO number or supplier"
+                                        />
+                                    </div>
+                                    <details class="filter-field date-filter" id="inspectionDateFilter">
+                                        <summary class="date-filter-summary">
+                                            <span id="inspectionDateSummary">All arrival dates</span
+                                            ><i class="fa-solid fa-calendar-days"></i>
+                                        </summary>
+                                        <div class="date-filter-panel">
+                                            <div>
+                                                <label for="inspectionDateFrom">From</label
+                                                ><input
+                                                    class="filter-control"
+                                                    id="inspectionDateFrom"
+                                                    type="date"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label for="inspectionDateTo">To</label
+                                                ><input
+                                                    class="filter-control"
+                                                    id="inspectionDateTo"
+                                                    type="date"
+                                                />
+                                            </div>
+                                        </div>
+                                    </details>
+                                    <div class="filter-field filter-select">
+                                        <label for="inspectionStatusFilter">Receiving Status</label
+                                        ><select class="filter-control" id="inspectionStatusFilter">
+                                            <option value="">All statuses</option>
+                                            <option value="awaiting">Awaiting Inspection</option>
+                                            <option value="in-progress">Inspection in Progress</option>
+                                            <option value="issue-found">With Issues</option>
+                                            <option value="ready">Ready to Confirm</option>
+                                            <option value="completed">Receiving Completed</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        class="btn btn-sm btn-light border"
+                                        id="btnClearInspectionFilters"
+                                        type="button"
+                                    >
+                                        <i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear filters
+                                    </button>
+                                </div>
                             </div>
                             <div class="queue-table-wrap">
                                 <table
                                     class="table table-hover queue-table"
+                                    id="inspectionQueueTable"
                                     aria-label="Arrived purchase orders and completed receiving records"
                                 >
                                     <thead>
@@ -394,6 +388,6 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
-    <script type="module" src="./js/modules/purchase_orders.js?v=120"></script>
+    <script type="module" src="./js/modules/purchase_orders.js?v=121"></script>
     </body>
 </html>

@@ -1,4 +1,19 @@
 import PharmaUtils from '../utils.js';
+import { isPrescriptionProduct } from './product_specification.js?v=11';
+
+function returnProductIdentity(record) {
+    const clean = value => {
+        const text = String(value || '').trim();
+        return /^(n\/a|none|null|-)$/i.test(text) ? '' : text;
+    };
+    const medicine = clean(record.category_name).toLowerCase() === 'medicine';
+    const name = medicine ? (clean(record.generic_name) || clean(record.product_name)) : clean(record.product_name);
+    const brand = clean(record.brand_name);
+    const primary = brand || name || 'Product';
+    const secondary = name && name.toLowerCase() !== primary.toLowerCase() ? name : '';
+    const rx = medicine && isPrescriptionProduct(record) ? '<span class="return-rx-badge" title="Prescription medicine">Rx</span>' : '';
+    return `<div class="cell-primary product-name">${escapeHtml(primary)}${!secondary ? rx : ''}</div>${secondary ? `<div class="cell-secondary">${escapeHtml(secondary)}${rx}</div>` : ''}`;
+}
 
 const API_BASE_URL = window.location.port
     ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1'
@@ -210,7 +225,7 @@ function filteredRecords() {
     const status = document.getElementById('returnStatusFilter')?.value || '';
     const reason = document.getElementById('returnReasonFilter')?.value || activeReason;
     return returnRecords.filter((record) => {
-        const haystack = [record.po_number,record.supplier_name,record.product_name,record.brand_name].join(' ').toLowerCase();
+        const haystack = [record.po_number,record.supplier_name,record.product_name,record.brand_name,record.generic_name].join(' ').toLowerCase();
         return (!search || haystack.includes(search)) && (!status || recordStatus(record) === status) && (!reason || reason === 'all' || normalizeReason(record.damage_reason) === reason);
     });
 }
@@ -260,7 +275,7 @@ function renderReturnDamageRecords() {
         <tr>
             <td data-label="Reference"><div class="cell-primary">${escapeHtml(record.po_number)}</div><div class="cell-secondary">${formatDate(record.return_date)}</div></td>
             <td data-label="Supplier"><div class="cell-primary">${escapeHtml(record.supplier_name)}</div></td>
-            <td data-label="Product"><div class="cell-primary product-name">${escapeHtml(record.product_name)}</div><div class="cell-secondary">${escapeHtml(productSpecification(record))}</div></td>
+            <td data-label="Product">${returnProductIdentity(record)}</td>
             <td data-label="Ordered"><span class="quantity-value">${escapeHtml(quantityLabel(record.ordered_quantity, orderedUnit))}</span></td>
             <td data-label="Accepted"><span class="quantity-value">${escapeHtml(quantityLabel(record.accepted_quantity, orderedUnit))}</span></td>
             <td data-label="Returned"><span class="quantity-value">${escapeHtml(quantityLabel(record.return_quantity, returnedUnit, true))}</span></td>

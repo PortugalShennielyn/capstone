@@ -2,7 +2,7 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=15"></script>
+    <script src="./js/navbar_bootstrap.js?v=17"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dr. R Pharmacy | Profile Settings</title>
@@ -11,10 +11,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=42" rel="stylesheet">
+    <link href="./css/navbar.css?v=43" rel="stylesheet">
     <link href="./css/profile.css?v=2" rel="stylesheet">
-    <script src="./js/navbar.js?v=100" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <script src="./js/navbar.js?v=105" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=30"></script>
 </head>
 <body class="role-loading">
 <div id="navbar-container"></div>
@@ -83,11 +83,9 @@
             </div>
 
             <aside class="profile-card profile-side-card" aria-labelledby="profileSettingsTitle">
-                <div class="profile-card-heading"><span class="profile-card-icon"><i class="fa-solid fa-palette"></i></span><div><h2 id="profileSettingsTitle">Profile Settings</h2><p>Personalize how your profile looks.</p></div></div>
-                <div class="profile-side-section"><div><h3>Profile Photo</h3><p>Upload a JPG, PNG, or WEBP image.</p></div><button class="profile-button profile-button-outline" id="choosePhotoButton" type="button"><i class="fa-solid fa-image"></i> Choose Photo</button></div>
-                <button class="profile-remove-photo" id="removePhotoButton" type="button" hidden>Remove photo</button>
-                <div class="profile-side-section profile-background-section"><div><h3>Profile Background</h3><p>Choose your preferred profile header color.</p></div><div class="profile-swatches" role="group" aria-label="Profile background color"><button type="button" data-theme="navy" aria-label="Navy background" aria-pressed="false"></button><button type="button" data-theme="purple" aria-label="Purple background" aria-pressed="true"></button><button type="button" data-theme="teal" aria-label="Teal background" aria-pressed="false"></button><button type="button" data-theme="orange" aria-label="Orange background" aria-pressed="false"></button><button type="button" data-theme="berry" aria-label="Berry background" aria-pressed="false"></button><button type="button" data-theme="slate" aria-label="Slate background" aria-pressed="false"></button></div></div>
-                <div class="profile-secure-note"><i class="fa-solid fa-user-shield"></i><div><strong>Secure account</strong><p>Your account remains protected by your assigned access rules.</p></div></div>
+                <div class="profile-card-heading"><span class="profile-card-icon"><i class="fa-solid fa-palette"></i></span><div><h2 id="profileSettingsTitle">Profile Settings</h2><p>Personalize your navigation and page headers.</p></div></div>
+                <div class="profile-side-section profile-background-section"><div><h3>Navigation &amp; Header Color</h3><p>Click a color to update the sidebar and top page headers across the system.</p></div><div class="profile-swatches" role="group" aria-label="Navigation and header color"><button type="button" data-theme="navy" aria-label="Navy background" aria-pressed="false"></button><button type="button" data-theme="purple" aria-label="Purple background" aria-pressed="true"></button><button type="button" data-theme="teal" aria-label="Teal background" aria-pressed="false"></button><button type="button" data-theme="orange" aria-label="Orange background" aria-pressed="false"></button><button type="button" data-theme="berry" aria-label="Berry background" aria-pressed="false"></button><button type="button" data-theme="slate" aria-label="Slate background" aria-pressed="false"></button></div></div>
+                <button class="profile-button profile-button-outline" id="resetNavigationColor" type="button">Reset to default</button><div class="profile-secure-note"><i class="fa-solid fa-user-shield"></i><div><strong>Secure account</strong><p>Your account remains protected by your assigned access rules.</p></div></div>
                 <p class="profile-local-note">Photo and color preferences are saved in this browser for your account.</p>
             </aside>
         </div>
@@ -96,6 +94,6 @@
 
 <input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script type="module" src="./js/modules/profile.js?v=1"></script>
+<script type="module" src="./js/modules/profile.js?v=2"></script>
 </body>
 </html>

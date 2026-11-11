@@ -21,17 +21,18 @@ try {
     ensureActivityLogSchema($pdo);
 
     $poId = cleanId($payload['po_id'] ?? null);
-    $status = trim((string) ($payload['status'] ?? ''));
+    $status = $forcedPurchaseOrderStatus ?? trim((string) ($payload['status'] ?? ''));
 
     if ($poId === '') {
         throw new InvalidArgumentException('Purchase order id is required.');
     }
 
+    $pdo->beginTransaction();
     $currentStatement = $pdo->prepare(
         'SELECT approval_status, status
          FROM purchase_orders
          WHERE po_id = :po_id
-         LIMIT 1'
+         LIMIT 1 FOR UPDATE'
     );
     $currentStatement->execute([':po_id' => $poId]);
     $current = $currentStatement->fetch(PDO::FETCH_ASSOC);
@@ -68,7 +69,6 @@ try {
         }
     }
 
-    $pdo->beginTransaction();
     updatePurchaseOrderStatus($pdo, $poId, $status, $currentStatus);
     if ($status === 'Cancelled') {
         recordPurchaseOrderApprovalAudit($pdo, $poId, $approvalStatus, $approvalStatus, 'cancel', $reason);

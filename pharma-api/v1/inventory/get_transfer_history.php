@@ -11,6 +11,11 @@ try {
             msd.variant medical_variant,msd.size medical_size,msd.material,msd.sterile_status,
             msd.package_type medical_package_type,msd.pack_content medical_pack_content,
             specs.normalized_specification,
+            (SELECT MAX(classification.value_text)
+             FROM product_specification_values classification
+             INNER JOIN product_specifications definition ON definition.specification_id=classification.specification_id
+             WHERE classification.product_id=p.product_id
+               AND LOWER(TRIM(definition.specification_name))='medicine classification') AS medicine_classification,
             t.movement_type, t.selected_quantity, t.selected_unit, t.base_quantity, t.base_unit,
             t.source_location, t.destination_location, t.created_at,
             GROUP_CONCAT(CONCAT(COALESCE(a.batch_number,a.source_batch_id),' (',a.base_quantity,' ',t.base_unit,

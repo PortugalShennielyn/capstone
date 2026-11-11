@@ -2,10 +2,27 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=15"></script>
+    <script src="./js/navbar_bootstrap.js?v=17"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Admin Settings</title>
+    <script>
+        (function redirectUsersAndRoles() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('section') === 'users') {
+                const next = new URL('users_roles.html', window.location.href);
+                const action = params.get('action');
+                if (action) next.searchParams.set('action', action);
+                window.location.replace(next.href);
+                return;
+            }
+            try {
+                if (sessionStorage.getItem('pharmacyAuthenticatedRole') === 'manager') {
+                    window.location.replace('users_roles.html');
+                }
+            } catch (error) {}
+        })();
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,9 +30,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=42" rel="stylesheet">
-    <script src="./js/navbar.js?v=100" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <link href="./css/navbar.css?v=43" rel="stylesheet">
+    <script src="./js/navbar.js?v=105" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=30"></script>
     <script type="module" src="./js/modules/pr_quantity_limit_settings.js?v=1"></script>
     <script type="module" src="./js/modules/stock_threshold_settings.js?v=2"></script>
 
@@ -795,24 +812,22 @@
 
         .settings-shell {
             display: grid;
-            grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
-            gap: 18px;
-        }
-
-        body.manager-user-management-only .settings-shell {
             grid-template-columns: minmax(0, 1fr);
+            gap: 16px;
         }
 
-        body.manager-user-management-only .settings-profile-card,
-        body.manager-user-management-only #editTenantIdentityBtn {
-            display: none !important;
+        .settings-pharmacy-header {
+            display: grid;
+            gap: 14px;
+            padding: 16px 20px 18px;
         }
 
         .settings-profile-card {
             padding: 18px 16px;
         }
 
-        .settings-profile-card h2 {
+        .settings-profile-card h2,
+        .settings-pharmacy-header h2 {
             margin: 0;
             color: var(--text-main);
             font-size: 16px;
@@ -922,24 +937,44 @@
         }
 
         .settings-profile-meta {
-            display: grid;
-            gap: 12px;
-            margin-top: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: stretch;
+            gap: 10px;
+            margin-top: 0;
         }
 
+        .settings-info-row.is-email { width: 220px; }
+        .settings-info-row.is-phone { width: 160px; }
+        .settings-info-row.is-timezone { width: 140px; }
+        .settings-info-row.is-address { width: 220px; }
+        .settings-info-row.is-hours { width: 214px; }
+
         .settings-profile-meta span {
+            display: block;
             color: #7b8494;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
         }
 
         .settings-profile-meta strong {
             display: block;
+            margin-top: 2px;
             color: var(--text-main);
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 800;
-            line-height: 1.4;
-            overflow-wrap: anywhere;
+            line-height: 1.35;
+            overflow-wrap: break-word;
+            word-break: normal;
+        }
+
+        .settings-info-row.is-email strong,
+        .settings-info-row.is-phone strong,
+        .settings-info-row.is-timezone strong {
+            white-space: nowrap;
         }
 
         .settings-profile-meta small {
@@ -947,41 +982,64 @@
             margin-top: 2px;
             color: #64748b;
             font-size: 12px;
-            font-weight: 750;
+            font-weight: 700;
             line-height: 1.35;
         }
 
         .settings-info-row {
-            display: grid;
-            grid-template-columns: 34px minmax(0, 1fr);
-            gap: 12px;
+            display: flex;
+            flex-direction: column;
             align-items: center;
+            justify-content: flex-start;
+            gap: 6px;
+            max-width: 100%;
             min-width: 0;
-            padding: 10px;
-            border-radius: 8px;
+            min-height: 0;
+            padding: 10px 12px 12px;
+            border: 1px solid #e7ebf3;
+            border-radius: 12px;
+            background: #f8fafc;
+            text-align: center;
+        }
+
+        .settings-info-row > div {
+            width: 100%;
+            min-width: 0;
         }
 
         .settings-info-row.is-active {
-            background: #eff6ff;
-            box-shadow: inset 3px 0 0 #3b82f6;
+            background: linear-gradient(180deg, #f5f3ff 0%, #eef2ff 100%);
+            border-color: #ddd6fe;
+            box-shadow: none;
         }
 
         .settings-info-icon {
-            width: 34px;
-            height: 34px;
+            width: 32px;
+            height: 32px;
+            margin: 0 auto;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            border-radius: 8px;
-            color: #4f46e5;
-            background: #eef2ff;
-            font-size: 14px;
+            border-radius: 9px;
+            color: #6d28d9;
+            background: #ede9fe;
+            font-size: 13px;
         }
 
         .settings-info-row.is-active .settings-info-icon {
             color: #fff;
-            background: linear-gradient(135deg, #2563eb, #7c3aed);
-            box-shadow: 0 10px 22px rgba(79, 70, 229, 0.22);
+            background: linear-gradient(135deg, #7c3aed, #4f46e5);
+            box-shadow: 0 8px 16px rgba(79, 70, 229, 0.22);
+        }
+
+        body.dark-mode .settings-info-row {
+            background: #151c2b;
+            border-color: #2a3448;
+        }
+
+        body.dark-mode .settings-info-row.is-active {
+            background: #1b1730;
+            border-color: #4c1d95;
         }
 
         .tenant-settings-grid {
@@ -1234,12 +1292,12 @@
 
         .admin-setting-card {
             display: grid;
-            gap: 14px;
+            gap: 16px;
             align-content: start;
             min-width: 0;
             width: 100%;
-            max-width: 1100px;
-            padding: 18px;
+            max-width: none;
+            padding: 22px 24px;
             border: 1px solid var(--border-soft);
             border-radius: 8px;
             background: #fff;
@@ -1254,7 +1312,7 @@
         }
 
         .admin-setting-card.is-two-column {
-            max-width: 1100px;
+            max-width: none;
         }
 
         .admin-setting-card.is-two-column .admin-setting-list {
@@ -2361,6 +2419,15 @@
             overflow-wrap: anywhere;
         }
 
+        .admin-setting-hint {
+            display: block;
+            margin-top: 3px;
+            color: #7b8494;
+            font-size: 11px;
+            font-weight: 650;
+            line-height: 1.4;
+        }
+
         .admin-setting-value {
             width: 100%;
             max-width: 420px;
@@ -2512,255 +2579,6 @@
             background: #f8fafc;
         }
 
-        .user-management-shell {
-            display: grid;
-            gap: 16px;
-        }
-
-        .user-summary-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .user-summary-card {
-            min-width: 0;
-            padding: 16px;
-            border: 1px solid var(--border-soft);
-            border-radius: 8px;
-            background: #f8fafc;
-        }
-
-        .user-summary-card span {
-            display: block;
-            color: #667085;
-            font-size: 12px;
-            font-weight: 800;
-        }
-
-        .user-summary-card strong {
-            display: block;
-            margin-top: 8px;
-            color: var(--text-main);
-            font-size: 26px;
-            font-weight: 900;
-            line-height: 1;
-        }
-
-        .user-controls-row {
-            display: grid;
-            grid-template-columns: minmax(220px, 1fr) 160px 150px auto;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .user-controls-row .admin-setting-control {
-            min-height: 42px;
-        }
-
-        .user-table-wrap {
-            overflow-x: auto;
-            border: 1px solid var(--border-soft);
-            border-radius: 8px;
-        }
-
-        .users-table {
-            width: 100%;
-            min-width: 920px;
-            border-collapse: separate;
-            border-spacing: 0;
-        }
-
-        .users-table th,
-        .users-table td {
-            padding: 13px 14px;
-            border-bottom: 1px solid var(--border-soft);
-            color: var(--text-main);
-            font-size: 13px;
-            text-align: left;
-            vertical-align: middle;
-            overflow-wrap: break-word;
-            word-break: normal;
-        }
-
-        .users-table th {
-            color: #596274;
-            background: #f8fafc;
-            font-size: 12px;
-            font-weight: 900;
-            text-transform: uppercase;
-        }
-
-        .users-table tr:last-child td {
-            border-bottom: 0;
-        }
-
-        .user-status-badge,
-        .user-role-badge {
-            display: inline-flex;
-            align-items: center;
-            min-height: 26px;
-            padding: 0 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 850;
-            white-space: nowrap;
-        }
-
-        .user-status-badge.active {
-            color: #047857;
-            background: #dcfce7;
-        }
-
-        .user-status-badge.inactive {
-            color: #7f1d1d;
-            background: #fee2e2;
-        }
-
-        .user-role-badge {
-            color: #4c1d95;
-            background: #f1e8ff;
-        }
-
-        .user-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .user-actions .btn {
-            min-height: 32px;
-            padding: 0 10px;
-            font-size: 12px;
-            font-weight: 850;
-        }
-
-        .user-form-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-        }
-
-        .user-form-grid .full-span,
-        .user-form-error {
-            grid-column: 1 / -1;
-        }
-
-        .user-form-error {
-            display: none;
-            margin: 0;
-            padding: 10px 12px;
-            border: 1px solid #fecaca;
-            border-radius: 8px;
-            color: #991b1b;
-            background: #fef2f2;
-            font-size: 13px;
-            font-weight: 800;
-        }
-
-        .user-form-error.is-visible {
-            display: block;
-        }
-
-        .user-detail-list {
-            display: grid;
-            gap: 10px;
-        }
-
-        .user-detail-row {
-            display: grid;
-            grid-template-columns: 140px minmax(0, 1fr);
-            gap: 12px;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border-soft);
-        }
-
-        .user-detail-row span {
-            color: #667085;
-            font-size: 13px;
-            font-weight: 800;
-        }
-
-        .user-detail-row strong {
-            color: var(--text-main);
-            font-size: 13px;
-            font-weight: 850;
-            overflow-wrap: anywhere;
-        }
-
-        body.dark-mode .user-summary-card,
-        body.dark-mode .users-table th {
-            background: #111827;
-        }
-
-        @media (max-width: 900px) {
-            .user-summary-grid,
-            .user-controls-row,
-            .user-form-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .permission-grid {
-            display: grid;
-            gap: 8px;
-            padding-top: 10px;
-            border-top: 1px solid var(--border-soft);
-            overflow-x: auto;
-            max-width: 100%;
-        }
-
-        .permission-row {
-            display: grid;
-            grid-template-columns: minmax(150px, 1.4fr) repeat(10, minmax(96px, 1fr));
-            gap: 8px;
-            align-items: center;
-            min-width: 1160px;
-        }
-
-        .permission-row .admin-switch {
-            justify-self: center;
-            transform: scale(0.82);
-            transform-origin: center;
-        }
-
-        .permission-cell {
-            min-height: 34px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 7px;
-            border-radius: 8px;
-            background: #f8fafc;
-            color: #4b5563;
-            font-size: 11px;
-            font-weight: 800;
-            text-align: center;
-            white-space: normal;
-            overflow-wrap: normal;
-            word-break: normal;
-            line-height: 1.25;
-        }
-
-        .permission-cell.role,
-        .permission-cell.heading {
-            justify-content: flex-start;
-            color: var(--text-main);
-            background: transparent;
-            text-align: left;
-        }
-
-        body.dark-mode .permission-cell {
-            background: #111827;
-            color: #d1d5db;
-        }
-
-        body.dark-mode .permission-cell.role,
-        body.dark-mode .permission-cell.heading {
-            background: transparent;
-            color: var(--text-main);
-        }
-
         .audit-list {
             display: grid;
             gap: 10px;
@@ -2898,6 +2716,20 @@
                 align-items: stretch;
                 flex-direction: column;
             }
+
+            .settings-info-row.is-email,
+            .settings-info-row.is-phone,
+            .settings-info-row.is-timezone,
+            .settings-info-row.is-address,
+            .settings-info-row.is-hours {
+                width: min(100%, 280px);
+            }
+
+            .settings-info-row.is-email strong,
+            .settings-info-row.is-phone strong,
+            .settings-info-row.is-timezone strong {
+                white-space: normal;
+            }
         }
 
         @media (max-width: 767.98px) {
@@ -3025,24 +2857,13 @@
                 grid-template-columns: 1fr;
             }
 
-            .permission-row {
-                grid-template-columns: minmax(150px, 1.4fr) repeat(10, minmax(96px, 1fr));
-            }
-
-            .permission-cell.heading,
-            .permission-cell.role {
-                min-height: 34px;
-                padding: 7px;
-                background: #f8fafc;
-            }
-
-            body.dark-mode .permission-cell.heading,
-            body.dark-mode .permission-cell.role {
-                background: #111827;
-            }
         }
 
-        @media (min-width: 992px) and (max-width: 1399.98px) {
+        @media (min-width: 992px) and (max-width: 1279.98px) {
+            .settings-info-row.is-email strong {
+                white-space: normal;
+            }
+
             .stats-grid,
             .quick-actions {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3127,48 +2948,14 @@
         <section class="page-body">
             <div id="view-settings" class="content-view">
 <div class="settings-shell">
-                    <aside class="content-panel settings-profile-card">
-                        <h2>Pharmacy Information</h2>
-                        <div class="settings-profile-meta">
-                            <div class="settings-info-row">
-                                <span class="settings-info-icon"><i class="fa-solid fa-envelope"></i></span>
-                                <div><span>Pharmacy Email</span><strong id="tenantOverviewBillingEmail">Not configured</strong></div>
-                            </div>
-                            <div class="settings-info-row">
-                                <span class="settings-info-icon"><i class="fa-solid fa-phone"></i></span>
-                                <div><span>Contact Number</span><strong id="tenantOverviewContact">Not configured</strong></div>
-                            </div>
-                            <div class="settings-info-row">
-                                <span class="settings-info-icon"><i class="fa-solid fa-location-dot"></i></span>
-                                <div><span>Address</span><strong id="tenantOverviewAddress">Not configured</strong></div>
-                            </div>
-                            <div class="settings-info-row">
-                                <span class="settings-info-icon"><i class="fa-solid fa-globe"></i></span>
-                                <div><span>Website</span><strong id="tenantOverviewWebsite">Not configured</strong></div>
-                            </div>
-                            <div class="settings-info-row is-active">
-                                <span class="settings-info-icon"><i class="fa-regular fa-clock"></i></span>
-                                <div><span>Business Hours Today</span><strong id="tenantOverviewBusinessHours">Not configured</strong><small id="tenantOverviewWeeklySummary">Not configured</small></div>
-                            </div>
-                            <div class="settings-info-row">
-                                <span class="settings-info-icon"><i class="fa-solid fa-calendar-day"></i></span>
-                                <div><span>Next Holiday</span><strong id="tenantOverviewNextHoliday">Not configured</strong></div>
-                            </div>
-                            <div class="settings-info-row">
-                                <span class="settings-info-icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
-                                <div><span>Time Zone</span><strong id="tenantOverviewTimeZone">Not configured</strong></div>
-                            </div>
-                        </div>
-                    </aside>
                     <section class="content-panel">
                         <div class="panel-body">
                             <div class="admin-settings-layout">
                                 <div class="admin-settings-intro">
                                     <div>
                                         <h2>Admin Settings</h2>
-                                        <p>Manage pharmacy preferences, stock rules, purchase orders, receipts, staff access, alerts, backups, and security.</p>
+                                        <p>Manage pharmacy preferences, stock rules, purchase orders, receipts, alerts, backups, and security.</p>
                                     </div>
-                                    <button class="btn btn-sm btn-purple settings-table-action" type="button" id="editTenantIdentityBtn">Edit Profile</button>
                                 </div>
 
                                 <nav class="admin-settings-menu" aria-label="Admin settings sections">
@@ -3178,7 +2965,6 @@
                                     <button type="button" data-admin-section="purchase-orders"><i class="fa-solid fa-file-invoice-dollar"></i><span>Procurement</span></button>
                                     <button type="button" data-admin-section="sales"><i class="fa-solid fa-cash-register"></i><span>Sales</span></button>
                                     <button type="button" data-admin-section="receipt"><i class="fa-solid fa-receipt"></i><span>POS Receipt</span></button>
-                                    <button type="button" data-admin-section="users"><i class="fa-solid fa-users-gear"></i><span>Users &amp; Roles</span></button>
                                     <button type="button" data-admin-section="notifications"><i class="fa-solid fa-bell"></i><span>Notifications</span></button>
                                     <button type="button" data-admin-section="backup"><i class="fa-solid fa-box-archive"></i><span>Backup &amp; Restore</span></button>
                                     <button type="button" data-admin-section="security"><i class="fa-solid fa-shield-halved"></i><span>Security</span></button>
@@ -3476,149 +3262,16 @@
                                         </div>
                                     </section>
 
-                                    <section class="admin-setting-card is-wide user-management-card">
-                                        <header>
-                                            <h3>Users &amp; Roles</h3>
-                                            <p>Create staff accounts and manage access.</p>
-                                        </header>
-                                        <div class="user-management-shell">
-                                            <div class="user-summary-grid" aria-label="User summary">
-                                                <div class="user-summary-card"><span>Total Users</span><strong id="totalUsersCard">0</strong></div>
-                                                <div class="user-summary-card"><span>Active Users</span><strong id="activeUsersCard">0</strong></div>
-                                                <div class="user-summary-card"><span>Inactive Users</span><strong id="inactiveUsersCard">0</strong></div>
-                                            </div>
-                                            <div class="user-controls-row">
-                                                <input class="admin-setting-control" id="userSearchInput" type="search" placeholder="Search full name, username, or role" aria-label="Search users">
-                                                <select class="admin-setting-control" id="userRoleFilter" aria-label="Filter by role">
-                                                    <option value="">All Roles</option>
-                                                    <option value="super_admin">Super Admin</option>
-                                                    <option value="admin">Admin</option>
-                                                    <option value="manager">Manager</option>
-                                                    <option value="supervisor">CEO</option>
-                                                    <option value="cashier">Cashier</option>
-                                                    <option value="salesclerk">Sales Clerk</option>
-                                                </select>
-                                                <select class="admin-setting-control" id="userStatusFilter" aria-label="Filter by status">
-                                                    <option value="">All Status</option>
-                                                    <option value="Active">Active</option>
-                                                    <option value="Inactive">Inactive</option>
-                                                </select>
-                                                <button class="btn btn-purple" type="button" id="addUserBtn"><i class="fa-solid fa-user-plus me-2"></i>Add User</button>
-                                            </div>
-                                            <div class="user-table-wrap">
-                                                <table class="users-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>Full Name</th>
-                                                            <th>Username</th>
-                                                            <th>Role</th>
-                                                            <th>Status</th>
-                                                            <th>Last Login</th>
-                                                            <th>Created Date</th>
-                                                            <th>Actions</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody id="usersTableBody">
-                                                        <tr><td colspan="7">Loading users...</td></tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </section>
-
-                                    <section class="admin-setting-card is-wide">
-                                        <header>
-                                            <h3>Role Permission Matrix</h3>
-                                            <p>Choose what each role can access.</p>
-                                        </header>
-                                        <div class="permission-grid" role="table" aria-label="Role Permission Matrix">
-                                            <div class="permission-row">
-                                                <span class="permission-cell heading">Role</span>
-                                                <span class="permission-cell heading">Products</span>
-                                                <span class="permission-cell heading">Inventory</span>
-                                                <span class="permission-cell heading">PO</span>
-                                                <span class="permission-cell heading">Sales</span>
-                                                <span class="permission-cell heading">Reports</span>
-                                                <span class="permission-cell heading">Settings</span>
-                                                <span class="permission-cell heading">User Management</span>
-                                                <span class="permission-cell heading">Returns</span>
-                                                <span class="permission-cell heading">Stock Adjustment</span>
-                                                <span class="permission-cell heading">Backup</span>
-                                            </div>
-                                            <div class="permission-row">
-                                                <span class="permission-cell role">Admin</span>
-                                                <label class="admin-switch" aria-label="Admin Products"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin Inventory"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin PO"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin Sales"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin Reports"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin Settings"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin User Management"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin Returns"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin Stock Adjustment"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Admin Backup"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="permission-row">
-                                                <span class="permission-cell role">Manager</span>
-                                                <label class="admin-switch" aria-label="Owner Manager Products"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager Inventory"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager PO"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager Sales"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager Reports"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager Settings"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager User Management"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager Returns"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager Stock Adjustment"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Owner Manager Backup"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="permission-row">
-                                                <span class="permission-cell role">CEO</span>
-                                                <label class="admin-switch" aria-label="CEO Products"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO Inventory Read Only"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO PO Processing"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO Sales"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO Reports"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO Settings"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO User Management"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO Returns Read Only"><input type="checkbox" checked disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO Stock Adjustment"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="CEO Backup"><input type="checkbox" disabled><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="permission-row">
-                                                <span class="permission-cell role">Sales Clerk</span>
-                                                <label class="admin-switch" aria-label="Sales Clerk Products"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk Inventory"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk PO"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk Sales"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk Reports"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk Settings"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk User Management"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk Returns"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk Stock Adjustment"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Sales Clerk Backup"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                            </div>
-                                            <div class="permission-row">
-                                                <span class="permission-cell role">Cashier</span>
-                                                <label class="admin-switch" aria-label="Cashier Products"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier Inventory"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier PO"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier Sales"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier Reports"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier Settings"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier User Management"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier Returns"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier Stock Adjustment"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                                <label class="admin-switch" aria-label="Cashier Backup"><input type="checkbox"><span class="admin-switch-track"></span></label>
-                                            </div>
-                                        </div>
-                                    </section>
-
                                     <section class="admin-setting-card">
                                         <header>
                                             <h3>Notifications</h3>
-                                            <p>Alerts shown to pharmacy staff.</p>
+                                            <p>Turn the red sidebar counts on or off for every signed-in user.</p>
                                         </header>
                                         <div class="admin-setting-list">
+                                            <div class="admin-setting-item">
+                                                <span class="admin-setting-label">Navbar badges<small class="admin-setting-hint">Show the red counts on sidebar modules when there is work to do.</small></span>
+                                                <label class="admin-switch" aria-label="Navbar badges"><input type="checkbox" id="navbarBadgeToggle" checked><span class="admin-switch-track"></span></label>
+                                            </div>
                                             <div class="admin-setting-item">
                                                 <span class="admin-setting-label">Dashboard Alerts</span>
                                                 <label class="admin-switch" aria-label="Dashboard Alerts"><input type="checkbox" checked><span class="admin-switch-track"></span></label>
@@ -3872,48 +3525,6 @@
         </div>
     </div>
 
-    <div class="modal fade" id="tenantIdentityModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold">Edit Pharmacy Profile</h5>
-                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <form id="tenantIdentityForm">
-                    <div class="modal-body">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantNameInput">Pharmacy Name</label>
-                                <input class="form-control" id="tenantNameInput" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantSlugInput">Short Name</label>
-                                <input class="form-control" id="tenantSlugInput" pattern="[a-z0-9-]+" placeholder="dr-r-pharmacy">
-                                <div class="form-text">Used for short pharmacy links.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantBillingEmailInput">Pharmacy Email</label>
-                                <input class="form-control" id="tenantBillingEmailInput" type="email" placeholder="billing@example.com">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label" for="tenantWebsiteInput">Website URL (optional)</label>
-                                <input class="form-control" id="tenantWebsiteInput" type="url" placeholder="Optional">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label" for="tenantLogoInput">Logo URL</label>
-                                <input class="form-control" id="tenantLogoInput" type="url" placeholder="https://example.com/logo.png">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                        <button class="btn btn-purple" type="submit">Save</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
     <div class="modal fade" id="settingsActionModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -3927,120 +3538,6 @@
                 <div class="modal-footer">
                     <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="userFormModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content">
-                <form id="userForm" novalidate>
-                    <div class="modal-header">
-                        <h5 class="modal-title fw-bold" id="userFormTitle">Add User</h5>
-                        <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="hidden" id="userIdInput">
-                        <p class="user-form-error" id="userFormError"></p>
-                        <div class="user-form-grid">
-                            <div>
-                                <label class="form-label" for="fullNameInput">Full Name</label>
-                                <input class="form-control" id="fullNameInput" required>
-                            </div>
-                            <div>
-                                <label class="form-label" for="usernameInput">Username</label>
-                                <input class="form-control" id="usernameInput" autocomplete="off" required>
-                            </div>
-                            <div class="password-field">
-                                <label class="form-label" for="tempPasswordInput">Temporary Password</label>
-                                <input class="form-control" id="tempPasswordInput" type="password" autocomplete="new-password">
-                            </div>
-                            <div class="password-field">
-                                <label class="form-label" for="confirmPasswordInput">Confirm Password</label>
-                                <input class="form-control" id="confirmPasswordInput" type="password" autocomplete="new-password">
-                            </div>
-                            <div>
-                                <label class="form-label" for="roleInput">Role</label>
-                                <select class="form-select" id="roleInput" required>
-                                    <option value="">Select role</option>
-                                    <option value="super_admin">Super Admin</option>
-                                    <option value="admin">Admin</option>
-                                    <option value="manager">Manager</option>
-                                    <option value="supervisor">CEO</option>
-                                    <option value="cashier">Cashier</option>
-                                    <option value="salesclerk">Sales Clerk</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label" for="statusInput">Status</label>
-                                <select class="form-select" id="statusInput">
-                                    <option value="Active" selected>Active</option>
-                                    <option value="Inactive">Inactive</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="form-label" for="emailInput">Email optional</label>
-                                <input class="form-control" id="emailInput" type="email">
-                            </div>
-                            <div>
-                                <label class="form-label" for="contactNumberInput">Contact Number optional</label>
-                                <input class="form-control" id="contactNumberInput">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                        <button class="btn btn-purple" type="submit" id="saveUserBtn">Save User</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="userDetailsModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold">User Details</h5>
-                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="user-detail-list" id="userDetailsBody"></div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <form id="resetPasswordForm" novalidate>
-                    <div class="modal-header">
-                        <h5 class="modal-title fw-bold">Reset Password</h5>
-                        <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="hidden" id="resetUserIdInput">
-                        <p class="user-form-error" id="resetPasswordError"></p>
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <label class="form-label" for="resetPasswordInput">Temporary Password</label>
-                                <input class="form-control" id="resetPasswordInput" type="password" autocomplete="new-password" required>
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label" for="resetConfirmPasswordInput">Confirm Password</label>
-                                <input class="form-control" id="resetConfirmPasswordInput" type="password" autocomplete="new-password" required>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
-                        <button class="btn btn-purple" type="submit">Reset Password</button>
-                    </div>
-                </form>
             </div>
         </div>
     </div>
@@ -4088,7 +3585,8 @@
             const authenticatedSession = window.__drpSession || await new Promise(resolve => {
                 window.addEventListener('pharma:session-ready', event => resolve(event.detail), { once: true });
             });
-            if (authenticatedSession?.access_role === 'manager') {
+            if (authenticatedSession?.access_role === 'manager' || String(authenticatedSession?.role || '').toLowerCase() === 'manager') {
+                window.location.replace('users_roles.html');
                 return;
             }
 
@@ -4127,6 +3625,9 @@
                 security: {
                     sessionTimeoutMs: 1800000,
                     autoLogoutEnabled: true
+                },
+                notifications: {
+                    navbarBadges: true
                 },
                 grn: {
                     receivedByName: '',
@@ -4283,6 +3784,11 @@
                     businessHours: {
                         ...defaults.businessHours,
                         ...(settings.businessHours || {})
+                    },
+                    notifications: {
+                        ...defaults.notifications,
+                        ...(settings.notifications || {}),
+                        ...(data.notifications || {})
                     }
                 };
             }
@@ -4456,8 +3962,6 @@
                 setText('tenantOverviewAddress', displayValue(profile.address));
                 setText('tenantOverviewBusinessHours', todayScheduleText(schedule));
                 setText('tenantOverviewWeeklySummary', weeklyScheduleText(schedule));
-                setText('tenantOverviewWebsite', displayValue(profile.website));
-                setText('tenantOverviewWebsiteInline', displayValue(profile.website));
                 setText('tenantOverviewTimeZone', displayValue(profile.timeZone || 'Asia/Manila'));
             }
 
@@ -4492,7 +3996,6 @@
             function updateScheduleSummary(schedule = normalizeSchedule(readSettings())) {
                 setText('tenantOverviewBusinessHours', todayScheduleText(schedule));
                 setText('tenantOverviewWeeklySummary', weeklyScheduleText(schedule));
-                setText('tenantOverviewNextHoliday', nextBusinessException ? `${prettyDate(nextBusinessException.date)} (${nextBusinessException.reason})` : 'Not configured');
             }
 
             function dayAbbreviation(day) {
@@ -5067,6 +4570,9 @@
                 nextBusinessException = settings.nextBusinessException || null;
                 if (sessionTimeoutSelect) sessionTimeoutSelect.value = String(security.sessionTimeoutMs);
                 if (autoLogoutToggle) autoLogoutToggle.checked = security.autoLogoutEnabled !== false;
+                const navbarBadgeToggle = document.getElementById('navbarBadgeToggle');
+                const notifications = { ...defaults.notifications, ...(settings.notifications || {}) };
+                if (navbarBadgeToggle) navbarBadgeToggle.checked = notifications.navbarBadges !== false;
                 applyProfile(profile, businessSchedule);
                 if (grnFields.receivedByName) grnFields.receivedByName.value = grn.receivedByName || '';
                 if (grnFields.approvedByName) grnFields.approvedByName.value = grn.approvedByName || '';
@@ -5077,7 +4583,7 @@
                 if (saveGrnSettingsBtn) saveGrnSettingsBtn.disabled = true;
                 updateScheduleSummary(businessSchedule);
                 renderBusinessHours(businessSchedule);
-                writeSettings({ ...settings, profile, grn, procurementDocumentSettings, procurementPreferences, businessHours, businessSchedule, security });
+                writeSettings({ ...settings, profile, grn, procurementDocumentSettings, procurementPreferences, businessHours, businessSchedule, security, notifications });
             }
 
             saveGeneralInfoBtn?.addEventListener('click', saveGeneralInfo);
@@ -5124,351 +4630,34 @@
             detailsDeleteExceptionBtn?.addEventListener('click', () => deleteException(detailsExceptionDate));
             sessionTimeoutSelect?.addEventListener('change', saveSecuritySettings);
             autoLogoutToggle?.addEventListener('change', saveSecuritySettings);
+            document.getElementById('navbarBadgeToggle')?.addEventListener('change', async (event) => {
+                const toggle = event.currentTarget;
+                const enabled = Boolean(toggle.checked);
+                const previous = readSettings();
+                const next = {
+                    ...previous,
+                    notifications: { ...(previous.notifications || {}), navbarBadges: enabled }
+                };
+                writeSettings(next);
+                window.dispatchEvent(new CustomEvent('drp:navbar-badges', { detail: { navbarBadges: enabled } }));
+                toggle.disabled = true;
+                try {
+                    await settingsRequest('save_notification_settings.php', {
+                        method: 'POST',
+                        body: JSON.stringify({ navbarBadges: enabled })
+                    });
+                    toastr.success(enabled ? 'Navbar badges are on.' : 'Navbar badges are off.');
+                } catch (error) {
+                    toggle.checked = !enabled;
+                    writeSettings(previous);
+                    window.dispatchEvent(new CustomEvent('drp:navbar-badges', { detail: { navbarBadges: !enabled } }));
+                    toastr.error(error.message || 'Unable to save navbar badges.');
+                } finally {
+                    toggle.disabled = false;
+                }
+            });
 
             applySettings();
-        })();
-        (function setupUserManagement() {
-            const apiBaseUrl = window.location.port
-                ? "http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1"
-                : "../pharma-api/v1";
-            const state = { users: [], editingUser: null, actorRole: '', assignableRoles: [] };
-            const announceUserListChange = () => { try { localStorage.setItem('pharmacy-user-list-updated', String(Date.now())); } catch (_) {} };
-            const roleLabels = {
-                super_admin: 'Super Admin',
-                admin: 'Admin',
-                manager: 'Manager',
-                supervisor: 'CEO',
-                cashier: 'Cashier',
-                salesclerk: 'Sales Clerk'
-            };
-            const els = {
-                total: document.getElementById('totalUsersCard'),
-                active: document.getElementById('activeUsersCard'),
-                inactive: document.getElementById('inactiveUsersCard'),
-                search: document.getElementById('userSearchInput'),
-                role: document.getElementById('userRoleFilter'),
-                status: document.getElementById('userStatusFilter'),
-                add: document.getElementById('addUserBtn'),
-                body: document.getElementById('usersTableBody'),
-                form: document.getElementById('userForm'),
-                formTitle: document.getElementById('userFormTitle'),
-                error: document.getElementById('userFormError'),
-                userId: document.getElementById('userIdInput'),
-                fullName: document.getElementById('fullNameInput'),
-                username: document.getElementById('usernameInput'),
-                password: document.getElementById('tempPasswordInput'),
-                confirm: document.getElementById('confirmPasswordInput'),
-                roleInput: document.getElementById('roleInput'),
-                statusInput: document.getElementById('statusInput'),
-                email: document.getElementById('emailInput'),
-                contact: document.getElementById('contactNumberInput'),
-                detailsBody: document.getElementById('userDetailsBody'),
-                resetForm: document.getElementById('resetPasswordForm'),
-                resetError: document.getElementById('resetPasswordError'),
-                resetUserId: document.getElementById('resetUserIdInput'),
-                resetPassword: document.getElementById('resetPasswordInput'),
-                resetConfirm: document.getElementById('resetConfirmPasswordInput')
-            };
-            const modals = {
-                form: document.getElementById('userFormModal') && window.bootstrap ? new bootstrap.Modal(document.getElementById('userFormModal')) : null,
-                details: document.getElementById('userDetailsModal') && window.bootstrap ? new bootstrap.Modal(document.getElementById('userDetailsModal')) : null,
-                reset: document.getElementById('resetPasswordModal') && window.bootstrap ? new bootstrap.Modal(document.getElementById('resetPasswordModal')) : null
-            };
-
-            function escapeHtml(value) {
-                return String(value ?? '').replace(/[&<>"']/g, char => ({
-                    '&': '&amp;',
-                    '<': '&lt;',
-                    '>': '&gt;',
-                    '"': '&quot;',
-                    "'": '&#39;'
-                })[char]);
-            }
-
-            function formatDate(value) {
-                if (!value) return 'Never';
-                const date = new Date(String(value).replace(' ', 'T'));
-                return Number.isNaN(date.getTime())
-                    ? String(value)
-                    : date.toLocaleString([], { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-            }
-
-            function setError(target, message = '') {
-                if (!target) return;
-                target.textContent = message;
-                target.classList.toggle('is-visible', Boolean(message));
-            }
-
-            function configureRoleOptions(permissions = {}) {
-                state.actorRole = permissions.actor_role || '';
-                state.assignableRoles = Array.isArray(permissions.assignable_roles)
-                    ? permissions.assignable_roles
-                    : Object.keys(roleLabels);
-
-                const roleOptions = ['<option value="">Select role</option>']
-                    .concat(state.assignableRoles.map(role => `<option value="${escapeHtml(role)}">${escapeHtml(roleLabels[role] || role)}</option>`));
-                if (els.roleInput) els.roleInput.innerHTML = roleOptions.join('');
-
-                if (state.actorRole !== 'manager') return;
-
-                document.body.classList.add('manager-user-management-only');
-                document.title = 'Dr. R Pharmacy | User Management';
-                const topbarTitle = document.querySelector('.page-title-mini strong');
-                const topbarSubtitle = document.querySelector('.page-title-mini span');
-                if (topbarTitle) topbarTitle.textContent = 'User Management';
-                if (topbarSubtitle) topbarSubtitle.textContent = 'Manage Cashier and Sales Clerk accounts';
-                const introTitle = document.querySelector('.admin-settings-intro h2');
-                const introText = document.querySelector('.admin-settings-intro p');
-                if (introTitle) introTitle.textContent = 'User Management';
-                if (introText) introText.textContent = 'Create and maintain Cashier and Sales Clerk accounts.';
-
-                document.querySelectorAll('[data-admin-section]').forEach(button => {
-                    button.classList.toggle('d-none', button.dataset.adminSection !== 'users');
-                });
-                document.querySelectorAll('.admin-settings-grid > .admin-setting-card').forEach(card => {
-                    const title = card.querySelector('h3')?.textContent?.trim();
-                    card.classList.toggle('d-none', title !== 'Users & Roles');
-                });
-                document.querySelector('[data-admin-section="users"]')?.click();
-
-                if (els.role) {
-                    els.role.innerHTML = [
-                        '<option value="">All Roles</option>',
-                        '<option value="cashier">Cashier</option>',
-                        '<option value="salesclerk">Sales Clerk</option>'
-                    ].join('');
-                }
-            }
-
-            async function userRequest(path, options = {}) {
-                const response = await fetch(`${apiBaseUrl}/users/${path}`, {
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-Tab-Token': sessionStorage.getItem('pharma_tab_token') || '',
-                        ...(options.headers || {})
-                    },
-                    ...options
-                });
-                const data = await response.json().catch(() => ({}));
-                if (!response.ok || data.success === false) {
-                    throw new Error(data.message || 'Unable to process user request.');
-                }
-                return data;
-            }
-
-            function filteredUsers() {
-                const q = (els.search?.value || '').trim().toLowerCase();
-                const role = els.role?.value || '';
-                const status = els.status?.value || '';
-                return state.users.filter(user => {
-                    const text = `${user.full_name || ''} ${user.username || ''} ${roleLabels[user.role] || user.role || ''}`.toLowerCase();
-                    return (!q || text.includes(q))
-                        && (!role || user.role === role)
-                        && (!status || user.status === status);
-                });
-            }
-
-            function renderUsers() {
-                const users = filteredUsers();
-                if (!els.body) return;
-                if (!users.length) {
-                    els.body.innerHTML = '<tr><td colspan="7">No users found.</td></tr>';
-                    return;
-                }
-                els.body.innerHTML = users.map(user => {
-                    const statusClass = String(user.status || '').toLowerCase();
-                    const nextStatus = user.status === 'Active' ? 'Inactive' : 'Active';
-                    return `
-                        <tr>
-                            <td><strong>${escapeHtml(user.full_name || '-')}</strong></td>
-                            <td>${escapeHtml(user.username || '-')}</td>
-                            <td><span class="user-role-badge">${escapeHtml(roleLabels[user.role] || user.role || '-')}</span></td>
-                            <td><span class="user-status-badge ${statusClass}">${escapeHtml(user.status || '-')}</span></td>
-                            <td>${escapeHtml(formatDate(user.last_login))}</td>
-                            <td>${escapeHtml(formatDate(user.created_at))}</td>
-                            <td>
-                                <div class="user-actions">
-                                    <button class="btn btn-light" type="button" data-user-action="view" data-user-id="${escapeHtml(user.user_id)}">View</button>
-                                    <button class="btn btn-light" type="button" data-user-action="edit" data-user-id="${escapeHtml(user.user_id)}">Edit</button>
-                                    <button class="btn btn-light" type="button" data-user-action="reset" data-user-id="${escapeHtml(user.user_id)}">Reset Password</button>
-                                    <button class="btn btn-outline-danger" type="button" data-user-action="toggle" data-user-id="${escapeHtml(user.user_id)}" data-next-status="${nextStatus}">${nextStatus === 'Active' ? 'Activate' : 'Deactivate'}</button>
-                                </div>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
-            }
-
-            async function loadUsers() {
-                try {
-                    const data = await userRequest('fetch_users.php');
-                    state.users = data.data?.users || [];
-                    configureRoleOptions(data.data?.permissions || {});
-                    const summary = data.data?.summary || {};
-                    if (els.total) els.total.textContent = summary.total_users ?? state.users.length;
-                    if (els.active) els.active.textContent = summary.active_users ?? state.users.filter(user => user.status === 'Active').length;
-                    if (els.inactive) els.inactive.textContent = summary.inactive_users ?? state.users.filter(user => user.status === 'Inactive').length;
-                    renderUsers();
-                } catch (error) {
-                    if (els.body) els.body.innerHTML = `<tr><td colspan="7">${escapeHtml(error.message || 'Unable to load users.')}</td></tr>`;
-                }
-            }
-
-            function findUser(userId) {
-                return state.users.find(user => user.user_id === userId);
-            }
-
-            function openUserForm(user = null) {
-                state.editingUser = user;
-                setError(els.error);
-                els.form?.reset();
-                els.userId.value = user?.user_id || '';
-                els.fullName.value = user?.full_name || '';
-                els.username.value = user?.username || '';
-                els.roleInput.value = user?.role || '';
-                els.statusInput.value = user?.status || 'Active';
-                els.email.value = user?.email || '';
-                els.contact.value = user?.contact_number || '';
-                const activeSupervisor = state.users.find(candidate => candidate.role === 'supervisor' && candidate.status === 'Active' && candidate.user_id !== user?.user_id);
-                const supervisorOption = els.roleInput?.querySelector('option[value="supervisor"]');
-                if (supervisorOption) {
-                    supervisorOption.disabled = Boolean(activeSupervisor);
-                    supervisorOption.textContent = activeSupervisor ? 'CEO (active account already exists)' : 'CEO';
-                }
-                document.querySelectorAll('.password-field').forEach(field => field.classList.toggle('d-none', Boolean(user)));
-                if (els.formTitle) els.formTitle.textContent = user ? 'Edit User' : 'Add User';
-                modals.form?.show();
-            }
-
-            function openDetails(user) {
-                if (!user || !els.detailsBody) return;
-                const rows = [
-                    ['Full Name', user.full_name],
-                    ['Username', user.username],
-                    ['Role', roleLabels[user.role] || user.role],
-                    ['Status', user.status],
-                    ['Email', user.email || 'Not provided'],
-                    ['Contact Number', user.contact_number || 'Not provided'],
-                    ['Last Login', formatDate(user.last_login)],
-                    ['Created Date', formatDate(user.created_at)]
-                ];
-                els.detailsBody.innerHTML = rows.map(([label, value]) => `
-                    <div class="user-detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '-')}</strong></div>
-                `).join('');
-                modals.details?.show();
-            }
-
-            function openReset(user) {
-                if (!user) return;
-                setError(els.resetError);
-                els.resetForm?.reset();
-                els.resetUserId.value = user.user_id;
-                modals.reset?.show();
-            }
-
-            els.add?.addEventListener('click', () => openUserForm());
-            [els.search, els.role, els.status].forEach(control => {
-                control?.addEventListener('input', renderUsers);
-                control?.addEventListener('change', renderUsers);
-            });
-            els.body?.addEventListener('click', async event => {
-                const button = event.target.closest('[data-user-action]');
-                if (!button) return;
-                const user = findUser(button.dataset.userId);
-                if (!user) return;
-                if (button.dataset.userAction === 'view') openDetails(user);
-                if (button.dataset.userAction === 'edit') openUserForm(user);
-                if (button.dataset.userAction === 'reset') openReset(user);
-                if (button.dataset.userAction === 'toggle') {
-                    try {
-                        await userRequest('toggle_user_status.php', {
-                            method: 'POST',
-                            body: JSON.stringify({ user_id: user.user_id, status: button.dataset.nextStatus })
-                        });
-                        announceUserListChange();
-                        toastr.success(button.dataset.nextStatus === 'Active' ? 'User activated.' : 'User deactivated.');
-                        await loadUsers();
-                    } catch (error) {
-                        toastr.error(error.message || 'Unable to update status.');
-                    }
-                }
-            });
-            els.form?.addEventListener('submit', async event => {
-                event.preventDefault();
-                setError(els.error);
-                const isEdit = Boolean(els.userId.value);
-                const payload = {
-                    user_id: els.userId.value,
-                    full_name: els.fullName.value.trim(),
-                    username: els.username.value.trim(),
-                    password: els.password.value,
-                    confirm_password: els.confirm.value,
-                    role: els.roleInput.value,
-                    status: els.statusInput.value,
-                    email: els.email.value.trim(),
-                    contact_number: els.contact.value.trim()
-                };
-                if (!payload.full_name) return setError(els.error, 'Full Name is required.');
-                if (!payload.username) return setError(els.error, 'Username is required.');
-                if (!payload.role) return setError(els.error, 'Role is required.');
-                const anotherActiveSupervisor = state.users.some(user => user.role === 'supervisor' && user.status === 'Active' && user.user_id !== payload.user_id);
-                if (payload.role === 'supervisor' && payload.status === 'Active' && anotherActiveSupervisor) {
-                    return setError(els.error, 'Only one active CEO account is allowed.');
-                }
-                if (!isEdit && payload.password !== payload.confirm_password) return setError(els.error, 'Password and Confirm Password must match.');
-                try {
-                    await userRequest(isEdit ? 'update_user.php' : 'add_user.php', {
-                        method: 'POST',
-                        body: JSON.stringify(payload)
-                    });
-                    announceUserListChange();
-                    toastr.success(isEdit ? 'User updated.' : 'User created.');
-                    modals.form?.hide();
-                    await loadUsers();
-                } catch (error) {
-                    setError(els.error, error.message || 'Unable to save user.');
-                }
-            });
-            els.resetForm?.addEventListener('submit', async event => {
-                event.preventDefault();
-                setError(els.resetError);
-                if (els.resetPassword.value !== els.resetConfirm.value) {
-                    return setError(els.resetError, 'Password and Confirm Password must match.');
-                }
-                try {
-                    await userRequest('reset_user_password.php', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            user_id: els.resetUserId.value,
-                            password: els.resetPassword.value,
-                            confirm_password: els.resetConfirm.value
-                        })
-                    });
-                    toastr.success('Password reset.');
-                    modals.reset?.hide();
-                } catch (error) {
-                    setError(els.resetError, error.message || 'Unable to reset password.');
-                }
-            });
-
-            function handleUserManagementUrlAction() {
-                const params = new URLSearchParams(window.location.search);
-                if (params.get('section') !== 'users') return;
-
-                document.querySelector('[data-admin-section="users"]')?.click();
-                document.querySelector('.user-management-card')?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
-
-                if (params.get('action') === 'add') {
-                    window.setTimeout(() => openUserForm(), 250);
-                }
-            }
-
-            loadUsers().then(handleUserManagementUrlAction);
         })();
         (function setupAdminSettingsSections() {
             const buttons = Array.from(document.querySelectorAll('[data-admin-section]'));
@@ -5482,8 +4671,6 @@
                 'Procurement Settings': 'purchase-orders',
                 'Sales': 'sales',
                 'POS Receipt Settings': 'receipt',
-                'Users & Roles': 'users',
-                'Role Permission Matrix': 'users',
                 'Notifications': 'notifications',
                 'Backup & Restore': 'backup',
                 'Backup History': 'backup',
@@ -5571,45 +4758,21 @@
 
         })();
         (function setupTenantIdentityEditor() {
-            const storageKey = 'drpTenantIdentityDraft';
-            const editButton = document.getElementById('editTenantIdentityBtn');
-            const form = document.getElementById('tenantIdentityForm');
-            const modalEl = document.getElementById('tenantIdentityModal');
-            const modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
-            const fields = {
-                name: document.getElementById('tenantNameInput'),
-                slug: document.getElementById('tenantSlugInput'),
-                billingEmail: document.getElementById('tenantBillingEmailInput'),
-                websiteUrl: document.getElementById('tenantWebsiteInput'),
-                logoUrl: document.getElementById('tenantLogoInput')
-            };
             function getDraft() {
                 try {
-                    const legacyDraft = JSON.parse(localStorage.getItem(storageKey) || '{}') || {};
+                    const legacyDraft = JSON.parse(localStorage.getItem('drpTenantIdentityDraft') || '{}') || {};
                     const settings = JSON.parse(localStorage.getItem('drpAdminSettings') || '{}') || {};
                     const profile = settings.profile || {};
                     return {
                         ...legacyDraft,
                         name: profile.name || legacyDraft.name,
                         billingEmail: profile.email || legacyDraft.billingEmail,
-                        websiteUrl: profile.website || legacyDraft.websiteUrl,
-                        logoUrl: profile.logoName || legacyDraft.logoUrl,
                         contactNumber: profile.contactNumber || legacyDraft.contactNumber,
                         address: profile.address || legacyDraft.address
                     };
                 } catch (error) {
                     return {};
                 }
-            }
-            function slugify(value) {
-                return String(value || '')
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/^-+|-+$/g, '');
-            }
-            function getTenantDisplayName() {
-                return document.getElementById('tenantSettingsName')?.textContent?.trim() || 'Dr. R Pharmacy';
             }
             function initialsFromName(value) {
                 return String(value || '')
@@ -5632,72 +4795,12 @@
                 setText('tenantSettingsName', draft.name);
                 setText('tenantSettingsNameInline', draft.name);
                 setText('tenantSettingsInitials', initialsFromName(draft.name));
-                setText('tenantIdentitySummary', 'Edit business profile details for ' + draft.name + '.');
                 setText('tenantOverviewName', draft.name);
-                setText('tenantOverviewSlug', displayValue(draft.slug));
                 setText('tenantOverviewBillingEmail', displayValue(draft.billingEmail));
                 setText('tenantOverviewBillingEmailInline', displayValue(draft.billingEmail));
                 setText('tenantOverviewContact', displayValue(draft.contactNumber));
                 setText('tenantOverviewAddress', displayValue(draft.address));
-                setText('tenantOverviewWebsite', displayValue(draft.websiteUrl));
-                setText('tenantOverviewWebsiteInline', displayValue(draft.websiteUrl));
-                setText('tenantOverviewLogo', displayValue(draft.logoUrl));
             };
-            function fillForm() {
-                const draft = getDraft();
-                const tenantName = draft.name || getTenantDisplayName();
-                fields.name.value = tenantName;
-                fields.slug.value = draft.slug || slugify(tenantName);
-                fields.billingEmail.value = draft.billingEmail || '';
-                fields.websiteUrl.value = draft.websiteUrl || '';
-                fields.logoUrl.value = draft.logoUrl || '';
-            }
-            editButton?.addEventListener('click', () => {
-                fillForm();
-                modal?.show();
-            });
-            fields.name?.addEventListener('input', () => {
-                if (!fields.slug.value.trim()) {
-                    fields.slug.value = slugify(fields.name.value);
-                }
-            });
-            form?.addEventListener('submit', (event) => {
-                event.preventDefault();
-                const name = fields.name.value.trim();
-                const slug = slugify(fields.slug.value || name);
-                if (!name) {
-                    fields.name.focus();
-                    return;
-                }
-                const draft = {
-                    name,
-                    slug,
-                    billingEmail: fields.billingEmail.value.trim(),
-                    websiteUrl: fields.websiteUrl.value.trim(),
-                    logoUrl: fields.logoUrl.value.trim()
-                };
-                localStorage.setItem(storageKey, JSON.stringify(draft));
-                try {
-                    const settings = JSON.parse(localStorage.getItem('drpAdminSettings') || '{}') || {};
-                    settings.profile = {
-                        ...(settings.profile || {}),
-                        name: draft.name,
-                        email: draft.billingEmail,
-                        website: draft.websiteUrl,
-                        logoName: draft.logoUrl
-                    };
-                    localStorage.setItem('drpAdminSettings', JSON.stringify(settings));
-                    const generalName = document.getElementById('generalPharmacyNameInput');
-                    const generalEmail = document.getElementById('generalPharmacyEmailInput');
-                    const generalWebsite = document.getElementById('generalWebsiteInput');
-                    if (generalName) generalName.value = draft.name;
-                    if (generalEmail) generalEmail.value = draft.billingEmail;
-                    if (generalWebsite) generalWebsite.value = draft.websiteUrl;
-                } catch (error) {}
-                window.applyTenantSettingsDraft();
-                modal?.hide();
-                toastr.success('Tenant identity updated.');
-            });
             window.applyTenantSettingsDraft();
         })();
     </script>

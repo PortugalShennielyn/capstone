@@ -3,12 +3,12 @@
 
     if (!document.querySelector('script[data-search-highlight-loader]')) {
         const searchHighlightScript = document.createElement('script');
-        searchHighlightScript.src = './js/search_highlight.js?v=3';
+        searchHighlightScript.src = './js/search_highlight.js?v=4';
         searchHighlightScript.dataset.searchHighlightLoader = 'true';
         document.head.appendChild(searchHighlightScript);
     }
 
-    const cacheKey = "drpNavbarHtml:v52";
+    const cacheKey = "drpNavbarHtml:v54";
     const expandedGroupsKey = "drpNavbarExpandedGroups";
     const supervisorNavigation = Object.freeze([
         ["supervisor_dashboard.html", "dashboard", "fa-gauge-high", "Dashboard"],
@@ -34,7 +34,7 @@
     }
 
     function applyVisualState() {
-        const collapsed = true;
+        const collapsed = readStorage(localStorage, "drpSidebarCollapsed", "true") === "true";
         const dark = readStorage(localStorage, "drpTheme") === "dark";
         document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
         document.documentElement.classList.toggle("sidebar-expanded", !collapsed);

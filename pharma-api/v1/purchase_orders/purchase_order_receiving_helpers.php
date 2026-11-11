@@ -78,17 +78,17 @@ function buildPurchaseOrderReceivingDetails(PDO $pdo, string $poId, string $rece
                 COALESCE(piii.unit_cost / NULLIF(poi.units_per_purchase_unit_snapshot, 0), poi.unit_price_snapshot, 0) AS unit_price,
                 CASE
                     WHEN LOWER(COALESCE(pc.category_name, '')) = 'medicine'
-                        THEN COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name, p.product_name)
-                    ELSE COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name)
+                        THEN COALESCE(md.generic_name, p.product_name)
+                    ELSE p.product_name
                 END AS product_name,
-                COALESCE(NULLIF(poi.brand_name_snapshot, ''), p.brand_name) AS brand_name,
-                COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name, '') AS generic_name,
+                p.brand_name AS brand_name,
+                COALESCE(md.generic_name, '') AS generic_name,
                 pc.category_name,
-                COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name, gd.variant, '') AS generic_or_variant,
-                COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
-                COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, '') AS size_value,
+                COALESCE(md.generic_name, gd.variant, '') AS generic_or_variant,
+                COALESCE(NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
+                COALESCE(gd.size, '') AS size_value,
                 COALESCE(NULLIF(poi.unit_snapshot, ''), md.dosage_form, gd.unit, 'pcs') AS unit,
-                COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging
+                COALESCE(md.package_type, gd.package_type, '') AS packaging
          FROM purchase_order_items poi
          LEFT JOIN product p ON p.product_id = poi.product_id
          LEFT JOIN product_categories pc ON pc.category_id = p.category_id

@@ -1,5 +1,5 @@
 import PharmaUtils from "../utils.js";
-import { formatProductIdentity, formatProductSpecification } from "./product_specification.js?v=8";
+import { formatProductIdentity, formatProductSpecification, isPrescriptionProduct, cleanProductSpecificationText } from "./product_specification.js?v=11";
 import {
     purchasingConversion,
     inventoryQuantityFromPurchase,
@@ -17,8 +17,9 @@ const STATUS_META = {
     Pending: "#f59e0b",
     Arrived: "#8b5cf6",
     Delivered: "#16a34a",
+    Cancelled: "#dc2626",
 };
-const STATUS_LABELS = {};
+const STATUS_LABELS = { Cancelled: "Cancel" };
 
 const createDraftItems = [];
 const editDraftItems = [];
@@ -745,6 +746,13 @@ function productTableProductName(item) {
     return baseName || productTableName(item) || "Unnamed product";
 }
 
+function productRxBadge(item) {
+    if (cleanText(item.category_name).toLowerCase() !== "medicine") return "";
+    const prescription = isPrescriptionProduct(item) || cleanText(item.specification)
+        .split(/\s*[•·]\s*/).some(part => isPrescriptionProduct({ classification: part }));
+    return prescription ? '<span class="po-rx-badge" title="Prescription medicine">Rx</span>' : "";
+}
+
 function productSpecification(item) {
     const category = cleanText(item.category_name).toLowerCase();
     const variant = cleanText(item.variant_flavor);
@@ -766,7 +774,7 @@ function productSpecification(item) {
     const seen = new Set();
 
     return parts
-        .map((part) => displayDetailText(part))
+        .map((part) => cleanProductSpecificationText(displayDetailText(part)))
         .filter((part) => {
             if (!part || ["medicine", "grocery"].includes(part.toLowerCase())) return false;
             const key = part.toLowerCase();
@@ -827,7 +835,7 @@ function productTableCellList(items, fallbackNames = []) {
                     return `
                     <li>
                         <span class="line-index">${index + 1}.</span>
-                        <span class="line-text"><strong class="po-item-brand">${escapeHtml(brand || product || "-")}</strong>${product && !sameText(product, brand) ? `<small class="po-item-product">${escapeHtml(product)}</small>` : ""}</span>
+                        <span class="line-text"><strong class="po-item-brand">${escapeHtml(brand || product || "-")}${!product || sameText(product, brand) ? productRxBadge(item) : ""}</strong>${product && !sameText(product, brand) ? `<small class="po-item-product">${escapeHtml(product)}${productRxBadge(item)}</small>` : ""}</span>
                     </li>
                 `;
                 })
@@ -860,7 +868,7 @@ function purchaseOrderItemsSummary(items = [], fallbackNames = []) {
                     .map((item) => {
                         const brand = productTableBrand(item);
                         const product = cleanText(item.generic_name) || productTableProductName(item);
-                        return `<li><strong>${escapeHtml(brand || product || "-")}</strong>${product && !sameText(product, brand) ? `<span>${escapeHtml(product)}</span>` : ""}</li>`;
+                        return `<li><strong>${escapeHtml(brand || product || "-")}${!product || sameText(product, brand) ? productRxBadge(item) : ""}</strong>${product && !sameText(product, brand) ? `<span>${escapeHtml(product)}${productRxBadge(item)}</span>` : ""}</li>`;
                     })
                     .join("")}
             </ul>
@@ -1007,6 +1015,7 @@ function isSupervisorPoViewer() {
 
 function activeMoreActionsButton(order) {
     if (isSupervisorPoViewer()) return "";
+    if (order.status === "Cancelled") return "";
     const nextStatus = validNextStatuses(order)[0] || "";
     const canRecordInvoice = ["Draft", "Pending", "Arrived", "Delivered"].includes(
         order.status || "",
@@ -1018,7 +1027,7 @@ function activeMoreActionsButton(order) {
         Number(order.invoice_total ?? order.total_amount ?? 0) > 0;
     const paid = getPoPaymentStatus(order) === "paid";
     return `
-        <button class="btn btn-sm btn-outline-secondary status-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" data-next-status="${escapeHtml(nextStatus)}" data-can-invoice="${canRecordInvoice}" data-has-invoice="${Boolean(order.invoice_recorded)}" data-can-payment="${canManagePayment}" data-payment-paid="${paid}" title="More actions" aria-label="More actions for ${escapeHtml(order.po_number || "")}" aria-haspopup="menu" aria-expanded="false">
+        <button class="btn btn-sm btn-outline-secondary status-po-btn" type="button" data-po-id="${escapeHtml(order.po_id)}" data-next-status="${escapeHtml(nextStatus)}" data-can-cancel="${["Draft", "Pending", "Arrived"].includes(order.status)}" data-can-invoice="${canRecordInvoice}" data-has-invoice="${Boolean(order.invoice_recorded)}" data-can-payment="${canManagePayment}" data-payment-paid="${paid}" title="More actions" aria-label="More actions for ${escapeHtml(order.po_number || "")}" aria-haspopup="menu" aria-expanded="false">
             <i class="fa-solid fa-ellipsis-vertical"></i>
         </button>
     `;
@@ -1119,6 +1128,9 @@ function toggleStatusActionMenu(toggle) {
         return;
     }
     const actions = [];
+    if (toggle.dataset.canCancel === "true") {
+        actions.push(`<button class="po-action-popover-item po-cancel-btn text-danger" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || "")}"><i class="fa-solid fa-ban" aria-hidden="true"></i><span>Cancel PO</span></button>`);
+    }
     if (toggle.dataset.canInvoice === "true") {
         actions.push(
             `<button class="po-action-popover-item po-action-popover-invoice" type="button" role="menuitem" data-po-id="${escapeHtml(toggle.dataset.poId || "")}"><i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i><span>${toggle.dataset.hasInvoice === "true" ? "View supplier invoice" : "Record supplier invoice"}</span></button>`,
@@ -3924,7 +3936,7 @@ function renderPoOrderSummary(order) {
                     ? Number(item.line_total) / orderedQuantity
                     : Number(item.price || 0) * unitsPerPurchaseUnit;
             return `<tr data-po-item-id="${escapeHtml(item.po_item_id || "")}">
-                <td><strong>${escapeHtml(title)}</strong>${brand && !sameText(brand, title) ? `<small>${escapeHtml(brand)}</small>` : ""}</td>
+                <td><strong>${escapeHtml(title)}</strong>${productRxBadge(item)}${brand && !sameText(brand, title) ? `<small>${escapeHtml(brand)}</small>` : ""}</td>
                 <td>${escapeHtml(specification || "—")}</td>
                 <td class="po-view-number">${escapeHtml(purchaseUnitQuantityLabel(item))}</td>
                 <td class="po-view-number" data-po-invoiced-qty>—</td>
@@ -4267,6 +4279,44 @@ async function updatePurchaseOrderStatusFromTable(poId) {
         await loadPurchaseOrders({ updateSummary: true });
     } catch (err) {
         PharmaUtils.toast.error(err.message);
+    }
+}
+
+async function cancelPurchaseOrder(poId) {
+    try {
+        const order = await getPurchaseOrder(poId, { force: true });
+        if (!["Draft", "Pending", "Arrived"].includes(order.status)) {
+            throw new Error("Only Draft, Pending, or Arrived purchase orders can be cancelled.");
+        }
+        let reason;
+        if (window.Swal) {
+            const result = await Swal.fire({
+                title: "Cancel PO?",
+                text: `Enter the reason for cancelling ${order.po_number || "this purchase order"}.`,
+                input: "textarea",
+                inputLabel: "Cancellation reason",
+                inputPlaceholder: "Enter a reason",
+                showCancelButton: true,
+                confirmButtonText: "Cancel PO",
+                cancelButtonText: "Keep PO",
+                confirmButtonColor: "#dc2626",
+                inputValidator: value => !String(value || "").trim() ? "A cancellation reason is required." : undefined,
+            });
+            if (!result.isConfirmed) return;
+            reason = String(result.value).trim();
+        } else {
+            reason = window.prompt("Reason for cancelling this PO:")?.trim();
+            if (!reason) return;
+        }
+        const result = await fetchJson(`${API_BASE_URL}/purchase_orders/update_purchase_order_status.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ po_id: poId, status: "Cancelled", reason }),
+        });
+        PharmaUtils.toast.success(result.message);
+        await loadPurchaseOrders({ updateSummary: true });
+    } catch (error) {
+        PharmaUtils.toast.error(error.message);
     }
 }
 
@@ -9164,14 +9214,14 @@ function inspectionQueueProductSummary(order) {
     const items = Array.isArray(order.items) ? order.items : [];
     const first = items[0] || order;
     const count = order.receiving_completed === true ? Number(order.products || 0) : items.length;
-    const product = first.generic_name || first.generic_name_snapshot || first.product_name || first.product_name_snapshot || "Product";
-    const brand = first.brand_name_snapshot || first.brand_name || "";
+    const product = first.generic_name || first.product_name || "Product";
+    const brand = first.brand_name || "";
     const more = Math.max(0, count - 1);
     const secondary = [
         brand && brand.trim().toLowerCase() !== product.trim().toLowerCase() ? brand : "",
         more > 0 ? `+${more} more` : "",
     ].filter(Boolean).join(" • ");
-    return `<div class="queue-product-summary"><strong>${escapeHtml(product)}</strong>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ""}</div>`;
+    return `<div class="queue-product-summary"><div class="queue-product-title"><strong>${escapeHtml(product)}</strong>${productRxBadge(first)}</div>${secondary ? `<span>${escapeHtml(secondary)}</span>` : ""}</div>`;
 }
 
 function renderInspectionQueue() {
@@ -9204,7 +9254,7 @@ function renderInspectionQueue() {
                 : order.inspection_snapshot || inspectionQueueSnapshot(order);
         const firstItem = Array.isArray(order.items) ? order.items[0] || {} : order;
         const haystack =
-            `${order.po_number || ""} ${order.grn_number || ""} ${order.supplier_name || ""} ${firstItem.generic_name || firstItem.generic_name_snapshot || firstItem.product_name_snapshot || firstItem.product_name || ""} ${firstItem.brand_name_snapshot || firstItem.brand_name || ""}`.toLowerCase();
+            `${order.po_number || ""} ${order.grn_number || ""} ${order.supplier_name || ""} ${firstItem.generic_name || firstItem.product_name || ""} ${firstItem.brand_name || ""}`.toLowerCase();
         const arrival = String(
             order.received_date ||
                 order.arrival_date ||
@@ -10120,6 +10170,13 @@ function initPurchaseOrders() {
         openViewPurchaseOrder(row.dataset.poId);
     });
     document.addEventListener("click", (event) => {
+        const cancelItem = event.target.closest(".po-cancel-btn");
+        if (cancelItem) {
+            event.preventDefault();
+            closeStatusActionMenu();
+            void cancelPurchaseOrder(cancelItem.dataset.poId);
+            return;
+        }
         const menuItem = event.target.closest(".status-po-menu-item");
         const invoiceItem = event.target.closest(".po-action-popover-invoice");
         const paymentItem = event.target.closest(".po-action-popover-payment");

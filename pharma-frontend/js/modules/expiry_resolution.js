@@ -162,6 +162,5 @@ document.querySelectorAll('input[name="caseType"]').forEach(input=>input.addEven
 ['pulloutShelfQty','pulloutStorageQty'].forEach(id=>$(id).addEventListener('input',updateTotal));
 $('pulloutForm').addEventListener('submit',createCase);
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('pulloutDrawer').classList.contains('is-open'))closeDrawer();});
-$('currentDate').textContent=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
 if(localStorage.getItem('drpTheme')==='dark'||localStorage.getItem('theme')==='dark')document.body.classList.add('dark-mode');
 load();

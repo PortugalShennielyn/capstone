@@ -2,16 +2,16 @@
 <html lang="en" data-bs-theme="light">
 <head>
     <script src="./js/navbar_profile.js?v=1"></script>
-    <script src="./js/navbar_bootstrap.js?v=15"></script>
+    <script src="./js/navbar_bootstrap.js?v=17"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. R Pharmacy | Sales History</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="./css/navbar.css?v=42" rel="stylesheet">
-    <script src="./js/navbar.js?v=100" defer></script>
-    <script type="module" src="./js/modules/auth_guard.js?v=27"></script>
+    <link href="./css/navbar.css?v=43" rel="stylesheet">
+    <script src="./js/navbar.js?v=105" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=30"></script>
     <style>
         :root { --purple:#6d28d9; --ink:#111827; --muted:#667085; --line:#e5eaf3; --soft:#f5f7fb; --green:#15803d; --red:#b91c1c; --amber:#b45309; --blue:#1d4ed8; }
         * { box-sizing:border-box; }
@@ -21,10 +21,7 @@
         .icon-btn { color:#475467; background:#eef2f8; }
         .page-icon { color:var(--purple); background:#eee7ff; }
         .page-body { width:100%; max-width:none; margin:0; padding:22px 26px; }
-        .page-title-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:14px; }
-        .title-group { display:flex; align-items:center; gap:12px; min-width:0; }
-        .title-group h1 { margin:0; font-size:24px; font-weight:900; color:#0f172a; }
-        .title-group p { margin:4px 0 0; color:var(--muted); font-size:13px; font-weight:700; }
+        .page-title-row { display:flex; align-items:center; justify-content:flex-end; gap:14px; margin-bottom:14px; }
         .soft-action { min-height:38px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:0 13px; border:1px solid #c4b5fd; border-radius:8px; color:#5b21b6; background:#f5f0ff; font-size:12px; font-weight:900; white-space:nowrap; }
         .summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-bottom:14px; }
         .summary-card,.history-panel,.drawer-panel,.filter-popover { border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 10px 28px rgba(15,23,42,.05); }
@@ -133,13 +130,6 @@
 
         <section class="page-body">
             <div class="page-title-row">
-                <div class="title-group">
-                    <span class="page-icon"><i class="fa-solid fa-receipt"></i></span>
-                    <div>
-                        <h1>Sales History</h1>
-                        <p>Review all completed, cancelled and voided pharmacy transactions.</p>
-                    </div>
-                </div>
                 <button class="soft-action" id="openShiftSummary" type="button"><i class="fa-solid fa-calendar-day"></i>View Shift Summary</button>
             </div>
 

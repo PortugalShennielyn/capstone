@@ -1939,125 +1939,6 @@ require_once __DIR__ . '/auth_page_guard.php';
                     </section>
                 </div>
             </div>
-            <div id="view-billing" class="content-view d-none">
-                <div class="content-panel">
-                    <div class="panel-header">
-                        <h2>Billing</h2>
-                    </div>
-                    <div class="panel-body">
-                        <div class="user-context-grid mb-3">
-                            <div class="user-context-panel">
-                                <h3>Billing Context</h3>
-                                <dl class="context-list">
-                                    <div>
-                                        <dt>Tenant</dt>
-                                        <dd id="billingTenantName">Dr. R Pharmacy</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Billing owner</dt>
-                                        <dd id="billingOwnerName">Dr. ADMIN</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Account context</dt>
-                                        <dd id="billingAccountContext">Admin</dd>
-                                    </div>
-                                </dl>
-                            </div>
-                            <div class="user-context-panel">
-                                <h3>Source Tables</h3>
-                                <dl class="context-list">
-                                    <div>
-                                        <dt>Tenant</dt>
-                                        <dd><code>saas.tenant</code></dd>
-                                    </div>
-                                    <div>
-                                        <dt>Plan rules</dt>
-                                        <dd><code>saas.plan</code></dd>
-                                    </div>
-                                    <div>
-                                        <dt>Overrides</dt>
-                                        <dd><code>saas.feature_override</code></dd>
-                                    </div>
-                                </dl>
-                            </div>
-                        </div>
-                        <h3 class="user-section-title">Subscription</h3>
-                        <div class="table-responsive mb-3">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Plan</th>
-                                        <th>Tenant</th>
-                                        <th>Status</th>
-                                        <th>Billing Cycle</th>
-                                        <th>Trial Ends</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td>Workspace Plan</td>
-                                        <td id="billingSubscriptionTenant">Dr. R Pharmacy</td>
-                                        <td><span class="status-pill success">Active</span></td>
-                                        <td>Monthly</td>
-                                        <td>Configured on tenant</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <h3 class="user-section-title">Invoices</h3>
-                        <div class="table-responsive mb-3">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Invoice</th>
-                                        <th>Period</th>
-                                        <th>Amount</th>
-                                        <th>Status</th>
-                                        <th>Due Date</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td>BILL-1003</td>
-                                        <td>Current month</td>
-                                        <td>0.00</td>
-                                        <td><span class="status-pill warning">Draft</span></td>
-                                        <td>Tenant billing date</td>
-                                    </tr>
-                                    <tr>
-                                        <td>BILL-1002</td>
-                                        <td>Previous month</td>
-                                        <td>0.00</td>
-                                        <td><span class="status-pill success">Recorded</span></td>
-                                        <td>Closed</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <h3 class="user-section-title">Payment Methods</h3>
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>Method</th>
-                                        <th>Last Four</th>
-                                        <th>Expires</th>
-                                        <th>Default</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td>Manual billing</td>
-                                        <td>Not stored</td>
-                                        <td>Not applicable</td>
-                                        <td><span class="status-pill success">Yes</span></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </section>
     </main>
 
@@ -2111,20 +1992,18 @@ require_once __DIR__ . '/auth_page_guard.php';
 
         // Sidebar view routing: show/hide view containers and trigger data loaders
         (function setupSidebarRouting(){
-            const viewIds = ['view-dashboard','view-inventory','view-suppliers','view-user-settings','view-billing'];
+            const viewIds = ['view-dashboard','view-inventory','view-suppliers','view-user-settings'];
             const pageTitle = document.querySelector('.page-title-mini strong');
             const pageSubtitle = document.querySelector('.page-title-mini span');
             const viewLabels = {
                 dashboard: ['Dashboard', 'Pharmacy management overview'],
                 inventory: ['Inventory', 'Stock batches and availability'],
                 suppliers: ['Suppliers', 'Supplier records and contacts'],
-                'user-settings': ['User Settings', 'Dashboard user preferences and account actions'],
-                billing: ['Billing', 'Tenant billing and payment records']
+                'user-settings': ['User Settings', 'Dashboard user preferences and account actions']
             };
 
             const dashboardRouteMap = {
                 'dashboard': 'dashboard',
-                'dashboard/billing': 'billing',
                 'dashboard/user/settings': 'user-settings',
                 'dashboard/inventory': 'inventory',
                 'dashboard/suppliers': 'suppliers'

@@ -20,6 +20,7 @@ const ROLE_PAGE_ACCESS = Object.freeze({
         'returns_disposals.html',
         'reports.html',
         'admin_settings.html',
+        'users_roles.html',
         'sales_history.html',
         'cashier_shift_summary.html'
     ]),
@@ -82,7 +83,7 @@ const ROLE_NAV_ACCESS = Object.freeze({
         'expiry-monitoring',
         'returns-disposals',
         'reports',
-        'settings',
+        'users-roles',
         'sales-history',
         'cashier-shift',
         'user-settings'

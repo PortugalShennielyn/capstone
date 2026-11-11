@@ -98,8 +98,8 @@ function grnEditAdjustBatch(PDO $pdo, array $batch, int $targetQuantity, ?string
             $pdo->prepare('UPDATE product_inventory SET quantity_stocked = quantity_stocked - :quantity WHERE inventory_id = :inventory_id AND quantity_stocked >= :guard')
                 ->execute([':quantity' => abs($delta), ':inventory_id' => $inventoryId, ':guard' => abs($delta)]);
         }
-        $pdo->prepare("UPDATE product_inventory SET expiration_date = :expiry, expiry_date = :expiry_copy, status = CASE WHEN quantity_remaining <= 0 THEN 'Out of Stock' WHEN :expiry_status_null IS NOT NULL AND :expiry_status_date < CURDATE() THEN 'Expired' ELSE 'Available' END WHERE inventory_id = :inventory_id")
-            ->execute([':expiry' => $expiryDate, ':expiry_copy' => $expiryDate, ':expiry_status_null' => $expiryDate, ':expiry_status_date' => $expiryDate, ':inventory_id' => $inventoryId]);
+        $pdo->prepare("UPDATE product_inventory SET expiry_date = :expiry, status = CASE WHEN quantity_remaining <= 0 THEN 'Out of Stock' WHEN :expiry_status_null IS NOT NULL AND :expiry_status_date < CURDATE() THEN 'Expired' ELSE 'Available' END WHERE inventory_id = :inventory_id")
+            ->execute([':expiry' => $expiryDate, ':expiry_status_null' => $expiryDate, ':expiry_status_date' => $expiryDate, ':inventory_id' => $inventoryId]);
     }
     foreach ($shelfRows as $shelf) {
         $pdo->prepare('UPDATE product_selling_stock SET expiration_date = :expiry WHERE selling_stock_id = :selling_stock_id')
@@ -139,7 +139,7 @@ try {
                 COALESCE(poi.units_per_purchase_unit_snapshot,1) units_per_purchase_unit,
                 COALESCE(NULLIF(poi.purchase_unit_snapshot,''),'Package') purchase_unit,
                 COALESCE(poi.unit_price_snapshot,0) unit_price,
-                COALESCE(NULLIF(poi.product_name_snapshot,''),p.product_name) product_name,
+                p.product_name,
                 CASE WHEN md.product_id IS NOT NULL OR LOWER(COALESCE(pc.category_name,'')) LIKE '%medicine%' THEN 1 ELSE 0 END requires_expiry
          FROM purchase_order_items poi
          INNER JOIN product p ON p.product_id=poi.product_id

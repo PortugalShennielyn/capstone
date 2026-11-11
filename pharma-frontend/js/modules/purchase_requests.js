@@ -1,5 +1,5 @@
 import API_BASE_URL from "../config/config.js";
-import { ensurePageTabSession, tabToken } from "./auth_guard.js?v=27";
+import { ensurePageTabSession, tabToken } from "./auth_guard.js?v=30";
 import { primaryAccessRole } from "./rbac.js";
 import { formatProductSpecification as productSpecification } from "./product_specification.js?v=8";
 import { purchaseRequestItemsSummary } from "./purchase_request_item_summary.js?v=2";

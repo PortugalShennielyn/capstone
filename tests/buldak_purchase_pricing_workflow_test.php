@@ -44,8 +44,8 @@ try {
         ->execute([':id'=>$poId,':number'=>'TEST-BULDAK-'.substr(str_replace('-','',$poId),0,10),':supplier'=>$product['supplier_id']]);
     $pdo->prepare("INSERT INTO purchase_order_items
         (po_item_id,po_id,product_id,quantity,purchase_qty,purchase_unit_snapshot,
-         units_per_purchase_unit_snapshot,inventory_qty_ordered,product_name_snapshot,unit_snapshot,unit_price_snapshot,line_total)
-        VALUES (:id,:po,:product,25,5,'Pack',5,25,'Buldak','pcs',100,2500)")
+         units_per_purchase_unit_snapshot,inventory_qty_ordered,unit_snapshot,unit_price_snapshot,line_total)
+        VALUES (:id,:po,:product,25,5,'Pack',5,25,'pcs',100,2500)")
         ->execute([':id'=>$poItemId,':po'=>$poId,':product'=>$productId]);
     $pdo->prepare("INSERT INTO purchase_order_invoices
         (invoice_id,po_id,invoice_number,invoice_date,discount,other_charges,supplier_invoice_total)

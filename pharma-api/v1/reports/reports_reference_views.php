@@ -564,6 +564,58 @@ function referenceExpiryReport(PDO $pdo, array $filters): array
             'notes'=>['Trace history includes receiving and recorded batch transfers. Current Storage and Shelf balances come from the batch ledger.']];
     }
 
+    if ($view === 'Returns & Disposals') {
+        $params = [];
+        $productFilters = $filters;
+        $productFilters['search'] = '';
+        $productFilter = reportProductFilterSql($productFilters, $params);
+        if ($filters['supplier_id'] !== '') {
+            $productFilter .= ' AND c.supplier_id=:supplier_id';
+            $params[':supplier_id'] = $filters['supplier_id'];
+        }
+        $rows = reportRows($pdo, "SELECT CONCAT(IF(c.case_type='Return','RET-','DSP-'), LPAD(c.case_seq,4,'0')) case_number,
+            c.case_type, p.product_name,
+            CASE WHEN c.case_type='Return' THEN COALESCE(NULLIF(s.supplier_name,''),'—') ELSE COALESCE(NULLIF(c.disposal_method,''),'—') END counterparty,
+            c.shelf_qty + c.storage_qty quantity,
+            ROUND((c.shelf_qty + c.storage_qty) * c.unit_cost, 2) cost_value,
+            CASE WHEN c.status IN ('Replaced','Credited','Disposed') THEN 'Done' ELSE c.status END case_status,
+            c.status outcome, DATE(c.updated_at) updated_date,
+            CASE WHEN c.status IN ('Replaced','Credited','Disposed') THEN 1 ELSE 0 END is_done
+            FROM inventory_resolution_cases c
+            JOIN product p ON p.product_id = c.product_id
+            LEFT JOIN suppliers s ON s.supplier_id = c.supplier_id
+            WHERE 1=1{$productFilter}
+            ORDER BY is_done, c.updated_at DESC, c.case_seq DESC", $params);
+        $rows = referenceSearchRows($rows, trim($filters['search']));
+        $openRows = array_values(array_filter($rows, static fn($row): bool => (int) $row['is_done'] === 0));
+        $disposedRows = array_values(array_filter($rows, static fn($row): bool => $row['outcome'] === 'Disposed'));
+        $unresolved = array_sum(array_map(static fn($row): float => (float) $row['cost_value'], $openRows));
+        $writtenOff = array_sum(array_map(static fn($row): float => (float) $row['cost_value'], $disposedRows));
+        $byStatus = [];
+        foreach ($rows as &$row) {
+            $label = $row['case_status'];
+            $byStatus[$label] = ($byStatus[$label] ?? 0) + (float) $row['cost_value'];
+            unset($row['is_done']);
+        }
+        unset($row);
+        [$page, $pagination] = referenceReportPage($rows, $filters);
+        return [
+            'summary' => [
+                reportCard('Unresolved stock value', $unresolved, 'currency', 'fa-peso-sign', 'red'),
+                reportCard('Open cases', count($openRows), 'number', 'fa-box-open', 'amber'),
+                reportCard('Written off', $writtenOff, 'currency', 'fa-trash-can', 'gray'),
+                reportCard('Cases', count($rows), 'number', 'fa-clipboard-list', 'purple'),
+            ],
+            'charts' => [['id' => 'resolution-cost', 'title' => 'Stock value by case status', 'type' => 'bar', 'orientation' => 'horizontal', 'tone' => 'expiry', 'rows' => array_map(static fn($label, $value) => compact('label', 'value'), array_keys($byStatus), array_values($byStatus))]],
+            'columns' => ['case_number' => 'Case', 'case_type' => 'Type', 'product_name' => 'Product', 'counterparty' => 'Supplier / method', 'quantity' => 'Qty', 'cost_value' => 'Cost value', 'case_status' => 'Status', 'outcome' => 'Outcome', 'updated_date' => 'Updated'],
+            'numeric_columns' => ['quantity'],
+            'currency_columns' => ['cost_value'],
+            'rows' => $page,
+            'pagination' => $pagination,
+            'notes' => ['Unresolved stock value is the red amount on Returns & Disposals: shelf and storage units pulled out, multiplied by the batch unit cost, for cases that are not yet replaced, credited, or disposed. Done cases stay in the list with their cost.'],
+        ];
+    }
+
     $expired = $view === 'Expired / Wastage';
     $shelf='COALESCE(selling.shelf_qty,0)';
     $remaining="(b.storage_qty+{$shelf})";
@@ -672,7 +724,7 @@ function referencePurchasingReport(PDO $pdo, array $filters): array
     if ($view === 'Purchase History') {
         $params2 = $params;
         $items = reportRows($pdo,"SELECT po.po_number,pr.pr_number,s.supplier_name,DATE(po.created_at) order_date,
-            COALESCE(NULLIF(poi.product_name_snapshot,''),p.product_name) product_name,
+            p.product_name,
             COALESCE(NULLIF(poi.inventory_qty_ordered,0),poi.quantity) ordered_qty,
             COALESCE(poi.line_total,poi.unit_price_snapshot*COALESCE(NULLIF(poi.inventory_qty_ordered,0),poi.quantity),0) line_total,po.status delivery_status
             FROM purchase_orders po JOIN suppliers s ON s.supplier_id=po.supplier_id
@@ -735,7 +787,7 @@ function referenceSupplierReport(PDO $pdo, array $filters): array
     if ($view === 'Returns & Damage' || $view === 'Supplier Credits') {
         if ($view === 'Returns & Damage') {
             $rows=reportRows($pdo,"SELECT DATE(sc.created_at) report_date,po.po_number,s.supplier_name,
-                COALESCE(NULLIF(poi.product_name_snapshot,''),p.product_name) product_name,
+                p.product_name,
                 sc.damage_reason,sc.affected_quantity,sc.damaged_quantity,sc.disposition,sc.claim_status
                 FROM supplier_claims sc JOIN purchase_order_items poi ON poi.po_item_id=sc.po_item_id
                 JOIN purchase_orders po ON po.po_id=poi.po_id JOIN suppliers s ON s.supplier_id=po.supplier_id

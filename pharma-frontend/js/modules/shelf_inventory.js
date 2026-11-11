@@ -2,7 +2,7 @@ import PharmaUtils from '../utils.js';
 import { createLiveSync, publishDataUpdate } from './live_data.js?v=1';
 import { configureResizableModal } from './modal_size.js?v=2';
 import { cleanProductSpecificationText, formatProductIdentityParts, inventoryMedicineSpecificationParts, isPrescriptionProduct } from './product_specification.js?v=11';
-import { primaryAccessRole } from './rbac.js?v=9';
+import { primaryAccessRole } from './rbac.js?v=10';
 import { openStockHistory } from './shelf_stock_history.js?v=1';
 
 const API_BASE_URL = window.location.port ? 'http://127.0.0.1/PharmacySystem_for_DocR/pharma-api/v1' : '../pharma-api/v1';

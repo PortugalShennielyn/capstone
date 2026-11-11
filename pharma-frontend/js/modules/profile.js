@@ -1,7 +1,7 @@
 import API_BASE_URL from '../config/config.js';
 import PharmaUtils from '../utils.js';
-import { cacheAuthenticatedProfile, ensurePageTabSession } from './auth_guard.js?v=27';
-import { roleLabel } from './rbac.js?v=9';
+import { cacheAuthenticatedProfile, ensurePageTabSession } from './auth_guard.js?v=30';
+import { roleLabel } from './rbac.js?v=10';
 
 const byId = (id) => document.getElementById(id);
 const themes = { navy:'#1b356d', purple:'#6846cf', teal:'#116653', orange:'#b75a29', berry:'#a22853', slate:'#252c3a' };
@@ -37,11 +37,14 @@ function renderUser(user) {
 }
 
 function applyTheme(theme, persist = false) {
-    const selected = themes[theme] ? theme : 'purple';
-    document.documentElement.style.setProperty('--profile-accent', themes[selected]);
+    const selected = themes[theme] ? theme : '';
     document.querySelectorAll('[data-theme]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.theme === selected)));
     if (persist) {
-        try { localStorage.setItem(`${storagePrefix}:theme`, selected); } catch (_) { showMessage('accountMessage', 'This browser could not save your color preference.'); }
+        try {
+            if (selected) localStorage.setItem(`${storagePrefix}:navigation-theme`, selected);
+            else localStorage.removeItem(`${storagePrefix}:navigation-theme`);
+            window.dispatchEvent(new Event('drp:navigation-theme'));
+        } catch (_) { showMessage('accountMessage', 'This browser could not save your color preference.'); }
     }
 }
 
@@ -49,7 +52,6 @@ function applyPhoto(dataUrl) {
     const avatar = byId('profileAvatar');
     avatar.classList.toggle('has-photo', Boolean(dataUrl));
     avatar.style.backgroundImage = dataUrl ? `url("${dataUrl}")` : '';
-    byId('removePhotoButton').hidden = !dataUrl;
 }
 
 async function selectedPhoto(file) {
@@ -168,14 +170,9 @@ function bindEvents() {
         button.querySelector('i').className = visible ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
     }));
     byId('changePhotoButton').addEventListener('click', () => byId('profilePhotoInput').click());
-    byId('choosePhotoButton').addEventListener('click', () => byId('profilePhotoInput').click());
     byId('avatarCameraButton').addEventListener('click', () => byId('profilePhotoInput').click());
     byId('profilePhotoInput').addEventListener('change', event => selectedPhoto(event.target.files?.[0]));
-    byId('removePhotoButton').addEventListener('click', () => {
-        try { localStorage.removeItem(`${storagePrefix}:photo`); } catch (_) {}
-        applyPhoto('');
-        showMessage('accountMessage', 'Profile photo removed from this browser.', true);
-    });
+    byId('resetNavigationColor').addEventListener('click', () => applyTheme('', true));
     document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => applyTheme(button.dataset.theme, true)));
 }
 
@@ -186,9 +183,10 @@ async function initialize() {
     storagePrefix = `drp-profile:${session.user_id}`;
     renderUser(session);
     try {
-        applyTheme(localStorage.getItem(`${storagePrefix}:theme`) || 'purple');
+        applyTheme(localStorage.getItem(`${storagePrefix}:navigation-theme`) || '');
+        window.dispatchEvent(new Event('drp:navigation-theme'));
         applyPhoto(localStorage.getItem(`${storagePrefix}:photo`) || '');
-    } catch (_) { applyTheme('purple'); }
+    } catch (_) { applyTheme(''); }
 }
 
 initialize();

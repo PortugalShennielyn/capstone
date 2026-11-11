@@ -55,5 +55,8 @@ echo json_encode([
     'businessSchedule' => fetchBusinessHours($pdo),
     'businessExceptions' => fetchBusinessHourExceptions($pdo, $_GET['month'] ?? null),
     'nextBusinessException' => fetchNextBusinessHourException($pdo),
+    'notifications' => [
+        'navbarBadges' => fetchNavbarBadgesEnabled($pdo),
+    ],
 ]);
 ?>

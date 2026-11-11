@@ -7,7 +7,7 @@ import {
     primaryAccessRole,
     roleLabel,
     sessionRoleSet
-} from './rbac.js?v=9';
+} from './rbac.js?v=10';
 
 const TAB_TOKEN_KEY = 'pharma_tab_token';
 const TAB_CHANNEL = 'pharma_tab_session_channel';

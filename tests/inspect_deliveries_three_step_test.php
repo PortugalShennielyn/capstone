@@ -57,10 +57,8 @@ try {
     $fixture = $pdo->query(
         "SELECT po.supplier_id, poi.product_id, poi.quantity, poi.purchase_qty,
                 poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot,
-                poi.inventory_qty_ordered, poi.product_name_snapshot, poi.brand_name_snapshot,
-                poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot,
-                poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot,
-                poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, poi.line_total,
+                poi.inventory_qty_ordered,
+                poi.unit_snapshot, poi.unit_price_snapshot, poi.line_total,
                 c.conversion_id, c.unit_name AS base_unit_name,
                 box_c.conversion_id AS purchase_conversion_id,
                 action_c.conversion_id AS action_conversion_id, action_c.unit_name AS action_unit_name,
@@ -107,25 +105,18 @@ try {
     $pdo->prepare(
         "INSERT INTO purchase_order_items
             (po_item_id, po_id, product_id, quantity, purchase_qty, purchase_unit_snapshot,
-             units_per_purchase_unit_snapshot, inventory_qty_ordered, product_name_snapshot,
-             brand_name_snapshot, category_name_snapshot, type_name_snapshot, generic_name_snapshot,
-             variant_flavor_snapshot, strength_snapshot, size_value_snapshot, unit_snapshot,
-             packaging_snapshot, unit_price_snapshot, line_total)
+             units_per_purchase_unit_snapshot, inventory_qty_ordered, unit_snapshot,
+             unit_price_snapshot, line_total)
          VALUES
             (:po_item_id, :po_id, :product_id, :quantity, :purchase_qty, :purchase_unit,
-             :units_per_purchase_unit, :inventory_qty_ordered, :product_name, :brand_name,
-             :category_name, :type_name, :generic_name, :variant_flavor, :strength,
-             :size_value, :unit_name, :packaging, :unit_price, :line_total)"
+             :units_per_purchase_unit, :inventory_qty_ordered, :unit_name, :unit_price, :line_total)"
     )->execute([
         ':po_item_id' => $poItemId, ':po_id' => $poId, ':product_id' => $fixture['product_id'],
         ':quantity' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'], ':purchase_qty' => 5,
         ':purchase_unit' => $fixture['purchase_unit_snapshot'], ':units_per_purchase_unit' => $fixture['units_per_purchase_unit_snapshot'],
-        ':inventory_qty_ordered' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'], ':product_name' => $fixture['product_name_snapshot'],
-        ':brand_name' => $fixture['brand_name_snapshot'], ':category_name' => $fixture['category_name_snapshot'],
-        ':type_name' => $fixture['type_name_snapshot'], ':generic_name' => $fixture['generic_name_snapshot'],
-        ':variant_flavor' => $fixture['variant_flavor_snapshot'], ':strength' => $fixture['strength_snapshot'],
-        ':size_value' => $fixture['size_value_snapshot'], ':unit_name' => $fixture['unit_snapshot'],
-        ':packaging' => $fixture['packaging_snapshot'], ':unit_price' => $fixture['unit_price_snapshot'],
+        ':inventory_qty_ordered' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'],
+        ':unit_name' => $fixture['unit_snapshot'],
+        ':unit_price' => $fixture['unit_price_snapshot'],
         ':line_total' => 5 * (int) $fixture['units_per_purchase_unit_snapshot'] * (float) $fixture['unit_price_snapshot'],
     ]);
 

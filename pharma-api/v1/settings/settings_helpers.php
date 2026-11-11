@@ -368,6 +368,40 @@ function fetchSystemSettings(PDO $pdo): array
     ];
 }
 
+function ensureNavbarBadgeColumn(PDO $pdo): void
+{
+    $check = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'system_settings'
+           AND COLUMN_NAME = 'navbar_badges_enabled'"
+    );
+    if ((int) $check->fetchColumn() === 0) {
+        $pdo->exec('ALTER TABLE system_settings ADD COLUMN navbar_badges_enabled TINYINT(1) NOT NULL DEFAULT 1');
+    }
+}
+
+function fetchNavbarBadgesEnabled(PDO $pdo): bool
+{
+    ensureNavbarBadgeColumn($pdo);
+    $value = $pdo->query('SELECT navbar_badges_enabled FROM system_settings ORDER BY setting_id ASC LIMIT 1')->fetchColumn();
+    return $value === false || $value === null || (int) $value === 1;
+}
+
+function saveNavbarBadgesEnabled(PDO $pdo, bool $enabled): bool
+{
+    ensureNavbarBadgeColumn($pdo);
+    $statement = $pdo->prepare(
+        'INSERT INTO system_settings (setting_id, navbar_badges_enabled)
+         VALUES (1, :enabled)
+         ON DUPLICATE KEY UPDATE
+            navbar_badges_enabled = VALUES(navbar_badges_enabled),
+            updated_at = NOW()'
+    );
+    $statement->execute([':enabled' => $enabled ? 1 : 0]);
+    return fetchNavbarBadgesEnabled($pdo);
+}
+
 function ensurePurchaseRequestQuantityLimitColumn(PDO $pdo): void
 {
     $check = $pdo->query(

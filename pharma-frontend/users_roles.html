@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <script src="./js/navbar_profile.js?v=1"></script>
+    <script src="./js/navbar_bootstrap.js?v=17"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. R Pharmacy | Users &amp; Roles</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" rel="stylesheet">
+    <link href="./css/navbar.css?v=43" rel="stylesheet">
+    <script src="./js/navbar.js?v=105" defer></script>
+    <script type="module" src="./js/modules/auth_guard.js?v=30"></script>
+    <style>
+        :root{--purple:#7c3aed;--purple-dark:#6328d6;--body-bg:#f4f6fb;--topbar-height:70px;--border-soft:#e8ecf3;--text-main:#252b37;--transition:all .3s ease}
+        *{box-sizing:border-box}
+        body{margin:0;min-height:100vh;color:var(--text-main);background:var(--body-bg);font-family:"Inter",sans-serif}
+        body.dark-mode{--body-bg:#111827;--border-soft:#263244;--text-main:#e5e7eb}
+        a{text-decoration:none}
+        .main-wrapper{min-height:100vh;margin-left:var(--sidebar-width);transition:var(--transition)}
+        .topbar{position:sticky;top:0;z-index:1020;height:var(--topbar-height);display:flex;align-items:center;justify-content:space-between;padding:0 26px;background:#fff;border-bottom:1px solid var(--border-soft)}
+        body.dark-mode .topbar,body.dark-mode .user-panel,body.dark-mode .user-summary-card{background:#182131;color:var(--text-main)}
+        .topbar-left,.topbar-right{display:flex;align-items:center;gap:14px}
+        .icon-btn{width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:8px;color:#4b5563;background:#f4f6fb}
+        .page-title-mini{display:flex;flex-direction:column;line-height:1.2}
+        .page-title-mini strong{font-size:15px;font-weight:800}
+        .page-title-mini span{margin-top:3px;color:#7b8494;font-size:12px;font-weight:600}
+        .page-body{padding:clamp(20px,1.55vw,24px)}
+        .user-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:0}
+        .user-summary-card{display:flex;align-items:center;gap:14px;min-width:0;min-height:92px;padding:16px 18px;border:1px solid var(--border-soft);border-top:3px solid #7c3aed;border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.05)}
+        .user-summary-card.is-active{border-top-color:#16a34a}
+        .user-summary-card.is-inactive{border-top-color:#e11d48}
+        .user-summary-icon{display:grid;width:42px;height:42px;flex:0 0 42px;place-items:center;border-radius:10px;background:#ede9fe;color:#6d28d9;font-size:16px}
+        .user-summary-card.is-active .user-summary-icon{background:#dcfce7;color:#15803d}
+        .user-summary-card.is-inactive .user-summary-icon{background:#ffe4e6;color:#be123c}
+        .user-summary-copy{min-width:0}
+        .user-summary-copy span{display:block;color:#6b7280;font-size:12px;font-weight:800}
+        .user-summary-copy strong{display:block;margin-top:4px;font-size:28px;font-weight:900;line-height:1.1}
+        .user-panel{margin-top:18px;border:1px solid var(--border-soft);border-radius:10px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.05)}
+        .user-controls-row{display:grid;grid-template-columns:minmax(180px,1fr) minmax(128px,170px) minmax(120px,150px) auto;gap:10px;align-items:center;padding:18px}
+        .user-controls-row .form-control,.user-controls-row .form-select{height:40px;font-size:13px}
+        .btn-purple{--bs-btn-color:#fff;--bs-btn-bg:var(--purple);--bs-btn-border-color:var(--purple);--bs-btn-hover-color:#fff;--bs-btn-hover-bg:var(--purple-dark);--bs-btn-hover-border-color:var(--purple-dark);height:40px;font-weight:800;white-space:nowrap}
+        .user-table-wrap{padding:0 18px 18px;overflow-x:hidden}
+        .users-table{width:100% !important;margin:0;table-layout:fixed !important;border-collapse:separate;border-spacing:0}
+        .users-table th,.users-table td{padding:10px 8px;border-bottom:1px solid #edf0f5;color:var(--text-main);font-size:12px !important;line-height:1.35;text-align:left;vertical-align:middle;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+        .users-table th{color:#596274;background:#f8f9fc;font-size:12px;font-weight:850;letter-spacing:0}
+        .users-table tr:last-child td{border-bottom:0}
+        body.dark-mode .users-table th{background:#111827}
+        .user-status-badge,.user-role-badge{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:800;white-space:normal}
+        .user-status-badge.active{color:#047857;background:#dcfce7}
+        .user-status-badge.inactive{color:#7f1d1d;background:#fee2e2}
+        .user-role-badge{color:#4c1d95;background:#f1e8ff}
+        .user-role-badge.role-super_admin{color:#3730a3;background:#e0e7ff}
+        .user-role-badge.role-admin{color:#6d28d9;background:#ede9fe}
+        .user-role-badge.role-supervisor{color:#0f766e;background:#ccfbf1}
+        .user-role-badge.role-cashier{color:#1d4ed8;background:#dbeafe}
+        .user-role-badge.role-salesclerk{color:#c2410c;background:#ffedd5}
+        .user-actions{display:flex;flex-wrap:wrap;gap:4px;min-width:0;max-width:100%}
+        .user-actions .btn{min-height:28px;max-width:100%;padding:2px 8px;font-size:12px;font-weight:800;line-height:1.2;white-space:normal}
+        .user-actions .btn-outline-success{color:#15803d;border-color:#86efac;background:#f0fdf4}
+        .user-actions .btn-outline-success:hover{color:#fff;border-color:#16a34a;background:#16a34a}
+        .empty-row{text-align:center;color:#64748b;font-weight:800}
+        .user-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+        .user-form-error{display:none;grid-column:1 / -1;margin:0 0 12px;padding:10px 12px;border:1px solid #fecaca;border-radius:8px;color:#991b1b;background:#fef2f2;font-size:13px;font-weight:800}
+        .user-form-error.is-visible{display:block}
+        .user-detail-list{display:grid;gap:10px}
+        .user-detail-row{display:grid;grid-template-columns:140px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid var(--border-soft)}
+        .user-detail-row span{color:#667085;font-size:13px;font-weight:800}
+        .user-detail-row strong{color:var(--text-main);font-size:13px;font-weight:850;overflow-wrap:anywhere}
+        #userFormModal .modal-header{cursor:move}
+        @media (max-width:900px){
+            .user-summary-grid,.user-controls-row,.user-form-grid{grid-template-columns:1fr}
+            .btn-purple{width:100%}
+        }
+        @media (max-width:760px){
+            .main-wrapper{margin-left:0}
+            .topbar{padding:0 16px}
+            .page-body{padding:16px}
+            .user-table-wrap{padding:0 12px 12px}
+            .users-table,.users-table tbody,.users-table tr,.users-table td{display:block;width:100%}
+            .users-table thead{display:none}
+            .users-table tr{margin:0 0 12px;border:1px solid var(--border-soft);border-radius:10px;overflow:hidden}
+            .users-table td{display:grid;grid-template-columns:minmax(92px,.7fr) minmax(0,1.6fr);gap:8px;padding:9px 11px}
+            .users-table td::before{content:attr(data-label);color:#667085;font-size:11px;font-weight:850}
+        }
+    </style>
+</head>
+<body>
+    <div id="navbar-container"></div>
+    <div class="main-wrapper" id="mainWrapper">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn" id="sidebarToggle" type="button" aria-label="Toggle sidebar"><i class="fa-solid fa-bars"></i></button>
+                <div class="page-title-mini"><strong>Users &amp; Roles</strong><span>Administration</span></div>
+            </div>
+            <div class="topbar-right"></div>
+        </header>
+        <main class="page-body">
+            <section class="user-summary-grid" aria-label="User summary">
+                <article class="user-summary-card is-total"><span class="user-summary-icon" aria-hidden="true"><i class="fa-solid fa-users"></i></span><div class="user-summary-copy"><span>Total Users</span><strong id="totalUsersCard">0</strong></div></article>
+                <article class="user-summary-card is-active"><span class="user-summary-icon" aria-hidden="true"><i class="fa-solid fa-user-check"></i></span><div class="user-summary-copy"><span>Active Users</span><strong id="activeUsersCard">0</strong></div></article>
+                <article class="user-summary-card is-inactive"><span class="user-summary-icon" aria-hidden="true"><i class="fa-solid fa-user-slash"></i></span><div class="user-summary-copy"><span>Inactive Users</span><strong id="inactiveUsersCard">0</strong></div></article>
+            </section>
+            <section class="user-panel" aria-label="User accounts">
+                <div class="user-controls-row">
+                    <input class="form-control" id="userSearchInput" type="search" placeholder="Search full name, username, or role" aria-label="Search users">
+                    <select class="form-select" id="userRoleFilter" aria-label="Filter by role">
+                        <option value="">All Roles</option>
+                        <option value="super_admin">Super Admin</option>
+                        <option value="admin">Admin</option>
+                        <option value="supervisor">Inventory Manager</option>
+                        <option value="cashier">Cashier</option>
+                        <option value="salesclerk">Sales Clerk</option>
+                    </select>
+                    <select class="form-select" id="userStatusFilter" aria-label="Filter by status">
+                        <option value="">All Status</option>
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
+                    <button class="btn btn-purple" type="button" id="addUserBtn"><i class="fa-solid fa-user-plus me-2"></i>Add User</button>
+                </div>
+                <div class="user-table-wrap">
+                    <table class="users-table" data-table-enhance="false">
+                        <colgroup>
+                            <col style="width:17%">
+                            <col style="width:13%">
+                            <col style="width:12%">
+                            <col style="width:11%">
+                            <col style="width:15%">
+                            <col style="width:15%">
+                            <col style="width:17%">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>Full Name</th>
+                                <th>Username</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Last Login</th>
+                                <th>Created Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr><td class="empty-row" colspan="7">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="modal fade" id="userFormModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <form id="userForm" novalidate>
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold" id="userFormTitle">Add User</h5>
+                        <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="userIdInput">
+                        <p class="user-form-error" id="userFormError"></p>
+                        <div class="user-form-grid">
+                            <div>
+                                <label class="form-label" for="fullNameInput">Full Name</label>
+                                <input class="form-control" id="fullNameInput" required>
+                            </div>
+                            <div>
+                                <label class="form-label" for="usernameInput">Username</label>
+                                <input class="form-control" id="usernameInput" autocomplete="off" required>
+                            </div>
+                            <div class="password-field">
+                                <label class="form-label" for="tempPasswordInput">Temporary Password</label>
+                                <input class="form-control" id="tempPasswordInput" type="password" autocomplete="new-password">
+                            </div>
+                            <div class="password-field">
+                                <label class="form-label" for="confirmPasswordInput">Confirm Password</label>
+                                <input class="form-control" id="confirmPasswordInput" type="password" autocomplete="new-password">
+                            </div>
+                            <div>
+                                <label class="form-label" for="roleInput">Role</label>
+                                <select class="form-select" id="roleInput" required>
+                                    <option value="">Select role</option>
+                                    <option value="cashier">Cashier</option>
+                                    <option value="salesclerk">Sales Clerk</option>
+                                    <option value="supervisor">Inventory Manager</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" for="statusInput">Status</label>
+                                <select class="form-select" id="statusInput">
+                                    <option value="Active" selected>Active</option>
+                                    <option value="Inactive">Inactive</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label" for="emailInput">Email optional</label>
+                                <input class="form-control" id="emailInput" type="email">
+                            </div>
+                            <div>
+                                <label class="form-label" for="contactNumberInput">Contact Number optional</label>
+                                <input class="form-control" id="contactNumberInput">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                        <button class="btn btn-purple" type="submit" id="saveUserBtn">Save User</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="userDetailsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">User Details</h5>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="user-detail-list" id="userDetailsBody"></div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="userStatusModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="userStatusTitle">Update account</h5>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-0" id="userStatusMessage">Confirm this account change.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-danger" type="button" id="userStatusConfirm">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script type="module" src="./js/modules/user_management.js?v=4"></script>
+</body>
+</html>

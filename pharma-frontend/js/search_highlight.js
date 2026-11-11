@@ -28,7 +28,7 @@
     ].join(',');
 
     const pageTargets = Object.freeze({
-        'admin_settings.html': { userSearchInput: '#usersTableBody' },
+        'users_roles.html': { userSearchInput: '#usersTableBody' },
         'cancelled_sales.html': { cashierSearch: '#reportRows' },
         'cashier_pos.html': { cashierSearch: '#cashierOrderList' },
         'cashier_queue.html': { cashierSearch: '#queueRows' },

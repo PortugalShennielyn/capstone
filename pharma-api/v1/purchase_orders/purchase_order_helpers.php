@@ -48,17 +48,20 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
     $pdo->exec("UPDATE purchase_orders SET status = 'Delivered' WHERE status IN ('Return/Damage', 'Delivered with Return/Damage')");
     $pdo->exec("UPDATE purchase_orders SET status = 'Pending' WHERE LOWER(TRIM(status)) = 'in transit'");
     $pdo->exec("UPDATE purchase_orders SET status = 'Cancelled' WHERE approval_status = 'Rejected' AND status = 'Pending'");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS product_name_snapshot VARCHAR(150) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS brand_name_snapshot VARCHAR(150) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS category_name_snapshot VARCHAR(100) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS type_name_snapshot VARCHAR(100) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS generic_name_snapshot VARCHAR(150) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS variant_flavor_snapshot VARCHAR(100) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS strength_snapshot VARCHAR(100) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS size_value_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_snapshot VARCHAR(100) NULL");
-    $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS packaging_snapshot VARCHAR(100) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_price_snapshot DECIMAL(12,4) NULL");
+    $pdo->exec(
+        "ALTER TABLE purchase_order_items
+            DROP COLUMN IF EXISTS product_name_snapshot,
+            DROP COLUMN IF EXISTS brand_name_snapshot,
+            DROP COLUMN IF EXISTS category_name_snapshot,
+            DROP COLUMN IF EXISTS type_name_snapshot,
+            DROP COLUMN IF EXISTS generic_name_snapshot,
+            DROP COLUMN IF EXISTS variant_flavor_snapshot,
+            DROP COLUMN IF EXISTS strength_snapshot,
+            DROP COLUMN IF EXISTS size_value_snapshot,
+            DROP COLUMN IF EXISTS packaging_snapshot"
+    );
     $pdo->exec("ALTER TABLE purchase_order_items MODIFY unit_price_snapshot DECIMAL(12,4) NULL");
     $pdo->exec("ALTER TABLE purchase_order_items MODIFY line_total DECIMAL(10,2) NULL DEFAULT NULL");
     $pdo->exec("ALTER TABLE inventory_batches MODIFY unit_cost DECIMAL(12,4) NOT NULL DEFAULT 0.0000");
@@ -115,13 +118,31 @@ function ensurePurchaseOrderSchema(PDO $pdo): void
             batch_number VARCHAR(80) NOT NULL,
             quantity_stocked INT NOT NULL DEFAULT 0,
             quantity_remaining INT NOT NULL DEFAULT 0,
-            expiration_date DATE NULL,
+            expiry_date DATE NULL,
             status VARCHAR(40) NOT NULL DEFAULT 'Available',
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
-    $pdo->exec("ALTER TABLE product_inventory MODIFY expiration_date DATE NULL");
+    $pdo->exec("ALTER TABLE product_inventory ADD COLUMN IF NOT EXISTS expiry_date DATE NULL");
     $pdo->exec("ALTER TABLE product_inventory ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    if (purchaseOrderColumnExists($pdo, 'product_inventory', 'expiration_date')) {
+        $pdo->exec("UPDATE product_inventory SET expiry_date = expiration_date WHERE expiry_date IS NULL AND expiration_date IS NOT NULL");
+        $pdo->exec("ALTER TABLE product_inventory DROP COLUMN expiration_date");
+    }
+    $pdo->exec("DROP TABLE IF EXISTS product_variations_backup");
+}
+
+function purchaseOrderColumnExists(PDO $pdo, string $table, string $column): bool
+{
+    $statement = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = :table_name
+           AND COLUMN_NAME = :column_name'
+    );
+    $statement->execute([':table_name' => $table, ':column_name' => $column]);
+    return (int) $statement->fetchColumn() > 0;
 }
 
 function purchaseOrderStatuses(): array
@@ -350,16 +371,7 @@ function validatePurchaseOrderItems(array $items): void
 function purchaseOrderItemSnapshotColumns(): array
 {
     return [
-        'product_name' => 'product_name_snapshot',
-        'brand_name' => 'brand_name_snapshot',
-        'category_name' => 'category_name_snapshot',
-        'type_name' => 'type_name_snapshot',
-        'generic_name' => 'generic_name_snapshot',
-        'variant_flavor' => 'variant_flavor_snapshot',
-        'strength' => 'strength_snapshot',
-        'size_value' => 'size_value_snapshot',
         'unit' => 'unit_snapshot',
-        'packaging' => 'packaging_snapshot',
         'price' => 'unit_price_snapshot'
     ];
 }
@@ -449,16 +461,7 @@ function purchaseOrderQuantityParams(array $item): array
 function purchaseOrderItemSnapshotParams(array $item): array
 {
     return [
-        ':product_name_snapshot' => cleanSnapshotText($item, 'product_name'),
-        ':brand_name_snapshot' => cleanSnapshotText($item, 'brand_name'),
-        ':category_name_snapshot' => cleanSnapshotText($item, 'category_name'),
-        ':type_name_snapshot' => cleanSnapshotText($item, 'type_name'),
-        ':generic_name_snapshot' => cleanSnapshotText($item, 'generic_name'),
-        ':variant_flavor_snapshot' => cleanSnapshotText($item, 'variant_flavor'),
-        ':strength_snapshot' => cleanSnapshotText($item, 'strength'),
-        ':size_value_snapshot' => cleanSnapshotText($item, 'size_value'),
         ':unit_snapshot' => cleanSnapshotText($item, 'unit'),
-        ':packaging_snapshot' => cleanSnapshotText($item, 'packaging'),
         ':unit_price_snapshot' => cleanSnapshotPrice($item)
     ];
 }

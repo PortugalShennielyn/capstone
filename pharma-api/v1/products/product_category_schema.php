@@ -188,7 +188,7 @@ function ensureProductCategorySchema(PDO $pdo): void
             batch_number VARCHAR(80) NULL,
             quantity_stocked INT NOT NULL DEFAULT 0,
             quantity_remaining INT NOT NULL DEFAULT 0,
-            expiration_date DATE NULL,
+            expiry_date DATE NULL,
             status VARCHAR(30) DEFAULT 'Available',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -412,7 +412,7 @@ function ensureInventoryBatchSchema(PDO $pdo): void
             inv.product_id,
             po.supplier_id,
             COALESCE(por.received_date, inv.created_at, CURRENT_TIMESTAMP),
-            COALESCE(inv.expiry_date, inv.expiration_date),
+            inv.expiry_date,
             COALESCE(inv.quantity_stocked, 0) + COALESCE(shelf.shelf_qty, 0),
             COALESCE(inv.quantity_remaining, 0),
             COALESCE(shelf.shelf_qty, 0),
@@ -421,8 +421,8 @@ function ensureInventoryBatchSchema(PDO $pdo): void
             COALESCE(poi.unit_price_snapshot, p.price, 0),
             CASE
                 WHEN COALESCE(inv.quantity_remaining, 0) + COALESCE(shelf.shelf_qty, 0) <= 0 THEN 'depleted'
-                WHEN COALESCE(inv.expiry_date, inv.expiration_date) IS NOT NULL
-                    AND COALESCE(inv.expiry_date, inv.expiration_date) < CURDATE() THEN 'expired'
+                WHEN inv.expiry_date IS NOT NULL
+                    AND inv.expiry_date < CURDATE() THEN 'expired'
                 ELSE 'active'
             END,
             COALESCE(inv.created_at, CURRENT_TIMESTAMP)

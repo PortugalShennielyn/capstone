@@ -33,7 +33,7 @@ if (in_array($status, ['Active', 'Inactive'], true)) {
 $sql = 'SELECT user_id, full_name, username, role, status, email, contact_number, last_login, created_at, updated_at
         FROM users
         WHERE ' . implode(' AND ', $where) . '
-        ORDER BY created_at DESC, full_name ASC';
+        ORDER BY CASE WHEN role = \'admin\' THEN 0 ELSE 1 END, created_at DESC, full_name ASC';
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $users = array_map(static function (array $row): array {

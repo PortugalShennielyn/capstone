@@ -1,3 +1,23 @@
+function applyPersonalNavigationTheme(userId) {
+    const palette = {navy:'#1b356d',purple:'#6846cf',teal:'#116653',orange:'#b75a29',berry:'#a22853',slate:'#252c3a'};
+    let selected = '';
+    try {
+        userId = userId || sessionStorage.getItem('pharmacyAuthenticatedUserId');
+        selected = userId ? localStorage.getItem(`drp-profile:${userId}:navigation-theme`) : '';
+    } catch (_) {}
+    let style = document.getElementById('personal-navigation-theme');
+    if (!style) { style = document.createElement('style'); style.id='personal-navigation-theme'; document.head.appendChild(style); }
+    const color = palette[selected];
+    style.textContent = color ? `
+        :root { --sidebar-bg:${color}!important; --sidebar-bg-deep:${color}!important; --sidebar-text:#fff!important; }
+        #navbar-container .app-sidebar, #navbar-container .sidebar-header, #navbar-container .sidebar-profile-footer,
+        .drp-shared-topbar, .profile-topbar { background:${color}!important; }
+        #navbar-container .nav-link, #navbar-container .nav-link i { color:#fff!important; }
+    ` : '';
+}
+window.addEventListener('drp:navigation-theme', () => applyPersonalNavigationTheme());
+applyPersonalNavigationTheme();
+
 (function initNavigationRuntime() {
     if (window.__drpNavigationRuntime) {
         window.__drpNavigationRuntime.clear();
@@ -162,7 +182,10 @@ async function initializeNavbar(container) {
         expanded: "pharmacyNavbarScrollTopExpanded",
         collapsed: "pharmacyNavbarScrollTopCollapsed"
     };
-    const savedCollapsed = true;
+    let savedCollapsed = true;
+    try {
+        savedCollapsed = localStorage.getItem("drpSidebarCollapsed") !== "false";
+    } catch (error) {}
     const mainWrapperBeforeLoad = document.getElementById("mainWrapper");
     document.body.classList.add("navbar-state-booting");
     document.body.classList.add("role-loading");
@@ -179,8 +202,8 @@ async function initializeNavbar(container) {
     const revealFailSafe = window.setTimeout(revealShell, 2500);
 
     try {
-        const rbac = await import("./modules/rbac.js?v=9");
-        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v53";
+        const rbac = await import("./modules/rbac.js?v=10");
+        const cacheKey = window.__drpNavbarMarkupCacheKey || "drpNavbarHtml:v54";
         let navbarHtml = sessionStorage.getItem(cacheKey);
 
         if (!navbarHtml) {
@@ -235,9 +258,6 @@ async function initializeNavbar(container) {
         document.querySelectorAll("#sidebarToggle").forEach(toggle => {
             if (toggle !== sidebarToggle) toggle.remove();
         });
-        try {
-            localStorage.removeItem("drpSidebarCollapsed");
-        } catch (error) {}
         document.querySelectorAll(".sidebar-backdrop").forEach(backdrop => backdrop.remove());
         const filename = window.location.pathname.split("/").pop() || "dashboard.html";
         let isRestoringNavbarScroll = false;
@@ -266,6 +286,7 @@ async function initializeNavbar(container) {
             "reports.html": "reports",
             "sales_clerk_reports.html": "reports",
             "audit_logs.html": "audit-logs",
+            "users_roles.html": "users-roles",
             "admin_settings.html": "settings",
             "pos.html": "pos",
             "clerk.html": "clerk",
@@ -1325,16 +1346,6 @@ async function initializeNavbar(container) {
                 if (reportsLink) reportsLink.href = "sales_clerk_reports.html";
             }
 
-            if (accessRole === "manager") {
-                const userManagementLink = container.querySelector("[data-nav-page='settings']");
-                if (userManagementLink) {
-                    userManagementLink.href = "admin_settings.html?section=users";
-                    userManagementLink.title = "User Management";
-                    const label = userManagementLink.querySelector(".nav-label");
-                    if (label) label.textContent = "User Management";
-                }
-            }
-
             if (accessRole === "supervisor") {
                 window.__drpNavbarBootstrap?.renderSupervisorNavigation(container);
                 container.querySelectorAll(".sidebar-user-action:not([data-auth-action='logout'])").forEach(link => {
@@ -1394,7 +1405,6 @@ async function initializeNavbar(container) {
 
         const dashboardViewMap = {
             dashboard: "dashboard",
-            "dashboard/billing": "billing",
             "dashboard/user/settings": "user-settings",
             "dashboard/products": "products",
             "dashboard/inspect-deliveries": "inspect-deliveries",
@@ -1588,12 +1598,6 @@ async function initializeNavbar(container) {
             if (event.key !== "Escape") return;
             setUserPopoverOpen(false);
             closeSlimFlyout();
-            if (document.body.classList.contains("sidebar-open")) {
-                saveNavbarScrollPosition(true);
-                setSidebarState(true);
-                scheduleNavbarScrollRestore(false);
-                headerSidebarToggle?.focus({ preventScroll: true });
-            }
         }
 
         function getActiveLabel() {
@@ -1605,7 +1609,7 @@ async function initializeNavbar(container) {
                 "shelf-inventory": "Shelf Inventory",
                 "supplier": "Suppliers",
                 "settings": "Admin Settings",
-                "billing": "Billing",
+                "users-roles": "Users & Roles",
                 "user-settings": "User Settings",
                 "purchase-orders": "Purchase Orders",
                 "purchase-requests": "Purchase Requests",
@@ -1668,6 +1672,9 @@ async function initializeNavbar(container) {
         function toggleSidebar() {
             if (document.body.classList.contains("sidebar-open")) closeSidebar();
             else openSidebar();
+            try {
+                localStorage.setItem("drpSidebarCollapsed", String(sidebar.classList.contains("collapsed")));
+            } catch (error) {}
         }
 
         function setSidebarState(isCollapsed) {
@@ -1838,7 +1845,6 @@ async function initializeNavbar(container) {
             if ((isSamePath && isSameHash) || isActiveModule) {
                 event.preventDefault();
                 event.stopPropagation();
-                setSidebarState(true);
                 return;
             }
 
@@ -1851,19 +1857,7 @@ async function initializeNavbar(container) {
             event.preventDefault();
             saveExpandedGroupsState();
             saveNavbarScrollPosition(true);
-            setSidebarState(true);
             window.__drpNavigationRuntime.navigate(targetUrl);
-        }
-
-        function closeSidebarFromOutside(event) {
-            if (!sidebar || sidebar.classList.contains("collapsed")) return;
-            if (sidebar.contains(event.target)) return;
-            if (event.target.closest("#sidebarToggle, #sidebarOpenToggle")) return;
-            if (event.target.closest(".modal, .modal-backdrop, .swal2-container, .toast, .toast-container")) return;
-
-            saveNavbarScrollPosition(true);
-            setSidebarState(true);
-            scheduleNavbarScrollRestore(false);
         }
 
         function handleNavbarCollapseClick(event) {
@@ -1951,7 +1945,6 @@ async function initializeNavbar(container) {
         container.addEventListener("click", handleUserPopoverClick);
         document.addEventListener("pointerdown", closeUserPopoverFromOutside);
         document.addEventListener("pointerdown", closeSlimFlyoutFromOutside);
-        document.addEventListener("pointerdown", closeSidebarFromOutside);
         document.addEventListener("keydown", handleNavbarKeydown);
         window.addEventListener("resize", closeSlimFlyout);
         window.addEventListener("scroll", closeSlimFlyout, true);
@@ -1976,6 +1969,7 @@ async function initializeNavbar(container) {
         loadCurrentSession()
             .then(currentSession => {
                 applyRoleNavigation(currentSession);
+                applyPersonalNavigationTheme(currentSession?.user_id);
                 window.dispatchEvent(new CustomEvent("navbar:permissions-ready"));
                 applyActiveNavigation();
                 scheduleNavbarScrollRestore();
@@ -2006,13 +2000,14 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
     const topbar = document.querySelector(
         '#mainWrapper > .topbar, .main-wrapper > .topbar, '
         + '#mainWrapper > .cashier-topbar, .main-wrapper > .cashier-topbar, '
-        + '#mainWrapper > .shift-topbar, .main-wrapper > .shift-topbar'
+        + '#mainWrapper > .shift-topbar, .main-wrapper > .shift-topbar, '
+        + '#mainWrapper > .profile-topbar, .main-wrapper > .profile-topbar'
     );
     if (!topbar || topbar.dataset.drpSharedReady === 'true') return;
     topbar.dataset.drpSharedReady = 'true';
     topbar.classList.add('drp-shared-topbar');
 
-    const searchPages = new Set(['dashboard.html', 'supervisor_dashboard.html', 'products.html', 'inventory.html', 'shelf_inventory.html', 'supplier.html', 'purchase_requests.html', 'supervisor_approval.html', 'admin_settings.html', 'sales_clerk_pos.html', 'sales_clerk_orders.html', 'cashier_pos.html']);
+    const searchPages = new Set(['dashboard.html', 'supervisor_dashboard.html', 'products.html', 'inventory.html', 'shelf_inventory.html', 'supplier.html', 'purchase_requests.html', 'supervisor_approval.html', 'admin_settings.html', 'users_roles.html', 'sales_clerk_pos.html', 'sales_clerk_orders.html', 'cashier_pos.html']);
     const hasGlobalSearch = searchPages.has(filename);
     topbar.classList.toggle('has-global-search', hasGlobalSearch);
 
@@ -2332,6 +2327,69 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
     setupSearch();
     setupNotifications();
 
+    let latestNavWorkData = null;
+    let navbarBadgeOverride = null;
+    const navbarBadgesEnabled = (data = {}) => {
+        if (navbarBadgeOverride !== null) return navbarBadgeOverride;
+        if (Object.prototype.hasOwnProperty.call(data, 'navbar_badges')) return data.navbar_badges !== false && data.navbar_badges !== 0 && data.navbar_badges !== '0';
+        try {
+            const settings = JSON.parse(localStorage.getItem('drpAdminSettings') || '{}');
+            if (settings.notifications && settings.notifications.navbarBadges === false) return false;
+        } catch (error) {}
+        return true;
+    };
+    const applyNavWorkCounts = (data = {}) => {
+        latestNavWorkData = data;
+        if (!navbarBadgesEnabled(data)) {
+            document.querySelectorAll('#navbar-container .nav-work-count').forEach(badge => badge.remove());
+            return;
+        }
+        const counts = {
+            inventory: Number(data.out_of_stock || 0) + Number(data.low_stock || 0),
+            'shelf-inventory': Number(data.low_shelf || 0),
+            'purchase-requests': Number(data.pending_pr || 0),
+            'purchase-orders': Number(data.pending_po || 0),
+            'inspect-deliveries': Number(data.awaiting_inspection || 0),
+            'supervisor-approval': Number(data.pending_pr || 0),
+            'return-damage': Number(data.open_claims || 0),
+            'expiry-monitoring': Number(data.expiry_attention || 0),
+            'returns-disposals': Number(data.open_resolution_cases || 0)
+        };
+        const groups = {
+            '#masterFilesCollapse': ['inventory', 'shelf-inventory'],
+            '#purchaseOrdersCollapse': ['purchase-requests', 'purchase-orders', 'inspect-deliveries'],
+            '#monitoringCollapse': ['return-damage', 'expiry-monitoring', 'returns-disposals']
+        };
+        const setCount = (link, count) => {
+            if (!link) return;
+            let badge = link.querySelector(':scope > .nav-work-count');
+            if (!count) {
+                badge?.remove();
+                return;
+            }
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'nav-work-count';
+                const arrow = link.querySelector(':scope > .collapse-arrow');
+                arrow ? link.insertBefore(badge, arrow) : link.appendChild(badge);
+            }
+            const label = count > 99 ? '99+' : String(count);
+            badge.textContent = label;
+            badge.setAttribute('aria-label', `${label} need attention`);
+        };
+        document.querySelectorAll('#navbar-container a[data-nav-page]').forEach(link => {
+            setCount(link, counts[link.dataset.navPage] || 0);
+        });
+        Object.entries(groups).forEach(([href, keys]) => {
+            const total = keys.reduce((sum, key) => sum + (counts[key] || 0), 0);
+            setCount(document.querySelector(`#navbar-container a[href="${href}"]`), total);
+        });
+    };
+    window.addEventListener('drp:navbar-badges', (event) => {
+        navbarBadgeOverride = event.detail?.navbarBadges !== false;
+        applyNavWorkCounts(latestNavWorkData || {});
+    });
+
     if (filename !== 'dashboard.html') {
         const badge = document.getElementById('dashboardNotificationBadge');
         const list = document.getElementById('dashboardNotificationList');
@@ -2405,6 +2463,7 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
                 if (list) list.innerHTML = alerts.length
                     ? alerts.map(alert => `<a class="notification-menu-item tone-${alert.tone}" role="menuitem" data-alert-key="${escapeHtml(alert.label)}" data-alert-count="${alert.count}" href="${alert.href}"><span class="notification-item-icon"><i class="fa-solid ${alert.icon}"></i></span><span class="notification-item-copy"><strong>${escapeHtml(alert.label)}</strong><small>${escapeHtml(alert.description)}</small></span><span class="notification-item-count">${alert.count}</span><i class="fa-solid fa-chevron-right notification-item-arrow" aria-hidden="true"></i></a>`).join('')
                     : '<div class="notification-empty-state"><span><i class="fa-solid fa-check"></i></span><strong>You’re all caught up</strong><p>No urgent system alerts right now.</p></div>';
+                applyNavWorkCounts(data);
             })
             .catch(error => {
                 const message = error?.message === 'auth'
@@ -2421,6 +2480,15 @@ function initializeSharedTopbar({ filename, apiBaseUrl, tabToken, loadCurrentSes
                 if (totalLabel) totalLabel.textContent = '—';
                 if (list) list.innerHTML = `<div class="notification-empty-state"><span><i class="fa-solid fa-triangle-exclamation"></i></span><strong>${escapeHtml(message[0])}</strong><p>${escapeHtml(message[1])}</p></div>`;
             });
+    } else {
+        Promise.resolve(typeof loadCurrentSession === 'function' ? loadCurrentSession() : null)
+            .then(() => fetch(`${apiBaseUrl()}/dashboard/get_dashboard_summary.php?scope=alerts`, {
+                credentials: 'include',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-Tab-Token': tabToken() }
+            }))
+            .then(response => response.ok ? response.json() : null)
+            .then(data => { if (data && data.status !== 'error') applyNavWorkCounts(data); })
+            .catch(() => {});
     }
 }
 

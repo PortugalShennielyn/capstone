@@ -50,19 +50,20 @@ function purchaseOrderInvoice(PDO $pdo, string $poId): ?array
         'SELECT piii.invoice_item_id, piii.invoice_id, piii.po_item_id, piii.unit_cost, piii.invoice_qty,
                 poi.product_id, poi.purchase_qty AS order_qty,
                 COALESCE(NULLIF(TRIM(poi.purchase_unit_snapshot), \'\'), \'pcs\') AS purchase_unit,
-                COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), \'\'), NULLIF(TRIM(md.generic_name), \'\'), p.product_name) AS product_name,
-                COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), \'\'), NULLIF(TRIM(md.generic_name), \'\'), p.product_name) AS generic_name,
-                COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), \'\'), p.brand_name) AS brand_name,
-                COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), \'\'), NULLIF(TRIM(poi.variant_flavor_snapshot), \'\'), \'\') AS generic_or_variant,
-                COALESCE(NULLIF(TRIM(poi.strength_snapshot), \'\'), \'\') AS strength,
-                COALESCE(NULLIF(TRIM(poi.size_value_snapshot), \'\'), \'\') AS size_value,
+                COALESCE(NULLIF(TRIM(md.generic_name), \'\'), p.product_name) AS product_name,
+                COALESCE(NULLIF(TRIM(md.generic_name), \'\'), p.product_name) AS generic_name,
+                p.brand_name AS brand_name,
+                COALESCE(NULLIF(TRIM(md.generic_name), \'\'), NULLIF(TRIM(gd.variant), \'\'), \'\') AS generic_or_variant,
+                COALESCE(NULLIF(TRIM(md.strength), \'\'), NULLIF(TRIM(CONCAT_WS(\' \', md.strength_value, md.strength_unit)), \'\'), \'\') AS strength,
+                COALESCE(NULLIF(TRIM(gd.size), \'\'), \'\') AS size_value,
                 COALESCE(NULLIF(TRIM(poi.unit_snapshot), \'\'), \'\') AS unit,
-                COALESCE(NULLIF(TRIM(poi.packaging_snapshot), \'\'), \'\') AS packaging,
+                COALESCE(NULLIF(TRIM(md.package_type), \'\'), NULLIF(TRIM(gd.package_type), \'\'), \'\') AS packaging,
                 ROUND(piii.invoice_qty * piii.unit_cost, 2) AS line_total
          FROM purchase_order_invoice_items piii
          INNER JOIN purchase_order_items poi ON poi.po_item_id = piii.po_item_id
          INNER JOIN product p ON p.product_id = poi.product_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          WHERE piii.invoice_id = :invoice_id
          ORDER BY poi.po_item_id'
     );

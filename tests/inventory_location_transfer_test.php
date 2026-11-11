@@ -37,10 +37,10 @@ try {
     $pdo->prepare('INSERT INTO suppliers (supplier_id,supplier_name) VALUES (?,?)')->execute([$ids['supplier'], 'Transfer Test Supplier']);
     $pdo->prepare("INSERT INTO supplier_products (supplier_product_id,supplier_id,product_id,purchase_unit,purchase_unit_contains,inner_unit,units_per_inner_unit,inventory_unit,units_per_purchase_unit) VALUES (?,?,?,'BOX',10,'STAB',10,'PCS',100)")
         ->execute([$ids['supplier_product'], $ids['supplier'], $ids['product']]);
-    $inventory = $pdo->prepare("INSERT INTO product_inventory (inventory_id,product_id,batch_number,quantity_stocked,quantity_remaining,expiration_date,expiry_date,status) VALUES (?,?,?,?,?,?,?,'Available')");
+    $inventory = $pdo->prepare("INSERT INTO product_inventory (inventory_id,product_id,batch_number,quantity_stocked,quantity_remaining,expiry_date,status) VALUES (?,?,?,?,?,?,'Available')");
     $batch = $pdo->prepare("INSERT INTO inventory_batches (batch_id,legacy_inventory_id,product_id,supplier_id,expiry_date,received_qty,storage_qty,batch_status) VALUES (?,?,?,?,?,?,?,'active')");
-    $inventory->execute([$ids['inventory1'],$ids['product'],'FEFO-A',20,20,'2026-12-31','2026-12-31']);
-    $inventory->execute([$ids['inventory2'],$ids['product'],'FEFO-B',50,50,'2027-03-31','2027-03-31']);
+    $inventory->execute([$ids['inventory1'],$ids['product'],'FEFO-A',20,20,'2026-12-31']);
+    $inventory->execute([$ids['inventory2'],$ids['product'],'FEFO-B',50,50,'2027-03-31']);
     $batch->execute([$ids['batch1'],$ids['inventory1'],$ids['product'],$ids['supplier'],'2026-12-31',20,20]);
     $batch->execute([$ids['batch2'],$ids['inventory2'],$ids['product'],$ids['supplier'],'2027-03-31',50,50]);
 

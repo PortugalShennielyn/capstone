@@ -69,7 +69,6 @@ $clearTables = [
     'purchase_requests',
     'supplier_product_unit_conversions',
     'supplier_products',
-    'product_variations_backup',
     'product_specification_values',
     'grocery_details',
     'medical_supply_details',
@@ -150,7 +149,6 @@ try {
     $pdo->exec('DELETE FROM supplier_product_unit_conversions');
     $pdo->exec('DELETE FROM supplier_products');
     $pdo->exec("DELETE FROM entity_dimensions WHERE entity_type IN ('product', 'product_variation')");
-    $pdo->exec('DELETE FROM product_variations_backup');
     $pdo->exec('DELETE FROM product_specification_values');
     $pdo->exec('DELETE FROM grocery_details');
     $pdo->exec('DELETE FROM medical_supply_details');

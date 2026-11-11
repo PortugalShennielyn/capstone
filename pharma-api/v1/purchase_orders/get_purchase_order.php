@@ -132,18 +132,12 @@ try {
              INNER JOIN purchase_orders supplier_po ON supplier_po.supplier_id = sp.supplier_id
              WHERE supplier_po.po_id = poi.po_id AND sp.product_id = poi.product_id
              LIMIT 1) AS supplier_price_per_purchase_unit,
-            CASE
-                WHEN NULLIF(TRIM(poi.product_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.product_name_snapshot)) LIKE 'N/A%' THEN p.product_name
-                ELSE poi.product_name_snapshot
-            END AS product_name,
-            CASE
-                WHEN NULLIF(TRIM(poi.brand_name_snapshot), '') IS NULL OR UPPER(TRIM(poi.brand_name_snapshot)) LIKE 'N/A%' THEN p.brand_name
-                ELSE poi.brand_name_snapshot
-            END AS brand_name,
-            COALESCE(NULLIF(poi.category_name_snapshot, ''), pc.category_name) AS category_name,
-            COALESCE(NULLIF(poi.type_name_snapshot, ''), pt.type_name) AS type_name,
-            COALESCE(NULLIF(poi.generic_name_snapshot, ''), md.generic_name) AS generic_name,
-            COALESCE(NULLIF(poi.strength_snapshot, ''), NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
+            p.product_name AS product_name,
+            p.brand_name AS brand_name,
+            pc.category_name AS category_name,
+            pt.type_name AS type_name,
+            md.generic_name AS generic_name,
+            COALESCE(NULLIF(md.strength, ''), NULLIF(CONCAT_WS(' ', md.strength_value, md.strength_unit), ''), '') AS strength,
             COALESCE(md.strength_value, md.strength) AS strength_value,
             md.strength_unit AS strength_unit,
             md.dosage_form AS dosage_form,
@@ -151,11 +145,11 @@ try {
             md.net_content_unit,
             md.net_content_value AS volume_value,
             md.net_content_unit AS volume_unit,
-            COALESCE(NULLIF(poi.variant_flavor_snapshot, ''), gd.variant, '') AS variant_flavor,
-            COALESCE(NULLIF(poi.size_value_snapshot, ''), gd.size, '') AS size_value,
+            COALESCE(gd.variant, '') AS variant_flavor,
+            COALESCE(gd.size, '') AS size_value,
             gd.net_weight AS weight_volume_value,
             gd.unit AS weight_volume_unit,
-            COALESCE(NULLIF(poi.packaging_snapshot, ''), md.package_type, gd.package_type, '') AS packaging,
+            COALESCE(md.package_type, gd.package_type, '') AS packaging,
             CASE
                 WHEN NULLIF(poi.unit_snapshot, '') IS NOT NULL AND UPPER(TRIM(poi.unit_snapshot)) NOT LIKE 'N/A%' THEN poi.unit_snapshot
                 WHEN LOWER(COALESCE(md.dosage_form, '')) IN ('tablet', 'capsule', 'caplet') THEN 'pcs'
@@ -207,7 +201,7 @@ try {
             GROUP BY product_id
          ) inv ON inv.product_id = poi.product_id
          WHERE poi.po_id = :po_id
-         GROUP BY poi.po_item_id, poi.product_id, p.status, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, piii.unit_cost, poi.product_name_snapshot, poi.brand_name_snapshot, poi.category_name_snapshot, poi.type_name_snapshot, poi.generic_name_snapshot, poi.variant_flavor_snapshot, poi.strength_snapshot, poi.size_value_snapshot, poi.unit_snapshot, poi.packaging_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.return_quantity, returns.supplier_credit_quantity, returns.replacement_pending_quantity, returns.return_reasons, returns.return_remarks, inv.storage_qty, inv.shelf_qty, inv.damaged_qty
+         GROUP BY poi.po_item_id, poi.product_id, p.status, poi.quantity, poi.purchase_qty, poi.purchase_unit_snapshot, poi.units_per_purchase_unit_snapshot, poi.inventory_qty_ordered, poi.line_total, piii.unit_cost, poi.unit_snapshot, poi.unit_price_snapshot, p.product_name, p.brand_name, pc.category_name, pt.type_name, md.generic_name, md.strength, md.strength_value, md.strength_unit, md.net_content_value, md.net_content_unit, md.dosage_form, md.package_type, gd.variant, gd.size, gd.net_weight, gd.unit, gd.package_type, p.price, returns.return_quantity, returns.supplier_credit_quantity, returns.replacement_pending_quantity, returns.return_reasons, returns.return_remarks, inv.storage_qty, inv.shelf_qty, inv.damaged_qty
          ORDER BY poi.po_item_id"
     );
     $itemsStatement->execute([':po_id' => $poId]);

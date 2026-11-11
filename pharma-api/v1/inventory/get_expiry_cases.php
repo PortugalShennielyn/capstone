@@ -10,6 +10,9 @@ try {
     $statement = $pdo->query("SELECT c.*,
         CONCAT(IF(c.case_type='Return','RET-','DSP-'),LPAD(c.case_seq,4,'0')) AS case_number,
         p.product_name,p.brand_name,md.generic_name,pc.category_name,
+        (SELECT MAX(psv.value_text) FROM product_specification_values psv
+         INNER JOIN product_specifications ps ON ps.specification_id=psv.specification_id
+         WHERE psv.product_id=p.product_id AND LOWER(TRIM(ps.specification_name))='medicine classification') AS medicine_classification,
         COALESCE(NULLIF(u.unit_symbol,''),u.unit_name,'units') AS base_unit,
         COALESCE(s.supplier_name,'') AS supplier_name,
         COALESCE(NULLIF(pi.batch_number,''),c.batch_id) AS batch_number,

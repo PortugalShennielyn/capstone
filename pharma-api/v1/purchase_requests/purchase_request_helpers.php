@@ -370,25 +370,23 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
                         poi.product_id,
                         " ~~ ",
                         COALESCE(
-                            NULLIF(TRIM(poi.generic_name_snapshot), ""),
                             NULLIF(TRIM(md.generic_name), ""),
-                            NULLIF(TRIM(poi.product_name_snapshot), ""),
                             NULLIF(TRIM(p.product_name), ""),
                             "Unnamed product"
                         ),
                         CASE
-                        WHEN NULLIF(TRIM(poi.variant_flavor_snapshot), "") IS NOT NULL
+                        WHEN NULLIF(TRIM(gd.variant), "") IS NOT NULL
                          AND LOCATE(
-                                LOWER(NULLIF(TRIM(poi.variant_flavor_snapshot), "")),
-                                LOWER(COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), ""), NULLIF(TRIM(md.generic_name), ""), NULLIF(TRIM(poi.product_name_snapshot), ""), NULLIF(TRIM(p.product_name), ""), "Unnamed product"))
+                                LOWER(NULLIF(TRIM(gd.variant), "")),
+                                LOWER(COALESCE(NULLIF(TRIM(md.generic_name), ""), NULLIF(TRIM(p.product_name), ""), "Unnamed product"))
                              ) = 0
-                        THEN CONCAT(" ", NULLIF(TRIM(poi.variant_flavor_snapshot), ""))
+                        THEN CONCAT(" ", NULLIF(TRIM(gd.variant), ""))
                         ELSE ""
                         END,
                         CASE
-                        WHEN COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), ""), NULLIF(TRIM(p.brand_name), "")) IS NOT NULL
-                         AND LOWER(COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), ""), NULLIF(TRIM(p.brand_name), ""))) <> LOWER(COALESCE(NULLIF(TRIM(poi.generic_name_snapshot), ""), NULLIF(TRIM(md.generic_name), ""), NULLIF(TRIM(poi.product_name_snapshot), ""), NULLIF(TRIM(p.product_name), ""), "Unnamed product"))
-                        THEN CONCAT(" — ", COALESCE(NULLIF(TRIM(poi.brand_name_snapshot), ""), NULLIF(TRIM(p.brand_name), "")))
+                        WHEN NULLIF(TRIM(p.brand_name), "") IS NOT NULL
+                         AND LOWER(NULLIF(TRIM(p.brand_name), "")) <> LOWER(COALESCE(NULLIF(TRIM(md.generic_name), ""), NULLIF(TRIM(p.product_name), ""), "Unnamed product"))
+                        THEN CONCAT(" — ", NULLIF(TRIM(p.brand_name), ""))
                         ELSE ""
                         END
                     )
@@ -411,8 +409,8 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
                         " ~~ ",
                         CONCAT_WS(
                             " • ",
-                            NULLIF(TRIM(COALESCE(NULLIF(poi.strength_snapshot, ""), NULLIF(md.strength, ""), NULLIF(CONCAT_WS(" ", md.strength_value, md.strength_unit), ""), NULLIF(CONCAT_WS(" ", poi.size_value_snapshot, poi.unit_snapshot), ""), "")), ""),
-                            NULLIF(TRIM(COALESCE(NULLIF(poi.packaging_snapshot, ""), NULLIF(md.package_type, ""), "")), ""),
+                            NULLIF(TRIM(COALESCE(NULLIF(md.strength, ""), NULLIF(CONCAT_WS(" ", md.strength_value, md.strength_unit), ""), NULLIF(CONCAT_WS(" ", gd.size, poi.unit_snapshot), ""), "")), ""),
+                            NULLIF(TRIM(COALESCE(NULLIF(md.package_type, ""), NULLIF(gd.package_type, ""), "")), ""),
                             NULLIF(TRIM(COALESCE(NULLIF(poi.unit_snapshot, ""), NULLIF(md.dosage_form, ""), "")), "")
                         )
                     )
@@ -424,6 +422,7 @@ function purchaseRequestRelatedPurchaseOrders(PDO $pdo, string $prId): ?array
          LEFT JOIN purchase_order_items poi ON poi.po_id = po.po_id
          LEFT JOIN product p ON p.product_id = poi.product_id
          LEFT JOIN medicine_details md ON md.product_id = p.product_id
+         LEFT JOIN grocery_details gd ON gd.product_id = p.product_id
          LEFT JOIN purchase_order_invoices invoice ON invoice.po_id = po.po_id
          WHERE pr.pr_id = :pr_id
          GROUP BY pr.pr_id, pr.pr_number, po.po_id, po.po_number, po.supplier_id,

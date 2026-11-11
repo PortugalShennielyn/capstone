@@ -208,7 +208,7 @@ try {
             ? "(sc.resolution_type = 'Replacement' OR sc.claim_status LIKE '%Replacement%')"
             : "(sc.resolution_type IN ('Next PO Credit', 'Credit', 'Supplier Credit') OR sc.claim_status LIKE '%Credit%')";
         $rows = alertRows($pdo, "SELECT sc.claim_id, po.po_number, s.supplier_name,
-                COALESCE(NULLIF(poi.product_name_snapshot, ''), p.product_name, 'Unnamed product') AS product_name,
+                COALESCE(p.product_name, 'Unnamed product') AS product_name,
                 COALESCE(NULLIF(sc.action_quantity, 0), sc.affected_quantity, 0) AS quantity,
                 sc.created_at AS reported_date, sc.claim_status AS record_status
             FROM supplier_claims sc
@@ -218,6 +218,15 @@ try {
             LEFT JOIN product p ON p.product_id = poi.product_id
             WHERE {$claimCondition}
               AND sc.claim_status NOT IN ('Resolved', 'Resolved / Credit Issued', 'Replacement Received / Resolved', 'Completed')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM supplier_credits cr
+                  LEFT JOIN supplier_credit_applications app ON app.credit_id = cr.credit_id
+                  WHERE cr.claim_id = sc.claim_id
+                  GROUP BY cr.credit_id, cr.credit_amount
+                  HAVING cr.credit_amount > 0
+                     AND COALESCE(SUM(app.amount_applied), 0) >= cr.credit_amount
+              )
             ORDER BY sc.created_at, po.po_number");
         foreach ($rows as &$row) {
             $row['quantity'] = (int) $row['quantity'];
